@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { EnvironmentInfo } from '../../../shared/types';
 
 interface NewSessionDialogProps {
@@ -12,6 +12,22 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
   const [envId, setEnvId] = useState<string>('');
   const [directory, setDirectory] = useState('');
   const [label, setLabel] = useState('');
+  const [reposRoot, setReposRoot] = useState<string | null>(null);
+  const [repoDirs, setRepoDirs] = useState<string[]>([]);
+  const [showRepoConfig, setShowRepoConfig] = useState(false);
+  const [reposRootInput, setReposRootInput] = useState('');
+
+  // Load repos root setting
+  useEffect(() => {
+    if (!isOpen) return;
+    window.electronAPI.config.get('reposRoot').then(val => {
+      setReposRoot(val);
+      if (val) {
+        setReposRootInput(val);
+        window.electronAPI.scanReposDir(val).then(setRepoDirs);
+      }
+    });
+  }, [isOpen]);
 
   // Auto-fill default directory when environment changes
   useEffect(() => {
@@ -29,13 +45,24 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
     }
   }, [isOpen, environments, envId]);
 
+  const saveReposRoot = useCallback(async () => {
+    const val = reposRootInput.trim();
+    if (val) {
+      await window.electronAPI.config.set('reposRoot', val);
+      setReposRoot(val);
+      const dirs = await window.electronAPI.scanReposDir(val);
+      setRepoDirs(dirs);
+    }
+    setShowRepoConfig(false);
+  }, [reposRootInput]);
+
   if (!isOpen) return null;
 
   const selectedEnv = environments.find(e => e.id === envId);
   const isSSH = selectedEnv?.type === 'ssh';
 
   const handleBrowse = async () => {
-    if (isSSH) return; // No local browse for SSH
+    if (isSSH) return;
     const dir = await window.electronAPI.dialog.openDirectory();
     if (dir) setDirectory(dir);
   };
@@ -53,6 +80,8 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
     if (e.key === 'Enter' && directory.trim()) handleCreate();
     if (e.key === 'Escape') onClose();
   };
+
+  const dirName = (fullPath: string) => fullPath.split(/[\\/]/).pop() || fullPath;
 
   return (
     <div className="dialog-overlay" onClick={onClose}>
@@ -79,6 +108,24 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
             </div>
           )}
 
+          {/* Quick-pick from repos root */}
+          {!isSSH && reposRoot && repoDirs.length > 0 && (
+            <div className="form-group">
+              <label className="form-label">Quick Pick</label>
+              <div className="repo-picker">
+                {repoDirs.map(dir => (
+                  <button
+                    key={dir}
+                    className={`repo-picker-item ${directory === dir ? 'repo-picker-item--selected' : ''}`}
+                    onClick={() => setDirectory(dir)}
+                  >
+                    {dirName(dir)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="form-group">
             <label className="form-label">
               {isSSH ? 'Remote Directory' : 'Directory'}
@@ -89,7 +136,7 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
                 value={directory}
                 onChange={e => setDirectory(e.target.value)}
                 placeholder={isSSH ? '~/repos/my-project' : 'C:\\repos\\my-project'}
-                autoFocus
+                autoFocus={!reposRoot}
               />
               {!isSSH && (
                 <button className="form-btn" onClick={handleBrowse}>Browse</button>
@@ -111,6 +158,40 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
               placeholder="Auto-generated from directory name"
             />
           </div>
+
+          {/* Repos root config */}
+          {!isSSH && (
+            <div className="form-group">
+              {!showRepoConfig && !reposRoot && (
+                <button
+                  className="form-link"
+                  onClick={() => setShowRepoConfig(true)}
+                >
+                  Set repos directory for quick pick...
+                </button>
+              )}
+              {!showRepoConfig && reposRoot && (
+                <button
+                  className="form-link"
+                  onClick={() => { setShowRepoConfig(true); setReposRootInput(reposRoot); }}
+                >
+                  Change repos directory ({reposRoot})
+                </button>
+              )}
+              {showRepoConfig && (
+                <div className="form-row">
+                  <input
+                    className="form-input"
+                    value={reposRootInput}
+                    onChange={e => setReposRootInput(e.target.value)}
+                    placeholder="C:\repo"
+                    onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); saveReposRoot(); } }}
+                  />
+                  <button className="form-btn" onClick={saveReposRoot}>Save</button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="dialog-footer">
           <button className="form-btn" onClick={onClose}>Cancel</button>

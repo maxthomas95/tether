@@ -125,4 +125,33 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
+
+  // === Config handlers ===
+
+  ipcMain.handle(IPC.CONFIG_GET, async (_event, key: string) => {
+    const { getDb } = await import('../db/database');
+    return getDb().config[key] ?? null;
+  });
+
+  ipcMain.handle(IPC.CONFIG_SET, async (_event, key: string, value: string) => {
+    const { getDb, saveDb } = await import('../db/database');
+    getDb().config[key] = value;
+    saveDb();
+  });
+
+  // === Scan repos directory ===
+
+  ipcMain.handle(IPC.SCAN_REPOS_DIR, async (_event, dir: string) => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      return entries
+        .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+        .map(e => path.join(dir, e.name))
+        .sort();
+    } catch {
+      return [];
+    }
+  });
 }

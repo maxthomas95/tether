@@ -45,6 +45,13 @@ const api: TetherAPI = {
   dialog: {
     openDirectory: (): Promise<string | null> => ipcRenderer.invoke(IPC.DIALOG_OPEN_DIRECTORY),
   },
+
+  config: {
+    get: (key: string): Promise<string | null> => ipcRenderer.invoke(IPC.CONFIG_GET, key),
+    set: (key: string, value: string): Promise<void> => ipcRenderer.invoke(IPC.CONFIG_SET, key, value),
+  },
+
+  scanReposDir: (dir: string): Promise<string[]> => ipcRenderer.invoke(IPC.SCAN_REPOS_DIR, dir),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

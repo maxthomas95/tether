@@ -58,6 +58,11 @@ export interface TetherAPI {
   dialog: {
     openDirectory(): Promise<string | null>;
   };
+  config: {
+    get(key: string): Promise<string | null>;
+    set(key: string, value: string): Promise<void>;
+  };
+  scanReposDir(dir: string): Promise<string[]>;
 }
 
 declare global {

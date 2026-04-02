@@ -13,6 +13,9 @@ export const IPC = {
   ENV_UPDATE: 'environment:update',
   ENV_DELETE: 'environment:delete',
   DIALOG_OPEN_DIRECTORY: 'dialog:open-directory',
+  SCAN_REPOS_DIR: 'scan:repos-dir',
+  CONFIG_GET: 'config:get',
+  CONFIG_SET: 'config:set',
 
   // Main -> Renderer
   SESSION_DATA: 'session:data',

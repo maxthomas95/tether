@@ -5,6 +5,7 @@ import fs from 'node:fs';
 export interface DbData {
   environments: EnvironmentRow[];
   sessions: SessionRow[];
+  config: Record<string, string>;
 }
 
 export interface EnvironmentRow {
@@ -57,12 +58,18 @@ export function getDb(): DbData {
     const filePath = getDbPath();
     if (fs.existsSync(filePath)) {
       try {
-        data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        const loaded = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        // Backfill missing fields from older data files
+        data = {
+          environments: loaded.environments || [],
+          sessions: loaded.sessions || [],
+          config: loaded.config || {},
+        };
       } catch {
-        data = { environments: [], sessions: [] };
+        data = { environments: [], sessions: [], config: {} };
       }
     } else {
-      data = { environments: [], sessions: [] };
+      data = { environments: [], sessions: [], config: {} };
     }
   }
   return data;
