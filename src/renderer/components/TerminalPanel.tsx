@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalPanelProps {
@@ -10,19 +10,30 @@ interface TerminalPanelProps {
 export function TerminalPanel({ sessionId, containerRef, onResize }: TerminalPanelProps) {
   const observerRef = useRef<ResizeObserver | null>(null);
 
+  const doResize = useCallback(() => {
+    requestAnimationFrame(onResize);
+  }, [onResize]);
+
+  // ResizeObserver on the container element
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el || !sessionId) return;
 
-    observerRef.current = new ResizeObserver(() => {
-      requestAnimationFrame(onResize);
-    });
+    observerRef.current = new ResizeObserver(doResize);
     observerRef.current.observe(el);
 
     return () => {
       observerRef.current?.disconnect();
+      observerRef.current = null;
     };
-  }, [containerRef, onResize]);
+  }, [containerRef, sessionId, doResize]);
+
+  // Window resize fallback — ResizeObserver can miss flex layout changes
+  useEffect(() => {
+    if (!sessionId) return;
+    window.addEventListener('resize', doResize);
+    return () => window.removeEventListener('resize', doResize);
+  }, [sessionId, doResize]);
 
   if (!sessionId) {
     return (
@@ -40,8 +51,7 @@ export function TerminalPanel({ sessionId, containerRef, onResize }: TerminalPan
   return (
     <div
       ref={containerRef}
-      className="terminal-container"
-      style={{ padding: 4 }}
+      className="terminal-container terminal-container--active"
     />
   );
 }

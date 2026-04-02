@@ -9,9 +9,10 @@ interface SessionItemProps {
   onKill: () => void;
   onRename: (label: string) => void;
   onRemove: () => void;
+  nested?: boolean;
 }
 
-export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove }: SessionItemProps) {
+export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, nested }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
@@ -53,7 +54,7 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
 
   return (
     <div
-      className={`session-item ${isActive ? 'session-item--active' : ''}`}
+      className={`session-item ${isActive ? 'session-item--active' : ''} ${nested ? 'session-item--nested' : ''}`}
       onClick={onClick}
       onContextMenu={handleContextMenu}
     >

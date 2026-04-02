@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { TerminalPanel } from './components/TerminalPanel';
-import { SessionItem } from './components/sidebar/SessionItem';
+import { RepoGroup } from './components/sidebar/RepoGroup';
 import { NewSessionDialog } from './components/sidebar/NewSessionDialog';
 import { NewEnvironmentDialog } from './components/sidebar/NewEnvironmentDialog';
 import { SidebarResizeHandle } from './components/sidebar/SidebarResizeHandle';
@@ -176,18 +176,30 @@ export function App() {
                   </span>
                   <span className="env-group-count">({envSessions.length})</span>
                 </div>
-                {!isCollapsed && envSessions.map(session => (
-                  <SessionItem
-                    key={session.id}
-                    session={session}
-                    isActive={session.id === activeSessionId}
-                    onClick={() => setActiveSessionId(session.id)}
-                    onStop={() => handleStop(session.id)}
-                    onKill={() => handleKill(session.id)}
-                    onRename={(l) => handleRename(session.id, l)}
-                    onRemove={() => handleRemove(session.id)}
-                  />
-                ))}
+                {!isCollapsed && envSessions.length > 0 && (
+                  (() => {
+                    // Group sessions by working directory
+                    const byDir = new Map<string, SessionInfo[]>();
+                    for (const s of envSessions) {
+                      const dir = s.workingDir;
+                      if (!byDir.has(dir)) byDir.set(dir, []);
+                      byDir.get(dir)!.push(s);
+                    }
+                    return Array.from(byDir.entries()).map(([dir, dirSessions]) => (
+                      <RepoGroup
+                        key={dir}
+                        repoPath={dir}
+                        sessions={dirSessions}
+                        activeSessionId={activeSessionId}
+                        onSelectSession={setActiveSessionId}
+                        onStop={handleStop}
+                        onKill={handleKill}
+                        onRename={handleRename}
+                        onRemove={handleRemove}
+                      />
+                    ));
+                  })()
+                )}
                 {!isCollapsed && envSessions.length === 0 && (
                   <div className="session-item" style={{ opacity: 0.5 }}>
                     <span className="status-dot status-dot--idle" />
