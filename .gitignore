@@ -1,0 +1,11 @@
+node_modules/
+.vite/
+out/
+dist/
+*.tsbuildinfo
+*.log
+npm-debug.log*
+.env
+.env.*
+.DS_Store
+Thumbs.db
