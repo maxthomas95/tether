@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { EnvVarEditor } from '../EnvVarEditor';
 import type { EnvironmentInfo } from '../../../shared/types';
 
 interface NewSessionDialogProps {
   isOpen: boolean;
   environments: EnvironmentInfo[];
   onClose: () => void;
-  onCreate: (workingDir: string, label: string, environmentId?: string) => void;
+  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>) => void;
 }
 
 export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: NewSessionDialogProps) {
@@ -16,10 +17,13 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
   const [repoDirs, setRepoDirs] = useState<string[]>([]);
   const [showRepoConfig, setShowRepoConfig] = useState(false);
   const [reposRootInput, setReposRootInput] = useState('');
+  const [sessionEnvVars, setSessionEnvVars] = useState<Record<string, string>>({});
+  const [appDefaultEnvVars, setAppDefaultEnvVars] = useState<Record<string, string>>({});
 
-  // Load repos root setting
+  // Load repos root and app default env vars
   useEffect(() => {
     if (!isOpen) return;
+    window.electronAPI.config.getDefaultEnvVars?.()?.then(setAppDefaultEnvVars).catch(() => {});
     window.electronAPI.config.get('reposRoot').then(val => {
       setReposRoot(val);
       if (val) {
@@ -56,10 +60,16 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
     setShowRepoConfig(false);
   }, [reposRootInput]);
 
-  if (!isOpen) return null;
-
   const selectedEnv = environments.find(e => e.id === envId);
   const isSSH = selectedEnv?.type === 'ssh';
+
+  // Compute inherited env vars for display (must be before early return — Rules of Hooks)
+  const inheritedVars = useMemo(() => ({
+    ...appDefaultEnvVars,
+    ...(selectedEnv?.envVars || {}),
+  }), [appDefaultEnvVars, selectedEnv]);
+
+  if (!isOpen) return null;
 
   const handleBrowse = async () => {
     if (isSSH) return;
@@ -69,10 +79,12 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
 
   const handleCreate = () => {
     if (!directory.trim()) return;
-    onCreate(directory.trim(), label.trim(), envId || undefined);
+    const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
+    onCreate(directory.trim(), label.trim(), envId || undefined, env);
     setDirectory('');
     setLabel('');
     setEnvId('');
+    setSessionEnvVars({});
     onClose();
   };
 
@@ -158,6 +170,26 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
               placeholder="Auto-generated from directory name"
             />
           </div>
+
+          {/* Env var overrides */}
+          <details className="form-group">
+            <summary className="form-label" style={{ cursor: 'pointer' }}>
+              Environment Variables
+              {Object.keys(inheritedVars).length > 0 && (
+                <span className="form-hint" style={{ display: 'inline', marginLeft: 8 }}>
+                  ({Object.keys(inheritedVars).length} inherited)
+                </span>
+              )}
+            </summary>
+            <div style={{ marginTop: 8 }}>
+              <EnvVarEditor
+                vars={sessionEnvVars}
+                onChange={setSessionEnvVars}
+                inheritedVars={inheritedVars}
+                compact
+              />
+            </div>
+          </details>
 
           {/* Repos root config */}
           {!isSSH && (

@@ -4,6 +4,7 @@ import { RepoGroup } from './components/sidebar/RepoGroup';
 import { NewSessionDialog } from './components/sidebar/NewSessionDialog';
 import { NewEnvironmentDialog } from './components/sidebar/NewEnvironmentDialog';
 import { SidebarResizeHandle } from './components/sidebar/SidebarResizeHandle';
+import { SettingsDialog } from './components/SettingsDialog';
 import { useTerminalManager } from './hooks/useTerminalManager';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType } from '../shared/types';
@@ -14,6 +15,7 @@ export function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState(220);
   const [sidebarVisible, setSidebarVisible] = useState(true);
@@ -46,9 +48,9 @@ export function App() {
     }
   }, [activeSessionId, termManager]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string) => {
+  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>) => {
     try {
-      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId });
+      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, env });
       termManager.getOrCreate(session.id);
       setSessions(prev => [...prev, session]);
       setActiveSessionId(session.id);
@@ -57,9 +59,9 @@ export function App() {
     }
   }, [termManager]);
 
-  const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>) => {
+  const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
     try {
-      const env = await window.electronAPI.environment.create({ name, type, config });
+      const env = await window.electronAPI.environment.create({ name, type, config, envVars });
       setEnvironments(prev => [...prev, env]);
     } catch (err) {
       console.error('Failed to create environment:', err);
@@ -148,6 +150,13 @@ export function App() {
             style={{ marginTop: 6, fontSize: 11, color: 'var(--text-secondary)' }}
           >
             + Add environment
+          </button>
+          <button
+            className="new-session-btn"
+            onClick={() => setSettingsOpen(true)}
+            style={{ marginTop: 6, fontSize: 11, color: 'var(--text-secondary)' }}
+          >
+            Settings
           </button>
         </div>
         <div className="sidebar-content">
@@ -247,6 +256,10 @@ export function App() {
         isOpen={envDialogOpen}
         onClose={() => setEnvDialogOpen(false)}
         onCreate={handleCreateEnvironment}
+      />
+      <SettingsDialog
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
       />
     </div>
   );

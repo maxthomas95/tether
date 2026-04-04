@@ -16,6 +16,8 @@ export const IPC = {
   SCAN_REPOS_DIR: 'scan:repos-dir',
   CONFIG_GET: 'config:get',
   CONFIG_SET: 'config:set',
+  CONFIG_GET_DEFAULT_ENV_VARS: 'config:get-default-env-vars',
+  CONFIG_SET_DEFAULT_ENV_VARS: 'config:set-default-env-vars',
 
   // Main -> Renderer
   SESSION_DATA: 'session:data',

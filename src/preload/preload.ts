@@ -49,6 +49,8 @@ const api: TetherAPI = {
   config: {
     get: (key: string): Promise<string | null> => ipcRenderer.invoke(IPC.CONFIG_GET, key),
     set: (key: string, value: string): Promise<void> => ipcRenderer.invoke(IPC.CONFIG_SET, key, value),
+    getDefaultEnvVars: (): Promise<Record<string, string>> => ipcRenderer.invoke(IPC.CONFIG_GET_DEFAULT_ENV_VARS),
+    setDefaultEnvVars: (vars: Record<string, string>): Promise<void> => ipcRenderer.invoke(IPC.CONFIG_SET_DEFAULT_ENV_VARS, vars),
   },
 
   scanReposDir: (dir: string): Promise<string[]> => ipcRenderer.invoke(IPC.SCAN_REPOS_DIR, dir),

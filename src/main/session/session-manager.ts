@@ -103,9 +103,25 @@ class SessionManager {
       callbacks.onExit(exitCode);
     });
 
+    // Resolve env var cascade: app defaults -> environment -> session override
+    const { getDb } = await import('../db/database');
+    const appEnvVars = getDb().defaultEnvVars;
+    let envEnvVars: Record<string, string> = {};
+    if (opts.environmentId) {
+      const envRow = getEnvironment(opts.environmentId);
+      if (envRow?.env_vars) {
+        try { envEnvVars = JSON.parse(envRow.env_vars); } catch { /* ignore */ }
+      }
+    }
+    const resolvedEnv: Record<string, string> = {
+      ...appEnvVars,
+      ...envEnvVars,
+      ...(opts.env || {}),
+    };
+
     await transport.start({
       workingDir: opts.workingDir,
-      env: opts.env || {},
+      env: resolvedEnv,
       cols: 120,
       rows: 30,
       cliArgs: opts.cliArgs,

@@ -8,6 +8,7 @@ export interface CreateEnvironmentInput {
   name: string;
   type: 'local' | 'ssh' | 'coder';
   config?: Record<string, unknown>;
+  envVars?: Record<string, string>;
   auth_mode?: string;
   model?: string;
   small_model?: string;
@@ -28,6 +29,7 @@ export function createEnvironment(input: CreateEnvironmentInput): EnvironmentRow
     name: input.name,
     type: input.type,
     config: JSON.stringify(input.config || {}),
+    env_vars: JSON.stringify(input.envVars || {}),
     auth_mode: input.auth_mode || null,
     api_key_enc: null,
     model: input.model || null,
@@ -47,6 +49,7 @@ export function updateEnvironment(id: string, updates: Partial<CreateEnvironment
   if (updates.name !== undefined) env.name = updates.name;
   if (updates.type !== undefined) env.type = updates.type;
   if (updates.config !== undefined) env.config = JSON.stringify(updates.config);
+  if (updates.envVars !== undefined) env.env_vars = JSON.stringify(updates.envVars);
   if (updates.auth_mode !== undefined) env.auth_mode = updates.auth_mode;
   if (updates.model !== undefined) env.model = updates.model;
   if (updates.small_model !== undefined) env.small_model = updates.small_model;

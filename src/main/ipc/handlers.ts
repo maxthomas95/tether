@@ -80,6 +80,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       name: env.name,
       type: env.type as EnvironmentInfo['type'],
       config: JSON.parse(env.config),
+      envVars: JSON.parse(env.env_vars || '{}'),
       sessionCount: sessions.filter(s => {
         if (s.environmentId === env.id) return true;
         if (env.type === 'local' && !s.environmentId) return true;
@@ -93,12 +94,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       name: opts.name,
       type: opts.type,
       config: opts.config,
+      envVars: opts.envVars,
     });
     return {
       id: env.id,
       name: env.name,
       type: env.type,
       config: JSON.parse(env.config),
+      envVars: JSON.parse(env.env_vars || '{}'),
       sessionCount: 0,
     } as EnvironmentInfo;
   });
@@ -108,6 +111,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       name: opts.name,
       type: opts.type,
       config: opts.config,
+      envVars: opts.envVars,
     });
   });
 
@@ -136,6 +140,17 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.CONFIG_SET, async (_event, key: string, value: string) => {
     const { getDb, saveDb } = await import('../db/database');
     getDb().config[key] = value;
+    saveDb();
+  });
+
+  ipcMain.handle(IPC.CONFIG_GET_DEFAULT_ENV_VARS, async () => {
+    const { getDb } = await import('../db/database');
+    return getDb().defaultEnvVars;
+  });
+
+  ipcMain.handle(IPC.CONFIG_SET_DEFAULT_ENV_VARS, async (_event, vars: Record<string, string>) => {
+    const { getDb, saveDb } = await import('../db/database');
+    getDb().defaultEnvVars = vars;
     saveDb();
   });
 

@@ -6,6 +6,7 @@ export interface DbData {
   environments: EnvironmentRow[];
   sessions: SessionRow[];
   config: Record<string, string>;
+  defaultEnvVars: Record<string, string>;
 }
 
 export interface EnvironmentRow {
@@ -13,6 +14,7 @@ export interface EnvironmentRow {
   name: string;
   type: 'local' | 'ssh' | 'coder';
   config: string;
+  env_vars: string; // JSON-encoded Record<string, string>
   auth_mode: string | null;
   api_key_enc: string | null;
   model: string | null;
@@ -60,16 +62,21 @@ export function getDb(): DbData {
       try {
         const loaded = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
         // Backfill missing fields from older data files
+        const envs = (loaded.environments || []).map((e: Record<string, unknown>) => ({
+          ...e,
+          env_vars: e.env_vars || '{}',
+        }));
         data = {
-          environments: loaded.environments || [],
+          environments: envs,
           sessions: loaded.sessions || [],
           config: loaded.config || {},
+          defaultEnvVars: loaded.defaultEnvVars || {},
         };
       } catch {
-        data = { environments: [], sessions: [], config: {} };
+        data = { environments: [], sessions: [], config: {}, defaultEnvVars: {} };
       }
     } else {
-      data = { environments: [], sessions: [], config: {} };
+      data = { environments: [], sessions: [], config: {}, defaultEnvVars: {} };
     }
   }
   return data;

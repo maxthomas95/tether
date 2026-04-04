@@ -6,6 +6,7 @@ export interface EnvironmentInfo {
   name: string;
   type: EnvironmentType;
   config: Record<string, unknown>;
+  envVars: Record<string, string>;
   sessionCount: number;
 }
 
@@ -31,6 +32,7 @@ export interface CreateEnvironmentOptions {
   name: string;
   type: EnvironmentType;
   config?: Record<string, unknown>;
+  envVars?: Record<string, string>;
 }
 
 export interface TetherAPI {
@@ -61,6 +63,8 @@ export interface TetherAPI {
   config: {
     get(key: string): Promise<string | null>;
     set(key: string, value: string): Promise<void>;
+    getDefaultEnvVars(): Promise<Record<string, string>>;
+    setDefaultEnvVars(vars: Record<string, string>): Promise<void>;
   };
   scanReposDir(dir: string): Promise<string[]>;
 }

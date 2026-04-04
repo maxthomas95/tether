@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { EnvVarEditor } from '../EnvVarEditor';
 import type { EnvironmentType } from '../../../shared/types';
 
 interface NewEnvironmentDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (name: string, type: EnvironmentType, config: Record<string, unknown>) => void;
+  onCreate: (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => void;
 }
 
 export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironmentDialogProps) {
@@ -16,6 +17,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
   const [keyPath, setKeyPath] = useState('');
   const [useAgent, setUseAgent] = useState(true);
   const [defaultDir, setDefaultDir] = useState('~');
+  const [envVars, setEnvVars] = useState<Record<string, string>>({});
 
   if (!isOpen) return null;
 
@@ -35,10 +37,10 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
       }
     }
 
-    onCreate(name.trim(), type, config);
+    onCreate(name.trim(), type, config, envVars);
     // Reset form
     setName(''); setHost(''); setPort('22'); setUsername('');
-    setKeyPath(''); setUseAgent(true); setDefaultDir('~');
+    setKeyPath(''); setUseAgent(true); setDefaultDir('~'); setEnvVars({});
     onClose();
   };
 
@@ -151,6 +153,15 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
               </div>
             </>
           )}
+
+          <details className="form-group">
+            <summary className="form-label" style={{ cursor: 'pointer' }}>
+              Environment Variables (optional)
+            </summary>
+            <div style={{ marginTop: 8 }}>
+              <EnvVarEditor vars={envVars} onChange={setEnvVars} compact />
+            </div>
+          </details>
         </div>
         <div className="dialog-footer">
           <button className="form-btn" onClick={onClose}>Cancel</button>
