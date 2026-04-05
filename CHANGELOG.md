@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.1.0-alpha.2] — 2026-04-04
+
+### New Features
+- **Workspace save/restore** — sessions auto-save on quit and restore on next launch. Toggle in Settings.
+- **CLI flags** — configure flags like `--dangerously-skip-permissions` in Settings (app-wide) or per-session in the New Session dialog. Custom flags supported.
+- **Clipboard support** — Ctrl+C (with selection) copies, Ctrl+V pastes, Ctrl+Shift+C always copies
+- **Shift+Enter multi-line input** — works like VS Code's terminal for multi-line prompts
+
+### Improvements
+- Settings dialog now has "Restore sessions on launch" toggle
+- New Session dialog shows inherited CLI flags from defaults
+- Dialog body scrollable when content overflows
+
+---
+
 ## [0.1.0-alpha.1] — 2026-04-04
 
 The first working build. Tether runs as a standalone Windows exe.
