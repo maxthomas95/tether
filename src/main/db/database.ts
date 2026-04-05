@@ -18,6 +18,7 @@ export interface DbData {
   sessions: SessionRow[];
   config: Record<string, string>;
   defaultEnvVars: Record<string, string>;
+  defaultCliFlags: string[];
   savedWorkspace: SavedWorkspace | null;
 }
 
@@ -83,13 +84,14 @@ export function getDb(): DbData {
           sessions: loaded.sessions || [],
           config: loaded.config || {},
           defaultEnvVars: loaded.defaultEnvVars || {},
+          defaultCliFlags: loaded.defaultCliFlags || [],
           savedWorkspace: loaded.savedWorkspace || null,
         };
       } catch {
-        data = { environments: [], sessions: [], config: {}, defaultEnvVars: {}, savedWorkspace: null };
+        data = { environments: [], sessions: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], savedWorkspace: null };
       }
     } else {
-      data = { environments: [], sessions: [], config: {}, defaultEnvVars: {}, savedWorkspace: null };
+      data = { environments: [], sessions: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], savedWorkspace: null };
     }
   }
   return data;

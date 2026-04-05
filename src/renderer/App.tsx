@@ -100,9 +100,9 @@ export function App() {
     }
   }, [activeSessionId, termManager]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>) => {
+  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[]) => {
     try {
-      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, env });
+      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, env, cliArgs });
       termManager.getOrCreate(session.id);
       setSessions(prev => [...prev, session]);
       setActiveSessionId(session.id);

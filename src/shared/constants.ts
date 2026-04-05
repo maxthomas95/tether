@@ -20,6 +20,8 @@ export const IPC = {
   CONFIG_SET: 'config:set',
   CONFIG_GET_DEFAULT_ENV_VARS: 'config:get-default-env-vars',
   CONFIG_SET_DEFAULT_ENV_VARS: 'config:set-default-env-vars',
+  CONFIG_GET_DEFAULT_CLI_FLAGS: 'config:get-default-cli-flags',
+  CONFIG_SET_DEFAULT_CLI_FLAGS: 'config:set-default-cli-flags',
 
   // Main -> Renderer
   SESSION_DATA: 'session:data',

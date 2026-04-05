@@ -143,6 +143,17 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     saveDb();
   });
 
+  ipcMain.handle(IPC.CONFIG_GET_DEFAULT_CLI_FLAGS, async () => {
+    const { getDb } = await import('../db/database');
+    return getDb().defaultCliFlags;
+  });
+
+  ipcMain.handle(IPC.CONFIG_SET_DEFAULT_CLI_FLAGS, async (_event, flags: string[]) => {
+    const { getDb, saveDb } = await import('../db/database');
+    getDb().defaultCliFlags = flags;
+    saveDb();
+  });
+
   ipcMain.handle(IPC.CONFIG_GET_DEFAULT_ENV_VARS, async () => {
     const { getDb } = await import('../db/database');
     return getDb().defaultEnvVars;

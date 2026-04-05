@@ -65,6 +65,8 @@ export interface TetherAPI {
     set(key: string, value: string): Promise<void>;
     getDefaultEnvVars(): Promise<Record<string, string>>;
     setDefaultEnvVars(vars: Record<string, string>): Promise<void>;
+    getDefaultCliFlags(): Promise<string[]>;
+    setDefaultCliFlags(flags: string[]): Promise<void>;
   };
   scanReposDir(dir: string): Promise<string[]>;
   clipboard: {

@@ -119,12 +119,16 @@ class SessionManager {
       ...(opts.env || {}),
     };
 
+    // Resolve CLI flags: app defaults + session-specific
+    const appCliFlags = getDb().defaultCliFlags || [];
+    const resolvedCliArgs = [...appCliFlags, ...(opts.cliArgs || [])];
+
     await transport.start({
       workingDir: opts.workingDir,
       env: resolvedEnv,
       cols: 120,
       rows: 30,
-      cliArgs: opts.cliArgs,
+      cliArgs: resolvedCliArgs.length > 0 ? resolvedCliArgs : undefined,
     });
 
     return session;

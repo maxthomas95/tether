@@ -41,9 +41,12 @@ export function useTerminalManager() {
       terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
         const ctrl = e.ctrlKey || e.metaKey;
 
-        // Shift+Enter → newline without submit (CSI u encoding)
-        if (e.key === 'Enter' && e.shiftKey && e.type === 'keydown') {
-          window.electronAPI.session.sendInput(sessionId, '\x1b[13;2u');
+        // Shift+Enter → newline without submit
+        // Block both keydown and keyup to fully prevent xterm's default Enter
+        if (e.key === 'Enter' && e.shiftKey) {
+          if (e.type === 'keydown') {
+            window.electronAPI.session.sendInput(sessionId, '\x1b[13;2u');
+          }
           return false;
         }
 

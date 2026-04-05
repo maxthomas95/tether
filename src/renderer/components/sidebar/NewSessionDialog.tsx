@@ -6,7 +6,7 @@ interface NewSessionDialogProps {
   isOpen: boolean;
   environments: EnvironmentInfo[];
   onClose: () => void;
-  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>) => void;
+  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[]) => void;
 }
 
 export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: NewSessionDialogProps) {
@@ -19,11 +19,15 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
   const [reposRootInput, setReposRootInput] = useState('');
   const [sessionEnvVars, setSessionEnvVars] = useState<Record<string, string>>({});
   const [appDefaultEnvVars, setAppDefaultEnvVars] = useState<Record<string, string>>({});
+  const [defaultCliFlags, setDefaultCliFlags] = useState<string[]>([]);
+  const [sessionCliFlags, setSessionCliFlags] = useState<string[]>([]);
+  const [customFlag, setCustomFlag] = useState('');
 
-  // Load repos root and app default env vars
+  // Load repos root, app default env vars, and CLI flags
   useEffect(() => {
     if (!isOpen) return;
     window.electronAPI.config.getDefaultEnvVars?.()?.then(setAppDefaultEnvVars).catch(() => {});
+    window.electronAPI.config.getDefaultCliFlags?.()?.then(setDefaultCliFlags).catch(() => {});
     window.electronAPI.config.get('reposRoot').then(val => {
       setReposRoot(val);
       if (val) {
@@ -80,11 +84,14 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
   const handleCreate = () => {
     if (!directory.trim()) return;
     const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
-    onCreate(directory.trim(), label.trim(), envId || undefined, env);
+    const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
+    onCreate(directory.trim(), label.trim(), envId || undefined, env, args);
     setDirectory('');
     setLabel('');
     setEnvId('');
     setSessionEnvVars({});
+    setSessionCliFlags([]);
+    setCustomFlag('');
     onClose();
   };
 
@@ -188,6 +195,63 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
                 inheritedVars={inheritedVars}
                 compact
               />
+            </div>
+          </details>
+
+          {/* CLI flags */}
+          <details className="form-group">
+            <summary className="form-label" style={{ cursor: 'pointer' }}>
+              CLI Flags
+              {defaultCliFlags.length > 0 && (
+                <span className="form-hint" style={{ display: 'inline', marginLeft: 8 }}>
+                  ({defaultCliFlags.length} from defaults)
+                </span>
+              )}
+            </summary>
+            <div style={{ marginTop: 8 }}>
+              {defaultCliFlags.length > 0 && (
+                <div style={{ marginBottom: 8, opacity: 0.5 }}>
+                  <span className="form-hint">Inherited from defaults:</span>
+                  {defaultCliFlags.map(f => (
+                    <code key={f} className="cli-flag-code" style={{ marginLeft: 6 }}>{f}</code>
+                  ))}
+                </div>
+              )}
+              {sessionCliFlags.map(flag => (
+                <div key={flag} className="cli-flag-custom">
+                  <code className="cli-flag-code">{flag}</code>
+                  <button
+                    className="env-editor-btn env-editor-btn--remove"
+                    onClick={() => setSessionCliFlags(prev => prev.filter(f => f !== flag))}
+                  >&times;</button>
+                </div>
+              ))}
+              <div className="form-row">
+                <input
+                  className="form-input"
+                  value={customFlag}
+                  onChange={e => setCustomFlag(e.target.value)}
+                  placeholder="--flag-name"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const f = customFlag.trim();
+                      if (f && !sessionCliFlags.includes(f)) {
+                        setSessionCliFlags(prev => [...prev, f]);
+                        setCustomFlag('');
+                      }
+                    }
+                  }}
+                />
+                <button className="form-btn" onClick={() => {
+                  const f = customFlag.trim();
+                  if (f && !sessionCliFlags.includes(f)) {
+                    setSessionCliFlags(prev => [...prev, f]);
+                    setCustomFlag('');
+                  }
+                }}>Add</button>
+              </div>
             </div>
           </details>
 

@@ -600,6 +600,22 @@ html, body, #root {
   border-bottom: 1px dashed var(--border-color);
 }
 
+/* CLI flag styling */
+.cli-flag-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-primary);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.cli-flag-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
 /* Wider dialog variant */
 .dialog--wide {
   width: 560px;
