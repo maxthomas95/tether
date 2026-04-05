@@ -9,10 +9,11 @@ interface SessionItemProps {
   onKill: () => void;
   onRename: (label: string) => void;
   onRemove: () => void;
+  onDuplicate: () => void;
   nested?: boolean;
 }
 
-export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, nested }: SessionItemProps) {
+export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, nested }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
@@ -85,6 +86,9 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
         <div ref={menuRef} className="context-menu" onClick={e => e.stopPropagation()}>
           <div className="context-menu-item" onClick={() => { setShowMenu(false); setEditing(true); setEditValue(session.label); }}>
             Rename
+          </div>
+          <div className="context-menu-item" onClick={() => { setShowMenu(false); onDuplicate(); }}>
+            Duplicate
           </div>
           {isAlive && (
             <div className="context-menu-item" onClick={() => { setShowMenu(false); onStop(); }}>

@@ -93,6 +93,12 @@ export function App() {
     });
   }, [activeSessionId, termManager]);
 
+  const handleDuplicate = useCallback(async (id: string) => {
+    const source = sessions.find(s => s.id === id);
+    if (!source) return;
+    handleCreateSession(source.workingDir, '', source.environmentId || undefined);
+  }, [sessions, handleCreateSession]);
+
   const toggleGroup = useCallback((envId: string) => {
     setCollapsedGroups(prev => {
       const next = new Set(prev);
@@ -205,6 +211,7 @@ export function App() {
                         onKill={handleKill}
                         onRename={handleRename}
                         onRemove={handleRemove}
+                        onDuplicate={handleDuplicate}
                       />
                     ));
                   })()

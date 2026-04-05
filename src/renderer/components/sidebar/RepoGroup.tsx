@@ -11,6 +11,7 @@ interface RepoGroupProps {
   onKill: (id: string) => void;
   onRename: (id: string, label: string) => void;
   onRemove: (id: string) => void;
+  onDuplicate: (id: string) => void;
 }
 
 export function RepoGroup({
@@ -22,6 +23,7 @@ export function RepoGroup({
   onKill,
   onRename,
   onRemove,
+  onDuplicate,
 }: RepoGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -36,6 +38,7 @@ export function RepoGroup({
         onKill={() => onKill(sessions[0].id)}
         onRename={(label) => onRename(sessions[0].id, label)}
         onRemove={() => onRemove(sessions[0].id)}
+        onDuplicate={() => onDuplicate(sessions[0].id)}
       />
     );
   }
@@ -73,6 +76,7 @@ export function RepoGroup({
           onKill={() => onKill(session.id)}
           onRename={(label) => onRename(session.id, label)}
           onRemove={() => onRemove(session.id)}
+          onDuplicate={() => onDuplicate(session.id)}
           nested
         />
       ))}
