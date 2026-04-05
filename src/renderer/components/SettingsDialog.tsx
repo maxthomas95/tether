@@ -8,20 +8,26 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
+  const [restoreOnLaunch, setRestoreOnLaunch] = useState(true);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!isOpen) { setLoaded(false); return; }
-    window.electronAPI.config.getDefaultEnvVars?.()?.then((vars: Record<string, string>) => {
-      setEnvVars(vars);
+    Promise.all([
+      window.electronAPI.config.getDefaultEnvVars?.()?.catch(() => ({})),
+      window.electronAPI.config.get?.('restoreOnLaunch')?.catch(() => null),
+    ]).then(([vars, restore]) => {
+      setEnvVars(vars || {});
+      setRestoreOnLaunch(restore !== 'false'); // default true
       setLoaded(true);
     });
   }, [isOpen]);
 
   const handleSave = useCallback(async () => {
     await window.electronAPI.config.setDefaultEnvVars?.(envVars);
+    await window.electronAPI.config.set?.('restoreOnLaunch', restoreOnLaunch ? 'true' : 'false');
     onClose();
-  }, [envVars, onClose]);
+  }, [envVars, restoreOnLaunch, onClose]);
 
   if (!isOpen) return null;
 
@@ -34,6 +40,20 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
         </div>
         <div className="dialog-body">
           <div className="form-group">
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={restoreOnLaunch}
+                onChange={e => setRestoreOnLaunch(e.target.checked)}
+              />
+              Restore sessions on launch
+            </label>
+            <p className="form-hint">
+              Automatically reopen your sessions when Tether starts.
+            </p>
+          </div>
+
+          <div className="form-group" style={{ marginTop: 20 }}>
             <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Default Environment Variables
             </label>

@@ -2,11 +2,23 @@ import { app } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 
+export interface SavedSession {
+  workingDir: string;
+  label: string;
+  environmentId?: string;
+}
+
+export interface SavedWorkspace {
+  sessions: SavedSession[];
+  activeIndex: number;
+}
+
 export interface DbData {
   environments: EnvironmentRow[];
   sessions: SessionRow[];
   config: Record<string, string>;
   defaultEnvVars: Record<string, string>;
+  savedWorkspace: SavedWorkspace | null;
 }
 
 export interface EnvironmentRow {
@@ -71,12 +83,13 @@ export function getDb(): DbData {
           sessions: loaded.sessions || [],
           config: loaded.config || {},
           defaultEnvVars: loaded.defaultEnvVars || {},
+          savedWorkspace: loaded.savedWorkspace || null,
         };
       } catch {
-        data = { environments: [], sessions: [], config: {}, defaultEnvVars: {} };
+        data = { environments: [], sessions: [], config: {}, defaultEnvVars: {}, savedWorkspace: null };
       }
     } else {
-      data = { environments: [], sessions: [], config: {}, defaultEnvVars: {} };
+      data = { environments: [], sessions: [], config: {}, defaultEnvVars: {}, savedWorkspace: null };
     }
   }
   return data;

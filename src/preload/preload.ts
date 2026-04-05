@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, clipboard } from 'electron';
 import { IPC } from '../shared/constants';
 import type {
   CreateSessionOptions, SessionInfo, SessionState,
@@ -54,6 +54,18 @@ const api: TetherAPI = {
   },
 
   scanReposDir: (dir: string): Promise<string[]> => ipcRenderer.invoke(IPC.SCAN_REPOS_DIR, dir),
+
+  clipboard: {
+    readText: (): string => clipboard.readText(),
+    writeText: (text: string): void => clipboard.writeText(text),
+  },
+
+  workspace: {
+    save: (sessions: Array<{ workingDir: string; label: string; environmentId?: string }>, activeIndex: number): Promise<void> =>
+      ipcRenderer.invoke(IPC.WORKSPACE_SAVE, sessions, activeIndex),
+    load: (): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string }>; activeIndex: number } | null> =>
+      ipcRenderer.invoke(IPC.WORKSPACE_LOAD),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

@@ -67,6 +67,14 @@ export interface TetherAPI {
     setDefaultEnvVars(vars: Record<string, string>): Promise<void>;
   };
   scanReposDir(dir: string): Promise<string[]>;
+  clipboard: {
+    readText(): string;
+    writeText(text: string): void;
+  };
+  workspace: {
+    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string }>, activeIndex: number): Promise<void>;
+    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string }>; activeIndex: number } | null>;
+  };
 }
 
 declare global {

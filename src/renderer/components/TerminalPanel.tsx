@@ -28,13 +28,14 @@ export function TerminalPanel({ sessionId, containerRef, onResize }: TerminalPan
     };
   }, [containerRef, sessionId, doResize]);
 
-  // Window resize fallback — ResizeObserver can miss flex layout changes
+  // Window resize fallback
   useEffect(() => {
     if (!sessionId) return;
     window.addEventListener('resize', doResize);
     return () => window.removeEventListener('resize', doResize);
   }, [sessionId, doResize]);
 
+  // ALL hooks above, early return below
   if (!sessionId) {
     return (
       <div className="terminal-container">

@@ -154,6 +154,19 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     saveDb();
   });
 
+  // === Workspace save/restore ===
+
+  ipcMain.handle(IPC.WORKSPACE_SAVE, async (_event, sessions: Array<{ workingDir: string; label: string; environmentId?: string }>, activeIndex: number) => {
+    const { getDb, saveDb } = await import('../db/database');
+    getDb().savedWorkspace = { sessions, activeIndex };
+    saveDb();
+  });
+
+  ipcMain.handle(IPC.WORKSPACE_LOAD, async () => {
+    const { getDb } = await import('../db/database');
+    return getDb().savedWorkspace;
+  });
+
   // === Scan repos directory ===
 
   ipcMain.handle(IPC.SCAN_REPOS_DIR, async (_event, dir: string) => {

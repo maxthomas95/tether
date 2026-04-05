@@ -21,10 +21,62 @@ export function App() {
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const termManager = useTerminalManager();
 
-  // Load environments on mount
+  // Load environments on mount, then restore workspace
   useEffect(() => {
-    window.electronAPI.environment.list().then(setEnvironments);
+    let mounted = true;
+    window.electronAPI.environment.list().then(async (envs) => {
+      if (!mounted) return;
+      setEnvironments(envs);
+
+      // Check if restore is enabled (default: true)
+      const restoreSetting = await window.electronAPI.config.get?.('restoreOnLaunch');
+      if (restoreSetting === 'false') return;
+
+      // Load saved workspace
+      const workspace = await window.electronAPI.workspace?.load?.();
+      if (!workspace || !workspace.sessions.length) return;
+
+      // Restore sessions
+      for (let i = 0; i < workspace.sessions.length; i++) {
+        const saved = workspace.sessions[i];
+        try {
+          const session = await window.electronAPI.session.create({
+            workingDir: saved.workingDir,
+            label: saved.label || undefined,
+            environmentId: saved.environmentId,
+          });
+          if (!mounted) return;
+          termManager.getOrCreate(session.id);
+          setSessions(prev => [...prev, session]);
+          if (i === workspace.activeIndex) {
+            setActiveSessionId(session.id);
+          }
+        } catch {
+          // Skip sessions that fail to restore (e.g. dir no longer exists)
+        }
+      }
+    });
+    return () => { mounted = false; };
   }, []);
+
+  // Save workspace on close
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (sessions.length > 0) {
+        const activeIndex = sessions.findIndex(s => s.id === activeSessionId);
+        window.electronAPI.workspace?.save?.(
+          sessions.map(s => ({
+            workingDir: s.workingDir,
+            label: s.label,
+            environmentId: s.environmentId || undefined,
+          })),
+          Math.max(0, activeIndex),
+        );
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [sessions, activeSessionId]);
 
   // Subscribe to PTY data and state changes
   useEffect(() => {

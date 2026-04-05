@@ -38,12 +38,34 @@ export function useTerminalManager() {
         window.electronAPI.session.sendInput(sessionId, data);
       });
 
-      // Shift+Enter → send newline without submit (CSI u encoding)
       terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+        const ctrl = e.ctrlKey || e.metaKey;
+
+        // Shift+Enter → newline without submit (CSI u encoding)
         if (e.key === 'Enter' && e.shiftKey && e.type === 'keydown') {
           window.electronAPI.session.sendInput(sessionId, '\x1b[13;2u');
-          return false; // Prevent default xterm handling
+          return false;
         }
+
+        // Ctrl+C with selection → copy to clipboard (don't send SIGINT)
+        if (ctrl && e.key === 'c' && terminal.hasSelection()) {
+          window.electronAPI.clipboard.writeText(terminal.getSelection());
+          return false;
+        }
+
+        // Ctrl+V → paste from clipboard
+        if (ctrl && e.key === 'v' && e.type === 'keydown') {
+          const text = window.electronAPI.clipboard.readText();
+          if (text) window.electronAPI.session.sendInput(sessionId, text);
+          return false;
+        }
+
+        // Ctrl+Shift+C → always copy
+        if (ctrl && e.shiftKey && e.key === 'C') {
+          window.electronAPI.clipboard.writeText(terminal.getSelection());
+          return false;
+        }
+
         return true;
       });
 
