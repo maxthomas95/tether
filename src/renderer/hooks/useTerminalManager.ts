@@ -38,6 +38,15 @@ export function useTerminalManager() {
         window.electronAPI.session.sendInput(sessionId, data);
       });
 
+      // Shift+Enter → send newline without submit (CSI u encoding)
+      terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+        if (e.key === 'Enter' && e.shiftKey && e.type === 'keydown') {
+          window.electronAPI.session.sendInput(sessionId, '\x1b[13;2u');
+          return false; // Prevent default xterm handling
+        }
+        return true;
+      });
+
       managed = { terminal, fitAddon };
       terminals.current.set(sessionId, managed);
     }
