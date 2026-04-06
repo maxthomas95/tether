@@ -10,6 +10,7 @@ import fs from 'node:fs';
 
 const config: ForgeConfig = {
   packagerConfig: {
+    icon: './assets/icon',
     asar: {
       unpack: '**/node_modules/{node-pty,ssh2}/**',
     },
@@ -55,7 +56,7 @@ const config: ForgeConfig = {
     },
   },
   makers: [
-    new MakerSquirrel({}),
+    new MakerSquirrel({ setupIcon: './assets/icon.ico' }),
     new MakerZIP({}, ['darwin']),
   ],
   plugins: [

@@ -20,6 +20,7 @@ const createWindow = () => {
     minWidth: 600,
     minHeight: 400,
     title: 'Tether',
+    icon: path.join(__dirname, '../../assets/icon.ico'),
     backgroundColor: '#1e1e2e',
     titleBarStyle: 'hidden',
     titleBarOverlay: {

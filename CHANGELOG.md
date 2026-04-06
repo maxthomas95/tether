@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.1.2-alpha.3] — 2026-04-05
+
+### New Features
+- **Catppuccin themes** — full theming system with all four Catppuccin flavors (Mocha, Macchiato, Frappé, Latte) plus the original Default Dark. Themes persist across sessions and include terminal ANSI palette colors.
+- **Custom titlebar** — hidden native frame replaced with themed overlay for min/max/close buttons
+- **VS Code-style menubar** — branded top bar with File/Help placeholders and Tether logo
+
+### Improvements
+- App icon set on window and Squirrel installer
+- Logo displayed in menubar alongside title
+- Asset type declarations for PNG/JPG/SVG imports
+
+---
+
 ## [0.1.0-alpha.2] — 2026-04-04
 
 ### New Features

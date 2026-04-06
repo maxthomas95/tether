@@ -9,6 +9,7 @@ import { useTerminalManager } from './hooks/useTerminalManager';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTheme } from './hooks/useTheme';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType } from '../shared/types';
+import logoSrc from './assets/logo.png';
 
 export function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -192,6 +193,7 @@ export function App() {
   return (
     <div className="app-layout">
       <div className="menubar">
+        <img src={logoSrc} alt="Tether" className="menubar-logo" />
         <span className="menubar-title">Tether</span>
         <button className="menubar-item">File</button>
         <button className="menubar-item">Help</button>

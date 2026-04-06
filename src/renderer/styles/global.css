@@ -56,6 +56,14 @@ html, body, #root {
   flex-shrink: 0;
 }
 
+.menubar-logo {
+  height: 28px;
+  width: 28px;
+  object-fit: contain;
+  margin-right: 6px;
+  -webkit-app-region: no-drag;
+}
+
 .menubar-title {
   font-size: 13px;
   font-weight: 700;
