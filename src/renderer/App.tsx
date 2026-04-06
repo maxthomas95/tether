@@ -129,7 +129,16 @@ export function App() {
 
   const handleKill = useCallback(async (id: string) => {
     await window.electronAPI.session.kill(id);
-  }, []);
+    await window.electronAPI.session.remove(id);
+    termManager.remove(id);
+    setSessions(prev => {
+      const remaining = prev.filter(s => s.id !== id);
+      if (activeSessionId === id) {
+        setActiveSessionId(remaining.length > 0 ? remaining[0].id : null);
+      }
+      return remaining;
+    });
+  }, [activeSessionId, termManager]);
 
   const handleRename = useCallback(async (id: string, label: string) => {
     await window.electronAPI.session.rename(id, label);

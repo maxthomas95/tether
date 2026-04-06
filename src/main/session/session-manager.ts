@@ -98,6 +98,7 @@ class SessionManager {
     });
 
     transport.onExit(({ exitCode }) => {
+      if (!session.transport) return;
       statusDetector.markExited(id, exitCode);
       session.transport = null;
       callbacks.onExit(exitCode);
@@ -178,6 +179,7 @@ class SessionManager {
     const session = this.sessions.get(id);
     if (session?.transport) {
       session.transport.kill();
+      session.transport = null;
       statusDetector.markExited(id, 1);
     }
   }
