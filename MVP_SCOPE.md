@@ -1,5 +1,7 @@
 # MVP Scope — Tether
 
+> **Note:** This document was the original MVP plan. As of v0.1.2-alpha.3, all MVP milestones (M1-M5) are complete. Several post-MVP features (SSH adapter, environment management, session grouping, workspace persistence) have also been implemented. Items below are annotated with their current status.
+
 ## MVP Definition
 
 The MVP is the smallest build that is **genuinely useful for daily work.** After the MVP, you should be able to close all your terminal tabs and tmux sessions and manage your Claude Code sessions entirely through Tether — at least for local sessions.
@@ -34,7 +36,8 @@ The MVP is the smallest build that is **genuinely useful for daily work.** After
 - All other keystrokes pass through to Claude Code untouched
 
 ### Persistence
-- Session list persists across app restarts (SQLite)
+- Session list persists across app restarts (JSON file)
+- Workspace save/restore — sessions auto-save on quit and restore on next launch (toggle in Settings)
 - Running PTYs do NOT persist across app restarts (PTY dies with the Electron process)
 - On restart, previously-running sessions show as "stopped" and can be manually restarted
 
@@ -45,61 +48,61 @@ The MVP is the smallest build that is **genuinely useful for daily work.** After
 
 ## Out of Scope (MVP)
 
-### SSH Adapter
-The SSH adapter is the immediate follow-up after MVP, but it adds significant complexity: connection management, reconnection logic, remote host validation, key handling. Ship MVP without it, then add it as the first post-MVP feature.
+### ~~SSH Adapter~~ — DONE (alpha.1)
+Implemented in `ssh-transport.ts`. Supports host/port/username, private key or SSH agent auth, keepalive, env var injection.
 
 ### Container/Coder Adapter
-Requires API integration with Coder or Docker. Post-MVP.
+The `coder` environment type exists in the schema but falls back to LocalTransport. Full implementation planned as Phase 7.
 
-### Environment Management UI
-MVP has a simple "new session" dialog where you pick a directory and optionally set API config. The full environment registry (named environments with grouped sessions) comes in the next phase.
+### ~~Environment Management UI~~ — DONE (alpha.1)
+Full environment registry with `NewEnvironmentDialog.tsx`. Supports Local and SSH types with per-environment env vars.
 
-### Session Grouping in Sidebar
-MVP sidebar is a flat list. Grouping by environment comes when the environment management UI ships.
+### ~~Session Grouping in Sidebar~~ — DONE (alpha.1)
+Sessions auto-grouped by working directory in `RepoGroup.tsx`. Collapsible groups with session count.
 
 ### Session Resume/Reconnect
 If a PTY dies, the session is marked dead. No automatic reconnect. No Claude Code `--resume` integration. Future feature.
 
 ### Desktop Notifications
-No notifications for background session state changes in MVP.
+No notifications for background session state changes yet.
 
 ### Session Transcript Export
-No export functionality in MVP.
+No export functionality yet.
 
 ### Multi-Model Quick Switch
 No in-place model switching. To change models, stop the session and start a new one.
 
 ### Drag-and-Drop Reorder
-Sessions are ordered by creation time in MVP. Manual reorder is post-MVP polish.
+Sessions are ordered by creation time. Manual reorder is post-MVP polish.
 
 ## MVP Milestones
 
-### M1: Shell (1-2 days)
+### M1: Shell (1-2 days) — DONE
 - Electron app boots with React renderer
 - Basic two-panel layout: sidebar stub + terminal panel
 - xterm.js renders in the terminal panel
 - Single hardcoded local PTY spawning `claude` — proves the terminal works
 
-### M2: Multi-Session (1-2 days)
+### M2: Multi-Session (1-2 days) — DONE
 - Session Manager creates/destroys sessions via the Local Adapter
 - Sidebar lists sessions, click to switch
 - Each session has its own xterm.js instance (hidden when not active)
 - Resize propagation works across session switches
 - Session stop/kill from sidebar context menu
 
-### M3: Status Detection (1 day)
+### M3: Status Detection (1 day) — DONE
 - Passive data tap on PTY output
 - Status dot rendering in sidebar (green/yellow/gray/red)
 - Debounced state transitions
 - Heartbeat loop for dead session detection
 
-### M4: Configuration (1 day)
-- "New session" dialog: directory picker, label, API config fields
-- Per-session OpenRouter env var injection
-- SQLite persistence for session metadata
-- Session list restored on app restart (as stopped sessions)
+### M4: Configuration (1 day) — DONE
+- "New session" dialog: environment selection, directory picker/repo quick-pick, label, env vars, CLI flags
+- Per-session environment variable injection (3-level cascade)
+- JSON file persistence for session metadata
+- Workspace save/restore on app restart
 
-### M5: Polish (1-2 days)
+### M5: Polish (1-2 days) — DONE
 - Keyboard shortcuts (Cmd+N, Cmd+1-9, Cmd+↑/↓)
 - Sidebar visual polish: active indicator, status dots, labels
 - Error handling: PTY spawn failures, invalid directories, bad API config
@@ -109,11 +112,11 @@ Sessions are ordered by creation time in MVP. Manual reorder is post-MVP polish.
 
 ## Post-MVP Roadmap (Ordered by Priority)
 
-1. **SSH Adapter** — remote VM sessions, environment registry, connection management
-2. **Environment Management** — named environments, grouped sidebar, per-env defaults
+1. ~~**SSH Adapter**~~ — DONE (alpha.1)
+2. ~~**Environment Management**~~ — DONE (alpha.1)
 3. **Session Resume** — reconnect to still-alive PTYs on app restart, Claude `--resume` integration
 4. **Desktop Notifications** — alert when background session transitions to "waiting"
-5. **Container Adapter** — Docker/Coder workspace integration
+5. **Container Adapter** — Coder workspace integration (Phase 7)
 6. **Drag-and-Drop** — reorder sessions and environment groups
 7. **Transcript Export** — save session output to file
 8. **Multi-Model Switch** — in-place model change with session resume

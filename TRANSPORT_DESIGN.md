@@ -9,69 +9,48 @@ This document specifies the transport interface, the implementation details for 
 ## Transport Interface
 
 ```typescript
+// src/main/transport/types.ts
+
 interface SessionTransport {
-  /**
-   * Start the session. Spawns Claude Code in the target environment.
-   * Resolves when the PTY is established and ready to receive input.
-   * Rejects if the spawn fails (bad path, SSH connection refused, etc.)
-   */
+  /** Spawn Claude Code in the target environment. Resolves when PTY is ready. */
   start(options: TransportStartOptions): Promise<void>;
 
-  /**
-   * Write raw bytes to the PTY stdin.
-   * This is keyboard input from xterm.js — passed through untouched.
-   */
+  /** Write raw bytes to PTY stdin (keyboard input from xterm.js). */
   write(data: string): void;
 
-  /**
-   * Resize the remote PTY.
-   * Called when xterm.js dimensions change (panel resize, window resize).
-   */
+  /** Resize the remote PTY (called on xterm.js dimension changes). */
   resize(cols: number, rows: number): void;
 
-  /**
-   * Graceful shutdown. Sends SIGTERM equivalent, waits for exit.
-   * Resolves when the PTY has exited.
-   */
+  /** Graceful shutdown — sends Ctrl+C, waits for exit. */
   stop(): Promise<void>;
 
-  /**
-   * Force kill. Sends SIGKILL equivalent, immediate cleanup.
-   */
+  /** Force kill — immediate cleanup. */
   kill(): void;
 
-  /**
-   * Register callback for PTY output data.
-   * This is the raw byte stream — ANSI escapes, cursor moves, everything.
-   * Multiple listeners allowed (terminal + status detector).
-   */
+  /** Register callback for PTY output data (raw byte stream). */
   onData(callback: (data: string) => void): void;
 
-  /**
-   * Register callback for PTY exit.
-   * Fired when the Claude Code process exits (graceful or crash).
-   */
-  onExit(callback: (exitInfo: { exitCode: number; signal?: string }) => void): void;
+  /** Register callback for PTY exit (graceful or crash). */
+  onExit(callback: (exitInfo: TransportExitInfo) => void): void;
 
-  /**
-   * Current connection state.
-   */
+  /** Current connection state. */
   readonly connected: boolean;
+
+  /** Clean up all resources (called when session is removed). */
+  dispose(): void;
 }
 
 interface TransportStartOptions {
-  /** Working directory for Claude Code */
   workingDir: string;
-
-  /** Environment variables to inject (OpenRouter config, etc.) */
   env: Record<string, string>;
-
-  /** Initial terminal dimensions */
   cols: number;
   rows: number;
-
-  /** Optional: Claude Code CLI arguments (e.g., --model, --resume) */
   cliArgs?: string[];
+}
+
+interface TransportExitInfo {
+  exitCode: number;
+  signal?: string;
 }
 ```
 
@@ -125,13 +104,22 @@ Screen (rendered by xterm.js VT emulator)
 Uses `node-pty` (the same library VS Code uses for its integrated terminal).
 
 ```typescript
-// Conceptual implementation — not final code
+// Simplified from src/main/transport/local-transport.ts
 
 class LocalTransport implements SessionTransport {
   private pty: IPty | null = null;
 
   async start(options: TransportStartOptions): Promise<void> {
-    this.pty = spawn('claude', options.cliArgs || [], {
+    // Lazy-load node-pty to avoid ABI mismatch crashes at import time
+    const nodePty = require('node-pty');
+
+    // Platform-specific: cmd.exe on Windows, bash on Unix
+    const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
+    const args = process.platform === 'win32'
+      ? ['/c', 'claude', ...cliArgs]
+      : ['-c', `claude ${cliArgs.join(' ')}`];
+
+    this.pty = nodePty.spawn(shell, args, {
       name: 'xterm-256color',
       cols: options.cols,
       rows: options.rows,
@@ -139,57 +127,31 @@ class LocalTransport implements SessionTransport {
       env: {
         ...process.env,
         ...options.env,
-        // Ensure Claude Code gets a proper terminal
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
       },
     });
   }
 
-  write(data: string): void {
-    this.pty?.write(data);
-  }
-
-  resize(cols: number, rows: number): void {
-    this.pty?.resize(cols, rows);
-  }
-
-  async stop(): Promise<void> {
-    this.pty?.kill('SIGTERM');
-    // Wait for exit with timeout, then SIGKILL if needed
-  }
-
-  kill(): void {
-    this.pty?.kill('SIGKILL');
-  }
-
-  onData(callback: (data: string) => void): void {
-    this.pty?.onData(callback);
-  }
-
-  onExit(callback: (exitInfo: { exitCode: number }) => void): void {
-    this.pty?.onExit(({ exitCode }) => callback({ exitCode }));
-  }
+  // write(), resize(), stop(), kill(), onData(), onExit(), dispose()
+  // follow the SessionTransport interface
 }
 ```
 
 ### Environment Variables
 
-The local adapter merges env vars in this priority order (highest wins):
+Environment variables are merged in this cascade (last wins):
 
-1. Session-level `api_config` overrides
-2. Environment-level `api_config` defaults
-3. App-level default API config
-4. User's shell environment (`process.env`)
+1. User's shell environment (`process.env`)
+2. App-level default env vars (configured in Settings)
+3. Environment-level env vars
+4. Session-level overrides (configured in New Session dialog)
 
-The critical env vars for OpenRouter:
-
-```
-ANTHROPIC_BASE_URL=https://openrouter.ai/api
-ANTHROPIC_API_KEY=sk-or-...
-ANTHROPIC_MODEL=anthropic/claude-sonnet-4       (optional)
-ANTHROPIC_SMALL_FAST_MODEL=anthropic/claude-haiku-4.5  (optional)
-```
+Common env vars (available as quick-add presets in the UI):
+- `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`
+- `ANTHROPIC_BASE_URL` (for OpenRouter or custom endpoints)
+- `CLAUDE_CODE_MAX_TURNS`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`
+- `AWS_PROFILE`, `AWS_REGION`
 
 ### PTY Lifecycle
 
@@ -205,66 +167,39 @@ ANTHROPIC_SMALL_FAST_MODEL=anthropic/claude-haiku-4.5  (optional)
 Uses the `ssh2` npm package for SSH connectivity.
 
 ```typescript
-// Conceptual implementation — not final code
+// Simplified from src/main/transport/ssh-transport.ts
 
 class SSHTransport implements SessionTransport {
   private client: Client | null = null;
   private stream: ClientChannel | null = null;
+  private sshConfig: SSHConfig;
 
   async start(options: TransportStartOptions): Promise<void> {
     this.client = new Client();
 
-    await new Promise<void>((resolve, reject) => {
-      this.client.on('ready', () => {
-        this.client.shell(
-          {
-            term: 'xterm-256color',
-            cols: options.cols,
-            rows: options.rows,
-          },
-          (err, stream) => {
-            if (err) return reject(err);
-            this.stream = stream;
-
-            // Send the command to start Claude Code
-            // We use the shell channel and send the command as input
-            // so that the user's remote shell profile is sourced
-            const envExports = Object.entries(options.env)
-              .map(([k, v]) => `export ${k}="${v}"`)
-              .join(' && ');
-
-            const cmd = options.cliArgs?.length
-              ? `claude ${options.cliArgs.join(' ')}`
-              : 'claude';
-
-            stream.write(`${envExports} && cd ${options.workingDir} && ${cmd}\n`);
-
-            resolve();
-          }
-        );
-      });
-
-      this.client.on('error', reject);
-
-      this.client.connect({
-        host: options.sshConfig.host,
-        port: options.sshConfig.port || 22,
-        username: options.sshConfig.user,
-        privateKey: readFileSync(options.sshConfig.keyPath),
-        // Or use agent: process.env.SSH_AUTH_SOCK
-      });
+    // Connect with keepalive (10s interval, max 3 missed)
+    this.client.connect({
+      host: this.sshConfig.host,
+      port: this.sshConfig.port || 22,
+      username: this.sshConfig.username,
+      // Auth: SSH agent (Windows: \\.\pipe\openssh-ssh-agent) or private key file
+      agent: this.sshConfig.useAgent ? agentPath : undefined,
+      privateKey: this.sshConfig.privateKeyPath ? readFileSync(...) : undefined,
+      keepaliveInterval: 10000,
+      keepaliveCountMax: 3,
     });
-  }
 
-  write(data: string): void {
-    this.stream?.write(data);
+    // On ready: open shell with PTY, send cd + env + claude command
+    // Command: cd <workingDir> && env VAR1=val1 VAR2=val2 claude [args]
+    // Single quotes in env values are escaped
   }
 
   resize(cols: number, rows: number): void {
     this.stream?.setWindow(rows, cols, 0, 0);
   }
 
-  // ... stop, kill, onData, onExit follow same pattern
+  // write(), stop(), kill(), onData(), onExit(), dispose()
+  // follow the SessionTransport interface
 }
 ```
 
@@ -275,10 +210,10 @@ class SSHTransport implements SessionTransport {
 **Keep-alive:** The `ssh2` client supports server keep-alive. Configured with `keepaliveInterval: 10000` (10s) and `keepaliveCountMax: 3` (drop after 30s of no response).
 
 **Reconnection strategy:**
-- On SSH channel close or connection error, mark session as `dead`
-- User can manually trigger reconnect from the sidebar context menu
-- On reconnect: re-establish SSH connection, open new shell, start new Claude Code process
-- Note: this does NOT resume the Claude Code conversation. It's a fresh Claude Code session in the same directory. True session resume (using Claude Code's `--resume` flag) is a post-MVP feature.
+- On SSH channel close or connection error, the session is marked `dead` via the onExit callback
+- No automatic reconnection is implemented yet
+- The user can create a new session in the same environment to reconnect
+- True session resume (using Claude Code's `--resume` flag) is a future feature
 
 **Authentication methods supported (priority order):**
 1. SSH agent (if `SSH_AUTH_SOCK` is set)
@@ -301,33 +236,17 @@ Tether does NOT install Claude Code on remote hosts. This is a manual prerequisi
 - API keys sent as env var exports are visible in the remote shell history. Mitigation: use `env` command instead of `export` to avoid shell history, or inject via a temp file. This is a known tradeoff to be addressed post-MVP.
 - SSH agent forwarding is supported but disabled by default.
 
-## Container Adapter (Post-MVP Design Notes)
+## Container Adapter (Future — Phase 7)
 
-### Docker
-
-```typescript
-class DockerTransport implements SessionTransport {
-  // Uses dockerode library
-  // 1. Create container (or start existing) with Claude Code image
-  // 2. Exec with PTY: container.exec({ Tty: true, AttachStdin: true, ... })
-  // 3. Stream attach for data flow
-  // Resize via exec.resize()
-}
-```
-
-### Coder
+The `coder` environment type exists in the schema but currently falls back to `LocalTransport`. The planned approach is SSH-via-Coder-CLI rather than direct API integration:
 
 ```typescript
-class CoderTransport implements SessionTransport {
-  // Uses Coder API (REST)
-  // 1. Create workspace from template (or start existing)
-  // 2. Open terminal session via Coder's WebSocket terminal API
-  // 3. Data flows over WebSocket
-  // Resize via WebSocket control message
-}
+// Future: Coder workspace sessions will likely use SSH tunneling
+// through the Coder CLI, allowing reuse of the existing SSHTransport
+// rather than building a new WebSocket-based transport.
 ```
 
-Both follow the same `SessionTransport` interface. The terminal panel is completely unaware of which adapter is active.
+No Docker adapter is planned. Coder is the target container runtime for managed dev environments.
 
 ## Performance Considerations
 

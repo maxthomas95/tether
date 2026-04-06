@@ -1,5 +1,7 @@
 # Product Spec — Tether
 
+> **Note:** This document was the original product spec written before implementation. As of v0.1.2-alpha.3, most core user stories are implemented. Stories are annotated with their status below.
+
 ## Vision
 
 Tether is a session multiplexer for Claude Code. It solves one problem well: letting a developer see, switch between, and manage all their Claude Code sessions — wherever those sessions are running — from a single interface that preserves the native terminal experience exactly.
@@ -19,51 +21,51 @@ A developer who:
 
 ### Session Lifecycle
 
-**SF-01: Start a new local session**
+**SF-01: Start a new local session** — DONE
 As a developer, I want to create a new Claude Code session in a local directory so I can start working on a task. I pick a directory (or type a path), optionally set a label, and a new session appears in the sidebar. Claude Code launches in the terminal panel.
 
-**SF-02: Start a new remote session**
+**SF-02: Start a new remote session** — DONE
 As a developer, I want to create a Claude Code session on a remote VM so I can work on code that lives on that machine. I select a pre-configured SSH environment, pick or type a remote directory, and the session launches over SSH. The terminal experience is indistinguishable from local.
 
-**SF-03: Stop a session**
+**SF-03: Stop a session** — DONE
 As a developer, I want to stop a running session cleanly. Claude Code receives the appropriate signal, the PTY closes, and the session moves to a "stopped" state in the sidebar. I can see the last output before it stopped.
 
 **SF-04: Resume a session**
 As a developer, I want to reconnect to a Claude Code session that I previously detached from (or that survived a laptop sleep). The PTY stream resumes and I see the current state of the session. For SSH sessions, this means reconnecting the SSH channel. For local sessions, the PTY is still alive in the background.
 
-**SF-05: Kill a stuck session**
+**SF-05: Kill a stuck session** — DONE
 As a developer, I want to force-kill a session that's not responding. SIGKILL the PTY process, clean up resources, mark as dead in the registry.
 
 ### Session Navigation
 
-**SF-10: Switch between sessions**
+**SF-10: Switch between sessions** — DONE
 As a developer, I want to click a session in the sidebar (or use a keyboard shortcut) to instantly switch the terminal panel to that session's PTY stream. Switching is instant — no reload, no re-render. The xterm.js instance for each session stays alive in the background.
 
-**SF-11: See session status at a glance**
+**SF-11: See session status at a glance** — DONE
 As a developer, I want to see a colored indicator on each session in the sidebar:
 - **Green** — Claude is actively producing output (tool calls running, response streaming)
 - **Yellow/Amber** — Claude is waiting for user input (the `>` prompt is showing)
 - **Gray** — Session is idle or backgrounded (no recent activity)
 - **Red** — Session is dead/errored (PTY exited, SSH disconnected)
 
-**SF-12: Group sessions by environment**
+**SF-12: Group sessions by environment** — DONE (grouped by working directory, not environment type)
 As a developer, I want my sessions organized by environment in the sidebar. All local sessions together, all sessions on VM-A together, all Coder workspace sessions together. I can collapse/expand groups.
 
-**SF-13: Label and reorder sessions**
+**SF-13: Label and reorder sessions** — PARTIAL (labeling done via inline rename; drag reorder not yet implemented)
 As a developer, I want to give sessions a short label ("NKP OIDC fix", "VoidCode GPU pipeline") so I can identify them at a glance. I want to drag sessions to reorder within their group.
 
-**SF-14: Quick-switch with keyboard**
+**SF-14: Quick-switch with keyboard** — DONE
 As a developer, I want to press a hotkey (e.g., `Cmd+1` through `Cmd+9`, or `Cmd+↑/↓`) to jump between sessions without touching the mouse.
 
 ### Environment Management
 
-**SF-20: Configure a local environment**
+**SF-20: Configure a local environment** — DONE
 As a developer, I want to register a local directory as a named environment. Sessions created against it inherit its label, default model config, and env vars.
 
-**SF-21: Configure an SSH environment**
+**SF-21: Configure an SSH environment** — DONE
 As a developer, I want to register a remote host as a named environment. I provide: hostname, SSH user, identity file path, and optionally a default working directory. Tether validates the connection on save.
 
-**SF-22: Configure per-environment API settings**
+**SF-22: Configure per-environment API settings** — DONE (via env var editor, not dedicated auth UI)
 As a developer, I want each environment to have its own API backend config:
 - `ANTHROPIC_BASE_URL` (e.g., `https://openrouter.ai/api` or direct Anthropic)
 - `ANTHROPIC_API_KEY`
@@ -72,7 +74,7 @@ As a developer, I want each environment to have its own API backend config:
 
 Sessions inherit these from their environment, but I can override per-session.
 
-**SF-23: Configure per-session API settings**
+**SF-23: Configure per-session API settings** — DONE (via env var overrides in New Session dialog)
 As a developer, I want to override the model or API key for a specific session without changing the environment defaults. Use case: running one session on Opus for complex architecture work while the rest use Sonnet.
 
 ### Future (Post-MVP)
@@ -80,8 +82,8 @@ As a developer, I want to override the model or API key for a specific session w
 **SF-30: Container/Coder adapter**
 Spin up ephemeral Coder workspaces or Docker containers as environments with Claude Code pre-installed.
 
-**SF-31: Session persistence across app restarts**
-When I quit and reopen Tether, my session list is restored. Local sessions whose PTYs are still alive reconnect. SSH sessions that dropped attempt to reconnect.
+**SF-31: Session persistence across app restarts** — DONE (workspace save/restore)
+When I quit and reopen Tether, my session list is restored. Toggle in Settings. PTYs don't survive app restart — sessions are recreated as new processes. True PTY reconnection is not yet implemented.
 
 **SF-32: Notification on session state change**
 Desktop notification when a background session transitions from "active" to "waiting for input" — so I know when Claude needs me.

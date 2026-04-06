@@ -2,7 +2,7 @@
 
 ## System Overview
 
-Tether is an Electron desktop application with a React frontend. The Electron main process owns all session lifecycle (PTY management, SSH connections, state persistence). The renderer process owns the UI (sidebar, terminal panels, configuration). Communication between them uses Electron IPC for commands and a WebSocket-style event channel for real-time PTY data streaming.
+Tether is an Electron desktop application with a React frontend. The Electron main process owns all session lifecycle (PTY management, SSH connections, state persistence). The renderer process owns the UI (sidebar, terminal panels, configuration). Communication between them uses Electron IPC for both commands and real-time PTY data streaming.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -23,11 +23,10 @@ Tether is an Electron desktop application with a React frontend. The Electron ma
 │  │  ┌─────────────┐  ┌────────────┐  ┌─────────────────┐ │ │
 │  │  │ Session      │  │ Transport  │  │ Status Detector │ │ │
 │  │  │ Registry     │  │ Adapters   │  │ (passive tap)   │ │ │
-│  │  │ (SQLite)     │  │            │  │                 │ │ │
+│  │  │ (JSON file)  │  │            │  │                 │ │ │
 │  │  └─────────────┘  │ ┌────────┐ │  └─────────────────┘ │ │
 │  │                    │ │ Local  │ │                      │ │
 │  │                    │ │ SSH    │ │                      │ │
-│  │                    │ │ Docker │ │                      │ │
 │  │                    │ └────────┘ │                      │ │
 │  │                    └────────────┘                      │ │
 │  └────────────────────────────────────────────────────────┘ │
@@ -40,47 +39,62 @@ Tether is an Electron desktop application with a React frontend. The Electron ma
 
 **Purpose:** Single source of truth for all session and environment state.
 
-**Storage:** SQLite via `better-sqlite3` (synchronous reads, async writes). Database file lives at `~/.Tether/sessions.db`.
+**Storage:** JSON file at `{app.getPath('userData')}/data.json`. Data is loaded into memory on first access and written to disk on mutations. SQLite was originally planned but deferred due to native module ABI issues with VS 2025 + Electron 41.
 
-**Schema (conceptual):**
+**Data schema (TypeScript interfaces in `src/main/db/database.ts`):**
 
-```
-environments
-  id              TEXT PRIMARY KEY (uuid)
-  name            TEXT NOT NULL
-  type            TEXT NOT NULL (local | ssh | docker)
-  config          TEXT NOT NULL (JSON blob — host, user, key, etc.)
-  auth_mode       TEXT (subscription | api_key | openrouter — nullable, inherits app default)
-  api_key_enc     TEXT (encrypted via safeStorage — nullable)
-  model           TEXT (nullable — model identifier, format depends on auth_mode)
-  small_model     TEXT (nullable — small/fast model identifier)
-  sort_order      INTEGER
-  created_at      TEXT
-  updated_at      TEXT
+```typescript
+// Top-level data file structure
+interface DbData {
+  environments: EnvironmentRow[]
+  sessions: SessionRow[]
+  config: Record<string, string>           // Key-value config (theme, reposRoot, restoreOnLaunch)
+  defaultEnvVars: Record<string, string>   // App-wide env vars
+  defaultCliFlags: string[]                // App-wide CLI flags
+  savedWorkspace: SavedWorkspace | null    // Session restore state
+}
 
-sessions
-  id              TEXT PRIMARY KEY (uuid)
-  environment_id  TEXT REFERENCES environments(id)
-  label           TEXT
-  working_dir     TEXT NOT NULL
-  state           TEXT NOT NULL (starting | running | waiting | idle | stopped | dead)
-  auth_mode       TEXT (nullable — overrides environment)
-  api_key_enc     TEXT (nullable — encrypted, overrides environment)
-  model           TEXT (nullable — overrides environment)
-  small_model     TEXT (nullable — overrides environment)
-  pid             INTEGER (local PTY PID, nullable)
-  sort_order      INTEGER
-  created_at      TEXT
-  updated_at      TEXT
-  last_active_at  TEXT
+// EnvironmentRow
+interface EnvironmentRow {
+  id: string                   // UUID
+  name: string
+  type: 'local' | 'ssh' | 'coder'
+  config: string               // JSON blob — host, port, username, etc.
+  env_vars: string             // JSON-encoded Record<string, string>
+  auth_mode: string | null     // Placeholder for future auth modes
+  api_key_enc: string | null   // Placeholder for encrypted API key
+  model: string | null         // Placeholder for model selection
+  small_model: string | null   // Placeholder for small/fast model
+  sort_order: number
+  created_at: string           // ISO timestamp
+  updated_at: string           // ISO timestamp
+}
+
+// SessionRow
+interface SessionRow {
+  id: string                   // UUID
+  environment_id: string | null
+  label: string
+  working_dir: string
+  state: string                // SessionState enum value
+  auth_mode: string | null     // Placeholder
+  api_key_enc: string | null   // Placeholder
+  model: string | null         // Placeholder
+  small_model: string | null   // Placeholder
+  pid: number | null           // Local PTY PID
+  sort_order: number
+  created_at: string           // ISO timestamp
+  updated_at: string           // ISO timestamp
+  last_active_at: string | null
+}
 ```
 
 **Notes:**
-- Auth config cascades: session → environment → app defaults. A session's `auth_mode` overrides its environment's; null falls through to the next level. See [DD-02](DESIGN_DECISIONS.md#dd-02-auth-model--first-class-support-for-three-modes).
-- `api_key_enc` is encrypted via Electron's `safeStorage` before storage. See [DD-04](DESIGN_DECISIONS.md#dd-04-secrets-storage-mvp).
-- `model` format depends on `auth_mode`: Anthropic-native identifiers for `api_key` mode, OpenRouter-namespaced for `openrouter` mode. See [DD-03](DESIGN_DECISIONS.md#dd-03-naming-convention-for-openrouter-models).
+- Environment variable config cascades: app defaults -> environment -> session overrides.
+- `auth_mode`, `api_key_enc`, `model`, and `small_model` fields exist as placeholders for future auth/model selection features. Currently unused.
 - `state` is updated by the Status Detector, not by the transport adapters directly.
 - `pid` is only meaningful for local sessions. SSH sessions track connection state internally.
+- On startup, `markAllRunningAsStopped()` resets any sessions left in running states from a previous crash.
 
 ### Session Manager
 
@@ -144,11 +158,10 @@ All adapters implement a common interface (detailed in [Transport Design](TRANSP
 - Handles reconnection on network interruption (with configurable retry)
 - Requires Claude Code to be pre-installed on the remote host
 
-**Container Adapter (Post-MVP)**
-- Targets Docker Engine API or Coder API
-- Creates/starts a container with Claude Code available
-- Attaches to container exec session for PTY
-- Can spin up ephemeral containers on demand
+**Container Adapter (Future)**
+- The `coder` environment type exists in the schema but currently falls back to `LocalTransport`
+- Planned approach: SSH-via-Coder-CLI (Phase 7)
+- No Docker adapter is planned — Coder is the target container runtime
 
 ### Status Detector
 
@@ -172,40 +185,51 @@ All adapters implement a common interface (detailed in [Transport Design](TRANSP
 
 ### IPC Design
 
-**Renderer → Main (commands):**
-- `session:create` — { environmentId, workingDir, label, authMode?, apiKey?, model?, smallModel? }
-- `session:stop` — { sessionId }
-- `session:kill` — { sessionId }
-- `session:switch` — { sessionId } (tells main to route PTY data for this session to renderer)
-- `session:resize` — { sessionId, cols, rows }
-- `session:input` — { sessionId, data } (keystrokes from xterm.js)
-- `environment:create` — { name, type, config, apiConfig }
-- `environment:update` — { id, ...changes }
-- `environment:delete` — { id }
-- `environment:test` — { id } (validate SSH connection, etc.)
+**Renderer -> Main (invoke/handle):**
+- `session:create` — create a new session
+- `session:list` — list all sessions
+- `session:stop` — graceful stop (sends Ctrl+C)
+- `session:kill` — force kill session
+- `session:rename` — rename a session
+- `session:remove` — remove session from list
+- `environment:list` — list all environments
+- `environment:create` — create a new environment
+- `environment:update` — update environment config
+- `environment:delete` — delete an environment
+- `workspace:save` — save current workspace state
+- `workspace:load` — load saved workspace
+- `dialog:open-directory` — open OS directory picker
+- `scan:repos-dir` — scan a directory for subdirectories (repo quick-pick)
+- `config:get` / `config:set` — key-value config (theme, reposRoot, restoreOnLaunch)
+- `config:get-default-env-vars` / `config:set-default-env-vars` — app-wide env vars
+- `config:get-default-cli-flags` / `config:set-default-cli-flags` — app-wide CLI flags
+- `titlebar:update` — update titlebar overlay color for theme sync
 
-**Main → Renderer (events):**
+**Renderer -> Main (send/on — fire-and-forget):**
+- `session:input` — send keystroke data to session PTY
+- `session:resize` — resize PTY dimensions
+
+**Main -> Renderer (events):**
 - `session:data` — { sessionId, data } (raw PTY bytes — high frequency)
-- `session:state-change` — { sessionId, oldState, newState }
-- `session:exited` — { sessionId, exitCode }
-- `sessions:list` — { sessions[] } (initial load and refresh)
-- `environments:list` — { environments[] }
+- `session:state-change` — { sessionId, state } (status detector updates)
+- `session:exited` — { sessionId, exitCode } (PTY exit notification)
 
 **Data streaming consideration:** PTY data (`session:data`) is the highest-frequency event. For local sessions this can be thousands of events per second during heavy output. Electron IPC handles this fine for a single active session, but if we're streaming data for background sessions (for status detection), we need to be mindful of IPC overhead. The main process should only send `session:data` for the **currently visible session** to the renderer. Background session data is consumed only by the status detector in the main process.
 
 ### Configuration & Storage
 
-**App config:** `~/.Tether/config.json`
-- Default API settings (base_url, api_key, model)
-- UI preferences (sidebar width, theme)
-- Keyboard shortcut overrides
+**All data is stored in a single JSON file:** `{app.getPath('userData')}/data.json`
 
-**Session database:** `~/.Tether/sessions.db`
-- See schema above
+This file contains:
+- Environment definitions (Local, SSH, Coder)
+- Session records (metadata, not terminal output)
+- App config (theme, reposRoot, restoreOnLaunch)
+- Default environment variables and CLI flags
+- Saved workspace state (for session restore on launch)
 
-**SSH keys:** Tether does not store or manage SSH keys. It references the user's existing SSH key paths (e.g., `~/.ssh/id_ed25519`). SSH agent forwarding is supported if the user's agent is running.
+**SSH keys:** Tether does not store or manage SSH keys. It references the user's existing SSH key paths (e.g., `~/.ssh/id_ed25519`). SSH agent forwarding is supported — on Windows, uses `\\.\pipe\openssh-ssh-agent`.
 
-**Secrets handling:** API keys are encrypted at rest using Electron's `safeStorage` module (DPAPI on Windows, Keychain on macOS, libsecret on Linux). Keys are encrypted before writing to SQLite and decrypted on read. See [DD-04](DESIGN_DECISIONS.md#dd-04-secrets-storage-mvp) for full rationale.
+**Secrets handling:** API keys injected via environment variables are stored as plain text in the env var config. Encrypted storage via `safeStorage` is a placeholder in the schema (`api_key_enc` field) but not yet implemented.
 
 ## Key Design Decisions
 
@@ -216,13 +240,14 @@ All adapters implement a common interface (detailed in [Transport Design](TRANSP
 - xterm.js is built for Electron/browser environments. The VS Code terminal stack (xterm.js + node-pty) is the most battle-tested terminal-in-an-app implementation available.
 - Electron's IPC is fast enough for PTY data streaming (proven by VS Code).
 
-### Why SQLite (not JSON files, not a full DB)
+### Why JSON Persistence (originally planned SQLite)
 
-- Atomic reads/writes without file corruption risk
-- Query capability for filtering/sorting sessions
-- `better-sqlite3` is synchronous for reads — no async overhead for sidebar renders
-- Single file, zero config, survives app crashes
-- Can easily export/backup by copying one file
+SQLite via `better-sqlite3` was the original plan for its atomic writes and query capabilities. However, native module ABI incompatibilities between VS 2025 and Electron 41 made `better-sqlite3` impractical to build. JSON file persistence was adopted as a pragmatic workaround:
+
+- Zero native dependencies — no ABI issues
+- Simple to debug (human-readable file)
+- In-memory object with save-on-mutate is fast enough for the current scale
+- `better-sqlite3` remains in `package.json` for future migration when toolchain issues are resolved
 
 ### Why not the Claude Agent SDK for session management
 

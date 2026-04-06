@@ -4,7 +4,7 @@
 
 Tether is a desktop session multiplexer for Claude Code. It provides a single unified interface to manage multiple Claude Code sessions across local, SSH, and containerized (Coder) environments — preserving the exact native terminal experience via raw PTY piping into xterm.js.
 
-**Status:** Design/spec phase. No source code yet. All documentation is complete and ready for implementation.
+**Status:** Active development. v0.1.2-alpha.3 released. Local and SSH sessions working, environment management, theming, and workspace persistence implemented.
 
 ## Core Principle
 
@@ -17,13 +17,13 @@ Tether is a desktop session multiplexer for Claude Code. It provides a single un
 - **Terminal:** xterm.js + xterm-addon-fit (same as VS Code)
 - **Local PTY:** node-pty
 - **SSH:** ssh2 (Node.js)
-- **State:** SQLite via better-sqlite3 (~/.Tether/sessions.db)
-- **IPC:** Electron IPC (commands) + event channel (PTY data streaming)
-- **Secrets:** Electron safeStorage for API key encryption at rest
+- **State:** JSON file persistence (`{userData}/data.json`) — SQLite planned but deferred due to native module ABI issues
+- **IPC:** Electron IPC (commands + event channels for PTY data streaming)
+- **Themes:** Catppuccin (Mocha, Macchiato, Frappe, Latte) + Default Dark
 
 ## Architecture
 
-- **Main process:** Session Manager, Transport Adapters (Local/SSH/Container), Session Registry (SQLite), Status Detector
+- **Main process:** Session Manager, Transport Adapters (Local/SSH), Session Registry (JSON), Status Detector
 - **Renderer process:** React UI — Sidebar (session list + groups), Terminal Panel (xterm.js), Config dialogs
 - **Transport interface:** All adapters implement `SessionTransport` — the UI is environment-agnostic
 - **Data flow:** Keystroke -> xterm.js -> IPC -> transport.write() -> PTY stdin -> Claude Code -> PTY stdout -> status detector (copy) + IPC -> xterm.js -> screen
@@ -33,10 +33,11 @@ Tether is a desktop session multiplexer for Claude Code. It provides a single un
 | File | Contents |
 |---|---|
 | `README.md` | Project intro, problem/solution, core principles |
+| `CHANGELOG.md` | Release history with features and known issues per version |
 | `PRODUCT_SPEC.md` | Vision, target user, user stories (SF-01 through SF-34), non-goals |
-| `MVP_SCOPE.md` | MVP definition, 5 milestones (M1-M5), post-MVP roadmap, technical risks |
-| `ARCHITECTURE.md` | System diagram, component design, DB schema, IPC design, key decisions |
-| `TRANSPORT_DESIGN.md` | Transport interface (TypeScript), Local/SSH/Container adapter specs, data flow |
+| `MVP_SCOPE.md` | Original MVP definition, milestones (M1-M5), post-MVP roadmap |
+| `ARCHITECTURE.md` | System diagram, component design, data schema, IPC design, key decisions |
+| `TRANSPORT_DESIGN.md` | Transport interface (TypeScript), Local/SSH adapter specs, data flow |
 | `UI_DESIGN.md` | Layout mockups, sidebar, terminal panel, dialogs, keyboard shortcuts, visual design |
 
 ## Development Guidelines
@@ -78,29 +79,47 @@ npm run start        # Launch in dev mode (Electron Forge + Vite)
 npx electron .       # Direct launch (no Vite dev server for renderer)
 ```
 
-**Note:** Native modules (node-pty, better-sqlite3) have ABI issues with VS 2025 + Electron 41. Workarounds: JSON persistence instead of SQLite, lazy node-pty import. See memory/dev_environment.md.
+**Note:** Native modules (node-pty) have ABI issues with VS 2025 + Electron 41. Workarounds: lazy node-pty import, JSON persistence instead of SQLite. `better-sqlite3` is in package.json but unused — JSON file storage is the current persistence layer.
 
 ## File Structure
 
 ```
 src/
-  main/index.ts              # Electron main entry
-  main/ipc/handlers.ts       # IPC handler registry
-  main/session/session-manager.ts  # Session lifecycle + transport factory
-  main/transport/types.ts     # SessionTransport interface
+  main/index.ts                  # Electron main entry
+  main/ipc/handlers.ts           # IPC handler registry (25 channels)
+  main/session/session-manager.ts    # Session lifecycle + transport factory
+  main/transport/types.ts         # SessionTransport interface
   main/transport/local-transport.ts  # Local PTY via node-pty
   main/transport/ssh-transport.ts    # SSH via ssh2
   main/status/status-detector.ts     # Passive PTY status detection
-  main/db/database.ts         # JSON file persistence
-  main/db/environment-repo.ts # Environment CRUD
-  main/db/session-repo.ts     # Session CRUD
-  preload/preload.ts          # contextBridge IPC API
-  renderer/App.tsx             # Root React component
-  renderer/components/         # TerminalPanel, sidebar/, dialogs
-  renderer/hooks/              # useTerminalManager, useKeyboardShortcuts
-  renderer/styles/global.css   # Dark theme + all component styles
-  shared/types.ts              # Shared TS interfaces
-  shared/constants.ts          # IPC channel names
+  main/db/database.ts             # JSON file persistence
+  main/db/environment-repo.ts     # Environment CRUD
+  main/db/session-repo.ts         # Session CRUD
+  preload/preload.ts              # contextBridge IPC API
+  renderer/index.tsx              # React entry point
+  renderer/App.tsx                # Root React component
+  renderer/components/
+    TerminalPanel.tsx             # xterm.js container + resize handling
+    SettingsDialog.tsx            # App-wide settings (theme, env vars, CLI flags)
+    EnvVarEditor.tsx              # Reusable env var editor with presets
+    sidebar/
+      NewSessionDialog.tsx        # Session creation with env selection, repo pick, env vars, CLI flags
+      NewEnvironmentDialog.tsx    # Environment creation (Local/SSH config)
+      RepoGroup.tsx               # Groups sessions by working directory
+      SessionItem.tsx             # Session row with context menu + inline rename
+      SidebarResizeHandle.tsx     # Draggable sidebar resize (180-400px)
+  renderer/hooks/
+    useTerminalManager.ts         # xterm.js instance lifecycle per session
+    useKeyboardShortcuts.ts       # App-level keyboard shortcuts
+    useTheme.ts                   # Theme loading, CSS variable application, titlebar sync
+  renderer/styles/
+    global.css                    # Component styles + CSS variable theming
+    themes.ts                     # 5 theme definitions (Catppuccin + Default Dark)
+  renderer/assets/
+    logo.png                      # App logo for menubar
+    assets.d.ts                   # Type declarations for image imports
+  shared/types.ts                 # Shared TS interfaces (TetherAPI, session/env types)
+  shared/constants.ts             # IPC channel name constants
 ```
 
 **Important:** The preload entry is `src/preload/preload.ts` (not `index.ts`) to avoid Vite output collision with main process `index.js` in `.vite/build/`.
