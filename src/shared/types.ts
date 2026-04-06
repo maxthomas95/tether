@@ -68,6 +68,9 @@ export interface TetherAPI {
     getDefaultCliFlags(): Promise<string[]>;
     setDefaultCliFlags(flags: string[]): Promise<void>;
   };
+  titlebar: {
+    updateOverlay(color: string, symbolColor: string): Promise<void>;
+  };
   scanReposDir(dir: string): Promise<string[]>;
   clipboard: {
     readText(): string;

@@ -178,6 +178,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getDb().savedWorkspace;
   });
 
+  // === Titlebar overlay ===
+
+  ipcMain.handle(IPC.TITLEBAR_UPDATE, async (_event, color: string, symbolColor: string) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.setTitleBarOverlay({ color, symbolColor, height: 36 });
+    }
+  });
+
   // === Scan repos directory ===
 
   ipcMain.handle(IPC.SCAN_REPOS_DIR, async (_event, dir: string) => {

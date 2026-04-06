@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { EnvVarEditor } from './EnvVarEditor';
+import { themeList } from '../styles/themes';
 
 const COMMON_FLAGS = [
   { flag: '--dangerously-skip-permissions', label: 'Skip permission prompts' },
@@ -10,9 +11,11 @@ const COMMON_FLAGS = [
 interface SettingsDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  currentTheme: string;
+  onThemeChange: (name: string) => void;
 }
 
-export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }: SettingsDialogProps) {
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [cliFlags, setCliFlags] = useState<string[]>([]);
   const [customFlag, setCustomFlag] = useState('');
@@ -71,6 +74,21 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
           <button className="dialog-close" onClick={onClose}>&times;</button>
         </div>
         <div className="dialog-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+          <div className="form-group">
+            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              Theme
+            </label>
+            <select
+              className="form-input"
+              value={currentTheme}
+              onChange={e => onThemeChange(e.target.value)}
+            >
+              {themeList.map(t => (
+                <option key={t.name} value={t.name}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="form-group">
             <label className="form-radio-label">
               <input

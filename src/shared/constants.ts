@@ -23,6 +23,8 @@ export const IPC = {
   CONFIG_GET_DEFAULT_CLI_FLAGS: 'config:get-default-cli-flags',
   CONFIG_SET_DEFAULT_CLI_FLAGS: 'config:set-default-cli-flags',
 
+  TITLEBAR_UPDATE: 'titlebar:update',
+
   // Main -> Renderer
   SESSION_DATA: 'session:data',
   SESSION_STATE_CHANGE: 'session:state-change',

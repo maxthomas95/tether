@@ -20,7 +20,13 @@ const createWindow = () => {
     minWidth: 600,
     minHeight: 400,
     title: 'Tether',
-    backgroundColor: '#1e1e1e',
+    backgroundColor: '#1e1e2e',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#181825',
+      symbolColor: '#cdd6f4',
+      height: 36,
+    },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       // Note: preload.js is built from src/preload/preload.ts

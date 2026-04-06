@@ -7,6 +7,7 @@ import { SidebarResizeHandle } from './components/sidebar/SidebarResizeHandle';
 import { SettingsDialog } from './components/SettingsDialog';
 import { useTerminalManager } from './hooks/useTerminalManager';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useTheme } from './hooks/useTheme';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType } from '../shared/types';
 
 export function App() {
@@ -19,7 +20,8 @@ export function App() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState(220);
   const [sidebarVisible, setSidebarVisible] = useState(true);
-  const termManager = useTerminalManager();
+  const { themeName, setTheme, xtermTheme } = useTheme();
+  const termManager = useTerminalManager(xtermTheme);
 
   // Load environments on mount, then restore workspace
   useEffect(() => {
@@ -189,6 +191,12 @@ export function App() {
 
   return (
     <div className="app-layout">
+      <div className="menubar">
+        <span className="menubar-title">Tether</span>
+        <button className="menubar-item">File</button>
+        <button className="menubar-item">Help</button>
+      </div>
+      <div className="app-body">
       <aside
         className="sidebar"
         style={{
@@ -295,7 +303,7 @@ export function App() {
               {' \u00b7 '}{activeEnv ? `${activeEnv.type}${activeEnv.type === 'ssh' ? ':' + (activeEnv.config?.host || '') : ''}` : 'local'}
             </span>
           ) : (
-            <span className="terminal-header-text">Tether</span>
+            <span className="terminal-header-text">No active session</span>
           )}
         </div>
         <TerminalPanel
@@ -304,6 +312,7 @@ export function App() {
           onResize={termManager.fitActive}
         />
       </main>
+      </div>
 
       <NewSessionDialog
         isOpen={sessionDialogOpen}
@@ -319,6 +328,8 @@ export function App() {
       <SettingsDialog
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        currentTheme={themeName}
+        onThemeChange={setTheme}
       />
     </div>
   );

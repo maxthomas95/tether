@@ -55,6 +55,10 @@ const api: TetherAPI = {
     setDefaultCliFlags: (flags: string[]): Promise<void> => ipcRenderer.invoke(IPC.CONFIG_SET_DEFAULT_CLI_FLAGS, flags),
   },
 
+  titlebar: {
+    updateOverlay: (color: string, symbolColor: string): Promise<void> => ipcRenderer.invoke(IPC.TITLEBAR_UPDATE, color, symbolColor),
+  },
+
   scanReposDir: (dir: string): Promise<string[]> => ipcRenderer.invoke(IPC.SCAN_REPOS_DIR, dir),
 
   clipboard: {

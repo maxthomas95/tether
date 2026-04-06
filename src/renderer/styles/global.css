@@ -1,20 +1,22 @@
 :root {
-  --bg-primary: #1e1e1e;
-  --bg-sidebar: #252526;
-  --bg-header: #2d2d2d;
-  --bg-hover: #2a2d2e;
-  --bg-active: #37373d;
-  --text-primary: #cccccc;
-  --text-secondary: #858585;
-  --text-muted: #5a5a5a;
-  --border-color: #3c3c3c;
-  --accent: #4fc1e9;
-  --status-running: #22c55e;
-  --status-waiting: #eab308;
-  --status-idle: #6b7280;
-  --status-dead: #ef4444;
+  --bg-primary: #1e1e2e;
+  --bg-sidebar: #181825;
+  --bg-header: #313244;
+  --bg-hover: #45475a;
+  --bg-active: #585b70;
+  --text-primary: #cdd6f4;
+  --text-secondary: #bac2de;
+  --text-muted: #6c7086;
+  --border-color: #585b70;
+  --accent: #b4befe;
+  --status-running: #a6e3a1;
+  --status-waiting: #f9e2af;
+  --status-idle: #7f849c;
+  --status-dead: #f38ba8;
+  --btn-primary-text: #1e1e2e;
+  --shadow-opacity: 0.5;
   --sidebar-width: 220px;
-  --header-height: 32px;
+  --header-height: 36px;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
 }
@@ -36,7 +38,53 @@ html, body, #root {
 
 .app-layout {
   display: flex;
+  flex-direction: column;
   height: 100%;
+}
+
+/* ── Menu bar ── */
+.menubar {
+  height: var(--header-height);
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 2px;
+  -webkit-app-region: drag;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.menubar-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+  margin-right: 12px;
+}
+
+.menubar-item {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.menubar-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── App body (sidebar + terminal, below menubar) ── */
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Sidebar */
@@ -174,12 +222,13 @@ html, body, #root {
 }
 
 .terminal-header {
-  height: var(--header-height);
-  background: var(--bg-header);
+  height: 30px;
+  background: var(--bg-primary);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   padding: 0 12px;
+  flex-shrink: 0;
 }
 
 .terminal-header-text {
@@ -350,7 +399,7 @@ html, body, #root {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, var(--shadow-opacity));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -455,7 +504,7 @@ html, body, #root {
 .form-btn--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #000;
+  color: var(--btn-primary-text);
 }
 
 .form-btn--primary:hover {
@@ -650,7 +699,7 @@ html, body, #root {
 .repo-picker-item--selected {
   border-color: var(--accent);
   background: var(--accent);
-  color: #000;
+  color: var(--btn-primary-text);
 }
 
 /* Text link button */

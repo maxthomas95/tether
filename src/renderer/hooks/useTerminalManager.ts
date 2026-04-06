@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect } from 'react';
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 
 interface ManagedTerminal {
@@ -7,29 +7,33 @@ interface ManagedTerminal {
   fitAddon: FitAddon;
 }
 
-const TERMINAL_OPTIONS = {
+const BASE_TERMINAL_OPTIONS = {
   cursorBlink: true,
   fontFamily: "'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace",
   fontSize: 14,
-  theme: {
-    background: '#1e1e1e',
-    foreground: '#cccccc',
-    cursor: '#cccccc',
-    selectionBackground: '#264f78',
-  },
   allowProposedApi: true,
 } as const;
 
-export function useTerminalManager() {
+export function useTerminalManager(xtermTheme?: ITheme) {
   const terminals = useRef(new Map<string, ManagedTerminal>());
   const containerRef = useRef<HTMLDivElement | null>(null);
   const activeIdRef = useRef<string | null>(null);
+  const themeRef = useRef<ITheme | undefined>(xtermTheme);
+
+  // Update theme on all existing terminals when it changes
+  useEffect(() => {
+    themeRef.current = xtermTheme;
+    if (!xtermTheme) return;
+    for (const managed of terminals.current.values()) {
+      managed.terminal.options.theme = xtermTheme;
+    }
+  }, [xtermTheme]);
 
   // Get or create a Terminal instance for a session
   const getOrCreate = useCallback((sessionId: string): ManagedTerminal => {
     let managed = terminals.current.get(sessionId);
     if (!managed) {
-      const terminal = new Terminal(TERMINAL_OPTIONS);
+      const terminal = new Terminal({ ...BASE_TERMINAL_OPTIONS, theme: themeRef.current });
       const fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
 
