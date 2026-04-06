@@ -15,7 +15,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
   const [port, setPort] = useState('22');
   const [username, setUsername] = useState('');
   const [keyPath, setKeyPath] = useState('');
-  const [useAgent, setUseAgent] = useState(true);
+  const [password, setPassword] = useState('');
+  const [authMethod, setAuthMethod] = useState<'agent' | 'key' | 'password'>('agent');
   const [defaultDir, setDefaultDir] = useState('~');
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
 
@@ -30,17 +31,19 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
       config.port = parseInt(port) || 22;
       config.username = username.trim() || 'root';
       config.defaultDir = defaultDir.trim() || '~';
-      if (useAgent) {
+      if (authMethod === 'agent') {
         config.useAgent = true;
-      } else if (keyPath.trim()) {
+      } else if (authMethod === 'key' && keyPath.trim()) {
         config.privateKeyPath = keyPath.trim();
+      } else if (authMethod === 'password' && password) {
+        config.password = password;
       }
     }
 
     onCreate(name.trim(), type, config, envVars);
     // Reset form
     setName(''); setHost(''); setPort('22'); setUsername('');
-    setKeyPath(''); setUseAgent(true); setDefaultDir('~'); setEnvVars({});
+    setKeyPath(''); setPassword(''); setAuthMethod('agent'); setDefaultDir('~'); setEnvVars({});
     onClose();
   };
 
@@ -117,26 +120,44 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
                   <label className="form-radio-label">
                     <input
                       type="radio"
-                      checked={useAgent}
-                      onChange={() => setUseAgent(true)}
+                      checked={authMethod === 'agent'}
+                      onChange={() => setAuthMethod('agent')}
                     />
                     SSH Agent
                   </label>
                   <label className="form-radio-label">
                     <input
                       type="radio"
-                      checked={!useAgent}
-                      onChange={() => setUseAgent(false)}
+                      checked={authMethod === 'key'}
+                      onChange={() => setAuthMethod('key')}
                     />
                     Private Key File
                   </label>
+                  <label className="form-radio-label">
+                    <input
+                      type="radio"
+                      checked={authMethod === 'password'}
+                      onChange={() => setAuthMethod('password')}
+                    />
+                    Password
+                  </label>
                 </div>
-                {!useAgent && (
+                {authMethod === 'key' && (
                   <input
                     className="form-input"
                     value={keyPath}
                     onChange={e => setKeyPath(e.target.value)}
                     placeholder="~/.ssh/id_ed25519"
+                    style={{ marginTop: 6 }}
+                  />
+                )}
+                {authMethod === 'password' && (
+                  <input
+                    className="form-input"
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Enter password"
                     style={{ marginTop: 6 }}
                   />
                 )}

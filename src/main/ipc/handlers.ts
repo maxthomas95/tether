@@ -1,9 +1,29 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { ipcMain, BrowserWindow, dialog, safeStorage } from 'electron';
 import { IPC } from '../../shared/constants';
 import type { CreateSessionOptions, CreateEnvironmentOptions, EnvironmentInfo } from '../../shared/types';
 import { sessionManager } from '../session/session-manager';
 import * as envRepo from '../db/environment-repo';
 import * as sessionRepo from '../db/session-repo';
+
+function encryptConfigPassword(config: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!config || typeof config.password !== 'string') return config;
+  const copy = { ...config };
+  if (safeStorage.isEncryptionAvailable()) {
+    copy.password = safeStorage.encryptString(copy.password as string).toString('base64');
+    copy.passwordEncrypted = true;
+  }
+  return copy;
+}
+
+function decryptConfigPassword(config: Record<string, unknown>): Record<string, unknown> {
+  if (!config.passwordEncrypted || typeof config.password !== 'string') return config;
+  const copy = { ...config };
+  if (safeStorage.isEncryptionAvailable()) {
+    copy.password = safeStorage.decryptString(Buffer.from(copy.password as string, 'base64'));
+  }
+  delete copy.passwordEncrypted;
+  return copy;
+}
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   const send = (channel: string, ...args: unknown[]) => {
@@ -79,7 +99,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       id: env.id,
       name: env.name,
       type: env.type as EnvironmentInfo['type'],
-      config: JSON.parse(env.config),
+      config: decryptConfigPassword(JSON.parse(env.config)),
       envVars: JSON.parse(env.env_vars || '{}'),
       sessionCount: sessions.filter(s => {
         if (s.environmentId === env.id) return true;
@@ -93,14 +113,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const env = envRepo.createEnvironment({
       name: opts.name,
       type: opts.type,
-      config: opts.config,
+      config: encryptConfigPassword(opts.config),
       envVars: opts.envVars,
     });
     return {
       id: env.id,
       name: env.name,
       type: env.type,
-      config: JSON.parse(env.config),
+      config: decryptConfigPassword(JSON.parse(env.config)),
       envVars: JSON.parse(env.env_vars || '{}'),
       sessionCount: 0,
     } as EnvironmentInfo;
@@ -110,7 +130,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     envRepo.updateEnvironment(id, {
       name: opts.name,
       type: opts.type,
-      config: opts.config,
+      config: encryptConfigPassword(opts.config),
       envVars: opts.envVars,
     });
   });
