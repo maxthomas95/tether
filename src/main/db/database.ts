@@ -13,6 +13,17 @@ export interface SavedWorkspace {
   activeIndex: number;
 }
 
+export interface GitProviderRow {
+  id: string;
+  name: string;
+  type: 'gitea' | 'ado';
+  baseUrl: string;
+  organization: string | null;
+  token: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DbData {
   environments: EnvironmentRow[];
   sessions: SessionRow[];
@@ -20,6 +31,7 @@ export interface DbData {
   defaultEnvVars: Record<string, string>;
   defaultCliFlags: string[];
   savedWorkspace: SavedWorkspace | null;
+  gitProviders: GitProviderRow[];
 }
 
 export interface EnvironmentRow {
@@ -86,12 +98,13 @@ export function getDb(): DbData {
           defaultEnvVars: loaded.defaultEnvVars || {},
           defaultCliFlags: loaded.defaultCliFlags || [],
           savedWorkspace: loaded.savedWorkspace || null,
+          gitProviders: loaded.gitProviders || [],
         };
       } catch {
-        data = { environments: [], sessions: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], savedWorkspace: null };
+        data = { environments: [], sessions: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], savedWorkspace: null, gitProviders: [] };
       }
     } else {
-      data = { environments: [], sessions: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], savedWorkspace: null };
+      data = { environments: [], sessions: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], savedWorkspace: null, gitProviders: [] };
     }
   }
   return data;

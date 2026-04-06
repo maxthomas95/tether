@@ -25,8 +25,19 @@ export const IPC = {
 
   TITLEBAR_UPDATE: 'titlebar:update',
 
+  // Git provider & clone
+  GIT_PROVIDER_LIST: 'git:provider-list',
+  GIT_PROVIDER_CREATE: 'git:provider-create',
+  GIT_PROVIDER_UPDATE: 'git:provider-update',
+  GIT_PROVIDER_DELETE: 'git:provider-delete',
+  GIT_PROVIDER_TEST: 'git:provider-test',
+  GIT_PROVIDER_REPOS: 'git:provider-repos',
+  GIT_CLONE: 'git:clone',
+  GIT_INIT: 'git:init',
+
   // Main -> Renderer
   SESSION_DATA: 'session:data',
   SESSION_STATE_CHANGE: 'session:state-change',
   SESSION_EXITED: 'session:exited',
+  GIT_CLONE_PROGRESS: 'git:clone-progress',
 } as const;

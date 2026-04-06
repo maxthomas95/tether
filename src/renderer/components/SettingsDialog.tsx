@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { EnvVarEditor } from './EnvVarEditor';
 import { themeList } from '../styles/themes';
+import type { GitProviderInfo, GitProviderType } from '../../shared/types';
 
 const COMMON_FLAGS = [
   { flag: '--dangerously-skip-permissions', label: 'Skip permission prompts' },
@@ -22,6 +23,16 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [restoreOnLaunch, setRestoreOnLaunch] = useState(true);
   const [loaded, setLoaded] = useState(false);
 
+  // Git provider state
+  const [gitProviders, setGitProviders] = useState<GitProviderInfo[]>([]);
+  const [showAddProvider, setShowAddProvider] = useState(false);
+  const [newProviderType, setNewProviderType] = useState<GitProviderType>('gitea');
+  const [newProviderName, setNewProviderName] = useState('');
+  const [newProviderUrl, setNewProviderUrl] = useState('');
+  const [newProviderOrg, setNewProviderOrg] = useState('');
+  const [newProviderToken, setNewProviderToken] = useState('');
+  const [providerTestResult, setProviderTestResult] = useState<Record<string, { ok: boolean; error?: string }>>({});
+
   useEffect(() => {
     if (!isOpen) { setLoaded(false); return; }
     Promise.all([
@@ -34,6 +45,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setCliFlags(flags || []);
       setLoaded(true);
     });
+    window.electronAPI.gitProvider.list().then(setGitProviders).catch(() => {});
   }, [isOpen]);
 
   const handleSave = useCallback(async () => {
@@ -59,6 +71,37 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
 
   const removeFlag = (flag: string) => {
     setCliFlags(prev => prev.filter(f => f !== flag));
+  };
+
+  const handleAddProvider = async () => {
+    if (!newProviderName.trim() || !newProviderUrl.trim() || !newProviderToken.trim()) return;
+    try {
+      const provider = await window.electronAPI.gitProvider.create({
+        name: newProviderName.trim(),
+        type: newProviderType,
+        baseUrl: newProviderUrl.trim(),
+        organization: newProviderType === 'ado' ? newProviderOrg.trim() : undefined,
+        token: newProviderToken.trim(),
+      });
+      setGitProviders(prev => [...prev, provider]);
+      setShowAddProvider(false);
+      setNewProviderName('');
+      setNewProviderUrl('');
+      setNewProviderOrg('');
+      setNewProviderToken('');
+    } catch { /* ignore */ }
+  };
+
+  const handleDeleteProvider = async (id: string) => {
+    await window.electronAPI.gitProvider.delete(id);
+    setGitProviders(prev => prev.filter(p => p.id !== id));
+    setProviderTestResult(prev => { const next = { ...prev }; delete next[id]; return next; });
+  };
+
+  const handleTestProvider = async (id: string) => {
+    setProviderTestResult(prev => ({ ...prev, [id]: { ok: false, error: 'Testing...' } }));
+    const result = await window.electronAPI.gitProvider.test(id);
+    setProviderTestResult(prev => ({ ...prev, [id]: result }));
   };
 
   if (!isOpen) return null;
@@ -158,6 +201,116 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
               Applied to all sessions. Environments and sessions can override individual values.
             </p>
             {loaded && <EnvVarEditor vars={envVars} onChange={setEnvVars} />}
+          </div>
+
+          {/* Git Providers */}
+          <div className="form-group" style={{ marginTop: 20 }}>
+            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              Git Providers
+            </label>
+            <p className="form-hint" style={{ marginBottom: 12 }}>
+              Connect to Gitea or Azure DevOps to browse and clone repos from the New Session dialog.
+            </p>
+
+            {gitProviders.length > 0 && (
+              <div className="provider-list">
+                {gitProviders.map(p => (
+                  <div key={p.id} className="provider-row">
+                    <span className="provider-type-badge">{p.type}</span>
+                    <span className="provider-name">{p.name}</span>
+                    <span className="provider-url">{p.baseUrl}</span>
+                    <button className="env-editor-btn" onClick={() => handleTestProvider(p.id)}>
+                      Test
+                    </button>
+                    <button className="env-editor-btn env-editor-btn--remove" onClick={() => handleDeleteProvider(p.id)}>
+                      &times;
+                    </button>
+                    {providerTestResult[p.id] && (
+                      <span className="form-hint" style={{
+                        display: 'inline',
+                        marginLeft: 4,
+                        color: providerTestResult[p.id].ok ? 'var(--status-running)' : 'var(--status-dead)',
+                      }}>
+                        {providerTestResult[p.id].ok ? 'OK' : (providerTestResult[p.id].error || 'Failed')}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!showAddProvider && (
+              <button className="env-editor-btn" onClick={() => setShowAddProvider(true)}>
+                Add Provider
+              </button>
+            )}
+
+            {showAddProvider && (
+              <div style={{ border: '1px solid var(--border-color)', borderRadius: 4, padding: 12, marginTop: 8 }}>
+                <div className="form-group">
+                  <label className="form-label">Type</label>
+                  <select
+                    className="form-input"
+                    value={newProviderType}
+                    onChange={e => setNewProviderType(e.target.value as GitProviderType)}
+                  >
+                    <option value="gitea">Gitea</option>
+                    <option value="ado">Azure DevOps</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Name</label>
+                  <input
+                    className="form-input"
+                    value={newProviderName}
+                    onChange={e => setNewProviderName(e.target.value)}
+                    placeholder="My Gitea Server"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Base URL</label>
+                  <input
+                    className="form-input"
+                    value={newProviderUrl}
+                    onChange={e => setNewProviderUrl(e.target.value)}
+                    placeholder={newProviderType === 'gitea' ? 'https://gitea.example.com' : 'https://dev.azure.com'}
+                  />
+                </div>
+                {newProviderType === 'ado' && (
+                  <div className="form-group">
+                    <label className="form-label">Organization</label>
+                    <input
+                      className="form-input"
+                      value={newProviderOrg}
+                      onChange={e => setNewProviderOrg(e.target.value)}
+                      placeholder="my-org"
+                    />
+                  </div>
+                )}
+                <div className="form-group">
+                  <label className="form-label">Personal Access Token</label>
+                  <input
+                    type="password"
+                    className="form-input"
+                    value={newProviderToken}
+                    onChange={e => setNewProviderToken(e.target.value)}
+                    placeholder="ghp_... or PAT"
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="form-btn form-btn--primary" onClick={handleAddProvider}
+                    disabled={!newProviderName.trim() || !newProviderUrl.trim() || !newProviderToken.trim()}
+                  >Save</button>
+                  <button className="form-btn" onClick={() => {
+                    setShowAddProvider(false);
+                    setNewProviderName('');
+                    setNewProviderUrl('');
+                    setNewProviderOrg('');
+                    setNewProviderToken('');
+                  }}>Cancel</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         <div className="dialog-footer">

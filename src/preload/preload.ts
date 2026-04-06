@@ -3,6 +3,7 @@ import { IPC } from '../shared/constants';
 import type {
   CreateSessionOptions, SessionInfo, SessionState,
   CreateEnvironmentOptions, EnvironmentInfo, TetherAPI,
+  CreateGitProviderOptions, GitProviderInfo, GitRepoInfo, CloneProgressInfo,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -71,6 +72,25 @@ const api: TetherAPI = {
       ipcRenderer.invoke(IPC.WORKSPACE_SAVE, sessions, activeIndex),
     load: (): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string }>; activeIndex: number } | null> =>
       ipcRenderer.invoke(IPC.WORKSPACE_LOAD),
+  },
+
+  gitProvider: {
+    list: (): Promise<GitProviderInfo[]> => ipcRenderer.invoke(IPC.GIT_PROVIDER_LIST),
+    create: (opts: CreateGitProviderOptions): Promise<GitProviderInfo> => ipcRenderer.invoke(IPC.GIT_PROVIDER_CREATE, opts),
+    update: (id: string, opts: Partial<CreateGitProviderOptions>): Promise<void> => ipcRenderer.invoke(IPC.GIT_PROVIDER_UPDATE, id, opts),
+    delete: (id: string): Promise<void> => ipcRenderer.invoke(IPC.GIT_PROVIDER_DELETE, id),
+    test: (id: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(IPC.GIT_PROVIDER_TEST, id),
+    listRepos: (providerId: string, query?: string): Promise<GitRepoInfo[]> => ipcRenderer.invoke(IPC.GIT_PROVIDER_REPOS, providerId, query),
+  },
+
+  git: {
+    clone: (url: string, destination: string): Promise<string> => ipcRenderer.invoke(IPC.GIT_CLONE, url, destination),
+    init: (directory: string): Promise<string> => ipcRenderer.invoke(IPC.GIT_INIT, directory),
+    onCloneProgress(cb: (info: CloneProgressInfo) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, info: CloneProgressInfo) => cb(info);
+      ipcRenderer.on(IPC.GIT_CLONE_PROGRESS, h);
+      return () => ipcRenderer.removeListener(IPC.GIT_CLONE_PROGRESS, h);
+    },
   },
 };
 

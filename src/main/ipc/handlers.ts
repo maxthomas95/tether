@@ -1,9 +1,13 @@
 import { ipcMain, BrowserWindow, dialog, safeStorage } from 'electron';
 import { IPC } from '../../shared/constants';
-import type { CreateSessionOptions, CreateEnvironmentOptions, EnvironmentInfo } from '../../shared/types';
+import type { CreateSessionOptions, CreateEnvironmentOptions, EnvironmentInfo, GitProviderInfo, CreateGitProviderOptions } from '../../shared/types';
 import { sessionManager } from '../session/session-manager';
 import * as envRepo from '../db/environment-repo';
 import * as sessionRepo from '../db/session-repo';
+import * as gitProviderRepo from '../db/git-provider-repo';
+import { gitClone, gitInit } from '../git/git-service';
+import { GiteaClient } from '../git/providers/gitea-client';
+import { AdoClient } from '../git/providers/ado-client';
 
 function encryptConfigPassword(config: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
   if (!config || typeof config.password !== 'string') return config;
@@ -220,5 +224,86 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     } catch {
       return [];
     }
+  });
+
+  // === Git Provider handlers ===
+
+  function toProviderInfo(row: gitProviderRepo.GitProviderRow): GitProviderInfo {
+    return {
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      baseUrl: row.baseUrl,
+      organization: row.organization || undefined,
+      hasToken: !!row.token,
+    };
+  }
+
+  ipcMain.handle(IPC.GIT_PROVIDER_LIST, async () => {
+    return gitProviderRepo.listGitProviders().map(toProviderInfo);
+  });
+
+  ipcMain.handle(IPC.GIT_PROVIDER_CREATE, async (_event, opts: CreateGitProviderOptions) => {
+    const row = gitProviderRepo.createGitProvider({
+      name: opts.name,
+      type: opts.type,
+      baseUrl: opts.baseUrl,
+      organization: opts.organization,
+      token: opts.token,
+    });
+    return toProviderInfo(row);
+  });
+
+  ipcMain.handle(IPC.GIT_PROVIDER_UPDATE, async (_event, id: string, opts: Partial<CreateGitProviderOptions>) => {
+    gitProviderRepo.updateGitProvider(id, opts);
+  });
+
+  ipcMain.handle(IPC.GIT_PROVIDER_DELETE, async (_event, id: string) => {
+    gitProviderRepo.deleteGitProvider(id);
+  });
+
+  ipcMain.handle(IPC.GIT_PROVIDER_TEST, async (_event, id: string) => {
+    const provider = gitProviderRepo.getGitProvider(id);
+    if (!provider) return { ok: false, error: 'Provider not found' };
+    try {
+      if (provider.type === 'gitea') {
+        const client = new GiteaClient(provider.baseUrl, provider.token);
+        await client.testConnection();
+      } else {
+        const client = new AdoClient(provider.baseUrl, provider.organization || '', provider.token);
+        await client.testConnection();
+      }
+      return { ok: true };
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.GIT_PROVIDER_REPOS, async (_event, providerId: string, query?: string) => {
+    const provider = gitProviderRepo.getGitProvider(providerId);
+    if (!provider) throw new Error('Provider not found');
+    if (provider.type === 'gitea') {
+      const client = new GiteaClient(provider.baseUrl, provider.token);
+      return client.listRepos(query);
+    } else {
+      const client = new AdoClient(provider.baseUrl, provider.organization || '', provider.token);
+      return client.listRepos(query);
+    }
+  });
+
+  // === Git clone / init ===
+
+  ipcMain.handle(IPC.GIT_CLONE, async (_event, url: string, destination: string) => {
+    return gitClone({
+      url,
+      destination,
+      onProgress(info) {
+        send(IPC.GIT_CLONE_PROGRESS, info);
+      },
+    });
+  });
+
+  ipcMain.handle(IPC.GIT_INIT, async (_event, directory: string) => {
+    return gitInit(directory);
   });
 }

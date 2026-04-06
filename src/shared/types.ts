@@ -1,5 +1,37 @@
 export type SessionState = 'starting' | 'running' | 'waiting' | 'idle' | 'stopped' | 'dead';
 export type EnvironmentType = 'local' | 'ssh' | 'coder';
+export type GitProviderType = 'gitea' | 'ado';
+
+export interface GitProviderInfo {
+  id: string;
+  name: string;
+  type: GitProviderType;
+  baseUrl: string;
+  organization?: string;
+  hasToken: boolean;
+}
+
+export interface GitRepoInfo {
+  fullName: string;
+  cloneUrl: string;
+  description: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+}
+
+export interface CloneProgressInfo {
+  phase: 'counting' | 'compressing' | 'receiving' | 'resolving' | 'done' | 'error';
+  percent: number;
+  message: string;
+}
+
+export interface CreateGitProviderOptions {
+  name: string;
+  type: GitProviderType;
+  baseUrl: string;
+  organization?: string;
+  token: string;
+}
 
 export interface EnvironmentInfo {
   id: string;
@@ -79,6 +111,19 @@ export interface TetherAPI {
   workspace: {
     save(sessions: Array<{ workingDir: string; label: string; environmentId?: string }>, activeIndex: number): Promise<void>;
     load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string }>; activeIndex: number } | null>;
+  };
+  gitProvider: {
+    list(): Promise<GitProviderInfo[]>;
+    create(opts: CreateGitProviderOptions): Promise<GitProviderInfo>;
+    update(id: string, opts: Partial<CreateGitProviderOptions>): Promise<void>;
+    delete(id: string): Promise<void>;
+    test(id: string): Promise<{ ok: boolean; error?: string }>;
+    listRepos(providerId: string, query?: string): Promise<GitRepoInfo[]>;
+  };
+  git: {
+    clone(url: string, destination: string): Promise<string>;
+    init(directory: string): Promise<string>;
+    onCloneProgress(cb: (info: CloneProgressInfo) => void): () => void;
   };
 }
 
