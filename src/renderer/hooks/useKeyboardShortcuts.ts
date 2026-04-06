@@ -7,6 +7,7 @@ interface ShortcutActions {
   onPrevSession: () => void;
   onToggleSidebar: () => void;
   onStopSession: () => void;
+  onOpenSettings: () => void;
 }
 
 export function useKeyboardShortcuts(actions: ShortcutActions) {
@@ -33,6 +34,13 @@ export function useKeyboardShortcuts(actions: ShortcutActions) {
       if (e.key === 'w' && !e.shiftKey) {
         e.preventDefault();
         actions.onStopSession();
+        return;
+      }
+
+      // Ctrl+, — open settings
+      if (e.key === ',') {
+        e.preventDefault();
+        actions.onOpenSettings();
         return;
       }
 

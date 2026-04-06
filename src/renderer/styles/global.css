@@ -83,9 +83,123 @@ html, body, #root {
   -webkit-app-region: no-drag;
 }
 
-.menubar-item:hover {
+.menubar-item:hover,
+.menubar-item--open {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* ── Menu bar dropdowns ── */
+.menubar-menu {
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.menubar-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 2px;
+  background: var(--bg-header);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 220px;
+  z-index: 500;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.menubar-dropdown-item {
+  display: flex;
+  align-items: center;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  gap: 0;
+}
+
+.menubar-dropdown-item:hover {
+  background: var(--accent);
+  color: var(--btn-primary-text);
+}
+
+.menubar-dropdown-item:hover .menubar-dropdown-shortcut {
+  color: var(--btn-primary-text);
+  opacity: 0.7;
+}
+
+.menubar-dropdown-item--disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.menubar-dropdown-item--disabled:hover {
+  background: none;
+  color: var(--text-primary);
+}
+
+.menubar-dropdown-item--danger {
+  color: var(--status-dead);
+}
+
+.menubar-dropdown-item--danger:hover {
+  background: var(--status-dead);
+  color: #fff;
+}
+
+.menubar-dropdown-check {
+  width: 18px;
+  font-size: 12px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.menubar-dropdown-label {
+  flex: 1;
+}
+
+.menubar-dropdown-shortcut {
+  margin-left: 24px;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.menubar-dropdown-sep {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 8px;
+}
+
+/* ── Keyboard shortcuts dialog ── */
+.shortcuts-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.shortcuts-table td {
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.shortcuts-key {
+  width: 120px;
+}
+
+.shortcuts-key kbd {
+  display: inline-block;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.shortcuts-action {
+  color: var(--text-secondary);
 }
 
 /* ── App body (sidebar + terminal, below menubar) ── */
@@ -757,4 +871,174 @@ html, body, #root {
 select.form-input {
   appearance: auto;
   cursor: pointer;
+}
+
+/* Source tabs (New Session dialog) */
+.source-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 12px;
+  gap: 0;
+}
+
+.source-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.source-tab:hover {
+  color: var(--text-primary);
+}
+
+.source-tab--active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+/* Repo list (provider browse) */
+.repo-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  margin-top: 8px;
+}
+
+.repo-list-item {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.1s;
+}
+
+.repo-list-item:last-child {
+  border-bottom: none;
+}
+
+.repo-list-item:hover {
+  background: var(--bg-hover);
+}
+
+.repo-list-item--selected {
+  background: var(--bg-active);
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
+}
+
+.repo-list-item-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.repo-list-item-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repo-list-item-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-header);
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+
+/* Clone progress bar */
+.clone-progress {
+  margin-top: 8px;
+}
+
+.clone-progress-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.clone-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-primary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.clone-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+
+.clone-error {
+  font-size: 12px;
+  color: var(--status-dead);
+  margin-top: 6px;
+}
+
+/* Provider list in settings */
+.provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.provider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.provider-type-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--bg-header);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.provider-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-url {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+/* Password input */
+input[type="password"].form-input {
+  font-family: var(--font-mono);
+  letter-spacing: 1px;
 }

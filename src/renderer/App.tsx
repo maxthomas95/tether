@@ -5,11 +5,15 @@ import { NewSessionDialog } from './components/sidebar/NewSessionDialog';
 import { NewEnvironmentDialog } from './components/sidebar/NewEnvironmentDialog';
 import { SidebarResizeHandle } from './components/sidebar/SidebarResizeHandle';
 import { SettingsDialog } from './components/SettingsDialog';
+import { MenuBar } from './components/MenuBar';
+import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
+import { AboutDialog } from './components/AboutDialog';
 import { useTerminalManager } from './hooks/useTerminalManager';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTheme } from './hooks/useTheme';
+import { themeList } from './styles/themes';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType } from '../shared/types';
-import logoSrc from './assets/logo.png';
+import type { MenuDef } from './components/MenuBar';
 
 export function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -21,6 +25,8 @@ export function App() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState(220);
   const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const { themeName, setTheme, xtermTheme } = useTheme();
   const termManager = useTerminalManager(xtermTheme);
 
@@ -177,6 +183,7 @@ export function App() {
     onNewSession: () => setSessionDialogOpen(true),
     onToggleSidebar: () => setSidebarVisible(v => !v),
     onStopSession: () => { if (activeSessionId) handleStop(activeSessionId); },
+    onOpenSettings: () => setSettingsOpen(true),
     onSwitchSession: (index: number) => {
       if (index < sessions.length) setActiveSessionId(sessions[index].id);
     },
@@ -199,14 +206,62 @@ export function App() {
     ? environments.find(e => e.id === activeSession.environmentId)
     : environments.find(e => e.type === 'local');
 
+  const isAlive = activeSession
+    ? activeSession.state !== 'stopped' && activeSession.state !== 'dead'
+    : false;
+
+  const menus: MenuDef[] = useMemo(() => [
+    {
+      label: 'File',
+      items: [
+        { label: 'New Session...', shortcut: 'Ctrl+N', onClick: () => setSessionDialogOpen(true) },
+        { label: 'New Environment...', onClick: () => setEnvDialogOpen(true) },
+        { separator: true },
+        { label: 'Settings...', shortcut: 'Ctrl+,', onClick: () => setSettingsOpen(true) },
+        { separator: true },
+        { label: 'Exit', shortcut: 'Alt+F4', onClick: () => window.close() },
+      ],
+    },
+    {
+      label: 'Session',
+      items: [
+        { label: 'Stop Session', shortcut: 'Ctrl+W', onClick: () => { if (activeSessionId) handleStop(activeSessionId); }, disabled: !isAlive },
+        { label: 'Duplicate Session', onClick: () => { if (activeSessionId) handleDuplicate(activeSessionId); }, disabled: !activeSession },
+        { separator: true },
+        { label: 'Next Session', shortcut: 'Ctrl+\u2193', onClick: shortcutActions.onNextSession, disabled: sessions.length < 2 },
+        { label: 'Previous Session', shortcut: 'Ctrl+\u2191', onClick: shortcutActions.onPrevSession, disabled: sessions.length < 2 },
+        { separator: true },
+        { label: 'Kill Session', onClick: () => { if (activeSessionId) handleKill(activeSessionId); }, disabled: !isAlive, danger: true },
+        { label: 'Remove Session', onClick: () => { if (activeSessionId) handleRemove(activeSessionId); }, disabled: !activeSession, danger: true },
+      ],
+    },
+    {
+      label: 'View',
+      items: [
+        { label: 'Toggle Sidebar', shortcut: 'Ctrl+B', onClick: () => setSidebarVisible(v => !v) },
+        { separator: true },
+        ...themeList.map(t => ({
+          label: t.label,
+          checked: themeName === t.name,
+          onClick: () => setTheme(t.name),
+        })),
+      ],
+    },
+    {
+      label: 'Help',
+      items: [
+        { label: 'Keyboard Shortcuts', shortcut: 'Ctrl+/', onClick: () => setShortcutsOpen(true) },
+        { separator: true },
+        { label: 'Documentation', disabled: true },
+        { separator: true },
+        { label: 'About Tether', onClick: () => setAboutOpen(true) },
+      ],
+    },
+  ], [activeSessionId, activeSession, isAlive, sessions.length, themeName, setTheme, handleStop, handleKill, handleRemove, handleDuplicate, shortcutActions]);
+
   return (
     <div className="app-layout">
-      <div className="menubar">
-        <img src={logoSrc} alt="Tether" className="menubar-logo" />
-        <span className="menubar-title">Tether</span>
-        <button className="menubar-item">File</button>
-        <button className="menubar-item">Help</button>
-      </div>
+      <MenuBar menus={menus} />
       <div className="app-body">
       <aside
         className="sidebar"
@@ -341,6 +396,14 @@ export function App() {
         onClose={() => setSettingsOpen(false)}
         currentTheme={themeName}
         onThemeChange={setTheme}
+      />
+      <KeyboardShortcutsDialog
+        isOpen={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+      />
+      <AboutDialog
+        isOpen={aboutOpen}
+        onClose={() => setAboutOpen(false)}
       />
     </div>
   );
