@@ -15,6 +15,7 @@ export interface SSHConfig {
   username: string;
   privateKeyPath?: string;
   useAgent?: boolean;
+  password?: string;
 }
 
 export class SSHTransport implements SessionTransport {
@@ -49,7 +50,7 @@ export class SSHTransport implements SessionTransport {
         readyTimeout: 15000,
       };
 
-      // Authentication: agent or private key
+      // Authentication: agent, private key, or password
       if (this.sshConfig.useAgent) {
         // Windows OpenSSH agent
         connectConfig.agent = process.env.SSH_AUTH_SOCK || '\\\\.\\pipe\\openssh-ssh-agent';
@@ -60,6 +61,8 @@ export class SSHTransport implements SessionTransport {
           reject(new Error(`Failed to read SSH key: ${this.sshConfig.privateKeyPath}`));
           return;
         }
+      } else if (this.sshConfig.password) {
+        connectConfig.password = this.sshConfig.password;
       }
 
       this.client!.on('ready', () => {

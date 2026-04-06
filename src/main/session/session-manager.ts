@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { safeStorage } from 'electron';
 import { LocalTransport } from '../transport/local-transport';
 import { SSHTransport } from '../transport/ssh-transport';
 import type { SessionTransport } from '../transport/types';
@@ -49,13 +50,20 @@ function createTransport(environmentId?: string): SessionTransport {
   if (!env || env.type === 'local') return new LocalTransport();
 
   if (env.type === 'ssh') {
-    const config = JSON.parse(env.config) as Partial<SSHConfig>;
+    const raw = JSON.parse(env.config) as Record<string, unknown>;
+    // Decrypt password if it was encrypted at rest
+    let password = raw.password as string | undefined;
+    if (raw.passwordEncrypted && typeof password === 'string' && safeStorage.isEncryptionAvailable()) {
+      password = safeStorage.decryptString(Buffer.from(password, 'base64'));
+    }
+    const config = raw as Partial<SSHConfig>;
     return new SSHTransport({
       host: config.host || 'localhost',
       port: config.port || 22,
       username: config.username || 'root',
       privateKeyPath: config.privateKeyPath,
-      useAgent: config.useAgent ?? !config.privateKeyPath,
+      useAgent: config.useAgent ?? (!config.privateKeyPath && !password),
+      password,
     });
   }
 
