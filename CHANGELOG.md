@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.1.3-alpha.4] — 2026-04-07
+
+### New Features
+- **Git provider integrations** — Gitea and Azure DevOps support in the New Session dialog. Browse and search remote repos, then clone or init directly into your repos root.
+- **SSH password authentication** — SSH environments can now authenticate with a password in addition to private key auth.
+- **Functional menu bar** — File, Session, View, and Help menus are now wired up with real actions (previously placeholders).
+
+### Bug Fixes
+- Fixed kill-session bug where killed sessions could leave dangling state; added single-instance lock so only one Tether window runs at a time.
+- Gitea repo listing now correctly handles the `SearchResults` API wrapper and surfaces API errors instead of failing silently.
+- DevTools no longer auto-open when the app launches.
+
+### Internal
+- Documentation pass to bring all spec/architecture docs in line with the current implementation.
+
+---
+
 ## [0.1.2-alpha.3] — 2026-04-05
 
 ### New Features
