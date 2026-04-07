@@ -41,6 +41,7 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
   const [providerRepos, setProviderRepos] = useState<GitRepoInfo[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<GitRepoInfo | null>(null);
   const [loadingRepos, setLoadingRepos] = useState(false);
+  const [repoError, setRepoError] = useState('');
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -94,13 +95,15 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       setLoadingRepos(true);
+      setRepoError('');
       window.electronAPI.gitProvider.listRepos(selectedProviderId, providerSearchQuery || undefined)
         .then(repos => {
           setProviderRepos(repos);
           setLoadingRepos(false);
         })
-        .catch(() => {
+        .catch((err: unknown) => {
           setProviderRepos([]);
+          setRepoError(err instanceof Error ? err.message : String(err));
           setLoadingRepos(false);
         });
     }, 300);
@@ -211,6 +214,7 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
     setProviderRepos([]);
     setSelectedRepo(null);
     setSelectedProviderId('');
+    setRepoError('');
     onClose();
   };
 
@@ -543,7 +547,10 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
 
               <div className="form-group">
                 {loadingRepos && <span className="form-hint">Loading...</span>}
-                {!loadingRepos && providerRepos.length === 0 && selectedProviderId && (
+                {!loadingRepos && repoError && (
+                  <span className="clone-error">{repoError}</span>
+                )}
+                {!loadingRepos && !repoError && providerRepos.length === 0 && selectedProviderId && (
                   <span className="form-hint">No repos found. Try a different search.</span>
                 )}
                 {providerRepos.length > 0 && (
