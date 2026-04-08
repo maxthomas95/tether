@@ -6,6 +6,7 @@ import { sessionManager } from './session/session-manager';
 import { getDb, closeDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
 import { markAllRunningAsStopped } from './db/session-repo';
+import { getLoaderTheme, DEFAULT_LOADER_THEME } from '../shared/loader-themes';
 
 // Handle Squirrel.Windows lifecycle events (--squirrel-install,
 // --squirrel-firstrun, --squirrel-updated, --squirrel-obsolete,
@@ -20,9 +21,15 @@ let mainWindow: BrowserWindow | null = null;
 
 const createWindow = () => {
   // Initialize persistence
-  getDb();
+  const db = getDb();
   markAllRunningAsStopped();
   ensureDefaultLocalEnvironment();
+
+  // Read the saved theme synchronously so we can paint the window chrome
+  // and the inline boot loader in the right palette before the renderer
+  // mounts. Falls back to the default theme on first launch.
+  const savedThemeName = db.config.theme || DEFAULT_LOADER_THEME;
+  const loaderTheme = getLoaderTheme(savedThemeName);
 
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -31,11 +38,12 @@ const createWindow = () => {
     minHeight: 400,
     title: 'Tether',
     icon: path.join(__dirname, '../../assets/icon.ico'),
-    backgroundColor: '#1e1e2e',
+    backgroundColor: loaderTheme.bg,
+    show: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#181825',
-      symbolColor: '#cdd6f4',
+      color: loaderTheme.sidebar,
+      symbolColor: loaderTheme.text,
       height: 36,
     },
     webPreferences: {
@@ -46,13 +54,25 @@ const createWindow = () => {
     },
   });
 
+  // Wait until the renderer has painted its first frame (which includes
+  // the inline boot loader in index.html) before showing the window.
+  // This avoids a blank/white flash on launch.
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+  });
+
   registerIpcHandlers(mainWindow);
 
+  // Pass the saved theme name to the renderer via the URL so the inline
+  // boot loader can apply matching colors before any JS runs.
+  const themeQuery = `theme=${encodeURIComponent(savedThemeName)}`;
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    const sep = MAIN_WINDOW_VITE_DEV_SERVER_URL.includes('?') ? '&' : '?';
+    mainWindow.loadURL(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}${sep}${themeQuery}`);
   } else {
     mainWindow.loadFile(
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+      { search: themeQuery },
     );
   }
 
