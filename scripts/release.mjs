@@ -257,6 +257,10 @@ function phaseBuild(version) {
   }
   const code = shStream('npm', ['run', 'make']);
   if (code !== 0) die(`npm run make failed (exit ${code})`);
+  if (DRY_RUN) {
+    ok('build skipped (dry-run)');
+    return { setupPath: '<dry-run>', zipPath: '<dry-run>' };
+  }
   ({ setupPath, zipPath } = locateArtifacts(version));
   if (!setupPath) die(`Setup.exe matching version ${version} not found under out/make/squirrel.windows/x64/`);
   if (!zipPath)   die(`Portable zip matching version ${version} not found under out/make/zip/win32/x64/`);
@@ -271,8 +275,13 @@ function phaseAssets(version, { setupPath, zipPath }) {
   // We don't actually rename the files on disk — we just record the upload-name.
   const setupName = `Tether-${version}-Setup.exe`;
   const zipName   = `Tether-${version}-portable.zip`;
-  ok(`will upload as ${setupName} (${(statSync(setupPath).size/1024/1024).toFixed(1)} MB)`);
-  ok(`will upload as ${zipName} (${(statSync(zipPath).size/1024/1024).toFixed(1)} MB)`);
+  if (DRY_RUN && setupPath === '<dry-run>') {
+    ok(`will upload as ${setupName}`);
+    ok(`will upload as ${zipName}`);
+  } else {
+    ok(`will upload as ${setupName} (${(statSync(setupPath).size/1024/1024).toFixed(1)} MB)`);
+    ok(`will upload as ${zipName} (${(statSync(zipPath).size/1024/1024).toFixed(1)} MB)`);
+  }
   return [
     { path: setupPath, name: setupName },
     { path: zipPath,   name: zipName },
