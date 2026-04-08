@@ -400,113 +400,111 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
           </div>
 
           {/* Vault */}
-          <details className="form-group" style={{ marginTop: 20 }} open={vaultConfig.enabled}>
-            <summary className="form-label" style={{ cursor: 'pointer', fontSize: 14 }}>
+          <div className="form-group" style={{ marginTop: 20 }}>
+            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Vault Integration
-            </summary>
-            <div style={{ marginTop: 8 }}>
-              <p className="form-hint" style={{ marginBottom: 12 }}>
-                Source SSH passwords, API keys, and Git tokens from HashiCorp Vault.
-                Secrets are resolved just-in-time and never written to disk.
-              </p>
+            </label>
+            <p className="form-hint" style={{ marginBottom: 12 }}>
+              Source SSH passwords, API keys, and Git tokens from HashiCorp Vault.
+              Secrets are resolved just-in-time and never written to disk.
+            </p>
 
-              <div className="form-group">
-                <label className="form-radio-label">
+            <div className="form-group">
+              <label className="form-radio-label">
+                <input
+                  type="checkbox"
+                  checked={vaultConfig.enabled}
+                  onChange={e => setVaultConfig(c => ({ ...c, enabled: e.target.checked }))}
+                />
+                Enable Vault integration
+              </label>
+            </div>
+
+            {vaultConfig.enabled && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Vault Address</label>
                   <input
-                    type="checkbox"
-                    checked={vaultConfig.enabled}
-                    onChange={e => setVaultConfig(c => ({ ...c, enabled: e.target.checked }))}
+                    className="form-input"
+                    value={vaultConfig.addr}
+                    onChange={e => setVaultConfig(c => ({ ...c, addr: e.target.value }))}
+                    placeholder="https://vault.example.com"
+                    spellCheck={false}
                   />
-                  Enable Vault integration
-                </label>
-              </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">OIDC Role</label>
+                  <input
+                    className="form-input"
+                    value={vaultConfig.role}
+                    onChange={e => setVaultConfig(c => ({ ...c, role: e.target.value }))}
+                    placeholder="default"
+                    spellCheck={false}
+                  />
+                  <p className="form-hint">The Vault OIDC role to log in with.</p>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">KV Mount Path</label>
+                  <input
+                    className="form-input"
+                    value={vaultConfig.mount}
+                    onChange={e => setVaultConfig(c => ({ ...c, mount: e.target.value }))}
+                    placeholder="secret"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Namespace (optional)</label>
+                  <input
+                    className="form-input"
+                    value={vaultConfig.namespace || ''}
+                    onChange={e => setVaultConfig(c => ({ ...c, namespace: e.target.value }))}
+                    placeholder=""
+                    spellCheck={false}
+                  />
+                  <p className="form-hint">Leave blank if not using Vault Enterprise namespaces.</p>
+                </div>
 
-              {vaultConfig.enabled && (
-                <>
-                  <div className="form-group">
-                    <label className="form-label">Vault Address</label>
-                    <input
-                      className="form-input"
-                      value={vaultConfig.addr}
-                      onChange={e => setVaultConfig(c => ({ ...c, addr: e.target.value }))}
-                      placeholder="https://vault.example.com"
-                      spellCheck={false}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">OIDC Role</label>
-                    <input
-                      className="form-input"
-                      value={vaultConfig.role}
-                      onChange={e => setVaultConfig(c => ({ ...c, role: e.target.value }))}
-                      placeholder="default"
-                      spellCheck={false}
-                    />
-                    <p className="form-hint">The Vault OIDC role to log in with.</p>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">KV Mount Path</label>
-                    <input
-                      className="form-input"
-                      value={vaultConfig.mount}
-                      onChange={e => setVaultConfig(c => ({ ...c, mount: e.target.value }))}
-                      placeholder="secret"
-                      spellCheck={false}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Namespace (optional)</label>
-                    <input
-                      className="form-input"
-                      value={vaultConfig.namespace || ''}
-                      onChange={e => setVaultConfig(c => ({ ...c, namespace: e.target.value }))}
-                      placeholder=""
-                      spellCheck={false}
-                    />
-                    <p className="form-hint">Leave blank if not using Vault Enterprise namespaces.</p>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Status</label>
-                    <div style={{ marginTop: 4 }}>
-                      {vaultStatus.loggedIn ? (
-                        <span className="form-hint" style={{ color: 'var(--status-running)' }}>
-                          {'\u25CF'} Logged in
-                          {vaultStatus.identity ? ` as ${vaultStatus.identity}` : ''}
-                          {vaultStatus.expiresAt ? `, expires ${formatExpiry(vaultStatus.expiresAt)}` : ''}
-                        </span>
-                      ) : (
-                        <span className="form-hint" style={{ color: 'var(--text-muted)' }}>
-                          {'\u25CB'} Not logged in
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                      {vaultStatus.loggedIn ? (
-                        <button className="form-btn" onClick={handleVaultLogout}>Log Out</button>
-                      ) : (
-                        <button
-                          className="form-btn form-btn--primary"
-                          onClick={handleVaultLogin}
-                          disabled={vaultLoggingIn || !vaultConfig.addr || !vaultConfig.role}
-                        >
-                          {vaultLoggingIn ? 'Opening browser…' : 'Log In'}
-                        </button>
-                      )}
-                      <button className="form-btn" onClick={() => setShowMigrateDialog(true)} disabled={!vaultStatus.loggedIn}>
-                        Migrate Existing Secrets…
-                      </button>
-                    </div>
-                    {vaultLoginError && (
-                      <p className="form-hint" style={{ color: 'var(--status-dead)', marginTop: 6 }}>
-                        {vaultLoginError}
-                      </p>
+                <div className="form-group">
+                  <label className="form-label">Status</label>
+                  <div style={{ marginTop: 4 }}>
+                    {vaultStatus.loggedIn ? (
+                      <span className="form-hint" style={{ color: 'var(--status-running)' }}>
+                        {'\u25CF'} Logged in
+                        {vaultStatus.identity ? ` as ${vaultStatus.identity}` : ''}
+                        {vaultStatus.expiresAt ? `, expires ${formatExpiry(vaultStatus.expiresAt)}` : ''}
+                      </span>
+                    ) : (
+                      <span className="form-hint" style={{ color: 'var(--text-muted)' }}>
+                        {'\u25CB'} Not logged in
+                      </span>
                     )}
                   </div>
-                </>
-              )}
-            </div>
-          </details>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    {vaultStatus.loggedIn ? (
+                      <button className="form-btn" onClick={handleVaultLogout}>Log Out</button>
+                    ) : (
+                      <button
+                        className="form-btn form-btn--primary"
+                        onClick={handleVaultLogin}
+                        disabled={vaultLoggingIn || !vaultConfig.addr || !vaultConfig.role}
+                      >
+                        {vaultLoggingIn ? 'Opening browser…' : 'Log In'}
+                      </button>
+                    )}
+                    <button className="form-btn" onClick={() => setShowMigrateDialog(true)} disabled={!vaultStatus.loggedIn}>
+                      Migrate Existing Secrets…
+                    </button>
+                  </div>
+                  {vaultLoginError && (
+                    <p className="form-hint" style={{ color: 'var(--status-dead)', marginTop: 6 }}>
+                      {vaultLoginError}
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
         <div className="dialog-footer">
           <button className="form-btn" onClick={onClose}>Cancel</button>
