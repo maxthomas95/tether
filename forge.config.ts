@@ -57,7 +57,7 @@ const config: ForgeConfig = {
   },
   makers: [
     new MakerSquirrel({ setupIcon: './assets/icon.ico' }),
-    new MakerZIP({}, ['darwin']),
+    new MakerZIP({}, ['darwin', 'win32']),
   ],
   plugins: [
     new AutoUnpackNativesPlugin({}),
