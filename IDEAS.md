@@ -110,6 +110,150 @@ Each level can set, override, or inherit from above. A session in the "Productio
 
 ---
 
+## In Discussion — 2026-04-08 brainstorm
+
+A batch of ideas raised during a brainstorm session. Items at the top have been talked through and have design notes; items at the bottom are tagged `(unevaluated)` and need a future pass.
+
+### Worktree-aware session creation
+
+Spawning a new session directly into a fresh git worktree, so each parallel Claude Code session lives on its own branch without polluting the source repo.
+
+**UX shape:**
+- Toggle on the New Session dialog: "Create in new worktree"
+- When enabled: pick source repo, base branch, target branch name (default: slugified session label)
+- Tether runs `git worktree add` to `<repo>/.worktrees/<branch>/` (subfolder default — see decision below)
+- Session launches with `cwd` set to the worktree dir
+- On session close: prompt "Merge `<branch>` back to `<base>` and push?" with a merge commit (matches user preference for merge over squash). Then prune the worktree.
+- Local-only for v1 — remote (SSH/Coder) worktrees are a separate, harder problem
+- If source repo is dirty: warn but allow (don't block)
+
+**Decided 2026-04-08:**
+- **Location**: subfolder (`<repo>/.worktrees/<name>/`) by default. User prefers no folder sprawl.
+- **Mitigation**: auto-write `.worktrees/` to `.git/info/exclude` on first worktree creation (per-repo, not committed) so git itself doesn't see it.
+- **Caveat**: tool indexers (ripgrep, editor file watchers, language servers, linters) will descend into `.worktrees/` and double-count files unless told not to. Git's exclude doesn't help these tools.
+- **Escape hatch**: provide a setting to override the worktree root to a configurable global path (e.g., `C:\worktrees\<repo>-<branch>\`) for users who hit indexer issues. Default stays subfolder.
+
+**Open questions:**
+- Should the branch name be derived from the label or prompted separately?
+- Always merge-back on close, or offer Keep / Discard / Merge?
+
+### Native ccline-style statusline + idle/waiting detection (JSONL session tap)
+
+The user uses ccline-style Claude Code statuslines that show cwd, model, cost, context window, etc. — and since Tether is a passthrough terminal those already render fine. But making this **native and toggleable** would be valuable, and it converges with the long-standing "is Claude waiting on me or just idle?" problem.
+
+**Key insight:** Claude Code writes session transcripts to JSONL files at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. These contain model, token usage, cost, turn boundaries, and tool calls. Tailing those files gives us all the ccline data **and** clean turn-boundary signals — without parsing the PTY stream. Stays consistent with the dumb-pipe principle.
+
+This single feature replaces two earlier ideas:
+- ccline-style statusline (gets cost/model/context/cwd for free)
+- Idle/waiting detection via hooks (not needed — JSONL tells us when an assistant turn ends)
+
+**UX shape:**
+- A toggleable strip **below** the terminal panel showing for the active session: `model · ctx% · $cost · status dot`
+- Sidebar badges for non-active sessions: small context ring + status dot
+- Powered by file watcher on the JSONL transcript, with tolerant parsing (Claude Code's schema will drift)
+
+**Decided 2026-04-08:**
+- **Strip placement**: below the terminal (status-bar feel).
+
+**Open questions:**
+- For SSH sessions, transcripts live on the remote box — sftp tail in v1, or local-only initially?
+- File watching strategy: `fs.watch` (instant) or 1s poll (more portable)?
+- How to handle Claude Code version drift in the JSONL schema?
+
+### Git-aware sidebar (shares the statusline strip)
+
+Make the sidebar git-aware, but keep it visually minimal. Couples with the JSONL statusline strip — they share the same UI surface.
+
+**UX shape:**
+- **Sidebar**: tiny dirty-dot next to session name when working dir is dirty. No text noise otherwise — branch name is NOT shown in the sidebar.
+- **Hover tooltip**: full git status — branch, ahead/behind counts, modified file count
+- **Inside the statusline strip** (for the active session): `branch ↑3 ↓0 ●5`
+- Live updates via `fs.watch` on `.git/HEAD` and `.git/index`, polling fallback
+
+**Decided 2026-04-08:**
+- **Sidebar shows dirty-dot only**, not branch name. Reasoning: sidebar real estate is precious; session labels need to be readable; branch names are often long and would compete with the label; with the worktree-spawn flow the session label often *is* the branch, so showing it twice would be redundant. Branch info is accessible via tooltip + statusline strip.
+
+**Open questions:**
+- Update frequency / debounce strategy for noisy index changes?
+
+### Per-environment theming
+
+Visual indicator that the session you're typing into is on prod, not local. Cheap to build, prevents real disasters once SSH envs proliferate.
+
+**UX shape:**
+- Optional `accentColor` field per environment, picked in the env config dialog from a small preset palette (no clashing greens)
+- Applied to: terminal panel border (1-2px), sidebar group header bar, optional titlebar tint
+- Accent only — does **not** override the user's chosen terminal theme. Theme stays a global choice.
+- Default off so existing envs are unaffected
+
+**Decided 2026-04-08:**
+- **Accent only.** Theme is an aesthetic choice (Catppuccin variant etc.); env color is an informational signal ("you are on prod"). Different layers of meaning, shouldn't compete. A 2px border tint + sidebar group header bar gives enough signal without disrupting how the user reads the terminal.
+
+### Cloud sync of environments and workspaces
+
+User runs Tether on a personal PC and a work PC. Sync would mean configuring envs once and having them available on both.
+
+**UX shape:**
+- **Backend: git-based**, since user already runs Gitea. Tether keeps a private sync repo (e.g., `tether-config`).
+- **Auto-sync, debounced ~5s** after the last settings change. Pull on launch.
+- Manual "Sync Now" button + "last synced X minutes ago" indicator in settings as a paranoia escape hatch.
+- Last-write-wins; toast on conflict if it ever happens.
+- **Secrets do NOT sync.** Only env definitions, workspaces, snippets, themes, sidebar layout. API keys / SSH creds resolve via Vault per-machine (Vault is per-machine config).
+- **Blob is NOT encrypted in v1** — see decision below.
+- Bonus: full version history of config for free, since it's a git repo with readable diffs.
+- **Sync scope per item**: each environment tagged `syncScope: shared | machine-local`. The work PC has different SSH hosts than personal — those stay machine-local; the rest sync.
+
+**Decided 2026-04-08:**
+- **Auto-sync, debounced.** Two-PC solo use means the conflict window is tiny (user isn't at both machines simultaneously). Friction kills sync features; manual sync gets forgotten and PCs drift. Manual button stays as escape hatch.
+- **Don't encrypt the blob in v1.** All actual secrets live in Vault per-machine, so the sync blob holds env definitions, themes, snippets — not secrets. Encryption kills the readable-diff version-history benefit and adds key-management complexity. Private Gitea repo on user's own infra is already a strong perimeter. Opt-in encryption (age) can be added later as a setting if desired.
+
+**Open questions:**
+- How to bootstrap a fresh machine — one-time clone + token?
+- Conflict-resolution UX: silent overwrite with toast, or hard-stop and show a diff?
+
+### Prompt snippets / library
+
+Reusable prompt store with variable substitution. Low priority for the project owner personally, but a clean addition for users who'd want it.
+
+**UX shape (proposed, TBD):**
+- Snippet store in `data.json`: `{name, body, shortcut?}` per snippet
+- Optional global hotkey sends snippet body to active session
+- Variable substitution: `{branch}`, `{cwd}`, `{date}`, `{label}` — so "review the diff on {branch}" expands per session
+- Managed under Settings → Snippets
+- Per-environment scoping (some snippets only for specific envs)
+
+### Idle vs waiting detection
+
+**Resolved by the JSONL session tap above** — no need for Claude Code hooks, no need for PTY heuristics. Tracking here only because it was raised separately.
+
+### Vault integration
+
+**Already in flight in a separate conversation.** Not duplicating the design here. Cross-references the existing IDEAS.md note on encrypted API key storage; once Vault lands, that supersedes Electron safeStorage as the primary secret backend.
+
+---
+
+### Unevaluated — needs a future brainstorm pass
+
+These were proposed but not talked through. One-line capture so they're not lost.
+
+- **"Files touched this session" panel** *(unevaluated)* — snapshot `git status` at session start, show a panel of files Claude has modified since. Click to open in editor.
+- **Cost / token meter** *(unevaluated — partially absorbed by JSONL tap)* — aggregate $/tokens per session, per environment, per day. JSONL tap provides the data; the aggregation/reporting UI is separate.
+- **Branch-per-session workflow** *(unevaluated)* — auto-create a branch named from the label even without a worktree. Lighter than worktree mode for users who want one branch per task without multiple checkouts.
+- **Worktree group view** *(unevaluated)* — sidebar grouping mode that nests all sessions in worktrees of the same parent repo under a parent-repo header.
+- **Pre-flight checks before session start** *(unevaluated)* — before spawning Claude, validate: API key resolves, working dir exists, git is sane, disk space ok. "Ready to launch" panel with green/red checks.
+- **Broadcast input to N sessions** *(unevaluated)* — select N sessions, type once, keystrokes go to all. Useful for "git pull everywhere" or "update CLAUDE.md across all my repos".
+- **Session linking** *(unevaluated)* — explicitly mark sessions as related (frontend + backend for the same feature). Group visually, switch together with one shortcut, notifications fire as a unit.
+- **Session parking** *(unevaluated)* — snapshot Claude session ID + cwd + scrollback tail, kill the PTY to free RAM/remote-VM resources. "Unpark" relaunches with `--resume`. Lets you keep 30 sessions conceptually open without 30 live PTYs.
+- **Sidebar hover preview** *(unevaluated)* — hovering a session shows the last ~10 lines of its terminal output in a tooltip. Glance without switching.
+- **Command palette (Ctrl+P)** *(unevaluated)* — fuzzy launcher for app actions: new session, switch env, kill all idle, jump to session by label.
+- **Session templates with parameters** *(unevaluated)* — "New session from template" prompts for params (ticket number, branch) and feeds them into label + env vars + initial prompt.
+- **Idle reaper for remote sessions** *(unevaluated)* — auto-stop SSH/Coder sessions after N hours of true idleness. Saves remote VM resources, especially Coder workspaces that bill by uptime.
+- **Time tracking** *(unevaluated)* — aggregate active time per session/env/day. Useful for billing, self-awareness, or a "what did I do this week" view.
+- **CLAUDE.md quick-edit** *(unevaluated)* — small editor pane to tweak the working dir's CLAUDE.md without leaving Tether.
+- **Global hotkey** *(unevaluated)* — Win+`/Cmd+` to summon Tether from anywhere and start a quick session. Spotlight-style.
+
+---
+
 ## Medium-Term
 
 ### Multi-Model & Auth
