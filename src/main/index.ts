@@ -1,10 +1,20 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
+import squirrelStartup from 'electron-squirrel-startup';
 import { registerIpcHandlers } from './ipc/handlers';
 import { sessionManager } from './session/session-manager';
 import { getDb, closeDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
 import { markAllRunningAsStopped } from './db/session-repo';
+
+// Handle Squirrel.Windows lifecycle events (--squirrel-install,
+// --squirrel-firstrun, --squirrel-updated, --squirrel-obsolete,
+// --squirrel-uninstall). Without this, the installer launches the full
+// app UI for every event, producing the "multiple windows that respawn
+// when closed" bug. Must run before any other app initialization.
+if (squirrelStartup) {
+  app.quit();
+}
 
 let mainWindow: BrowserWindow | null = null;
 

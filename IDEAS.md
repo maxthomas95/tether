@@ -148,6 +148,8 @@ Each level can set, override, or inherit from above. A session in the "Productio
 - **Session monitoring dashboard** — overview of all session states, resource usage, uptime
 
 ### Platform & Distribution
+- **Migrate Windows installer from Squirrel to NSIS** — Squirrel.Windows installs silently to a fixed `%LocalAppData%\Tether\` path with no install wizard, no install-location picker, and the awkward green progress popup. Move to NSIS (likely via `electron-builder`, which has mature NSIS + code signing support) to get a real installer wizard with install path selection, per-user vs per-machine choice, shortcut options, and a more standard Windows install experience. Will also pair well with Azure Trusted Signing for SmartScreen trust.
+- **Code sign Windows builds** — Set up Azure Trusted Signing on a personal Microsoft Entra tenant (~$10/mo) to eliminate the SmartScreen "Windows protected your PC" warning. Requires a personal Entra tenant + Azure subscription so the publisher identity is "Max Thomas" / "Thomas Home Company", not a work org.
 - **macOS build** — test and polish on Mac (Cmd key mapping, Keychain for secrets)
 - **Linux build** — AppImage or .deb distribution
 - **Auto-updates** — Electron auto-updater for seamless updates
