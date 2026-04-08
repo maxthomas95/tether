@@ -114,7 +114,9 @@ Each level can set, override, or inherit from above. A session in the "Productio
 
 A batch of ideas raised during a brainstorm session. Items at the top have been talked through and have design notes; items at the bottom are tagged `(unevaluated)` and need a future pass.
 
-### Worktree-aware session creation
+### ~~Worktree-aware session creation~~
+
+**Decided 2026-04-08: Not building.** See [Not Doing](#not-doing) below for the reasoning. Design notes preserved here for reference.
 
 Spawning a new session directly into a fresh git worktree, so each parallel Claude Code session lives on its own branch without polluting the source repo.
 
@@ -310,6 +312,27 @@ These were proposed but not talked through. One-line capture so they're not lost
 - **Session log storage** — persist terminal output to disk for search and replay
 - **Plugin system** — allow third-party transport adapters (Kubernetes, cloud VMs, etc.)
 - **Multi-window support** — detach a session into its own window
+
+---
+
+## Not Doing
+
+Things explicitly decided against, with the reasoning. Different from "Unevaluated" (no decision yet) — these have been thought through and rejected. Listed here so future-me doesn't relitigate the same decision.
+
+### Worktree-aware session creation — 2026-04-08
+
+**Decision:** Don't build a dedicated worktree feature. Just ask Claude in-session to set up a worktree when one is needed.
+
+**Why:**
+- **Lifecycle surface area is bigger than the value.** Building this right means handling: indexer thrash from `.worktrees/` subfolders (ripgrep, LSPs, file watchers all double-count and git's `info/exclude` doesn't help them), merge conflicts on close, empty branches with nothing to merge, push failures, the PTY-still-alive-when-pruning ordering gotcha, and re-opening unmerged worktrees later. Each one is small; together they're a real maintenance footprint.
+- **Claude Code already handles git well.** "Hey, set up a worktree at X based on Y, other Claudes are working in this repo" gets ~70% of the value with 0% of the maintenance, and Claude handles per-repo conventions and conflict resolution contextually rather than via a dialog box.
+- **Tether already sets cwd at session creation**, so the cwd-bootstrap argument doesn't apply — there's no Tether-only capability gap that this feature would close.
+- **Single-user project.** The discoverability argument (a checkbox that teaches the workflow) doesn't apply when the user already knows the workflow exists.
+- **Remaining friction is tiny.** One sentence of preamble per session, occasionally.
+
+**What to do instead:** Ask Claude in-session. The `feedback_worktrees.md` and `feedback_worktree_workflow.md` memories already capture the user's preferences (subfolder location, merge over squash, merge back to main and push, don't leave as a separate branch).
+
+**Reconsider if:** Tether grows multiple users (discoverability matters again), OR worktree spawning becomes a daily action rather than occasional (friction adds up), OR remote (SSH/Coder) worktree workflows become valuable enough that consistency across environments justifies the code.
 
 ---
 

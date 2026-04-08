@@ -14,6 +14,7 @@ export const IPC = {
   ENV_DELETE: 'environment:delete',
   WORKSPACE_SAVE: 'workspace:save',
   WORKSPACE_LOAD: 'workspace:load',
+  TRANSCRIPTS_LIST: 'transcripts:list',
   DIALOG_OPEN_DIRECTORY: 'dialog:open-directory',
   SCAN_REPOS_DIR: 'scan:repos-dir',
   CONFIG_GET: 'config:get',

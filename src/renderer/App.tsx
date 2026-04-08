@@ -3,11 +3,13 @@ import { TerminalPanel } from './components/TerminalPanel';
 import { RepoGroup } from './components/sidebar/RepoGroup';
 import { NewSessionDialog } from './components/sidebar/NewSessionDialog';
 import { NewEnvironmentDialog } from './components/sidebar/NewEnvironmentDialog';
+import { ResumeChatDialog } from './components/sidebar/ResumeChatDialog';
 import { SidebarResizeHandle } from './components/sidebar/SidebarResizeHandle';
 import { SettingsDialog } from './components/SettingsDialog';
 import { MenuBar } from './components/MenuBar';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { AboutDialog } from './components/AboutDialog';
+import { Notifications, useNotifications } from './components/Notifications';
 import { useTerminalManager } from './hooks/useTerminalManager';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTheme } from './hooks/useTheme';
@@ -27,8 +29,42 @@ export function App() {
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [showResumeBadge, setShowResumeBadge] = useState(false);
+  const [enableResumePicker, setEnableResumePicker] = useState(true);
+  const [resumePickerFor, setResumePickerFor] = useState<{ sessionId: string; workingDir: string; currentTranscriptId?: string } | null>(null);
   const { themeName, setTheme, xtermTheme } = useTheme();
   const termManager = useTerminalManager(xtermTheme);
+  const { notifications, notify, dismiss } = useNotifications();
+
+  // Load resume-related UI settings; re-read whenever the Settings dialog closes
+  // so toggles take effect without a relaunch.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
+      window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
+    ]).then(([badge, picker]) => {
+      if (cancelled) return;
+      setShowResumeBadge(badge === 'true');
+      setEnableResumePicker(picker !== 'false');
+    });
+    return () => { cancelled = true; };
+  }, [settingsOpen]);
+
+  // Load resume-related UI settings; re-read whenever the Settings dialog closes
+  // so toggles take effect without a relaunch.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
+      window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
+    ]).then(([badge, picker]) => {
+      if (cancelled) return;
+      setShowResumeBadge(badge === 'true');
+      setEnableResumePicker(picker !== 'false');
+    });
+    return () => { cancelled = true; };
+  }, [settingsOpen]);
 
   // Load environments on mount, then restore workspace
   useEffect(() => {
@@ -40,6 +76,10 @@ export function App() {
       // Check if restore is enabled (default: true)
       const restoreSetting = await window.electronAPI.config.get?.('restoreOnLaunch');
       if (restoreSetting === 'false') return;
+
+      // Resume previous chats by default; opt out via setting.
+      const resumeSetting = await window.electronAPI.config.get?.('resumePreviousChats');
+      const resumeChats = resumeSetting !== 'false';
 
       // Load saved workspace
       const workspace = await window.electronAPI.workspace?.load?.();
@@ -53,6 +93,7 @@ export function App() {
             workingDir: saved.workingDir,
             label: saved.label || undefined,
             environmentId: saved.environmentId,
+            resumeClaudeSessionId: resumeChats ? saved.claudeSessionId : undefined,
           });
           if (!mounted) return;
           termManager.getOrCreate(session.id);
@@ -78,6 +119,7 @@ export function App() {
             workingDir: s.workingDir,
             label: s.label,
             environmentId: s.environmentId || undefined,
+            claudeSessionId: s.claudeSessionId,
           })),
           Math.max(0, activeIndex),
         );
@@ -109,16 +151,21 @@ export function App() {
     }
   }, [activeSessionId, termManager]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[]) => {
+  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string) => {
     try {
-      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, env, cliArgs });
+      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, env, cliArgs, resumeClaudeSessionId });
       termManager.getOrCreate(session.id);
       setSessions(prev => [...prev, session]);
       setActiveSessionId(session.id);
     } catch (err) {
       console.error('Failed to create session:', err);
+      notify({
+        type: 'error',
+        title: 'Failed to create session',
+        message: extractErrorMessage(err),
+      });
     }
-  }, [termManager]);
+  }, [termManager, notify]);
 
   const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
     try {
@@ -126,8 +173,13 @@ export function App() {
       setEnvironments(prev => [...prev, env]);
     } catch (err) {
       console.error('Failed to create environment:', err);
+      notify({
+        type: 'error',
+        title: 'Failed to create environment',
+        message: extractErrorMessage(err),
+      });
     }
-  }, []);
+  }, [notify]);
 
   const handleStop = useCallback(async (id: string) => {
     await window.electronAPI.session.stop(id);
@@ -168,6 +220,30 @@ export function App() {
     if (!source) return;
     handleCreateSession(source.workingDir, '', source.environmentId || undefined);
   }, [sessions, handleCreateSession]);
+
+  const handleOpenResumePicker = useCallback((id: string) => {
+    const source = sessions.find(s => s.id === id);
+    if (!source) return;
+    setResumePickerFor({
+      sessionId: id,
+      workingDir: source.workingDir,
+      currentTranscriptId: source.claudeSessionId,
+    });
+  }, [sessions]);
+
+  const handlePickResume = useCallback((transcriptId: string) => {
+    if (!resumePickerFor) return;
+    const source = sessions.find(s => s.id === resumePickerFor.sessionId);
+    if (!source) return;
+    handleCreateSession(
+      source.workingDir,
+      '',
+      source.environmentId || undefined,
+      undefined,
+      undefined,
+      transcriptId,
+    );
+  }, [resumePickerFor, sessions, handleCreateSession]);
 
   const toggleGroup = useCallback((envId: string) => {
     setCollapsedGroups(prev => {
@@ -338,6 +414,8 @@ export function App() {
                         onRename={handleRename}
                         onRemove={handleRemove}
                         onDuplicate={handleDuplicate}
+                        onResumePrevious={enableResumePicker ? handleOpenResumePicker : undefined}
+                        showResumeBadge={showResumeBadge}
                       />
                     ));
                   })()
@@ -405,8 +483,29 @@ export function App() {
         isOpen={aboutOpen}
         onClose={() => setAboutOpen(false)}
       />
+      {resumePickerFor && (
+        <ResumeChatDialog
+          isOpen={true}
+          workingDir={resumePickerFor.workingDir}
+          currentTranscriptId={resumePickerFor.currentTranscriptId}
+          onClose={() => setResumePickerFor(null)}
+          onPick={handlePickResume}
+        />
+      )}
+      <Notifications notifications={notifications} onDismiss={dismiss} />
     </div>
   );
+}
+
+/**
+ * Pull a readable error message out of whatever the IPC layer threw.
+ * Electron wraps remote errors as "Error invoking remote method 'X': Error: <real>"
+ * — strip the wrapper so the toast shows the actual cause.
+ */
+function extractErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const match = raw.match(/Error invoking remote method '[^']+':\s*(?:Error:\s*)?(.*)$/s);
+  return match ? match[1].trim() : raw;
 }
 
 function getStatusClass(state: SessionState): string {

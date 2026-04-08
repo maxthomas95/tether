@@ -12,6 +12,8 @@ interface RepoGroupProps {
   onRename: (id: string, label: string) => void;
   onRemove: (id: string) => void;
   onDuplicate: (id: string) => void;
+  onResumePrevious?: (id: string) => void;
+  showResumeBadge?: boolean;
 }
 
 export function RepoGroup({
@@ -24,6 +26,8 @@ export function RepoGroup({
   onRename,
   onRemove,
   onDuplicate,
+  onResumePrevious,
+  showResumeBadge,
 }: RepoGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -39,6 +43,8 @@ export function RepoGroup({
         onRename={(label) => onRename(sessions[0].id, label)}
         onRemove={() => onRemove(sessions[0].id)}
         onDuplicate={() => onDuplicate(sessions[0].id)}
+        onResumePrevious={onResumePrevious ? () => onResumePrevious(sessions[0].id) : undefined}
+        showResumeBadge={showResumeBadge}
       />
     );
   }
@@ -77,6 +83,8 @@ export function RepoGroup({
           onRename={(label) => onRename(session.id, label)}
           onRemove={() => onRemove(session.id)}
           onDuplicate={() => onDuplicate(session.id)}
+          onResumePrevious={onResumePrevious ? () => onResumePrevious(session.id) : undefined}
+          showResumeBadge={showResumeBadge}
           nested
         />
       ))}

@@ -7,12 +7,13 @@ import type { SSHConfig } from '../transport/ssh-transport';
 import { statusDetector } from '../status/status-detector';
 import { getEnvironment } from '../db/environment-repo';
 import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
+import { transcriptExists } from '../claude/transcripts';
 import type { SessionState, SessionInfo, CreateSessionOptions } from '../../shared/types';
 
 export interface SessionCallbacks {
-  onData(data: string): void;
-  onStateChange(state: SessionState): void;
-  onExit(exitCode: number): void;
+  onData(sessionId: string, data: string): void;
+  onStateChange(sessionId: string, state: SessionState): void;
+  onExit(sessionId: string, exitCode: number): void;
 }
 
 export class Session {
@@ -23,6 +24,10 @@ export class Session {
   readonly createdAt: string;
   state: SessionState = 'starting';
   transport: SessionTransport | null = null;
+  /** UUID we passed to `claude --session-id` (or `--resume`). */
+  claudeSessionId: string | null = null;
+  /** True when this session was launched via `--resume`. */
+  resumed = false;
 
   constructor(id: string, label: string, workingDir: string, environmentId?: string) {
     this.id = id;
@@ -40,6 +45,8 @@ export class Session {
       workingDir: this.workingDir,
       state: this.state,
       createdAt: this.createdAt,
+      claudeSessionId: this.claudeSessionId || undefined,
+      resumed: this.resumed || undefined,
     };
   }
 }
@@ -84,7 +91,7 @@ class SessionManager {
       const session = this.sessions.get(sessionId);
       if (session) {
         session.state = state;
-        this.callbacksMap.get(sessionId)?.onStateChange(state);
+        this.callbacksMap.get(sessionId)?.onStateChange(sessionId, state);
       }
     });
   }
@@ -116,14 +123,14 @@ class SessionManager {
 
     transport.onData((data: string) => {
       statusDetector.feedData(id, data);
-      callbacks.onData(data);
+      callbacks.onData(id, data);
     });
 
     transport.onExit(({ exitCode }) => {
       if (!session.transport) return;
       statusDetector.markExited(id, exitCode);
       session.transport = null;
-      callbacks.onExit(exitCode);
+      callbacks.onExit(id, exitCode);
     });
 
     // Resolve env var cascade: app defaults -> environment -> session override
@@ -158,12 +165,32 @@ class SessionManager {
     const appCliFlags = getDb().defaultCliFlags || [];
     const resolvedCliArgs = [...appCliFlags, ...(opts.cliArgs || [])];
 
+    // Decide on the Claude session UUID. We only manage this for local
+    // sessions — SSH/Coder transports don't currently understand the flag and
+    // we can't safely verify the remote JSONL exists before resuming.
+    let claudeSessionId: string | undefined;
+    let resumeId: string | undefined;
+    if (transport instanceof LocalTransport) {
+      if (opts.resumeClaudeSessionId && transcriptExists(opts.workingDir, opts.resumeClaudeSessionId)) {
+        // Resume the existing transcript and reuse the same id going forward.
+        resumeId = opts.resumeClaudeSessionId;
+        claudeSessionId = opts.resumeClaudeSessionId;
+        session.resumed = true;
+      } else {
+        // Fresh session — pin a new id so we can resume it next launch.
+        claudeSessionId = uuidv4();
+      }
+      session.claudeSessionId = claudeSessionId;
+    }
+
     await transport.start({
       workingDir: opts.workingDir,
       env: resolvedEnv,
       cols: 120,
       rows: 30,
       cliArgs: resolvedCliArgs.length > 0 ? resolvedCliArgs : undefined,
+      claudeSessionId,
+      resumeClaudeSessionId: resumeId,
     });
 
     return session;

@@ -4,6 +4,16 @@ export interface TransportStartOptions {
   cols: number;
   rows: number;
   cliArgs?: string[];
+  /**
+   * Pin a Claude session UUID via `--session-id`. Used on first launch so we
+   * can resume the same conversation later.
+   */
+  claudeSessionId?: string;
+  /**
+   * Resume an existing Claude conversation via `--resume <id>`. When set,
+   * `--session-id` is omitted (the two flags are mutually exclusive).
+   */
+  resumeClaudeSessionId?: string;
 }
 
 export interface TransportExitInfo {

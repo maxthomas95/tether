@@ -22,31 +22,45 @@ const config: ForgeConfig = {
     onlyModules: [],
   },
   hooks: {
-    // Copy native module node_modules into the packaged app before ASAR creation
+    // Copy externalized node_modules (and their full transitive dep graphs)
+    // into the packaged app before ASAR creation. Vite externalizes node-pty
+    // and ssh2 (see vite.main.config.ts) so they aren't bundled — without
+    // this hook they'd be missing from the asar entirely. We walk each
+    // module's package.json recursively so adding/removing transitive deps
+    // upstream doesn't silently break the build (e.g. ssh2 -> asn1 ->
+    // safer-buffer was missed by the previous hardcoded list, breaking SSH
+    // sessions in v0.1.3).
     packageAfterCopy: async (_config, buildPath) => {
       const nodeModulesPath = path.join(buildPath, 'node_modules');
-
-      // Ensure node_modules dir exists in the build
       if (!fs.existsSync(nodeModulesPath)) {
         fs.mkdirSync(nodeModulesPath, { recursive: true });
       }
 
-      // Copy native modules that Vite marks as external
       const externalModules = ['node-pty', 'ssh2'];
       const srcModules = path.resolve(__dirname, 'node_modules');
 
-      for (const mod of externalModules) {
-        const src = path.join(srcModules, mod);
-        const dest = path.join(nodeModulesPath, mod);
-        if (fs.existsSync(src) && !fs.existsSync(dest)) {
-          fs.cpSync(src, dest, { recursive: true });
+      // Recursively collect a module + every dep listed in its package.json
+      // (dependencies and optionalDependencies). Assumes a flat node_modules
+      // layout, which is what npm 7+ produces for this project.
+      const collect = (name: string, seen: Set<string>): void => {
+        if (seen.has(name)) return;
+        const pkgPath = path.join(srcModules, name, 'package.json');
+        if (!fs.existsSync(pkgPath)) return;
+        seen.add(name);
+        let pkg: { dependencies?: Record<string, string>; optionalDependencies?: Record<string, string> };
+        try {
+          pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        } catch {
+          return;
         }
-      }
+        const deps = { ...(pkg.dependencies || {}), ...(pkg.optionalDependencies || {}) };
+        for (const dep of Object.keys(deps)) collect(dep, seen);
+      };
 
-      // Also copy transitive native deps (bindings, node-addon-api, etc.)
-      const transitiveDeps = ['bindings', 'node-addon-api', 'file-uri-to-path',
-        'cpu-features', 'nan', 'prebuild-install', 'detect-libc'];
-      for (const mod of transitiveDeps) {
+      const toCopy = new Set<string>();
+      for (const mod of externalModules) collect(mod, toCopy);
+
+      for (const mod of toCopy) {
         const src = path.join(srcModules, mod);
         const dest = path.join(nodeModulesPath, mod);
         if (fs.existsSync(src) && !fs.existsSync(dest)) {

@@ -72,16 +72,20 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // === Session handlers ===
 
   ipcMain.handle(IPC.SESSION_CREATE, async (_event, opts: CreateSessionOptions) => {
+    // Callbacks receive sessionId as their first arg — do NOT close over the
+    // `session` const below. SSH transports can emit data events between
+    // `transport.start()` resolving and the `await` unblocking, which would
+    // hit the temporal dead zone on the const binding (v0.1.3 SSH crash).
     const session = await sessionManager.createSession(opts, {
-      onData(data: string) {
-        send(IPC.SESSION_DATA, session.id, data);
+      onData(sessionId, data) {
+        send(IPC.SESSION_DATA, sessionId, data);
       },
-      onStateChange(state) {
-        send(IPC.SESSION_STATE_CHANGE, session.id, state);
-        sessionRepo.updateSessionState(session.id, state);
+      onStateChange(sessionId, state) {
+        send(IPC.SESSION_STATE_CHANGE, sessionId, state);
+        sessionRepo.updateSessionState(sessionId, state);
       },
-      onExit(exitCode) {
-        send(IPC.SESSION_EXITED, session.id, exitCode);
+      onExit(sessionId, exitCode) {
+        send(IPC.SESSION_EXITED, sessionId, exitCode);
       },
     });
 
@@ -224,7 +228,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // === Workspace save/restore ===
 
-  ipcMain.handle(IPC.WORKSPACE_SAVE, async (_event, sessions: Array<{ workingDir: string; label: string; environmentId?: string }>, activeIndex: number) => {
+  ipcMain.handle(IPC.WORKSPACE_SAVE, async (_event, sessions: Array<{ workingDir: string; label: string; environmentId?: string; claudeSessionId?: string }>, activeIndex: number) => {
     const { getDb, saveDb } = await import('../db/database');
     getDb().savedWorkspace = { sessions, activeIndex };
     saveDb();
@@ -233,6 +237,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.WORKSPACE_LOAD, async () => {
     const { getDb } = await import('../db/database');
     return getDb().savedWorkspace;
+  });
+
+  ipcMain.handle(IPC.TRANSCRIPTS_LIST, async (_event, workingDir: string) => {
+    const { listTranscripts } = await import('../claude/transcripts');
+    return listTranscripts(workingDir);
   });
 
   // === Titlebar overlay ===

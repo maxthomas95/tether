@@ -6,6 +6,8 @@ export interface SavedSession {
   workingDir: string;
   label: string;
   environmentId?: string;
+  /** UUID of the Claude conversation to resume on next launch. */
+  claudeSessionId?: string;
 }
 
 export interface SavedWorkspace {

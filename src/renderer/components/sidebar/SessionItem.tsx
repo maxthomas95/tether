@@ -10,10 +10,14 @@ interface SessionItemProps {
   onRename: (label: string) => void;
   onRemove: () => void;
   onDuplicate: () => void;
+  /** When provided, the context menu shows "Resume previous chat…". */
+  onResumePrevious?: () => void;
+  /** When true, render a small ↻ marker for sessions launched via resume. */
+  showResumeBadge?: boolean;
   nested?: boolean;
 }
 
-export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, nested }: SessionItemProps) {
+export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, nested }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
@@ -76,7 +80,17 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
           />
         ) : (
           <>
-            <span className="session-label">{session.label}</span>
+            <span className="session-label">
+              {session.label}
+              {showResumeBadge && session.resumed && (
+                <span
+                  title="Resumed from a previous chat"
+                  style={{ marginLeft: 6, opacity: 0.7, fontSize: 11 }}
+                >
+                  ↻
+                </span>
+              )}
+            </span>
             <span className="session-path">{abbreviatePath(session.workingDir)}</span>
           </>
         )}
@@ -90,6 +104,11 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
           <div className="context-menu-item" onClick={() => { setShowMenu(false); onDuplicate(); }}>
             Duplicate
           </div>
+          {onResumePrevious && (
+            <div className="context-menu-item" onClick={() => { setShowMenu(false); onResumePrevious(); }}>
+              Resume previous chat…
+            </div>
+          )}
           {isAlive && (
             <div className="context-menu-item" onClick={() => { setShowMenu(false); onStop(); }}>
               Stop

@@ -36,6 +36,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [cliFlags, setCliFlags] = useState<string[]>([]);
   const [customFlag, setCustomFlag] = useState('');
   const [restoreOnLaunch, setRestoreOnLaunch] = useState(true);
+  const [resumePreviousChats, setResumePreviousChats] = useState(true);
+  const [showResumeBadge, setShowResumeBadge] = useState(false);
+  const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [loaded, setLoaded] = useState(false);
 
   // Git provider state
@@ -64,10 +67,16 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       window.electronAPI.config.getDefaultEnvVars?.()?.catch(() => ({})),
       window.electronAPI.config.get?.('restoreOnLaunch')?.catch(() => null),
       window.electronAPI.config.getDefaultCliFlags?.()?.catch(() => []),
-    ]).then(([vars, restore, flags]) => {
+      window.electronAPI.config.get?.('resumePreviousChats')?.catch(() => null),
+      window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
+      window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
+    ]).then(([vars, restore, flags, resumeChats, badge, picker]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlags(flags || []);
+      setResumePreviousChats(resumeChats !== 'false');
+      setShowResumeBadge(badge === 'true');
+      setEnableResumePicker(picker !== 'false');
       setLoaded(true);
     });
     window.electronAPI.gitProvider.list().then(setGitProviders).catch(() => {});
@@ -84,10 +93,13 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const handleSave = useCallback(async () => {
     await window.electronAPI.config.setDefaultEnvVars?.(envVars);
     await window.electronAPI.config.set?.('restoreOnLaunch', restoreOnLaunch ? 'true' : 'false');
+    await window.electronAPI.config.set?.('resumePreviousChats', resumePreviousChats ? 'true' : 'false');
+    await window.electronAPI.config.set?.('showResumeBadge', showResumeBadge ? 'true' : 'false');
+    await window.electronAPI.config.set?.('enableResumePicker', enableResumePicker ? 'true' : 'false');
     await window.electronAPI.config.setDefaultCliFlags?.(cliFlags);
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, cliFlags, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, cliFlags, vaultConfig, onClose]);
 
   const handleVaultLogin = async () => {
     setVaultLoginError(null);
@@ -201,6 +213,47 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
             <p className="form-hint">
               Automatically reopen your sessions when Tether starts.
             </p>
+
+            <div style={{ marginLeft: 22, marginTop: 8, opacity: restoreOnLaunch ? 1 : 0.5 }}>
+              <label className="form-radio-label">
+                <input
+                  type="checkbox"
+                  checked={resumePreviousChats}
+                  disabled={!restoreOnLaunch}
+                  onChange={e => setResumePreviousChats(e.target.checked)}
+                />
+                Resume previous chats
+              </label>
+              <p className="form-hint">
+                Reopen the same Claude conversation each session was on, instead of starting fresh.
+                Local sessions only; SSH sessions always start fresh.
+              </p>
+
+              <label className="form-radio-label" style={{ marginTop: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={showResumeBadge}
+                  disabled={!restoreOnLaunch || !resumePreviousChats}
+                  onChange={e => setShowResumeBadge(e.target.checked)}
+                />
+                Show a badge on resumed sessions
+              </label>
+              <p className="form-hint">
+                Adds a small ↻ marker next to sessions that were resumed from a prior chat.
+              </p>
+
+              <label className="form-radio-label" style={{ marginTop: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={enableResumePicker}
+                  onChange={e => setEnableResumePicker(e.target.checked)}
+                />
+                Enable &ldquo;Resume previous chat…&rdquo; in the right-click menu
+              </label>
+              <p className="form-hint">
+                Lets you manually pick an older Claude conversation for a session&rsquo;s working directory.
+              </p>
+            </div>
           </div>
 
           <div className="form-group" style={{ marginTop: 20 }}>

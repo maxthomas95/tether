@@ -90,6 +90,10 @@ export interface SessionInfo {
   state: SessionState;
   pid?: number;
   createdAt: string;
+  /** UUID passed to `claude --session-id`; used by `--resume` next launch. */
+  claudeSessionId?: string;
+  /** True if this session was started by resuming a prior Claude transcript. */
+  resumed?: boolean;
 }
 
 export interface CreateSessionOptions {
@@ -98,6 +102,17 @@ export interface CreateSessionOptions {
   environmentId?: string;
   env?: Record<string, string>;
   cliArgs?: string[];
+  /** When set, launch claude with `--resume <id>` instead of `--session-id <new>`. */
+  resumeClaudeSessionId?: string;
+}
+
+export interface TranscriptInfo {
+  /** Claude session UUID — also the JSONL filename stem. */
+  id: string;
+  /** Last-modified timestamp of the JSONL file (ISO). */
+  mtime: string;
+  /** First user prompt from the transcript, truncated. Empty if not found. */
+  preview: string;
 }
 
 export interface CreateEnvironmentOptions {
@@ -149,8 +164,11 @@ export interface TetherAPI {
     writeText(text: string): void;
   };
   workspace: {
-    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string }>, activeIndex: number): Promise<void>;
-    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string }>; activeIndex: number } | null>;
+    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; claudeSessionId?: string }>, activeIndex: number): Promise<void>;
+    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; claudeSessionId?: string }>; activeIndex: number } | null>;
+  };
+  transcripts: {
+    list(workingDir: string): Promise<TranscriptInfo[]>;
   };
   gitProvider: {
     list(): Promise<GitProviderInfo[]>;
