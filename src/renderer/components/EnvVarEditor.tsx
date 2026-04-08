@@ -13,12 +13,16 @@ const CLAUDE_PRESETS = [
 ];
 
 const SENSITIVE_PATTERNS = /key|secret|token|password/i;
+const VAULT_REF_PREFIX = 'vault://';
+const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
 
 interface EnvVarEditorProps {
   vars: Record<string, string>;
   onChange: (vars: Record<string, string>) => void;
   inheritedVars?: Record<string, string>;
   compact?: boolean;
+  /** When true, sensitive rows show a "Vault" toggle that switches the value field to a vault://... ref input. */
+  vaultEnabled?: boolean;
 }
 
 interface VarRow {
@@ -41,10 +45,11 @@ function toRecord(rows: VarRow[]): Record<string, string> {
   return result;
 }
 
-export function EnvVarEditor({ vars, onChange, inheritedVars, compact }: EnvVarEditorProps) {
+export function EnvVarEditor({ vars, onChange, inheritedVars, compact, vaultEnabled }: EnvVarEditorProps) {
   const [rows, setRows] = useState<VarRow[]>(() => toRows(vars));
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [showPresets, setShowPresets] = useState(false);
+  const [vaultTestResult, setVaultTestResult] = useState<Record<number, { ok: boolean; error?: string }>>({});
 
   const update = useCallback((newRows: VarRow[]) => {
     setRows(newRows);
@@ -86,6 +91,23 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact }: EnvVarE
   const isSensitive = (key: string) => SENSITIVE_PATTERNS.test(key);
   const existingKeys = new Set(rows.map(r => r.key));
 
+  const toggleVaultMode = useCallback((id: number) => {
+    const row = rows.find(r => r.id === id);
+    if (!row) return;
+    // Toggle: if currently a vault ref, clear it. Otherwise, seed with the prefix.
+    const newValue = isVaultRef(row.value) ? '' : VAULT_REF_PREFIX;
+    update(rows.map(r => r.id === id ? { ...r, value: newValue } : r));
+    setVaultTestResult(prev => { const next = { ...prev }; delete next[id]; return next; });
+  }, [rows, update]);
+
+  const testVaultRef = useCallback(async (id: number) => {
+    const row = rows.find(r => r.id === id);
+    if (!row || !isVaultRef(row.value)) return;
+    setVaultTestResult(prev => ({ ...prev, [id]: { ok: false, error: 'Testing...' } }));
+    const result = await window.electronAPI.vault.testRef(row.value);
+    setVaultTestResult(prev => ({ ...prev, [id]: result }));
+  }, [rows]);
+
   return (
     <div className={`env-editor ${compact ? 'env-editor--compact' : ''}`}>
       {/* Inherited vars */}
@@ -114,41 +136,81 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact }: EnvVarE
       )}
 
       {/* Editable rows */}
-      {rows.map(row => (
-        <div key={row.id} className="env-editor-row">
-          <input
-            className="form-input env-editor-key"
-            value={row.key}
-            onChange={e => updateRow(row.id, 'key', e.target.value)}
-            placeholder="VAR_NAME"
-          />
-          <div className="env-editor-value-wrap">
-            <input
-              className="form-input env-editor-value"
-              type={isSensitive(row.key) && !revealed.has(row.id) ? 'password' : 'text'}
-              value={row.value}
-              onChange={e => updateRow(row.id, 'value', e.target.value)}
-              placeholder="value"
-            />
-            {isSensitive(row.key) && (
+      {rows.map(row => {
+        const sensitive = isSensitive(row.key);
+        const vaultMode = isVaultRef(row.value);
+        const showVaultToggle = vaultEnabled && sensitive;
+        const testResult = vaultTestResult[row.id];
+        return (
+          <div key={row.id}>
+            <div className="env-editor-row">
+              <input
+                className="form-input env-editor-key"
+                value={row.key}
+                onChange={e => updateRow(row.id, 'key', e.target.value)}
+                placeholder="VAR_NAME"
+              />
+              <div className="env-editor-value-wrap">
+                <input
+                  className="form-input env-editor-value"
+                  type={vaultMode ? 'text' : (sensitive && !revealed.has(row.id) ? 'password' : 'text')}
+                  value={row.value}
+                  onChange={e => updateRow(row.id, 'value', e.target.value)}
+                  placeholder={vaultMode ? 'vault://secret/path#key' : 'value'}
+                  spellCheck={false}
+                />
+                {sensitive && !vaultMode && (
+                  <button
+                    className="env-editor-reveal"
+                    onClick={() => toggleReveal(row.id)}
+                    title={revealed.has(row.id) ? 'Hide' : 'Show'}
+                  >
+                    {revealed.has(row.id) ? '\u25C9' : '\u25CE'}
+                  </button>
+                )}
+              </div>
+              {showVaultToggle && (
+                <button
+                  className="env-editor-btn"
+                  onClick={() => toggleVaultMode(row.id)}
+                  title={vaultMode ? 'Switch to literal value' : 'Source from Vault'}
+                  style={vaultMode ? { background: 'var(--accent)', color: 'var(--btn-primary-text)' } : undefined}
+                >
+                  Vault
+                </button>
+              )}
+              {vaultMode && (
+                <button
+                  className="env-editor-btn"
+                  onClick={() => testVaultRef(row.id)}
+                  title="Test resolution"
+                >
+                  Test
+                </button>
+              )}
               <button
-                className="env-editor-reveal"
-                onClick={() => toggleReveal(row.id)}
-                title={revealed.has(row.id) ? 'Hide' : 'Show'}
+                className="env-editor-btn env-editor-btn--remove"
+                onClick={() => removeRow(row.id)}
+                title="Remove"
               >
-                {revealed.has(row.id) ? '\u25C9' : '\u25CE'}
+                &times;
               </button>
+            </div>
+            {testResult && (
+              <div
+                className="form-hint"
+                style={{
+                  marginLeft: 4,
+                  marginTop: 2,
+                  color: testResult.ok ? 'var(--status-running)' : 'var(--status-dead)',
+                }}
+              >
+                {testResult.ok ? '\u2713 Resolved' : (testResult.error || 'Failed')}
+              </div>
             )}
           </div>
-          <button
-            className="env-editor-btn env-editor-btn--remove"
-            onClick={() => removeRow(row.id)}
-            title="Remove"
-          >
-            &times;
-          </button>
-        </div>
-      ))}
+        );
+      })}
 
       {/* Actions */}
       <div className="env-editor-actions">

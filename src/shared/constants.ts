@@ -35,9 +35,21 @@ export const IPC = {
   GIT_CLONE: 'git:clone',
   GIT_INIT: 'git:init',
 
+  // Vault
+  VAULT_GET_CONFIG: 'vault:get-config',
+  VAULT_SET_CONFIG: 'vault:set-config',
+  VAULT_LOGIN: 'vault:login',
+  VAULT_LOGOUT: 'vault:logout',
+  VAULT_STATUS: 'vault:status',
+  VAULT_TEST_REF: 'vault:test-ref',
+  VAULT_LIST_KEYS: 'vault:list-keys',
+  VAULT_MIGRATE_SECRET: 'vault:migrate-secret',
+  VAULT_LIST_PLAINTEXT: 'vault:list-plaintext',
+
   // Main -> Renderer
   SESSION_DATA: 'session:data',
   SESSION_STATE_CHANGE: 'session:state-change',
   SESSION_EXITED: 'session:exited',
   GIT_CLONE_PROGRESS: 'git:clone-progress',
+  VAULT_STATUS_CHANGED: 'vault:status-changed',
 } as const;

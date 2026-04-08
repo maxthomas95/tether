@@ -2,6 +2,42 @@ export type SessionState = 'starting' | 'running' | 'waiting' | 'idle' | 'stoppe
 export type EnvironmentType = 'local' | 'ssh' | 'coder';
 export type GitProviderType = 'gitea' | 'ado';
 
+export interface VaultConfig {
+  enabled: boolean;
+  addr: string;
+  role: string;
+  mount: string;
+  namespace?: string;
+}
+
+export interface VaultStatus {
+  enabled: boolean;
+  loggedIn: boolean;
+  identity?: string;
+  expiresAt?: string;
+}
+
+export interface VaultPlaintextSecret {
+  source: 'sshPassword' | 'gitProvider' | 'envVar' | 'envEnvVar';
+  // For sshPassword/envEnvVar: the environment id
+  // For gitProvider: the provider id
+  // For envVar (default): empty
+  sourceId?: string;
+  // For envVar/envEnvVar: the env var key
+  key?: string;
+  // Display name for UI
+  displayName: string;
+  // Suggested vault ref for the migration UI
+  suggestedRef: string;
+}
+
+export interface MigrateSecretOptions {
+  source: VaultPlaintextSecret['source'];
+  sourceId?: string;
+  key?: string;
+  targetRef: string;
+}
+
 export interface GitProviderInfo {
   id: string;
   name: string;
@@ -9,6 +45,10 @@ export interface GitProviderInfo {
   baseUrl: string;
   organization?: string;
   hasToken: boolean;
+  /** When true, the stored token is a `vault://...` reference, not a literal secret. */
+  tokenIsVaultRef?: boolean;
+  /** The vault reference itself (only set when tokenIsVaultRef is true). Safe to show in UI. */
+  tokenVaultRef?: string;
 }
 
 export interface GitRepoInfo {
@@ -124,6 +164,18 @@ export interface TetherAPI {
     clone(url: string, destination: string): Promise<string>;
     init(directory: string): Promise<string>;
     onCloneProgress(cb: (info: CloneProgressInfo) => void): () => void;
+  };
+  vault: {
+    getConfig(): Promise<VaultConfig>;
+    setConfig(config: VaultConfig): Promise<void>;
+    login(): Promise<VaultStatus>;
+    logout(): Promise<void>;
+    status(): Promise<VaultStatus>;
+    testRef(ref: string): Promise<{ ok: boolean; error?: string }>;
+    listKeys(mount: string, path: string): Promise<string[]>;
+    listPlaintext(): Promise<VaultPlaintextSecret[]>;
+    migrateSecret(opts: MigrateSecretOptions): Promise<void>;
+    onStatusChange(cb: (status: VaultStatus) => void): () => void;
   };
 }
 

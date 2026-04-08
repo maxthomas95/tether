@@ -31,7 +31,6 @@ export function createEnvironment(input: CreateEnvironmentInput): EnvironmentRow
     config: JSON.stringify(input.config || {}),
     env_vars: JSON.stringify(input.envVars || {}),
     auth_mode: input.auth_mode || null,
-    api_key_enc: null,
     model: input.model || null,
     small_model: input.small_model || null,
     sort_order: 0,

@@ -1,13 +1,28 @@
 import { useState, useEffect, useCallback } from 'react';
 import { EnvVarEditor } from './EnvVarEditor';
+import { MigrateToVaultDialog } from './MigrateToVaultDialog';
 import { themeList } from '../styles/themes';
-import type { GitProviderInfo, GitProviderType } from '../../shared/types';
+import type { GitProviderInfo, GitProviderType, VaultConfig, VaultStatus } from '../../shared/types';
 
 const COMMON_FLAGS = [
   { flag: '--dangerously-skip-permissions', label: 'Skip permission prompts' },
   { flag: '--verbose', label: 'Verbose output' },
   { flag: '--no-telemetry', label: 'Disable telemetry' },
 ];
+
+const VAULT_REF_PREFIX = 'vault://';
+
+function formatExpiry(expiresAt?: string): string {
+  if (!expiresAt) return '';
+  const ms = Date.parse(expiresAt) - Date.now();
+  if (!Number.isFinite(ms)) return expiresAt;
+  if (ms <= 0) return 'expired';
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `in ${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `in ${hours}h`;
+  return `in ${Math.round(hours / 24)}d`;
+}
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -31,7 +46,17 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [newProviderUrl, setNewProviderUrl] = useState('');
   const [newProviderOrg, setNewProviderOrg] = useState('');
   const [newProviderToken, setNewProviderToken] = useState('');
+  const [newProviderTokenFromVault, setNewProviderTokenFromVault] = useState(false);
   const [providerTestResult, setProviderTestResult] = useState<Record<string, { ok: boolean; error?: string }>>({});
+
+  // Vault state
+  const [vaultConfig, setVaultConfig] = useState<VaultConfig>({
+    enabled: false, addr: '', role: '', mount: 'secret', namespace: '',
+  });
+  const [vaultStatus, setVaultStatus] = useState<VaultStatus>({ enabled: false, loggedIn: false });
+  const [vaultLoginError, setVaultLoginError] = useState<string | null>(null);
+  const [vaultLoggingIn, setVaultLoggingIn] = useState(false);
+  const [showMigrateDialog, setShowMigrateDialog] = useState(false);
 
   useEffect(() => {
     if (!isOpen) { setLoaded(false); return; }
@@ -46,14 +71,44 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setLoaded(true);
     });
     window.electronAPI.gitProvider.list().then(setGitProviders).catch(() => {});
+    window.electronAPI.vault.getConfig().then(setVaultConfig).catch(() => {});
+    window.electronAPI.vault.status().then(setVaultStatus).catch(() => {});
   }, [isOpen]);
+
+  // Live status updates from main
+  useEffect(() => {
+    const unsub = window.electronAPI.vault.onStatusChange(setVaultStatus);
+    return unsub;
+  }, []);
 
   const handleSave = useCallback(async () => {
     await window.electronAPI.config.setDefaultEnvVars?.(envVars);
     await window.electronAPI.config.set?.('restoreOnLaunch', restoreOnLaunch ? 'true' : 'false');
     await window.electronAPI.config.setDefaultCliFlags?.(cliFlags);
+    await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, cliFlags, onClose]);
+  }, [envVars, restoreOnLaunch, cliFlags, vaultConfig, onClose]);
+
+  const handleVaultLogin = async () => {
+    setVaultLoginError(null);
+    setVaultLoggingIn(true);
+    try {
+      // Persist the latest config first so the login flow uses it
+      await window.electronAPI.vault.setConfig(vaultConfig);
+      const status = await window.electronAPI.vault.login();
+      setVaultStatus(status);
+    } catch (err) {
+      setVaultLoginError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVaultLoggingIn(false);
+    }
+  };
+
+  const handleVaultLogout = async () => {
+    await window.electronAPI.vault.logout();
+    const status = await window.electronAPI.vault.status();
+    setVaultStatus(status);
+  };
 
   const toggleFlag = (flag: string) => {
     setCliFlags(prev =>
@@ -75,6 +130,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
 
   const handleAddProvider = async () => {
     if (!newProviderName.trim() || !newProviderUrl.trim() || !newProviderToken.trim()) return;
+    if (newProviderTokenFromVault && !newProviderToken.startsWith(VAULT_REF_PREFIX)) return;
     try {
       const provider = await window.electronAPI.gitProvider.create({
         name: newProviderName.trim(),
@@ -89,6 +145,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setNewProviderUrl('');
       setNewProviderOrg('');
       setNewProviderToken('');
+      setNewProviderTokenFromVault(false);
     } catch { /* ignore */ }
   };
 
@@ -200,7 +257,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
             <p className="form-hint" style={{ marginBottom: 12 }}>
               Applied to all sessions. Environments and sessions can override individual values.
             </p>
-            {loaded && <EnvVarEditor vars={envVars} onChange={setEnvVars} />}
+            {loaded && <EnvVarEditor vars={envVars} onChange={setEnvVars} vaultEnabled={vaultStatus.enabled} />}
           </div>
 
           {/* Git Providers */}
@@ -219,6 +276,15 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                     <span className="provider-type-badge">{p.type}</span>
                     <span className="provider-name">{p.name}</span>
                     <span className="provider-url">{p.baseUrl}</span>
+                    {p.tokenIsVaultRef && (
+                      <span
+                        className="form-hint"
+                        title={p.tokenVaultRef}
+                        style={{ display: 'inline', marginLeft: 4, color: 'var(--accent)' }}
+                      >
+                        Vault
+                      </span>
+                    )}
                     <button className="env-editor-btn" onClick={() => handleTestProvider(p.id)}>
                       Test
                     </button>
@@ -289,17 +355,36 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                 )}
                 <div className="form-group">
                   <label className="form-label">Personal Access Token</label>
+                  {vaultStatus.enabled && (
+                    <label className="form-radio-label" style={{ marginBottom: 4 }}>
+                      <input
+                        type="checkbox"
+                        checked={newProviderTokenFromVault}
+                        onChange={e => {
+                          setNewProviderTokenFromVault(e.target.checked);
+                          setNewProviderToken(e.target.checked ? VAULT_REF_PREFIX : '');
+                        }}
+                      />
+                      Source from Vault
+                    </label>
+                  )}
                   <input
-                    type="password"
+                    type={newProviderTokenFromVault ? 'text' : 'password'}
                     className="form-input"
                     value={newProviderToken}
                     onChange={e => setNewProviderToken(e.target.value)}
-                    placeholder="ghp_... or PAT"
+                    placeholder={newProviderTokenFromVault ? 'vault://secret/tether/git/name#token' : 'ghp_... or PAT'}
+                    spellCheck={false}
                   />
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="form-btn form-btn--primary" onClick={handleAddProvider}
-                    disabled={!newProviderName.trim() || !newProviderUrl.trim() || !newProviderToken.trim()}
+                    disabled={
+                      !newProviderName.trim() ||
+                      !newProviderUrl.trim() ||
+                      !newProviderToken.trim() ||
+                      (newProviderTokenFromVault && !newProviderToken.startsWith(VAULT_REF_PREFIX))
+                    }
                   >Save</button>
                   <button className="form-btn" onClick={() => {
                     setShowAddProvider(false);
@@ -307,17 +392,128 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                     setNewProviderUrl('');
                     setNewProviderOrg('');
                     setNewProviderToken('');
+                    setNewProviderTokenFromVault(false);
                   }}>Cancel</button>
                 </div>
               </div>
             )}
           </div>
+
+          {/* Vault */}
+          <details className="form-group" style={{ marginTop: 20 }} open={vaultConfig.enabled}>
+            <summary className="form-label" style={{ cursor: 'pointer', fontSize: 14 }}>
+              Vault Integration
+            </summary>
+            <div style={{ marginTop: 8 }}>
+              <p className="form-hint" style={{ marginBottom: 12 }}>
+                Source SSH passwords, API keys, and Git tokens from HashiCorp Vault.
+                Secrets are resolved just-in-time and never written to disk.
+              </p>
+
+              <div className="form-group">
+                <label className="form-radio-label">
+                  <input
+                    type="checkbox"
+                    checked={vaultConfig.enabled}
+                    onChange={e => setVaultConfig(c => ({ ...c, enabled: e.target.checked }))}
+                  />
+                  Enable Vault integration
+                </label>
+              </div>
+
+              {vaultConfig.enabled && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Vault Address</label>
+                    <input
+                      className="form-input"
+                      value={vaultConfig.addr}
+                      onChange={e => setVaultConfig(c => ({ ...c, addr: e.target.value }))}
+                      placeholder="https://vault.example.com"
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">OIDC Role</label>
+                    <input
+                      className="form-input"
+                      value={vaultConfig.role}
+                      onChange={e => setVaultConfig(c => ({ ...c, role: e.target.value }))}
+                      placeholder="default"
+                      spellCheck={false}
+                    />
+                    <p className="form-hint">The Vault OIDC role to log in with.</p>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">KV Mount Path</label>
+                    <input
+                      className="form-input"
+                      value={vaultConfig.mount}
+                      onChange={e => setVaultConfig(c => ({ ...c, mount: e.target.value }))}
+                      placeholder="secret"
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Namespace (optional)</label>
+                    <input
+                      className="form-input"
+                      value={vaultConfig.namespace || ''}
+                      onChange={e => setVaultConfig(c => ({ ...c, namespace: e.target.value }))}
+                      placeholder=""
+                      spellCheck={false}
+                    />
+                    <p className="form-hint">Leave blank if not using Vault Enterprise namespaces.</p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Status</label>
+                    <div style={{ marginTop: 4 }}>
+                      {vaultStatus.loggedIn ? (
+                        <span className="form-hint" style={{ color: 'var(--status-running)' }}>
+                          {'\u25CF'} Logged in
+                          {vaultStatus.identity ? ` as ${vaultStatus.identity}` : ''}
+                          {vaultStatus.expiresAt ? `, expires ${formatExpiry(vaultStatus.expiresAt)}` : ''}
+                        </span>
+                      ) : (
+                        <span className="form-hint" style={{ color: 'var(--text-muted)' }}>
+                          {'\u25CB'} Not logged in
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      {vaultStatus.loggedIn ? (
+                        <button className="form-btn" onClick={handleVaultLogout}>Log Out</button>
+                      ) : (
+                        <button
+                          className="form-btn form-btn--primary"
+                          onClick={handleVaultLogin}
+                          disabled={vaultLoggingIn || !vaultConfig.addr || !vaultConfig.role}
+                        >
+                          {vaultLoggingIn ? 'Opening browser…' : 'Log In'}
+                        </button>
+                      )}
+                      <button className="form-btn" onClick={() => setShowMigrateDialog(true)} disabled={!vaultStatus.loggedIn}>
+                        Migrate Existing Secrets…
+                      </button>
+                    </div>
+                    {vaultLoginError && (
+                      <p className="form-hint" style={{ color: 'var(--status-dead)', marginTop: 6 }}>
+                        {vaultLoginError}
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </details>
         </div>
         <div className="dialog-footer">
           <button className="form-btn" onClick={onClose}>Cancel</button>
           <button className="form-btn form-btn--primary" onClick={handleSave}>Save</button>
         </div>
       </div>
+      <MigrateToVaultDialog isOpen={showMigrateDialog} onClose={() => setShowMigrateDialog(false)} />
     </div>
   );
 }

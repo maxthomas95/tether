@@ -41,7 +41,6 @@ export interface EnvironmentRow {
   config: string;
   env_vars: string; // JSON-encoded Record<string, string>
   auth_mode: string | null;
-  api_key_enc: string | null;
   model: string | null;
   small_model: string | null;
   sort_order: number;
@@ -56,7 +55,6 @@ export interface SessionRow {
   working_dir: string;
   state: string;
   auth_mode: string | null;
-  api_key_enc: string | null;
   model: string | null;
   small_model: string | null;
   pid: number | null;

@@ -4,6 +4,7 @@ import type {
   CreateSessionOptions, SessionInfo, SessionState,
   CreateEnvironmentOptions, EnvironmentInfo, TetherAPI,
   CreateGitProviderOptions, GitProviderInfo, GitRepoInfo, CloneProgressInfo,
+  VaultConfig, VaultStatus, VaultPlaintextSecret, MigrateSecretOptions,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -90,6 +91,23 @@ const api: TetherAPI = {
       const h = (_e: Electron.IpcRendererEvent, info: CloneProgressInfo) => cb(info);
       ipcRenderer.on(IPC.GIT_CLONE_PROGRESS, h);
       return () => ipcRenderer.removeListener(IPC.GIT_CLONE_PROGRESS, h);
+    },
+  },
+
+  vault: {
+    getConfig: (): Promise<VaultConfig> => ipcRenderer.invoke(IPC.VAULT_GET_CONFIG),
+    setConfig: (config: VaultConfig): Promise<void> => ipcRenderer.invoke(IPC.VAULT_SET_CONFIG, config),
+    login: (): Promise<VaultStatus> => ipcRenderer.invoke(IPC.VAULT_LOGIN),
+    logout: (): Promise<void> => ipcRenderer.invoke(IPC.VAULT_LOGOUT),
+    status: (): Promise<VaultStatus> => ipcRenderer.invoke(IPC.VAULT_STATUS),
+    testRef: (ref: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(IPC.VAULT_TEST_REF, ref),
+    listKeys: (mount: string, path: string): Promise<string[]> => ipcRenderer.invoke(IPC.VAULT_LIST_KEYS, mount, path),
+    listPlaintext: (): Promise<VaultPlaintextSecret[]> => ipcRenderer.invoke(IPC.VAULT_LIST_PLAINTEXT),
+    migrateSecret: (opts: MigrateSecretOptions): Promise<void> => ipcRenderer.invoke(IPC.VAULT_MIGRATE_SECRET, opts),
+    onStatusChange(cb: (status: VaultStatus) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, status: VaultStatus) => cb(status);
+      ipcRenderer.on(IPC.VAULT_STATUS_CHANGED, h);
+      return () => ipcRenderer.removeListener(IPC.VAULT_STATUS_CHANGED, h);
     },
   },
 };

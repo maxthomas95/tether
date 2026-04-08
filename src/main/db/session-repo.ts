@@ -28,7 +28,6 @@ export function createSessionRow(input: CreateSessionInput): SessionRow {
     working_dir: input.working_dir,
     state: input.state || 'starting',
     auth_mode: null,
-    api_key_enc: null,
     model: null,
     small_model: null,
     pid: null,

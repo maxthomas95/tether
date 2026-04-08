@@ -6,6 +6,7 @@ import type { SessionTransport } from '../transport/types';
 import type { SSHConfig } from '../transport/ssh-transport';
 import { statusDetector } from '../status/status-detector';
 import { getEnvironment } from '../db/environment-repo';
+import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
 import type { SessionState, SessionInfo, CreateSessionOptions } from '../../shared/types';
 
 export interface SessionCallbacks {
@@ -43,7 +44,7 @@ export class Session {
   }
 }
 
-function createTransport(environmentId?: string): SessionTransport {
+async function createTransport(environmentId?: string): Promise<SessionTransport> {
   if (!environmentId) return new LocalTransport();
 
   const env = getEnvironment(environmentId);
@@ -51,9 +52,12 @@ function createTransport(environmentId?: string): SessionTransport {
 
   if (env.type === 'ssh') {
     const raw = JSON.parse(env.config) as Record<string, unknown>;
-    // Decrypt password if it was encrypted at rest
+    // Resolve password: vault ref → resolved string, encrypted-at-rest → decrypted string
     let password = raw.password as string | undefined;
-    if (raw.passwordEncrypted && typeof password === 'string' && safeStorage.isEncryptionAvailable()) {
+    if (typeof password === 'string' && isVaultRef(password)) {
+      // Vault refs are stored as-is (encryptConfigPassword leaves them alone)
+      password = await resolveRef(password);
+    } else if (raw.passwordEncrypted && typeof password === 'string' && safeStorage.isEncryptionAvailable()) {
       password = safeStorage.decryptString(Buffer.from(password, 'base64'));
     }
     const config = raw as Partial<SSHConfig>;
@@ -97,7 +101,17 @@ class SessionManager {
 
     statusDetector.register(id);
 
-    const transport = createTransport(opts.environmentId);
+    let transport: SessionTransport;
+    try {
+      transport = await createTransport(opts.environmentId);
+    } catch (err) {
+      // Resolution failed (e.g. vault ref couldn't be fetched). Tear down the
+      // half-initialized session and bubble the error to the caller.
+      statusDetector.unregister(id);
+      this.sessions.delete(id);
+      this.callbacksMap.delete(id);
+      throw err;
+    }
     session.transport = transport;
 
     transport.onData((data: string) => {
@@ -122,11 +136,23 @@ class SessionManager {
         try { envEnvVars = JSON.parse(envRow.env_vars); } catch { /* ignore */ }
       }
     }
-    const resolvedEnv: Record<string, string> = {
+    const mergedEnv: Record<string, string> = {
       ...appEnvVars,
       ...envEnvVars,
       ...(opts.env || {}),
     };
+
+    // Resolve any vault:// refs in the merged env. Failure aborts the session.
+    let resolvedEnv: Record<string, string>;
+    try {
+      resolvedEnv = await resolveAll(mergedEnv);
+    } catch (err) {
+      statusDetector.unregister(id);
+      transport.dispose();
+      this.sessions.delete(id);
+      this.callbacksMap.delete(id);
+      throw err;
+    }
 
     // Resolve CLI flags: app defaults + session-specific
     const appCliFlags = getDb().defaultCliFlags || [];
