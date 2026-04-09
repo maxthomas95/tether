@@ -9,6 +9,9 @@ import { getEnvironment } from '../db/environment-repo';
 import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
 import { transcriptExists } from '../claude/transcripts';
 import type { SessionState, SessionInfo, CreateSessionOptions } from '../../shared/types';
+import { createLogger } from '../logger';
+
+const log = createLogger('session');
 
 export interface SessionCallbacks {
   onData(sessionId: string, data: string): void;
@@ -102,6 +105,7 @@ class SessionManager {
   ): Promise<Session> {
     const id = uuidv4();
     const label = opts.label || opts.workingDir.split(/[\\/]/).pop() || 'Untitled';
+    log.info('Creating session', { id, label, workingDir: opts.workingDir, environmentId: opts.environmentId });
     const session = new Session(id, label, opts.workingDir, opts.environmentId);
     this.sessions.set(id, session);
     this.callbacksMap.set(id, callbacks);
@@ -112,8 +116,7 @@ class SessionManager {
     try {
       transport = await createTransport(opts.environmentId);
     } catch (err) {
-      // Resolution failed (e.g. vault ref couldn't be fetched). Tear down the
-      // half-initialized session and bubble the error to the caller.
+      log.error('Transport creation failed', { id, error: err instanceof Error ? err.message : String(err) });
       statusDetector.unregister(id);
       this.sessions.delete(id);
       this.callbacksMap.delete(id);
@@ -128,6 +131,7 @@ class SessionManager {
 
     transport.onExit(({ exitCode }) => {
       if (!session.transport) return;
+      log.info('Session exited', { id, exitCode });
       statusDetector.markExited(id, exitCode);
       session.transport = null;
       callbacks.onExit(id, exitCode);
@@ -154,6 +158,7 @@ class SessionManager {
     try {
       resolvedEnv = await resolveAll(mergedEnv);
     } catch (err) {
+      log.error('Env var resolution failed', { id, error: err instanceof Error ? err.message : String(err) });
       statusDetector.unregister(id);
       transport.dispose();
       this.sessions.delete(id);
@@ -214,6 +219,7 @@ class SessionManager {
   removeSession(id: string): void {
     const session = this.sessions.get(id);
     if (session) {
+      log.info('Removing session', { id });
       statusDetector.unregister(id);
       session.transport?.dispose();
       this.sessions.delete(id);
@@ -232,6 +238,7 @@ class SessionManager {
   async stopSession(id: string): Promise<void> {
     const session = this.sessions.get(id);
     if (session?.transport) {
+      log.info('Stopping session', { id });
       await session.transport.stop();
     }
   }
@@ -239,6 +246,7 @@ class SessionManager {
   killSession(id: string): void {
     const session = this.sessions.get(id);
     if (session?.transport) {
+      log.warn('Killing session', { id });
       session.transport.kill();
       session.transport = null;
       statusDetector.markExited(id, 1);

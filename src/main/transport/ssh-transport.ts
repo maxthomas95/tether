@@ -1,4 +1,7 @@
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
+import { createLogger } from '../logger';
+
+const log = createLogger('ssh');
 
 let ssh2Module: typeof import('ssh2') | null = null;
 
@@ -40,6 +43,7 @@ export class SSHTransport implements SessionTransport {
 
     this.client = new Client();
 
+    log.info('Connecting SSH', { host: this.sshConfig.host, port: this.sshConfig.port, username: this.sshConfig.username });
     return new Promise<void>((resolve, reject) => {
       const connectConfig: Record<string, unknown> = {
         host: this.sshConfig.host,
@@ -123,6 +127,7 @@ export class SSHTransport implements SessionTransport {
       });
 
       this.client!.on('error', (err: Error) => {
+        log.error('SSH connection error', { host: this.sshConfig.host, error: err.message });
         this._connected = false;
         if (this.stream) {
           const info: TransportExitInfo = { exitCode: 1, signal: err.message };

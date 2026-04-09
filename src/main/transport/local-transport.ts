@@ -1,6 +1,9 @@
 // node-pty is imported lazily to avoid crashing the main process at startup
 // if the native binary has an ABI mismatch
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
+import { createLogger } from '../logger';
+
+const log = createLogger('local-pty');
 
 let ptyModule: typeof import('node-pty') | null = null;
 
@@ -47,6 +50,7 @@ export class LocalTransport implements SessionTransport {
       ? ['/c', 'claude', ...claudeArgs]
       : ['-c', `claude ${claudeArgs.join(' ')}`];
 
+    log.info('Spawning local PTY', { shell, cwd: options.workingDir, args });
     this.ptyProcess = pty.spawn(shell, args, {
       name: 'xterm-256color',
       cols: options.cols,

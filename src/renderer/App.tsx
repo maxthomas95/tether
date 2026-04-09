@@ -51,21 +51,6 @@ export function App() {
     return () => { cancelled = true; };
   }, [settingsOpen]);
 
-  // Load resume-related UI settings; re-read whenever the Settings dialog closes
-  // so toggles take effect without a relaunch.
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
-      window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
-    ]).then(([badge, picker]) => {
-      if (cancelled) return;
-      setShowResumeBadge(badge === 'true');
-      setEnableResumePicker(picker !== 'false');
-    });
-    return () => { cancelled = true; };
-  }, [settingsOpen]);
-
   // Load environments on mount, then restore workspace
   useEffect(() => {
     let mounted = true;

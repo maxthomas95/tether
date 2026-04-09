@@ -28,6 +28,9 @@ import {
   DEFAULT_VAULT_CONFIG,
 } from '../vault/vault-auth';
 import { isVaultRef, resolveRef, parseRef, buildRef } from '../vault/vault-resolver';
+import { createLogger } from '../logger';
+
+const log = createLogger('ipc');
 
 function encryptConfigPassword(config: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
   if (!config || typeof config.password !== 'string') return config;
@@ -72,6 +75,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // === Session handlers ===
 
   ipcMain.handle(IPC.SESSION_CREATE, async (_event, opts: CreateSessionOptions) => {
+    log.info('IPC session:create', { workingDir: opts.workingDir, environmentId: opts.environmentId });
     // Callbacks receive sessionId as their first arg — do NOT close over the
     // `session` const below. SSH transports can emit data events between
     // `transport.start()` resolving and the `await` unblocking, which would
@@ -151,6 +155,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.ENV_CREATE, async (_event, opts: CreateEnvironmentOptions) => {
+    log.info('Creating environment', { name: opts.name, type: opts.type });
     const env = envRepo.createEnvironment({
       name: opts.name,
       type: opts.type,
@@ -177,6 +182,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.ENV_DELETE, async (_event, id: string) => {
+    log.info('Deleting environment', { id });
     envRepo.deleteEnvironment(id);
   });
 
@@ -310,6 +316,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.GIT_PROVIDER_TEST, async (_event, id: string) => {
     const provider = gitProviderRepo.getGitProvider(id);
     if (!provider) return { ok: false, error: 'Provider not found' };
+    log.info('Testing git provider', { id, type: provider.type, baseUrl: provider.baseUrl });
     try {
       const token = await resolveProviderToken(provider.token);
       if (provider.type === 'gitea') {
@@ -321,6 +328,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       }
       return { ok: true };
     } catch (err: unknown) {
+      log.error('Git provider test failed', { id, error: err instanceof Error ? err.message : String(err) });
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
@@ -341,6 +349,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // === Git clone / init ===
 
   ipcMain.handle(IPC.GIT_CLONE, async (_event, url: string, destination: string) => {
+    log.info('Git clone', { url, destination });
     return gitClone({
       url,
       destination,
@@ -373,7 +382,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.VAULT_LOGIN, async (): Promise<VaultStatus> => {
+    log.info('Vault OIDC login initiated');
     const status = await loginOidc();
+    log.info('Vault login result', { loggedIn: status.loggedIn, identity: status.identity });
     emitVaultStatus(status);
     return status;
   });
@@ -472,6 +483,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.VAULT_MIGRATE_SECRET, async (_event, opts: MigrateSecretOptions): Promise<void> => {
+    log.info('Migrating secret to Vault', { source: opts.source, targetRef: opts.targetRef });
     const { getDb, saveDb } = await import('../db/database');
     const db = getDb();
     const client = buildVaultClient();

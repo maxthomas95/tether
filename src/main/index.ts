@@ -7,6 +7,9 @@ import { getDb, closeDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
 import { markAllRunningAsStopped } from './db/session-repo';
 import { getLoaderTheme, DEFAULT_LOADER_THEME } from '../shared/loader-themes';
+import { createLogger, closeLogger } from './logger';
+
+const log = createLogger('app');
 
 // Handle Squirrel.Windows lifecycle events (--squirrel-install,
 // --squirrel-firstrun, --squirrel-updated, --squirrel-obsolete,
@@ -93,7 +96,10 @@ if (!gotTheLock) {
     }
   });
 
-  app.on('ready', createWindow);
+  app.on('ready', () => {
+    log.info('App ready, creating window');
+    createWindow();
+  });
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
@@ -108,7 +114,9 @@ if (!gotTheLock) {
   });
 
   app.on('before-quit', () => {
+    log.info('App shutting down');
     sessionManager.dispose();
     closeDb();
+    closeLogger();
   });
 }
