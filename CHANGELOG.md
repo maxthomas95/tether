@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.1.4-alpha.5] — 2026-04-09
+
+### New Features
+- **Test suite** — 42 unit tests covering StatusDetector, environment-repo, and session-repo using Vitest. Includes database mock for isolated testing without Electron.
+- **Structured logging** — new logger module writes to `{userData}/logs/tether.log` with log levels (error/warn/info/debug), file rotation at 5 MB, and scoped category tags.
+- **Welcome page logo** — app logo displayed on the welcome screen when no sessions are open.
+
+### Improvements
+- Logging wired into app lifecycle, session manager, local/SSH transports, IPC handlers, Vault login, and git operations for production diagnostics.
+- Resume-chat picker and error toasts added for better session continuity and error visibility.
+
+### Bug Fixes
+- Fixed duplicate `useEffect` in App.tsx that loaded resume badge/picker settings twice on every Settings dialog close.
+- Fixed SSH session crash caused by temporal dead zone when SSH transports emit data events before `transport.start()` resolves.
+
+---
+
 ## [0.1.3-alpha.4] — 2026-04-07
 
 ### New Features
