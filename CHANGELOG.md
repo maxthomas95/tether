@@ -7,15 +7,21 @@ All notable changes to this project will be documented in this file.
 ## [0.1.4-alpha.5] — 2026-04-09
 
 ### New Features
+- **HashiCorp Vault integration** — store SSH passwords, git provider tokens, and sensitive env vars in Vault. OIDC login, secret migration wizard, and `vault://` references throughout the app.
 - **Test suite** — 42 unit tests covering StatusDetector, environment-repo, and session-repo using Vitest. Includes database mock for isolated testing without Electron.
 - **Structured logging** — new logger module writes to `{userData}/logs/tether.log` with log levels (error/warn/info/debug), file rotation at 5 MB, and scoped category tags.
+- **Resume-chat picker** — pick a previous Claude transcript to resume when creating a session, with session continuity via `--resume`.
+- **Themed boot loader** — inline loading screen matches the active theme, eliminating the blank white flash on launch.
 - **Welcome page logo** — app logo displayed on the welcome screen when no sessions are open.
+- **Release automation** — `scripts/release.mjs` handles version bump, changelog, tagging, building, and Gitea publishing in 8 idempotent phases.
 
 ### Improvements
+- Vault settings shown inline in the Settings dialog instead of behind a disclosure.
 - Logging wired into app lifecycle, session manager, local/SSH transports, IPC handlers, Vault login, and git operations for production diagnostics.
-- Resume-chat picker and error toasts added for better session continuity and error visibility.
+- Error toasts surface IPC errors in the UI instead of only in the DevTools console.
 
 ### Bug Fixes
+- Fixed Squirrel installer launching multiple app windows on install/update/uninstall events.
 - Fixed duplicate `useEffect` in App.tsx that loaded resume badge/picker settings twice on every Settings dialog close.
 - Fixed SSH session crash caused by temporal dead zone when SSH transports emit data events before `transport.start()` resolves.
 
