@@ -11,6 +11,7 @@
 //   6. build        — npm run make
 //   7. assets       — locate Setup.exe and portable zip, rename to convention
 //   8. publish      — create Gitea release (prerelease=true) + upload assets
+//   9. github       — create GitHub release (mirror) + upload assets
 //
 // Usage:
 //   node scripts/release.mjs alpha.N            # cut a new alpha
@@ -19,8 +20,10 @@
 //   node scripts/release.mjs --next             # auto-pick next alpha number
 //
 // Environment:
-//   GITEA_TOKEN_FILE  override the default token path
-//                     (default: C:/Users/maxth/.tether/gitea-token)
+//   GITEA_TOKEN_FILE   override the default Gitea token path
+//                      (default: C:/Users/maxth/.tether/gitea-token)
+//   GITHUB_TOKEN_FILE  override the default GitHub token path
+//                      (default: C:/Users/maxth/.tether/github-token)
 
 import { execSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs';
@@ -35,6 +38,11 @@ const REPO_OWNER = 'ThomasHomeCompany';
 const REPO_NAME  = 'tether';
 const GITEA_BASE = 'https://gitea.thomashomecompany.com';
 const DEFAULT_TOKEN_FILE = 'C:/Users/maxth/.tether/gitea-token';
+
+const GITHUB_OWNER = 'maxthomas95';
+const GITHUB_REPO  = 'tether';
+const GITHUB_BASE  = 'https://api.github.com';
+const DEFAULT_GITHUB_TOKEN_FILE = 'C:/Users/maxth/.tether/github-token';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
@@ -64,6 +72,25 @@ function shStream(cmd, args = []) {
   if (DRY_RUN) { log(`[dry-run] would run: ${cmd} ${args.join(' ')}`); return 0; }
   const r = spawnSync(cmd, args, { cwd: REPO_ROOT, stdio: 'inherit', shell: platform === 'win32' });
   return r.status;
+}
+
+function curlUpload(filePath, url, authHeader) {
+  // Use curl for large file uploads — Node.js fetch chokes on 150MB+ bodies.
+  if (DRY_RUN) { log(`[dry-run] would curl-upload ${basename(filePath)}`); return; }
+  const r = spawnSync('curl', [
+    '--fail', '--silent', '--show-error',
+    '--connect-timeout', '30',
+    '--max-time', '600',
+    '-X', 'POST',
+    '-H', authHeader,
+    '-H', 'Content-Type: application/octet-stream',
+    '--data-binary', `@${filePath}`,
+    url,
+  ], { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'], shell: platform === 'win32' });
+  if (r.status !== 0) {
+    const stderr = r.stderr?.toString().trim() || '';
+    throw new Error(`curl upload failed (exit ${r.status}): ${stderr}`);
+  }
 }
 
 function readJSON(path)  { return JSON.parse(readFileSync(path, 'utf8')); }
@@ -96,6 +123,34 @@ async function gitea(method, path, { body, headers, query } = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+function readGithubToken() {
+  const tokenFile = process.env.GITHUB_TOKEN_FILE || DEFAULT_GITHUB_TOKEN_FILE;
+  if (!existsSync(tokenFile)) die(`GitHub token not found at ${tokenFile}. Set GITHUB_TOKEN_FILE or place the token there.`);
+  return readFileSync(tokenFile, 'utf8').trim();
+}
+
+async function github(method, path, { body, headers, query } = {}) {
+  const token = readGithubToken();
+  const url = new URL(path, GITHUB_BASE);
+  if (query) for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      ...(body && !(body instanceof Buffer) ? { 'Content-Type': 'application/json' } : {}),
+      ...headers,
+    },
+    body: body instanceof Buffer ? body : (body ? JSON.stringify(body) : undefined),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`GitHub ${method} ${path} → ${res.status}: ${text}`);
+  }
+  return text ? JSON.parse(text) : null;
+}
+
 // ─── Version + alpha resolution ──────────────────────────────────────────────
 
 function currentPackageVersion() {
@@ -121,7 +176,7 @@ async function nextAlphaNumber() {
 // ─── Phases ──────────────────────────────────────────────────────────────────
 
 function phasePreflight() {
-  log('Phase 1/8: preflight');
+  log('Phase 1/9: preflight');
   const branch = sh('git rev-parse --abbrev-ref HEAD');
   if (branch !== 'main') die(`Not on main (currently on ${branch})`);
 
@@ -142,7 +197,7 @@ function phasePreflight() {
 }
 
 function phaseVersion(targetVersion) {
-  log(`Phase 2/8: version → ${targetVersion}`);
+  log(`Phase 2/9: version → ${targetVersion}`);
   const pkgPath = join(REPO_ROOT, 'package.json');
   const pkg = readJSON(pkgPath);
   if (pkg.version === targetVersion) {
@@ -155,7 +210,7 @@ function phaseVersion(targetVersion) {
 }
 
 function phaseChangelog(version, alphaTag) {
-  log(`Phase 3/8: changelog`);
+  log(`Phase 3/9: changelog`);
   const path = join(REPO_ROOT, 'CHANGELOG.md');
   const content = readFileSync(path, 'utf8');
   const heading = `## [${version}-${alphaTag}]`;
@@ -194,7 +249,7 @@ function phaseChangelog(version, alphaTag) {
 }
 
 function phaseCommitTag(version, alphaTag) {
-  log(`Phase 4/8: commit + tag`);
+  log(`Phase 4/9: commit + tag`);
   const tag = `v${version}-${alphaTag}`;
   // Is the tag already there?
   const tagExists = sh(`git tag -l ${tag}`);
@@ -214,7 +269,7 @@ function phaseCommitTag(version, alphaTag) {
 }
 
 function phasePush(tag) {
-  log(`Phase 5/8: push`);
+  log(`Phase 5/9: push`);
   // Check if origin/main is behind local main.
   sh('git fetch origin main');
   const ahead = sh(`git rev-list origin/main..main --count`);
@@ -249,7 +304,7 @@ function locateArtifacts(version) {
 }
 
 function phaseBuild(version) {
-  log(`Phase 6/8: build (npm run make)`);
+  log(`Phase 6/9: build (npm run make)`);
   let { setupPath, zipPath } = locateArtifacts(version);
   if (setupPath && zipPath) {
     ok(`build artifacts already present for ${version}, skipping`);
@@ -270,7 +325,7 @@ function phaseBuild(version) {
 }
 
 function phaseAssets(version, { setupPath, zipPath }) {
-  log(`Phase 7/8: assets`);
+  log(`Phase 7/9: assets`);
   // Tether-{version}-Setup.exe and Tether-{version}-portable.zip
   // We don't actually rename the files on disk — we just record the upload-name.
   const setupName = `Tether-${version}-Setup.exe`;
@@ -289,7 +344,7 @@ function phaseAssets(version, { setupPath, zipPath }) {
 }
 
 async function phasePublish(version, alphaTag, assets) {
-  log(`Phase 8/8: publish to Gitea`);
+  log(`Phase 8/9: publish to Gitea`);
   const tag = `v${version}-${alphaTag}`;
 
   // Read the CHANGELOG section for this version to use as the release body.
@@ -335,16 +390,86 @@ async function phasePublish(version, alphaTag, assets) {
     }
     if (DRY_RUN) { log(`[dry-run] would upload ${asset.name}`); continue; }
     log(`uploading ${asset.name}...`);
-    const buf = readFileSync(asset.path);
-    await gitea('POST', `/repos/${REPO_OWNER}/${REPO_NAME}/releases/${release.id}/assets`, {
-      query: { name: asset.name },
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: buf,
-    });
+    const giteaUrl = `${GITEA_BASE}/api/v1/repos/${REPO_OWNER}/${REPO_NAME}/releases/${release.id}/assets?name=${encodeURIComponent(asset.name)}`;
+    curlUpload(asset.path, giteaUrl, `Authorization: token ${readToken()}`);
     ok(`uploaded ${asset.name}`);
   }
 
   console.log(`\n\x1b[32m✓\x1b[0m Release published: ${GITEA_BASE}/${REPO_OWNER}/${REPO_NAME}/releases/tag/${tag}\n`);
+}
+
+async function phaseGithub(version, alphaTag, assets) {
+  log(`Phase 9/9: publish to GitHub`);
+  const tag = `v${version}-${alphaTag}`;
+
+  // Read the CHANGELOG section for this version to use as the release body.
+  const changelog = readFileSync(join(REPO_ROOT, 'CHANGELOG.md'), 'utf8');
+  const sectionRe = new RegExp(`(## \\[${version}-${alphaTag}\\][\\s\\S]*?)(?=\\n## \\[|$)`);
+  const sectionMatch = changelog.match(sectionRe);
+  let body = sectionMatch ? sectionMatch[1].trim() : `Release ${tag}`;
+  body = body.replace(/^## \[.*?\][^\n]*\n+/, '');
+  body = body.replace(/\n+---\s*$/, '').trim();
+
+  // Wait for the Gitea push mirror to sync the tag to GitHub.
+  // Poll up to 60s — the mirror fires on push, so it's usually fast.
+  const tagUrl = `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/ref/tags/${tag}`;
+  let tagSynced = false;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    try {
+      await github('GET', tagUrl);
+      tagSynced = true;
+      break;
+    } catch {
+      if (attempt === 0) log('waiting for tag to sync to GitHub...');
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+  if (!tagSynced) {
+    warn(`tag ${tag} not yet on GitHub — mirror may be delayed. Skipping GitHub release.`);
+    return;
+  }
+  ok(`tag ${tag} exists on GitHub`);
+
+  // Does the release already exist?
+  let release = null;
+  try {
+    release = await github('GET', `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/${tag}`);
+    ok(`GitHub release ${tag} already exists (id ${release.id})`);
+  } catch (e) {
+    if (!String(e).includes('404')) throw e;
+  }
+
+  if (!release) {
+    if (DRY_RUN) { log(`[dry-run] would create GitHub release ${tag}`); return; }
+    release = await github('POST', `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases`, {
+      body: {
+        tag_name: tag,
+        target_commitish: 'main',
+        name: tag,
+        body,
+        draft: false,
+        prerelease: true,
+      },
+    });
+    ok(`created GitHub release ${tag} (id ${release.id})`);
+  }
+
+  // Upload only the Setup.exe to GitHub (skip portable zip to save upload time).
+  const githubAssets = assets.filter(a => a.name.toLowerCase().includes('setup'));
+  const existing = new Set((release.assets || []).map(a => a.name));
+  for (const asset of githubAssets) {
+    if (existing.has(asset.name)) {
+      ok(`GitHub asset ${asset.name} already uploaded`);
+      continue;
+    }
+    if (DRY_RUN) { log(`[dry-run] would upload ${asset.name} to GitHub`); continue; }
+    log(`uploading ${asset.name} to GitHub...`);
+    const ghUploadUrl = `https://uploads.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/${release.id}/assets?name=${encodeURIComponent(asset.name)}`;
+    curlUpload(asset.path, ghUploadUrl, `Authorization: Bearer ${readGithubToken()}`);
+    ok(`uploaded ${asset.name} to GitHub`);
+  }
+
+  console.log(`\n\x1b[32m✓\x1b[0m GitHub release published: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/${tag}\n`);
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -381,6 +506,7 @@ async function main() {
   const builtPaths = phaseBuild(targetVersion);
   const assets = phaseAssets(targetVersion, builtPaths);
   await phasePublish(targetVersion, alphaTag, assets);
+  await phaseGithub(targetVersion, alphaTag, assets);
 }
 
 main().catch(e => die(e.stack || String(e)));
