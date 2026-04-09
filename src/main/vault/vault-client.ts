@@ -1,3 +1,4 @@
+import { net } from 'electron';
 import {
   KvReadResult,
   OidcAuthUrlResponse,
@@ -54,7 +55,10 @@ export class VaultClient {
       { authenticated: false },
     );
     const url = body?.data?.auth_url;
-    if (!url) throw new VaultError('Vault OIDC auth_url response missing auth_url field');
+    if (!url) {
+      console.error('[Vault] oidcAuthUrl response body:', JSON.stringify(body, null, 2));
+      throw new VaultError('Vault OIDC auth_url response missing auth_url field');
+    }
     return { auth_url: url };
   }
 
@@ -154,7 +158,7 @@ export class VaultClient {
 
     let response: Response;
     try {
-      response = await fetch(`${this.addr}${path}`, {
+      response = await net.fetch(`${this.addr}${path}`, {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
