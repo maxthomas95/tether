@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import '@xterm/xterm/css/xterm.css';
+import logoSrc from '../assets/logo.png';
 
 interface TerminalPanelProps {
   sessionId: string | null;
@@ -40,6 +41,7 @@ export function TerminalPanel({ sessionId, containerRef, onResize }: TerminalPan
     return (
       <div className="terminal-container">
         <div className="terminal-placeholder">
+          <img src={logoSrc} alt="Tether" className="welcome-logo" />
           <p>Welcome to Tether</p>
           <p className="terminal-placeholder-sub">
             Create a new session to start working with Claude Code

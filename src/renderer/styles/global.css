@@ -379,6 +379,13 @@ html, body, #root {
   gap: 8px;
 }
 
+.welcome-logo {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 8px;
+  opacity: 0.85;
+}
+
 .terminal-placeholder-sub {
   font-size: 13px;
   color: var(--text-muted);
