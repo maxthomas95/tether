@@ -10,3 +10,6 @@ npm-debug.log*
 .env.*
 .DS_Store
 Thumbs.db
+.claude/
+tether.jpg
+tether-transparent.png

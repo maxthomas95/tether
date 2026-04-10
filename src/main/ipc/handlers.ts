@@ -91,6 +91,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       onExit(sessionId, exitCode) {
         send(IPC.SESSION_EXITED, sessionId, exitCode);
       },
+      onLabelChanged(sessionId, label) {
+        send(IPC.SESSION_LABEL_CHANGED, sessionId, label);
+        sessionRepo.updateSessionLabel(sessionId, label);
+      },
     });
 
     // Persist to DB
@@ -120,7 +124,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.SESSION_RENAME, async (_event, sessionId: string, label: string) => {
-    sessionManager.renameSession(sessionId, label);
+    sessionManager.renameSession(sessionId, label, 'user');
   });
 
   ipcMain.handle(IPC.SESSION_REMOVE, async (_event, sessionId: string) => {

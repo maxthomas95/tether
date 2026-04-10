@@ -228,6 +228,35 @@ Reusable prompt store with variable substitution. Low priority for the project o
 
 **Resolved by the JSONL session tap above** — no need for Claude Code hooks, no need for PTY heuristics. Tracking here only because it was raised separately.
 
+### Generic CLI support (multi-tool multiplexer)
+
+**Discussed 2026-04-09.** Make Tether usable as a multiplexer for any CLI tool (Codex, Aider, custom scripts), not just Claude Code.
+
+**Key insight:** The architecture is already ~80% generic. The PTY layer, transport interface, session/environment model, xterm.js rendering, sidebar grouping, theming, and SSH plumbing are all tool-agnostic. Claude-specific coupling is concentrated in: hardcoded `'claude'` spawn command in both transports, `--session-id`/`--resume` flag handling, transcript reader (`~/.claude/projects/*.jsonl`), resume dialog, status detector prompt hints (`❯`), and env var presets (`ANTHROPIC_API_KEY` etc.).
+
+**Decision: Claude is the only first-class citizen.** Other tools get "as-is" support — you get multiplexed terminals with grouping, theming, environments, and SSH, but no tool-specific integrations. Framing: "if it's not Claude, you get a raw multiplexed terminal."
+
+**What "as-is" means concretely:**
+- No session resume / `--session-id` tracking
+- No transcript browsing (Resume Chat dialog)
+- No Claude-specific env var presets
+- Status detection falls back to output-cadence-only (no prompt pattern matching)
+- User provides the full CLI command; Tether just spawns it
+
+**Implementation approach (when we get to it):**
+1. Add a `command` field to environments/sessions (defaults to `'claude'`)
+2. When `command !== 'claude'`, skip Claude-specific features
+3. Session creation dialog gets a "Custom CLI" option alongside the Claude default, with a text field for the command
+4. Optional: small note in UI — "Claude sessions include additional features like session resume and status detection"
+
+**Not building (for now):**
+- Tool profiles / plugin system for per-tool integrations
+- Per-tool prompt detection patterns
+- Per-tool transcript readers
+- Per-tool env var presets
+
+**Reconsider if:** demand from other users, or the user starts running non-Claude tools frequently enough that the missing features create real friction.
+
 ### Vault integration
 
 **Already in flight in a separate conversation.** Not duplicating the design here. Cross-references the existing IDEAS.md note on encrypted API key storage; once Vault lands, that supersedes Electron safeStorage as the primary secret backend.

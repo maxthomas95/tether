@@ -5,6 +5,7 @@ import { SSHTransport } from '../transport/ssh-transport';
 import type { SessionTransport } from '../transport/types';
 import type { SSHConfig } from '../transport/ssh-transport';
 import { statusDetector } from '../status/status-detector';
+import { planDetector } from '../status/plan-detector';
 import { getEnvironment } from '../db/environment-repo';
 import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
 import { transcriptExists } from '../claude/transcripts';
@@ -17,6 +18,7 @@ export interface SessionCallbacks {
   onData(sessionId: string, data: string): void;
   onStateChange(sessionId: string, state: SessionState): void;
   onExit(sessionId: string, exitCode: number): void;
+  onLabelChanged(sessionId: string, label: string): void;
 }
 
 export class Session {
@@ -97,6 +99,14 @@ class SessionManager {
         this.callbacksMap.get(sessionId)?.onStateChange(sessionId, state);
       }
     });
+
+    planDetector.onPlanDetected((sessionId, planName) => {
+      const session = this.sessions.get(sessionId);
+      if (session) {
+        session.label = planName;
+        this.callbacksMap.get(sessionId)?.onLabelChanged(sessionId, planName);
+      }
+    });
   }
 
   async createSession(
@@ -111,6 +121,7 @@ class SessionManager {
     this.callbacksMap.set(id, callbacks);
 
     statusDetector.register(id);
+    planDetector.register(id);
 
     let transport: SessionTransport;
     try {
@@ -118,6 +129,7 @@ class SessionManager {
     } catch (err) {
       log.error('Transport creation failed', { id, error: err instanceof Error ? err.message : String(err) });
       statusDetector.unregister(id);
+      planDetector.unregister(id);
       this.sessions.delete(id);
       this.callbacksMap.delete(id);
       throw err;
@@ -126,6 +138,7 @@ class SessionManager {
 
     transport.onData((data: string) => {
       statusDetector.feedData(id, data);
+      planDetector.feedData(id, data);
       callbacks.onData(id, data);
     });
 
@@ -160,6 +173,7 @@ class SessionManager {
     } catch (err) {
       log.error('Env var resolution failed', { id, error: err instanceof Error ? err.message : String(err) });
       statusDetector.unregister(id);
+      planDetector.unregister(id);
       transport.dispose();
       this.sessions.delete(id);
       this.callbacksMap.delete(id);
@@ -209,10 +223,13 @@ class SessionManager {
     return Array.from(this.sessions.values());
   }
 
-  renameSession(id: string, label: string): void {
+  renameSession(id: string, label: string, source: 'user' | 'auto' = 'user'): void {
     const session = this.sessions.get(id);
     if (session) {
       session.label = label;
+      if (source === 'user') {
+        planDetector.markUserRenamed(id);
+      }
     }
   }
 
@@ -221,6 +238,7 @@ class SessionManager {
     if (session) {
       log.info('Removing session', { id });
       statusDetector.unregister(id);
+      planDetector.unregister(id);
       session.transport?.dispose();
       this.sessions.delete(id);
       this.callbacksMap.delete(id);
@@ -255,6 +273,7 @@ class SessionManager {
 
   dispose(): void {
     statusDetector.dispose();
+    planDetector.dispose();
     for (const session of this.sessions.values()) {
       session.transport?.dispose();
     }

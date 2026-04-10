@@ -126,7 +126,10 @@ export function App() {
       const managed = termManager.getOrCreate(sid);
       managed.terminal.write('\r\n\x1b[90m[Session ended]\x1b[0m\r\n');
     });
-    return () => { removeData(); removeState(); removeExit(); };
+    const removeLabelChange = window.electronAPI.session.onLabelChanged((sid, label) => {
+      setSessions(prev => prev.map(s => s.id === sid ? { ...s, label } : s));
+    });
+    return () => { removeData(); removeState(); removeExit(); removeLabelChange(); };
   }, [termManager]);
 
   // Activate terminal when active session changes
