@@ -14,6 +14,8 @@ interface RepoGroupProps {
   onDuplicate: (id: string) => void;
   onResumePrevious?: (id: string) => void;
   showResumeBadge?: boolean;
+  onDragStart?: (sessionId: string) => void;
+  onDragEnd?: () => void;
 }
 
 export function RepoGroup({
@@ -28,6 +30,8 @@ export function RepoGroup({
   onDuplicate,
   onResumePrevious,
   showResumeBadge,
+  onDragStart,
+  onDragEnd,
 }: RepoGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -45,6 +49,8 @@ export function RepoGroup({
         onDuplicate={() => onDuplicate(sessions[0].id)}
         onResumePrevious={onResumePrevious ? () => onResumePrevious(sessions[0].id) : undefined}
         showResumeBadge={showResumeBadge}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
       />
     );
   }
@@ -85,6 +91,8 @@ export function RepoGroup({
           onDuplicate={() => onDuplicate(session.id)}
           onResumePrevious={onResumePrevious ? () => onResumePrevious(session.id) : undefined}
           showResumeBadge={showResumeBadge}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
           nested
         />
       ))}

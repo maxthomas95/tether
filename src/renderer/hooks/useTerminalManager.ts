@@ -1,10 +1,18 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import type { PaneId } from '../../shared/layout-types';
 
 interface ManagedTerminal {
   terminal: Terminal;
   fitAddon: FitAddon;
+}
+
+interface PaneEntry {
+  sessionId: string;
+  terminal: Terminal;
+  fitAddon: FitAddon;
+  container: HTMLDivElement | null;
 }
 
 const BASE_TERMINAL_OPTIONS = {
@@ -14,167 +22,228 @@ const BASE_TERMINAL_OPTIONS = {
   allowProposedApi: true,
 } as const;
 
-export function useTerminalManager(xtermTheme?: ITheme) {
-  const terminals = useRef(new Map<string, ManagedTerminal>());
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const activeIdRef = useRef<string | null>(null);
+export interface TerminalManagerAPI {
+  getOrCreate: (sessionId: string) => ManagedTerminal;
+  writeData: (sessionId: string, data: string) => void;
+  attachToPane: (paneId: PaneId, sessionId: string, container: HTMLDivElement) => void;
+  detachPane: (paneId: PaneId) => void;
+  fitPane: (paneId: PaneId) => void;
+  focusPane: (paneId: PaneId) => void;
+  remove: (sessionId: string) => void;
+}
+
+export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
+  const panes = useRef(new Map<PaneId, PaneEntry>());
+  const backgroundTerminals = useRef(new Map<string, ManagedTerminal>());
   const themeRef = useRef<ITheme | undefined>(xtermTheme);
 
   // Update theme on all existing terminals when it changes
   useEffect(() => {
     themeRef.current = xtermTheme;
     if (!xtermTheme) return;
-    for (const managed of terminals.current.values()) {
+    for (const entry of panes.current.values()) {
+      entry.terminal.options.theme = xtermTheme;
+    }
+    for (const managed of backgroundTerminals.current.values()) {
       managed.terminal.options.theme = xtermTheme;
     }
   }, [xtermTheme]);
 
-  // Get or create a Terminal instance for a session
+  const createTerminal = useCallback((sessionId: string): ManagedTerminal => {
+    const terminal = new Terminal({ ...BASE_TERMINAL_OPTIONS, theme: themeRef.current });
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+
+    // Wire up input forwarding
+    terminal.onData((data: string) => {
+      window.electronAPI.session.sendInput(sessionId, data);
+    });
+
+    terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+
+      // Shift+Enter → newline without submit
+      if (e.key === 'Enter' && e.shiftKey) {
+        if (e.type === 'keydown') {
+          window.electronAPI.session.sendInput(sessionId, '\x1b[13;2u');
+        }
+        return false;
+      }
+
+      // Ctrl+C with selection → copy to clipboard
+      if (ctrl && e.key === 'c' && terminal.hasSelection()) {
+        window.electronAPI.clipboard.writeText(terminal.getSelection());
+        return false;
+      }
+
+      // Ctrl+V → paste from clipboard
+      if (ctrl && e.key === 'v' && e.type === 'keydown') {
+        const text = window.electronAPI.clipboard.readText();
+        if (text) window.electronAPI.session.sendInput(sessionId, text);
+        return false;
+      }
+
+      // Ctrl+Shift+C → always copy
+      if (ctrl && e.shiftKey && e.key === 'C') {
+        window.electronAPI.clipboard.writeText(terminal.getSelection());
+        return false;
+      }
+
+      return true;
+    });
+
+    return { terminal, fitAddon };
+  }, []);
+
+  // Get or create a background terminal for sessions not in any visible pane
   const getOrCreate = useCallback((sessionId: string): ManagedTerminal => {
-    let managed = terminals.current.get(sessionId);
+    let managed = backgroundTerminals.current.get(sessionId);
     if (!managed) {
-      const terminal = new Terminal({ ...BASE_TERMINAL_OPTIONS, theme: themeRef.current });
-      const fitAddon = new FitAddon();
-      terminal.loadAddon(fitAddon);
-
-      // Wire up input forwarding
-      terminal.onData((data: string) => {
-        window.electronAPI.session.sendInput(sessionId, data);
-      });
-
-      terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-        const ctrl = e.ctrlKey || e.metaKey;
-
-        // Shift+Enter → newline without submit
-        // Block both keydown and keyup to fully prevent xterm's default Enter
-        if (e.key === 'Enter' && e.shiftKey) {
-          if (e.type === 'keydown') {
-            window.electronAPI.session.sendInput(sessionId, '\x1b[13;2u');
-          }
-          return false;
-        }
-
-        // Ctrl+C with selection → copy to clipboard (don't send SIGINT)
-        if (ctrl && e.key === 'c' && terminal.hasSelection()) {
-          window.electronAPI.clipboard.writeText(terminal.getSelection());
-          return false;
-        }
-
-        // Ctrl+V → paste from clipboard
-        if (ctrl && e.key === 'v' && e.type === 'keydown') {
-          const text = window.electronAPI.clipboard.readText();
-          if (text) window.electronAPI.session.sendInput(sessionId, text);
-          return false;
-        }
-
-        // Ctrl+Shift+C → always copy
-        if (ctrl && e.shiftKey && e.key === 'C') {
-          window.electronAPI.clipboard.writeText(terminal.getSelection());
-          return false;
-        }
-
-        return true;
-      });
-
-      managed = { terminal, fitAddon };
-      terminals.current.set(sessionId, managed);
+      managed = createTerminal(sessionId);
+      backgroundTerminals.current.set(sessionId, managed);
     }
     return managed;
-  }, []);
+  }, [createTerminal]);
 
-  // Write data to a session's terminal (works even if not attached to DOM)
+  // Write data to ALL panes showing this session + background terminal
   const writeData = useCallback((sessionId: string, data: string) => {
-    const managed = terminals.current.get(sessionId);
-    if (managed) {
-      managed.terminal.write(data);
+    // Write to background terminal if exists
+    const bg = backgroundTerminals.current.get(sessionId);
+    if (bg) {
+      bg.terminal.write(data);
     }
-  }, []);
 
-  // Activate a session — attach its terminal to the DOM container
-  const activate = useCallback((sessionId: string) => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    // Detach the currently active terminal
-    if (activeIdRef.current && activeIdRef.current !== sessionId) {
-      const prev = terminals.current.get(activeIdRef.current);
-      if (prev?.terminal.element) {
-        prev.terminal.element.remove();
+    // Write to all panes showing this session
+    for (const entry of panes.current.values()) {
+      if (entry.sessionId === sessionId) {
+        entry.terminal.write(data);
       }
     }
+  }, []);
 
-    const managed = getOrCreate(sessionId);
-    activeIdRef.current = sessionId;
-
-    // Only open if not already attached somewhere
-    if (!managed.terminal.element) {
-      managed.terminal.open(container);
-    } else {
-      container.appendChild(managed.terminal.element);
+  // Attach a terminal to a pane container
+  const attachToPane = useCallback((paneId: PaneId, sessionId: string, container: HTMLDivElement) => {
+    // If session has a background terminal, dispose it
+    const bg = backgroundTerminals.current.get(sessionId);
+    if (bg) {
+      bg.terminal.dispose();
+      backgroundTerminals.current.delete(sessionId);
     }
 
-    // Fit after a frame so container has dimensions
+    // Create a new terminal for this pane
+    const managed = createTerminal(sessionId);
+
+    const entry: PaneEntry = {
+      sessionId,
+      terminal: managed.terminal,
+      fitAddon: managed.fitAddon,
+      container,
+    };
+    panes.current.set(paneId, entry);
+
+    // Open terminal in the container
+    managed.terminal.open(container);
+
     requestAnimationFrame(() => {
       try {
         managed.fitAddon.fit();
-        window.electronAPI.session.resize(
-          sessionId,
-          managed.terminal.cols,
-          managed.terminal.rows,
-        );
+        window.electronAPI.session.resize(sessionId, managed.terminal.cols, managed.terminal.rows);
       } catch {
         // ignore
       }
       managed.terminal.focus();
     });
-  }, [getOrCreate]);
+  }, [createTerminal]);
 
-  // Remove a session's terminal
-  const remove = useCallback((sessionId: string) => {
-    const managed = terminals.current.get(sessionId);
-    if (managed) {
-      managed.terminal.dispose();
-      terminals.current.delete(sessionId);
-      if (activeIdRef.current === sessionId) {
-        activeIdRef.current = null;
+  // Detach a pane's terminal
+  const detachPane = useCallback((paneId: PaneId) => {
+    const entry = panes.current.get(paneId);
+    if (!entry) return;
+
+    const { sessionId, terminal } = entry;
+
+    // Check if any OTHER pane shows this session
+    let otherPaneExists = false;
+    for (const [id, e] of panes.current.entries()) {
+      if (id !== paneId && e.sessionId === sessionId) {
+        otherPaneExists = true;
+        break;
       }
+    }
+
+    // If no other pane shows this session, create a background terminal
+    if (!otherPaneExists && !backgroundTerminals.current.has(sessionId)) {
+      const bg = createTerminal(sessionId);
+      backgroundTerminals.current.set(sessionId, bg);
+    }
+
+    terminal.dispose();
+    panes.current.delete(paneId);
+  }, [createTerminal]);
+
+  // Fit a specific pane and send resize IPC
+  const fitPane = useCallback((paneId: PaneId) => {
+    const entry = panes.current.get(paneId);
+    if (!entry) return;
+    try {
+      entry.fitAddon.fit();
+      window.electronAPI.session.resize(entry.sessionId, entry.terminal.cols, entry.terminal.rows);
+    } catch {
+      // ignore
     }
   }, []);
 
-  // Fit the active terminal (call on resize)
-  const fitActive = useCallback(() => {
-    if (!activeIdRef.current) return;
-    const managed = terminals.current.get(activeIdRef.current);
-    if (managed) {
-      try {
-        managed.fitAddon.fit();
-        window.electronAPI.session.resize(
-          activeIdRef.current,
-          managed.terminal.cols,
-          managed.terminal.rows,
-        );
-      } catch {
-        // ignore
+  // Focus a specific pane's terminal
+  const focusPane = useCallback((paneId: PaneId) => {
+    const entry = panes.current.get(paneId);
+    if (!entry) return;
+    entry.terminal.focus();
+    try {
+      entry.fitAddon.fit();
+      window.electronAPI.session.resize(entry.sessionId, entry.terminal.cols, entry.terminal.rows);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Remove ALL terminals for a session (panes + background)
+  const remove = useCallback((sessionId: string) => {
+    // Remove from panes
+    for (const [paneId, entry] of panes.current.entries()) {
+      if (entry.sessionId === sessionId) {
+        entry.terminal.dispose();
+        panes.current.delete(paneId);
       }
+    }
+    // Remove background terminal
+    const bg = backgroundTerminals.current.get(sessionId);
+    if (bg) {
+      bg.terminal.dispose();
+      backgroundTerminals.current.delete(sessionId);
     }
   }, []);
 
   // Cleanup all terminals on unmount
   useEffect(() => {
     return () => {
-      for (const managed of terminals.current.values()) {
+      for (const entry of panes.current.values()) {
+        entry.terminal.dispose();
+      }
+      panes.current.clear();
+      for (const managed of backgroundTerminals.current.values()) {
         managed.terminal.dispose();
       }
-      terminals.current.clear();
+      backgroundTerminals.current.clear();
     };
   }, []);
 
   return {
-    containerRef,
     getOrCreate,
     writeData,
-    activate,
+    attachToPane,
+    detachPane,
+    fitPane,
+    focusPane,
     remove,
-    fitActive,
   };
 }

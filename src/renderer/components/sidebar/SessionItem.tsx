@@ -15,9 +15,11 @@ interface SessionItemProps {
   /** When true, render a small ↻ marker for sessions launched via resume. */
   showResumeBadge?: boolean;
   nested?: boolean;
+  onDragStart?: (sessionId: string) => void;
+  onDragEnd?: () => void;
 }
 
-export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, nested }: SessionItemProps) {
+export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, nested, onDragStart, onDragEnd }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
@@ -62,6 +64,13 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
       className={`session-item ${isActive ? 'session-item--active' : ''} ${nested ? 'session-item--nested' : ''}`}
       onClick={onClick}
       onContextMenu={handleContextMenu}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('application/tether-session', session.id);
+        e.dataTransfer.effectAllowed = 'copy';
+        onDragStart?.(session.id);
+      }}
+      onDragEnd={() => onDragEnd?.()}
     >
       <span className={`status-dot status-dot--${getStatusClass(session.state)}`} />
       <div className="session-info">

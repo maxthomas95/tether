@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { TerminalPanel } from './components/TerminalPanel';
+import { SplitLayout } from './components/SplitLayout';
 import { RepoGroup } from './components/sidebar/RepoGroup';
 import { NewSessionDialog } from './components/sidebar/NewSessionDialog';
 import { NewEnvironmentDialog } from './components/sidebar/NewEnvironmentDialog';
@@ -11,16 +11,19 @@ import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { Notifications, useNotifications } from './components/Notifications';
 import { useTerminalManager } from './hooks/useTerminalManager';
+import { useLayoutState } from './hooks/useLayoutState';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
+import { generatePaneId, findLeaf, getLeaves } from './lib/layout-tree';
+import type { LayoutNode } from '../shared/layout-types';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
+import logoSrc from './assets/logo.png';
 
 export function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [environments, setEnvironments] = useState<EnvironmentInfo[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -32,12 +35,19 @@ export function App() {
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [resumePickerFor, setResumePickerFor] = useState<{ sessionId: string; workingDir: string; currentTranscriptId?: string } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const { themeName, setTheme, xtermTheme } = useTheme();
   const termManager = useTerminalManager(xtermTheme);
+  const { layoutState, layoutDispatch } = useLayoutState();
   const { notifications, notify, dismiss } = useNotifications();
 
-  // Load resume-related UI settings; re-read whenever the Settings dialog closes
-  // so toggles take effect without a relaunch.
+  // Derive activeSessionId from focused pane
+  const focusedLeaf = layoutState.focusedPaneId && layoutState.root
+    ? findLeaf(layoutState.root, layoutState.focusedPaneId)
+    : null;
+  const activeSessionId = focusedLeaf?.sessionId ?? null;
+
+  // Load resume-related UI settings
   useEffect(() => {
     let cancelled = false;
     Promise.all([
@@ -58,19 +68,19 @@ export function App() {
       if (!mounted) return;
       setEnvironments(envs);
 
-      // Check if restore is enabled (default: true)
       const restoreSetting = await window.electronAPI.config.get?.('restoreOnLaunch');
       if (restoreSetting === 'false') return;
 
-      // Resume previous chats by default; opt out via setting.
       const resumeSetting = await window.electronAPI.config.get?.('resumePreviousChats');
       const resumeChats = resumeSetting !== 'false';
 
-      // Load saved workspace
       const workspace = await window.electronAPI.workspace?.load?.();
       if (!workspace || !workspace.sessions.length) return;
 
-      // Restore sessions
+      // Build layout tree from restored sessions
+      let root: LayoutNode | null = null;
+      let focusPaneId: string | null = null;
+
       for (let i = 0; i < workspace.sessions.length; i++) {
         const saved = workspace.sessions[i];
         try {
@@ -83,12 +93,33 @@ export function App() {
           if (!mounted) return;
           termManager.getOrCreate(session.id);
           setSessions(prev => [...prev, session]);
+
+          const paneId = generatePaneId();
+          if (!root) {
+            root = { type: 'leaf', id: paneId, sessionId: session.id };
+            focusPaneId = paneId;
+          } else {
+            // Stack subsequent sessions to the right of the first leaf
+            const leaves = getLeaves(root);
+            if (leaves.length > 0) {
+              const { addPane } = await import('./lib/layout-tree');
+              root = addPane(root, leaves[leaves.length - 1].id, session.id, 'right');
+            }
+          }
+
           if (i === workspace.activeIndex) {
-            setActiveSessionId(session.id);
+            const leaves = getLeaves(root!);
+            const leaf = leaves.find(l => l.sessionId === session.id);
+            if (leaf) focusPaneId = leaf.id;
           }
         } catch {
-          // Skip sessions that fail to restore (e.g. dir no longer exists)
+          // Skip sessions that fail to restore
         }
+      }
+
+      if (root) {
+        layoutDispatch({ type: 'SET_ROOT', root });
+        if (focusPaneId) layoutDispatch({ type: 'SET_FOCUS', paneId: focusPaneId });
       }
     });
     return () => { mounted = false; };
@@ -132,19 +163,25 @@ export function App() {
     return () => { removeData(); removeState(); removeExit(); removeLabelChange(); };
   }, [termManager]);
 
-  // Activate terminal when active session changes
-  useEffect(() => {
-    if (activeSessionId) {
-      termManager.activate(activeSessionId);
-    }
-  }, [activeSessionId, termManager]);
-
   const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string) => {
     try {
       const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, env, cliArgs, resumeClaudeSessionId });
       termManager.getOrCreate(session.id);
       setSessions(prev => [...prev, session]);
-      setActiveSessionId(session.id);
+
+      const paneId = generatePaneId();
+      if (!layoutState.root) {
+        const root: LayoutNode = { type: 'leaf', id: paneId, sessionId: session.id };
+        layoutDispatch({ type: 'SET_ROOT', root });
+        layoutDispatch({ type: 'SET_FOCUS', paneId });
+      } else if (layoutState.focusedPaneId) {
+        layoutDispatch({ type: 'ADD_PANE', targetPaneId: layoutState.focusedPaneId, sessionId: session.id, zone: 'right' });
+      } else {
+        const leaves = getLeaves(layoutState.root);
+        if (leaves.length > 0) {
+          layoutDispatch({ type: 'ADD_PANE', targetPaneId: leaves[0].id, sessionId: session.id, zone: 'right' });
+        }
+      }
     } catch (err) {
       console.error('Failed to create session:', err);
       notify({
@@ -153,7 +190,7 @@ export function App() {
         message: extractErrorMessage(err),
       });
     }
-  }, [termManager, notify]);
+  }, [termManager, layoutState.root, layoutState.focusedPaneId, layoutDispatch, notify]);
 
   const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
     try {
@@ -175,16 +212,7 @@ export function App() {
 
   const handleKill = useCallback(async (id: string) => {
     await window.electronAPI.session.kill(id);
-    await window.electronAPI.session.remove(id);
-    termManager.remove(id);
-    setSessions(prev => {
-      const remaining = prev.filter(s => s.id !== id);
-      if (activeSessionId === id) {
-        setActiveSessionId(remaining.length > 0 ? remaining[0].id : null);
-      }
-      return remaining;
-    });
-  }, [activeSessionId, termManager]);
+  }, []);
 
   const handleRename = useCallback(async (id: string, label: string) => {
     await window.electronAPI.session.rename(id, label);
@@ -194,14 +222,9 @@ export function App() {
   const handleRemove = useCallback(async (id: string) => {
     await window.electronAPI.session.remove(id);
     termManager.remove(id);
-    setSessions(prev => {
-      const remaining = prev.filter(s => s.id !== id);
-      if (activeSessionId === id) {
-        setActiveSessionId(remaining.length > 0 ? remaining[0].id : null);
-      }
-      return remaining;
-    });
-  }, [activeSessionId, termManager]);
+    layoutDispatch({ type: 'REMOVE_SESSION', sessionId: id });
+    setSessions(prev => prev.filter(s => s.id !== id));
+  }, [termManager, layoutDispatch]);
 
   const handleDuplicate = useCallback(async (id: string) => {
     const source = sessions.find(s => s.id === id);
@@ -233,6 +256,27 @@ export function App() {
     );
   }, [resumePickerFor, sessions, handleCreateSession]);
 
+  // Sidebar session click: focus existing pane or replace focused pane
+  const handleSelectSession = useCallback((sessionId: string) => {
+    if (layoutState.root) {
+      const leaves = getLeaves(layoutState.root);
+      const existingLeaf = leaves.find(l => l.sessionId === sessionId);
+      if (existingLeaf) {
+        layoutDispatch({ type: 'SET_FOCUS', paneId: existingLeaf.id });
+        termManager.focusPane(existingLeaf.id);
+        return;
+      }
+    }
+    if (layoutState.focusedPaneId) {
+      layoutDispatch({ type: 'REPLACE_SESSION', paneId: layoutState.focusedPaneId, sessionId });
+    } else if (!layoutState.root) {
+      const paneId = generatePaneId();
+      const root: LayoutNode = { type: 'leaf', id: paneId, sessionId };
+      layoutDispatch({ type: 'SET_ROOT', root });
+      layoutDispatch({ type: 'SET_FOCUS', paneId });
+    }
+  }, [layoutState.root, layoutState.focusedPaneId, layoutDispatch, termManager]);
+
   const toggleGroup = useCallback((envId: string) => {
     setCollapsedGroups(prev => {
       const next = new Set(prev);
@@ -242,6 +286,37 @@ export function App() {
     });
   }, []);
 
+  // Drag handlers for sidebar → terminal area
+  const handleDragStart = useCallback(() => {
+    setIsDragging(true);
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  // Drop handler for empty main area
+  const handleMainDragOver = useCallback((e: React.DragEvent) => {
+    if (!layoutState.root) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }, [layoutState.root]);
+
+  const handleMainDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const sessionId = e.dataTransfer.getData('application/tether-session');
+    if (!sessionId) return;
+
+    if (!layoutState.root) {
+      const paneId = generatePaneId();
+      const root: LayoutNode = { type: 'leaf', id: paneId, sessionId };
+      layoutDispatch({ type: 'SET_ROOT', root });
+      layoutDispatch({ type: 'SET_FOCUS', paneId });
+    }
+    setIsDragging(false);
+  }, [layoutState.root, layoutDispatch]);
+
   // Keyboard shortcuts
   const shortcutActions = useMemo(() => ({
     onNewSession: () => setSessionDialogOpen(true),
@@ -249,26 +324,36 @@ export function App() {
     onStopSession: () => { if (activeSessionId) handleStop(activeSessionId); },
     onOpenSettings: () => setSettingsOpen(true),
     onSwitchSession: (index: number) => {
-      if (index < sessions.length) setActiveSessionId(sessions[index].id);
+      if (!layoutState.root) return;
+      const leaves = getLeaves(layoutState.root);
+      if (index < leaves.length) {
+        layoutDispatch({ type: 'SET_FOCUS', paneId: leaves[index].id });
+        termManager.focusPane(leaves[index].id);
+      }
     },
     onNextSession: () => {
-      if (sessions.length === 0) return;
-      const idx = sessions.findIndex(s => s.id === activeSessionId);
-      setActiveSessionId(sessions[(idx + 1) % sessions.length].id);
+      if (!layoutState.root) return;
+      const leaves = getLeaves(layoutState.root);
+      if (leaves.length === 0) return;
+      const idx = leaves.findIndex(l => l.id === layoutState.focusedPaneId);
+      const next = leaves[(idx + 1) % leaves.length];
+      layoutDispatch({ type: 'SET_FOCUS', paneId: next.id });
+      termManager.focusPane(next.id);
     },
     onPrevSession: () => {
-      if (sessions.length === 0) return;
-      const idx = sessions.findIndex(s => s.id === activeSessionId);
-      setActiveSessionId(sessions[(idx - 1 + sessions.length) % sessions.length].id);
+      if (!layoutState.root) return;
+      const leaves = getLeaves(layoutState.root);
+      if (leaves.length === 0) return;
+      const idx = leaves.findIndex(l => l.id === layoutState.focusedPaneId);
+      const prev = leaves[(idx - 1 + leaves.length) % leaves.length];
+      layoutDispatch({ type: 'SET_FOCUS', paneId: prev.id });
+      termManager.focusPane(prev.id);
     },
-  }), [activeSessionId, sessions, handleStop]);
+  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutDispatch, termManager, handleStop]);
 
   useKeyboardShortcuts(shortcutActions);
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
-  const activeEnv = activeSession?.environmentId
-    ? environments.find(e => e.id === activeSession.environmentId)
-    : environments.find(e => e.type === 'local');
 
   const isAlive = activeSession
     ? activeSession.state !== 'stopped' && activeSession.state !== 'dead'
@@ -292,8 +377,8 @@ export function App() {
         { label: 'Stop Session', shortcut: 'Ctrl+W', onClick: () => { if (activeSessionId) handleStop(activeSessionId); }, disabled: !isAlive },
         { label: 'Duplicate Session', onClick: () => { if (activeSessionId) handleDuplicate(activeSessionId); }, disabled: !activeSession },
         { separator: true },
-        { label: 'Next Session', shortcut: 'Ctrl+\u2193', onClick: shortcutActions.onNextSession, disabled: sessions.length < 2 },
-        { label: 'Previous Session', shortcut: 'Ctrl+\u2191', onClick: shortcutActions.onPrevSession, disabled: sessions.length < 2 },
+        { label: 'Next Pane', shortcut: 'Ctrl+\u2193', onClick: shortcutActions.onNextSession, disabled: !layoutState.root || getLeaves(layoutState.root).length < 2 },
+        { label: 'Previous Pane', shortcut: 'Ctrl+\u2191', onClick: shortcutActions.onPrevSession, disabled: !layoutState.root || getLeaves(layoutState.root).length < 2 },
         { separator: true },
         { label: 'Kill Session', onClick: () => { if (activeSessionId) handleKill(activeSessionId); }, disabled: !isAlive, danger: true },
         { label: 'Remove Session', onClick: () => { if (activeSessionId) handleRemove(activeSessionId); }, disabled: !activeSession, danger: true },
@@ -321,7 +406,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, sessions.length, themeName, setTheme, handleStop, handleKill, handleRemove, handleDuplicate, shortcutActions]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleKill, handleRemove, handleDuplicate, shortcutActions]);
 
   return (
     <div className="app-layout">
@@ -383,7 +468,6 @@ export function App() {
                 </div>
                 {!isCollapsed && envSessions.length > 0 && (
                   (() => {
-                    // Group sessions by working directory
                     const byDir = new Map<string, SessionInfo[]>();
                     for (const s of envSessions) {
                       const dir = s.workingDir;
@@ -396,7 +480,7 @@ export function App() {
                         repoPath={dir}
                         sessions={dirSessions}
                         activeSessionId={activeSessionId}
-                        onSelectSession={setActiveSessionId}
+                        onSelectSession={handleSelectSession}
                         onStop={handleStop}
                         onKill={handleKill}
                         onRename={handleRename}
@@ -404,6 +488,8 @@ export function App() {
                         onDuplicate={handleDuplicate}
                         onResumePrevious={enableResumePicker ? handleOpenResumePicker : undefined}
                         showResumeBadge={showResumeBadge}
+                        onDragStart={handleDragStart}
+                        onDragEnd={handleDragEnd}
                       />
                     ));
                   })()
@@ -422,27 +508,32 @@ export function App() {
         </div>
       </aside>
       {sidebarVisible && <SidebarResizeHandle onResize={setSidebarWidth} />}
-      <main className="terminal-panel">
-        <div className="terminal-header">
-          {activeSession ? (
-            <span className="terminal-header-text">
-              <span
-                className={`status-dot status-dot--${getStatusClass(activeSession.state)}`}
-                style={{ display: 'inline-block', marginRight: 8, verticalAlign: 'middle' }}
-              />
-              {activeSession.label}
-              {' \u00b7 '}{abbreviatePath(activeSession.workingDir)}
-              {' \u00b7 '}{activeEnv ? `${activeEnv.type}${activeEnv.type === 'ssh' ? ':' + (activeEnv.config?.host || '') : ''}` : 'local'}
-            </span>
-          ) : (
-            <span className="terminal-header-text">No active session</span>
-          )}
-        </div>
-        <TerminalPanel
-          sessionId={activeSessionId}
-          containerRef={termManager.containerRef}
-          onResize={termManager.fitActive}
-        />
+      <main
+        className={`terminal-panel ${isDragging && !layoutState.root ? 'terminal-panel--drop-active' : ''}`}
+        onDragOver={handleMainDragOver}
+        onDrop={handleMainDrop}
+      >
+        {layoutState.root ? (
+          <SplitLayout
+            node={layoutState.maximizedPaneId
+              ? findLeaf(layoutState.root, layoutState.maximizedPaneId) || layoutState.root
+              : layoutState.root}
+            layoutDispatch={layoutDispatch}
+            termManager={termManager}
+            sessions={sessions}
+            isDragging={isDragging}
+            focusedPaneId={layoutState.focusedPaneId}
+            maximizedPaneId={layoutState.maximizedPaneId}
+          />
+        ) : (
+          <div className="terminal-container">
+            <div className="terminal-placeholder">
+              <img src={logoSrc} alt="Tether" className="welcome-logo" />
+              <p>Welcome to Tether</p>
+              <p className="terminal-placeholder-sub">Create a new session or drag one here to start</p>
+            </div>
+          </div>
+        )}
       </main>
       </div>
 
@@ -485,31 +576,8 @@ export function App() {
   );
 }
 
-/**
- * Pull a readable error message out of whatever the IPC layer threw.
- * Electron wraps remote errors as "Error invoking remote method 'X': Error: <real>"
- * — strip the wrapper so the toast shows the actual cause.
- */
 function extractErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   const match = raw.match(/Error invoking remote method '[^']+':\s*(?:Error:\s*)?(.*)$/s);
   return match ? match[1].trim() : raw;
-}
-
-function getStatusClass(state: SessionState): string {
-  switch (state) {
-    case 'running': case 'starting': return 'running';
-    case 'waiting': return 'waiting';
-    case 'stopped': case 'dead': return 'dead';
-    default: return 'idle';
-  }
-}
-
-function abbreviatePath(p: string): string {
-  const home = window.electronAPI.homeDir;
-  if (home && p.startsWith(home)) {
-    return '~' + p.slice(home.length).replace(/\\/g, '/');
-  }
-  const parts = p.split(/[\\/]/);
-  return parts.length > 2 ? `.../${parts.slice(-2).join('/')}` : p;
 }
