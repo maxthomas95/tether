@@ -104,6 +104,22 @@ export interface CreateSessionOptions {
   cliArgs?: string[];
   /** When set, launch claude with `--resume <id>` instead of `--session-id <new>`. */
   resumeClaudeSessionId?: string;
+  profileId?: string;
+}
+
+export interface LaunchProfileInfo {
+  id: string;
+  name: string;
+  envVars: Record<string, string>;
+  cliFlags: string[];
+  isDefault: boolean;
+}
+
+export interface CreateLaunchProfileOptions {
+  name: string;
+  envVars?: Record<string, string>;
+  cliFlags?: string[];
+  isDefault?: boolean;
 }
 
 export interface TranscriptInfo {
@@ -143,6 +159,12 @@ export interface TetherAPI {
     list(): Promise<EnvironmentInfo[]>;
     create(opts: CreateEnvironmentOptions): Promise<EnvironmentInfo>;
     update(id: string, opts: Partial<CreateEnvironmentOptions>): Promise<void>;
+    delete(id: string): Promise<void>;
+  };
+  profile: {
+    list(): Promise<LaunchProfileInfo[]>;
+    create(opts: CreateLaunchProfileOptions): Promise<LaunchProfileInfo>;
+    update(id: string, opts: Partial<CreateLaunchProfileOptions>): Promise<void>;
     delete(id: string): Promise<void>;
   };
   dialog: {

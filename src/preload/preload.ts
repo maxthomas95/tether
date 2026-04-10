@@ -2,7 +2,9 @@ import { contextBridge, ipcRenderer, clipboard } from 'electron';
 import { IPC } from '../shared/constants';
 import type {
   CreateSessionOptions, SessionInfo, SessionState,
-  CreateEnvironmentOptions, EnvironmentInfo, TetherAPI,
+  CreateEnvironmentOptions, EnvironmentInfo,
+  CreateLaunchProfileOptions, LaunchProfileInfo,
+  TetherAPI,
   CreateGitProviderOptions, GitProviderInfo, GitRepoInfo, CloneProgressInfo,
   VaultConfig, VaultStatus, VaultPlaintextSecret, MigrateSecretOptions,
   TranscriptInfo,
@@ -48,6 +50,13 @@ const api: TetherAPI = {
     create: (opts: CreateEnvironmentOptions): Promise<EnvironmentInfo> => ipcRenderer.invoke(IPC.ENV_CREATE, opts),
     update: (id: string, opts: Partial<CreateEnvironmentOptions>): Promise<void> => ipcRenderer.invoke(IPC.ENV_UPDATE, id, opts),
     delete: (id: string): Promise<void> => ipcRenderer.invoke(IPC.ENV_DELETE, id),
+  },
+
+  profile: {
+    list: (): Promise<LaunchProfileInfo[]> => ipcRenderer.invoke(IPC.PROFILE_LIST),
+    create: (opts: CreateLaunchProfileOptions): Promise<LaunchProfileInfo> => ipcRenderer.invoke(IPC.PROFILE_CREATE, opts),
+    update: (id: string, opts: Partial<CreateLaunchProfileOptions>): Promise<void> => ipcRenderer.invoke(IPC.PROFILE_UPDATE, id, opts),
+    delete: (id: string): Promise<void> => ipcRenderer.invoke(IPC.PROFILE_DELETE, id),
   },
 
   dialog: {

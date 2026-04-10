@@ -17,13 +17,14 @@ import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
 import { generatePaneId, findLeaf, getLeaves } from './lib/layout-tree';
 import type { LayoutNode } from '../shared/layout-types';
-import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType } from '../shared/types';
+import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
 import logoSrc from './assets/logo.png';
 
 export function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [environments, setEnvironments] = useState<EnvironmentInfo[]>([]);
+  const [profiles, setProfiles] = useState<LaunchProfileInfo[]>([]);
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -46,6 +47,11 @@ export function App() {
     ? findLeaf(layoutState.root, layoutState.focusedPaneId)
     : null;
   const activeSessionId = focusedLeaf?.sessionId ?? null;
+
+  // Load profiles on mount
+  useEffect(() => {
+    window.electronAPI.profile.list().then(setProfiles).catch(() => {});
+  }, []);
 
   // Load resume-related UI settings
   useEffect(() => {
@@ -163,9 +169,9 @@ export function App() {
     return () => { removeData(); removeState(); removeExit(); removeLabelChange(); };
   }, [termManager]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string) => {
+  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string) => {
     try {
-      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, env, cliArgs, resumeClaudeSessionId });
+      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, env, cliArgs, resumeClaudeSessionId, profileId });
       termManager.getOrCreate(session.id);
       setSessions(prev => [...prev, session]);
 
@@ -540,6 +546,7 @@ export function App() {
       <NewSessionDialog
         isOpen={sessionDialogOpen}
         environments={environments}
+        profiles={profiles}
         onClose={() => setSessionDialogOpen(false)}
         onCreate={handleCreateSession}
       />
@@ -550,7 +557,10 @@ export function App() {
       />
       <SettingsDialog
         isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => {
+          setSettingsOpen(false);
+          window.electronAPI.profile.list().then(setProfiles).catch(() => {});
+        }}
         currentTheme={themeName}
         onThemeChange={setTheme}
       />

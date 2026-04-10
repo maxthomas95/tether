@@ -7,6 +7,7 @@ import type { SSHConfig } from '../transport/ssh-transport';
 import { statusDetector } from '../status/status-detector';
 import { planDetector } from '../status/plan-detector';
 import { getEnvironment } from '../db/environment-repo';
+import { getProfile } from '../db/profile-repo';
 import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
 import { transcriptExists } from '../claude/transcripts';
 import type { SessionState, SessionInfo, CreateSessionOptions } from '../../shared/types';
@@ -150,7 +151,7 @@ class SessionManager {
       callbacks.onExit(id, exitCode);
     });
 
-    // Resolve env var cascade: app defaults -> environment -> session override
+    // Resolve env var cascade: app defaults -> environment -> profile -> session override
     const { getDb } = await import('../db/database');
     const appEnvVars = getDb().defaultEnvVars;
     let envEnvVars: Record<string, string> = {};
@@ -160,9 +161,21 @@ class SessionManager {
         try { envEnvVars = JSON.parse(envRow.env_vars); } catch { /* ignore */ }
       }
     }
+    let profileEnvVars: Record<string, string> = {};
+    let profileCliFlags: string[] = [];
+    if (opts.profileId) {
+      const profile = getProfile(opts.profileId);
+      if (profile?.env_vars) {
+        try { profileEnvVars = JSON.parse(profile.env_vars); } catch { /* ignore */ }
+      }
+      if (profile?.cli_flags) {
+        try { profileCliFlags = JSON.parse(profile.cli_flags); } catch { /* ignore */ }
+      }
+    }
     const mergedEnv: Record<string, string> = {
       ...appEnvVars,
       ...envEnvVars,
+      ...profileEnvVars,
       ...(opts.env || {}),
     };
 
@@ -180,9 +193,9 @@ class SessionManager {
       throw err;
     }
 
-    // Resolve CLI flags: app defaults + session-specific
+    // Resolve CLI flags: app defaults + profile + session-specific
     const appCliFlags = getDb().defaultCliFlags || [];
-    const resolvedCliArgs = [...appCliFlags, ...(opts.cliArgs || [])];
+    const resolvedCliArgs = [...appCliFlags, ...profileCliFlags, ...(opts.cliArgs || [])];
 
     // Decide on the Claude session UUID. We only manage this for local
     // sessions — SSH/Coder transports don't currently understand the flag and

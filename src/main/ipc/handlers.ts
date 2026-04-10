@@ -3,7 +3,9 @@ import { IPC } from '../../shared/constants';
 import type {
   CreateSessionOptions,
   CreateEnvironmentOptions,
+  CreateLaunchProfileOptions,
   EnvironmentInfo,
+  LaunchProfileInfo,
   GitProviderInfo,
   CreateGitProviderOptions,
   VaultConfig,
@@ -14,6 +16,7 @@ import type {
 import { sessionManager } from '../session/session-manager';
 import * as envRepo from '../db/environment-repo';
 import * as sessionRepo from '../db/session-repo';
+import * as profileRepo from '../db/profile-repo';
 import * as gitProviderRepo from '../db/git-provider-repo';
 import { gitClone, gitInit } from '../git/git-service';
 import { GiteaClient } from '../git/providers/gitea-client';
@@ -188,6 +191,47 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.ENV_DELETE, async (_event, id: string) => {
     log.info('Deleting environment', { id });
     envRepo.deleteEnvironment(id);
+  });
+
+  // === Profile handlers ===
+
+  ipcMain.handle(IPC.PROFILE_LIST, async () => {
+    return profileRepo.listProfiles().map((p): LaunchProfileInfo => ({
+      id: p.id,
+      name: p.name,
+      envVars: JSON.parse(p.env_vars || '{}'),
+      cliFlags: JSON.parse(p.cli_flags || '[]'),
+      isDefault: p.is_default,
+    }));
+  });
+
+  ipcMain.handle(IPC.PROFILE_CREATE, async (_event, opts: CreateLaunchProfileOptions) => {
+    const p = profileRepo.createProfile({
+      name: opts.name,
+      envVars: opts.envVars,
+      cliFlags: opts.cliFlags,
+      isDefault: opts.isDefault,
+    });
+    return {
+      id: p.id,
+      name: p.name,
+      envVars: JSON.parse(p.env_vars || '{}'),
+      cliFlags: JSON.parse(p.cli_flags || '[]'),
+      isDefault: p.is_default,
+    } as LaunchProfileInfo;
+  });
+
+  ipcMain.handle(IPC.PROFILE_UPDATE, async (_event, id: string, opts: Partial<CreateLaunchProfileOptions>) => {
+    profileRepo.updateProfile(id, {
+      name: opts.name,
+      envVars: opts.envVars,
+      cliFlags: opts.cliFlags,
+      isDefault: opts.isDefault,
+    });
+  });
+
+  ipcMain.handle(IPC.PROFILE_DELETE, async (_event, id: string) => {
+    profileRepo.deleteProfile(id);
   });
 
   // === Dialog handlers ===
