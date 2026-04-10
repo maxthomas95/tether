@@ -1,5 +1,5 @@
 import { useRef, useCallback } from 'react';
-import type { LayoutNode } from '../../shared/layout-types';
+import type { LayoutNode, LayoutLeaf } from '../../shared/layout-types';
 import type { SessionInfo } from '../../shared/types';
 import type { TerminalManagerAPI } from '../hooks/useTerminalManager';
 import type { LayoutAction } from '../hooks/useLayoutState';
@@ -12,7 +12,8 @@ interface SplitLayoutProps {
   termManager: TerminalManagerAPI;
   sessions: SessionInfo[];
   isDragging: boolean;
-  onDragStateChange: (dragging: boolean) => void;
+  draggingPaneId: string | null;
+  onDragStateChange: (dragging: boolean, sourcePaneId?: string) => void;
   focusedPaneId: string | null;
   maximizedPaneId: string | null;
 }
@@ -23,6 +24,7 @@ export function SplitLayout({
   termManager,
   sessions,
   isDragging,
+  draggingPaneId,
   onDragStateChange,
   focusedPaneId,
   maximizedPaneId,
@@ -36,6 +38,7 @@ export function SplitLayout({
         session={session}
         isFocused={focusedPaneId === node.id}
         isDragging={isDragging}
+        draggingPaneId={draggingPaneId}
         onDragStateChange={onDragStateChange}
         layoutDispatch={layoutDispatch}
         termManager={termManager}
@@ -50,6 +53,7 @@ export function SplitLayout({
       termManager={termManager}
       sessions={sessions}
       isDragging={isDragging}
+      draggingPaneId={draggingPaneId}
       onDragStateChange={onDragStateChange}
       focusedPaneId={focusedPaneId}
       maximizedPaneId={maximizedPaneId}
@@ -63,7 +67,8 @@ interface SplitContainerProps {
   termManager: TerminalManagerAPI;
   sessions: SessionInfo[];
   isDragging: boolean;
-  onDragStateChange: (dragging: boolean) => void;
+  draggingPaneId: string | null;
+  onDragStateChange: (dragging: boolean, sourcePaneId?: string) => void;
   focusedPaneId: string | null;
   maximizedPaneId: string | null;
 }
@@ -74,6 +79,7 @@ function SplitContainer({
   termManager,
   sessions,
   isDragging,
+  draggingPaneId,
   onDragStateChange,
   focusedPaneId,
   maximizedPaneId,
@@ -101,6 +107,7 @@ function SplitContainer({
           termManager={termManager}
           sessions={sessions}
           isDragging={isDragging}
+          draggingPaneId={draggingPaneId}
           onDragStateChange={onDragStateChange}
           focusedPaneId={focusedPaneId}
           maximizedPaneId={maximizedPaneId}
@@ -122,6 +129,7 @@ function SplitContainer({
           termManager={termManager}
           sessions={sessions}
           isDragging={isDragging}
+          draggingPaneId={draggingPaneId}
           onDragStateChange={onDragStateChange}
           focusedPaneId={focusedPaneId}
           maximizedPaneId={maximizedPaneId}

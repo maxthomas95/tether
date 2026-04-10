@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import type { PaneId } from '../../shared/layout-types';
@@ -123,35 +123,46 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
 
   // Attach a terminal to a pane container
   const attachToPane = useCallback((paneId: PaneId, sessionId: string, container: HTMLDivElement) => {
-    // If session has a background terminal, dispose it
+    let terminal: Terminal;
+    let fitAddon: FitAddon;
+
+    // Reuse background terminal if it exists — it has the scrollback buffer
     const bg = backgroundTerminals.current.get(sessionId);
     if (bg) {
-      bg.terminal.dispose();
+      terminal = bg.terminal;
+      fitAddon = bg.fitAddon;
       backgroundTerminals.current.delete(sessionId);
+
+      if (!terminal.element) {
+        terminal.open(container);
+      } else {
+        container.appendChild(terminal.element);
+      }
+    } else {
+      // No background terminal — create fresh
+      const managed = createTerminal(sessionId);
+      terminal = managed.terminal;
+      fitAddon = managed.fitAddon;
+      terminal.open(container);
     }
 
-    // Create a new terminal for this pane
-    const managed = createTerminal(sessionId);
+    panes.current.set(paneId, { sessionId, terminal, fitAddon, container });
 
-    const entry: PaneEntry = {
-      sessionId,
-      terminal: managed.terminal,
-      fitAddon: managed.fitAddon,
-      container,
-    };
-    panes.current.set(paneId, entry);
-
-    // Open terminal in the container
-    managed.terminal.open(container);
-
-    requestAnimationFrame(() => {
+    // Fit after the layout has settled — a single rAF can be too early for
+    // flex containers that haven't received their final dimensions yet.
+    const doFit = () => {
       try {
-        managed.fitAddon.fit();
-        window.electronAPI.session.resize(sessionId, managed.terminal.cols, managed.terminal.rows);
+        fitAddon.fit();
+        window.electronAPI.session.resize(sessionId, terminal.cols, terminal.rows);
       } catch {
         // ignore
       }
-      managed.terminal.focus();
+    };
+    requestAnimationFrame(() => {
+      doFit();
+      terminal.focus();
+      // Second fit after another frame to catch late layout shifts
+      requestAnimationFrame(doFit);
     });
   }, [createTerminal]);
 
@@ -237,7 +248,7 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
     };
   }, []);
 
-  return {
+  return useMemo<TerminalManagerAPI>(() => ({
     getOrCreate,
     writeData,
     attachToPane,
@@ -245,5 +256,5 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
     fitPane,
     focusPane,
     remove,
-  };
+  }), [getOrCreate, writeData, attachToPane, detachPane, fitPane, focusPane, remove]);
 }

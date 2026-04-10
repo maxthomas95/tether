@@ -37,6 +37,7 @@ export function App() {
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [resumePickerFor, setResumePickerFor] = useState<{ sessionId: string; workingDir: string; currentTranscriptId?: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null);
   const { themeName, setTheme, xtermTheme } = useTheme();
   const termManager = useTerminalManager(xtermTheme);
   const { layoutState, layoutDispatch } = useLayoutState();
@@ -295,10 +296,18 @@ export function App() {
   // Drag handlers for sidebar → terminal area
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
+    setDraggingPaneId(null);
   }, []);
 
   const handleDragEnd = useCallback(() => {
     setIsDragging(false);
+    setDraggingPaneId(null);
+  }, []);
+
+  // Drag handler for pane header drags
+  const handlePaneDragStateChange = useCallback((dragging: boolean, sourcePaneId?: string) => {
+    setIsDragging(dragging);
+    setDraggingPaneId(dragging ? (sourcePaneId ?? null) : null);
   }, []);
 
   // Drop handler for empty main area
@@ -528,7 +537,8 @@ export function App() {
             termManager={termManager}
             sessions={sessions}
             isDragging={isDragging}
-            onDragStateChange={setIsDragging}
+            draggingPaneId={draggingPaneId}
+            onDragStateChange={handlePaneDragStateChange}
             focusedPaneId={layoutState.focusedPaneId}
             maximizedPaneId={layoutState.maximizedPaneId}
           />

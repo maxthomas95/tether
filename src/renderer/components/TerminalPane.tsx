@@ -11,7 +11,8 @@ interface TerminalPaneProps {
   session: SessionInfo | undefined;
   isFocused: boolean;
   isDragging: boolean;
-  onDragStateChange: (dragging: boolean) => void;
+  draggingPaneId: string | null;
+  onDragStateChange: (dragging: boolean, sourcePaneId?: string) => void;
   layoutDispatch: React.Dispatch<LayoutAction>;
   termManager: TerminalManagerAPI;
 }
@@ -22,6 +23,7 @@ export function TerminalPane({
   session,
   isFocused,
   isDragging,
+  draggingPaneId,
   onDragStateChange,
   layoutDispatch,
   termManager,
@@ -103,7 +105,7 @@ export function TerminalPane({
           e.dataTransfer.setData('application/tether-pane', paneId);
           e.dataTransfer.setData('application/tether-session', sessionId);
           e.dataTransfer.effectAllowed = 'move';
-          onDragStateChange(true);
+          onDragStateChange(true, paneId);
         }}
         onDragEnd={() => onDragStateChange(false)}
       >
@@ -131,7 +133,7 @@ export function TerminalPane({
           ref={containerRef}
           style={{ flex: 1, overflow: 'hidden', width: '100%', height: '100%' }}
         />
-        {isDragging && (
+        {isDragging && draggingPaneId !== paneId && (
           <DropZoneOverlay paneId={paneId} layoutDispatch={layoutDispatch} />
         )}
       </div>
