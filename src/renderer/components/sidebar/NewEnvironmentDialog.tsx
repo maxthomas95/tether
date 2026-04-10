@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
 import type { EnvironmentType } from '../../../shared/types';
-
-const VAULT_REF_PREFIX = 'vault://';
+import { suggestVaultPath, VAULT_REF_PREFIX } from '../../utils/vault-path';
 
 interface NewEnvironmentDialogProps {
   isOpen: boolean;
@@ -25,7 +24,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [vaultConnected, setVaultConnected] = useState(false);
   const [vaultMount, setVaultMount] = useState('secret');
-  const [vaultIdentity, setVaultIdentity] = useState('');
+  const [vaultIdentity, setVaultIdentity] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -33,11 +32,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
     if (!isOpen) return;
     window.electronAPI.vault.status().then(s => {
       setVaultConnected(s.enabled && s.loggedIn);
-      if (s.identity) {
-        // Strip auth method prefix (e.g. "oidc-mathomas@uwcu.org" -> "mathomas@uwcu.org")
-        const clean = s.identity.replace(/^[a-z]+-/, '');
-        setVaultIdentity(clean);
-      }
+      setVaultIdentity(s.identity);
     }).catch(() => setVaultConnected(false));
     window.electronAPI.vault.getConfig().then(c => { if (c.mount) setVaultMount(c.mount); }).catch(() => {});
   }, [isOpen]);
@@ -47,11 +42,13 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
   const passwordReady =
     authMethod !== 'password' || !!password;
 
-  const slugify = (s: string): string =>
-    s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'host';
-
-  const identitySegment = vaultIdentity ? `${vaultIdentity}/` : '';
-  const suggestedVaultPath = `${VAULT_REF_PREFIX}${vaultMount}/${identitySegment}tether/ssh/${slugify(name || host)}#password`;
+  const suggestedVaultPath = suggestVaultPath(
+    { mount: vaultMount },
+    { identity: vaultIdentity },
+    'ssh',
+    name || host || 'host',
+    'password',
+  );
 
   const handleCreate = async () => {
     if (!name.trim() || (type === 'ssh' && !host.trim())) return;

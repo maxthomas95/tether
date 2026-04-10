@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { suggestVaultPath } from '../utils/vault-path';
 
 const CLAUDE_PRESETS = [
   { key: 'ANTHROPIC_API_KEY', label: 'API Key' },
@@ -50,6 +51,19 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, vaultEnab
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [showPresets, setShowPresets] = useState(false);
   const [vaultTestResult, setVaultTestResult] = useState<Record<number, { ok: boolean; error?: string }>>({});
+  const [vaultWriteResult, setVaultWriteResult] = useState<Record<number, { ok: boolean; error?: string; ref?: string }>>({});
+  const [vaultMount, setVaultMount] = useState('secret');
+  const [vaultIdentity, setVaultIdentity] = useState<string | undefined>(undefined);
+  const [vaultLoggedIn, setVaultLoggedIn] = useState(false);
+
+  useEffect(() => {
+    if (!vaultEnabled) return;
+    window.electronAPI.vault.getConfig().then(c => { if (c.mount) setVaultMount(c.mount); }).catch(() => {});
+    window.electronAPI.vault.status().then(s => {
+      setVaultLoggedIn(s.loggedIn);
+      setVaultIdentity(s.identity);
+    }).catch(() => {});
+  }, [vaultEnabled]);
 
   const update = useCallback((newRows: VarRow[]) => {
     setRows(newRows);
@@ -108,6 +122,29 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, vaultEnab
     setVaultTestResult(prev => ({ ...prev, [id]: result }));
   }, [rows]);
 
+  const storeInVault = useCallback(async (id: number) => {
+    const row = rows.find(r => r.id === id);
+    if (!row || !row.key.trim() || !row.value || isVaultRef(row.value)) return;
+    const ref = suggestVaultPath(
+      { mount: vaultMount },
+      { identity: vaultIdentity },
+      'env',
+      row.key,
+      'value',
+    );
+    setVaultWriteResult(prev => ({ ...prev, [id]: { ok: false, error: 'Writing...' } }));
+    try {
+      await window.electronAPI.vault.writeSecret(ref, row.value);
+      update(rows.map(r => r.id === id ? { ...r, value: ref } : r));
+      setVaultWriteResult(prev => ({ ...prev, [id]: { ok: true, ref } }));
+    } catch (err) {
+      setVaultWriteResult(prev => ({
+        ...prev,
+        [id]: { ok: false, error: err instanceof Error ? err.message : String(err) },
+      }));
+    }
+  }, [rows, update, vaultMount, vaultIdentity]);
+
   return (
     <div className={`env-editor ${compact ? 'env-editor--compact' : ''}`}>
       {/* Inherited vars */}
@@ -140,7 +177,9 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, vaultEnab
         const sensitive = isSensitive(row.key);
         const vaultMode = isVaultRef(row.value);
         const showVaultToggle = vaultEnabled && sensitive;
+        const canStoreInVault = vaultEnabled && vaultLoggedIn && sensitive && !!row.value && !vaultMode;
         const testResult = vaultTestResult[row.id];
+        const writeResult = vaultWriteResult[row.id];
         return (
           <div key={row.id}>
             <div className="env-editor-row">
@@ -179,6 +218,15 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, vaultEnab
                   Vault
                 </button>
               )}
+              {canStoreInVault && (
+                <button
+                  className="env-editor-btn"
+                  onClick={() => storeInVault(row.id)}
+                  title="Write this value to Vault and replace with a reference"
+                >
+                  {'\u2192 Vault'}
+                </button>
+              )}
               {vaultMode && (
                 <button
                   className="env-editor-btn"
@@ -206,6 +254,20 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, vaultEnab
                 }}
               >
                 {testResult.ok ? '\u2713 Resolved' : (testResult.error || 'Failed')}
+              </div>
+            )}
+            {writeResult && (
+              <div
+                className="form-hint"
+                style={{
+                  marginLeft: 4,
+                  marginTop: 2,
+                  color: writeResult.ok ? 'var(--status-running)' : 'var(--status-dead)',
+                }}
+              >
+                {writeResult.ok
+                  ? `\u2713 Written to ${writeResult.ref}`
+                  : (writeResult.error || 'Failed')}
               </div>
             )}
           </div>

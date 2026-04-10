@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { EnvVarEditor } from './EnvVarEditor';
 import { MigrateToVaultDialog } from './MigrateToVaultDialog';
 import { themeList } from '../styles/themes';
+import { suggestVaultPath } from '../utils/vault-path';
 import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus } from '../../shared/types';
 
 const COMMON_FLAGS = [
@@ -9,8 +10,6 @@ const COMMON_FLAGS = [
   { flag: '--verbose', label: 'Verbose output' },
   { flag: '--no-telemetry', label: 'Disable telemetry' },
 ];
-
-const VAULT_REF_PREFIX = 'vault://';
 
 function formatExpiry(expiresAt?: string): string {
   if (!expiresAt) return '';
@@ -57,7 +56,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [newProviderUrl, setNewProviderUrl] = useState('');
   const [newProviderOrg, setNewProviderOrg] = useState('');
   const [newProviderToken, setNewProviderToken] = useState('');
-  const [newProviderTokenFromVault, setNewProviderTokenFromVault] = useState(false);
+  const [newProviderStoreInVault, setNewProviderStoreInVault] = useState(false);
+  const [newProviderVaultPath, setNewProviderVaultPath] = useState('');
+  const [newProviderError, setNewProviderError] = useState<string | null>(null);
   const [providerTestResult, setProviderTestResult] = useState<Record<string, { ok: boolean; error?: string }>>({});
 
   // Vault state
@@ -149,16 +150,35 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     setCliFlags(prev => prev.filter(f => f !== flag));
   };
 
+  const suggestedProviderVaultPath = suggestVaultPath(
+    { mount: vaultConfig.mount },
+    { identity: vaultStatus.identity },
+    'git',
+    newProviderName || newProviderType,
+    'token',
+  );
+
   const handleAddProvider = async () => {
     if (!newProviderName.trim() || !newProviderUrl.trim() || !newProviderToken.trim()) return;
-    if (newProviderTokenFromVault && !newProviderToken.startsWith(VAULT_REF_PREFIX)) return;
+    setNewProviderError(null);
     try {
+      let tokenToStore = newProviderToken.trim();
+      if (newProviderStoreInVault) {
+        const ref = (newProviderVaultPath || suggestedProviderVaultPath).trim();
+        try {
+          await window.electronAPI.vault.writeSecret(ref, tokenToStore);
+        } catch (err) {
+          setNewProviderError(`Failed to write to Vault: ${err instanceof Error ? err.message : String(err)}`);
+          return;
+        }
+        tokenToStore = ref;
+      }
       const provider = await window.electronAPI.gitProvider.create({
         name: newProviderName.trim(),
         type: newProviderType,
         baseUrl: newProviderUrl.trim(),
         organization: newProviderType === 'ado' ? newProviderOrg.trim() : undefined,
-        token: newProviderToken.trim(),
+        token: tokenToStore,
       });
       setGitProviders(prev => [...prev, provider]);
       setShowAddProvider(false);
@@ -166,7 +186,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setNewProviderUrl('');
       setNewProviderOrg('');
       setNewProviderToken('');
-      setNewProviderTokenFromVault(false);
+      setNewProviderStoreInVault(false);
+      setNewProviderVaultPath('');
+      setNewProviderError(null);
     } catch { /* ignore */ }
   };
 
@@ -552,35 +574,53 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                 )}
                 <div className="form-group">
                   <label className="form-label">Personal Access Token</label>
-                  {vaultStatus.enabled && (
-                    <label className="form-radio-label" style={{ marginBottom: 4 }}>
-                      <input
-                        type="checkbox"
-                        checked={newProviderTokenFromVault}
-                        onChange={e => {
-                          setNewProviderTokenFromVault(e.target.checked);
-                          setNewProviderToken(e.target.checked ? VAULT_REF_PREFIX : '');
-                        }}
-                      />
-                      Source from Vault
-                    </label>
-                  )}
                   <input
-                    type={newProviderTokenFromVault ? 'text' : 'password'}
+                    type="password"
                     className="form-input"
                     value={newProviderToken}
                     onChange={e => setNewProviderToken(e.target.value)}
-                    placeholder={newProviderTokenFromVault ? 'vault://secret/tether/git/name#token' : 'ghp_... or PAT'}
+                    placeholder="ghp_... or PAT"
                     spellCheck={false}
                   />
+                  {vaultStatus.enabled && vaultStatus.loggedIn && (
+                    <>
+                      <label className="form-radio-label" style={{ marginTop: 6, marginBottom: 4 }}>
+                        <input
+                          type="checkbox"
+                          checked={newProviderStoreInVault}
+                          onChange={e => setNewProviderStoreInVault(e.target.checked)}
+                        />
+                        Store in Vault
+                      </label>
+                      {newProviderStoreInVault && (
+                        <>
+                          <input
+                            className="form-input"
+                            value={newProviderVaultPath || suggestedProviderVaultPath}
+                            onChange={e => setNewProviderVaultPath(e.target.value)}
+                            placeholder={suggestedProviderVaultPath}
+                            spellCheck={false}
+                            style={{ marginTop: 4, fontSize: '0.85em' }}
+                          />
+                          <p className="form-hint" style={{ marginTop: 2 }}>
+                            Token will be written to this Vault path on save.
+                          </p>
+                        </>
+                      )}
+                    </>
+                  )}
+                  {newProviderError && (
+                    <p className="form-hint" style={{ marginTop: 4, color: 'var(--status-dead)' }}>
+                      {newProviderError}
+                    </p>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="form-btn form-btn--primary" onClick={handleAddProvider}
                     disabled={
                       !newProviderName.trim() ||
                       !newProviderUrl.trim() ||
-                      !newProviderToken.trim() ||
-                      (newProviderTokenFromVault && !newProviderToken.startsWith(VAULT_REF_PREFIX))
+                      !newProviderToken.trim()
                     }
                   >Save</button>
                   <button className="form-btn" onClick={() => {
@@ -589,7 +629,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                     setNewProviderUrl('');
                     setNewProviderOrg('');
                     setNewProviderToken('');
-                    setNewProviderTokenFromVault(false);
+                    setNewProviderStoreInVault(false);
+                    setNewProviderVaultPath('');
+                    setNewProviderError(null);
                   }}>Cancel</button>
                 </div>
               </div>
