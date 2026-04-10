@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
-import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo } from '../../../shared/types';
+import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderWorkspace } from '../../../shared/types';
 
 type SourceTab = 'local' | 'clone' | 'gitea' | 'ado';
 
@@ -46,6 +46,11 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [repoError, setRepoError] = useState('');
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Coder workspace state
+  const [coderWorkspaces, setCoderWorkspaces] = useState<CoderWorkspace[]>([]);
+  const [loadingCoder, setLoadingCoder] = useState(false);
+  const [coderError, setCoderError] = useState('');
 
   // Load repos root, app default env vars, CLI flags, and git providers
   useEffect(() => {
@@ -144,7 +149,33 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
 
   const selectedEnv = environments.find(e => e.id === envId);
   const isSSH = selectedEnv?.type === 'ssh';
+  const isCoder = selectedEnv?.type === 'coder';
   const selectedProfile = profiles.find(p => p.id === profileId);
+
+  const fetchCoderWorkspaces = useCallback((id: string) => {
+    setLoadingCoder(true);
+    setCoderError('');
+    window.electronAPI.coder.listWorkspaces(id)
+      .then(ws => {
+        setCoderWorkspaces(ws);
+        setLoadingCoder(false);
+      })
+      .catch((err: unknown) => {
+        setCoderWorkspaces([]);
+        setCoderError(err instanceof Error ? err.message : String(err));
+        setLoadingCoder(false);
+      });
+  }, []);
+
+  // Load Coder workspaces when a Coder env is selected
+  useEffect(() => {
+    if (!isOpen || !isCoder || !envId) {
+      setCoderWorkspaces([]);
+      setCoderError('');
+      return;
+    }
+    fetchCoderWorkspaces(envId);
+  }, [isOpen, isCoder, envId, fetchCoderWorkspaces]);
 
   const inheritedVars = useMemo(() => ({
     ...appDefaultEnvVars,
@@ -322,7 +353,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
           {/* === LOCAL TAB === */}
           {activeTab === 'local' && (
             <>
-              {!isSSH && reposRoot && repoDirs.length > 0 && (
+              {!isSSH && !isCoder && reposRoot && repoDirs.length > 0 && (
                 <div className="form-group">
                   <label className="form-label">Quick Pick</label>
                   <div className="repo-picker">
@@ -339,28 +370,72 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                 </div>
               )}
 
-              <div className="form-group">
-                <label className="form-label">
-                  {isSSH ? 'Remote Directory' : 'Directory'}
-                </label>
-                <div className="form-row">
-                  <input
-                    className="form-input"
-                    value={directory}
-                    onChange={e => setDirectory(e.target.value)}
-                    placeholder={isSSH ? '~/repos/my-project' : 'C:\\repos\\my-project'}
-                    autoFocus={!reposRoot}
-                  />
-                  {!isSSH && (
-                    <button className="form-btn" onClick={handleBrowse}>Browse</button>
+              {isCoder ? (
+                <div className="form-group">
+                  <label className="form-label">Workspace</label>
+                  <div className="form-row">
+                    <select
+                      className="form-input"
+                      value={directory}
+                      onChange={e => setDirectory(e.target.value)}
+                      disabled={loadingCoder || coderWorkspaces.length === 0}
+                    >
+                      <option value="">
+                        {loadingCoder
+                          ? 'Loading workspaces...'
+                          : coderWorkspaces.length === 0
+                            ? 'No workspaces found'
+                            : 'Select a workspace'}
+                      </option>
+                      {coderWorkspaces.map(ws => (
+                        <option key={`${ws.owner}/${ws.name}`} value={ws.name}>
+                          {ws.owner}/{ws.name} ({ws.status})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="form-btn"
+                      onClick={() => envId && fetchCoderWorkspaces(envId)}
+                      disabled={loadingCoder}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                  {coderError && (
+                    <span className="form-hint" style={{ color: 'var(--status-dead)' }}>
+                      {coderError}
+                    </span>
+                  )}
+                  {!coderError && (
+                    <span className="form-hint">
+                      Workspace must be running. Start it from the Coder UI if stopped.
+                    </span>
                   )}
                 </div>
-                {isSSH && !!selectedEnv?.config?.host && (
-                  <span className="form-hint">
-                    on {String(selectedEnv.config.username || 'root')}@{String(selectedEnv.config.host)}
-                  </span>
-                )}
-              </div>
+              ) : (
+                <div className="form-group">
+                  <label className="form-label">
+                    {isSSH ? 'Remote Directory' : 'Directory'}
+                  </label>
+                  <div className="form-row">
+                    <input
+                      className="form-input"
+                      value={directory}
+                      onChange={e => setDirectory(e.target.value)}
+                      placeholder={isSSH ? '~/repos/my-project' : 'C:\\repos\\my-project'}
+                      autoFocus={!reposRoot}
+                    />
+                    {!isSSH && (
+                      <button className="form-btn" onClick={handleBrowse}>Browse</button>
+                    )}
+                  </div>
+                  {isSSH && !!selectedEnv?.config?.host && (
+                    <span className="form-hint">
+                      on {String(selectedEnv.config.username || 'root')}@{String(selectedEnv.config.host)}
+                    </span>
+                  )}
+                </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label">Label (optional)</label>
@@ -450,7 +525,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               </details>
 
               {/* Repos root config */}
-              {!isSSH && (
+              {!isSSH && !isCoder && (
                 <div className="form-group">
                   {!showRepoConfig && !reposRoot && (
                     <button

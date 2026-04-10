@@ -22,14 +22,32 @@ SSH environments require:
 
 Tether stores the *path* to your SSH key, never the key itself.
 
-### Coder (Planned)
+### Coder
 
-Connect to Coder workspaces for containerized development environments. This integration is planned for a future release.
+Connect to [Coder](https://coder.com/) workspaces for containerized development environments. Tether wraps the `coder ssh` command in a local PTY, so auth and workspace routing are handled entirely by the Coder CLI you already have installed.
+
+Prerequisites:
+
+- The `coder` CLI is installed and on your PATH
+- You are logged in: run `coder login <your-deployment-url>` in a terminal
+- At least one workspace exists and is **running** (create and start it from the Coder web UI)
+
+Coder environments only need one setting:
+
+- **Coder CLI Path** -- defaults to `coder`. Override only if the binary isn't on your PATH.
+
+When you create a session in a Coder environment, Tether calls `coder list --output json` and shows your workspaces in a dropdown. Pick a running workspace and Tether will spawn `coder ssh <workspace>` and launch Claude Code inside it.
+
+**Phase 1 limitations:**
+
+- The workspace must already be running. Starting/stopping workspaces from Tether is not yet supported.
+- Sessions always launch in the workspace's default directory; there is no per-session subdirectory field yet.
+- Resume-by-transcript (`--resume`) is not supported for Coder sessions (transcripts live inside the workspace, not locally).
 
 ## Creating an Environment
 
 1. Click the **+** button next to the environment dropdown in the New Session dialog
-2. Choose the environment type (Local or SSH)
+2. Choose the environment type (Local, SSH, or Coder)
 3. Fill in the connection details
 4. Click **Create**
 

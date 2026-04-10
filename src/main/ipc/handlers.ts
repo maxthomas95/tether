@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, dialog, safeStorage } from 'electron';
+import { execFile } from 'node:child_process';
 import { IPC } from '../../shared/constants';
 import type {
   CreateSessionOptions,
@@ -12,6 +13,7 @@ import type {
   VaultStatus,
   VaultPlaintextSecret,
   MigrateSecretOptions,
+  CoderWorkspace,
 } from '../../shared/types';
 import { sessionManager } from '../session/session-manager';
 import * as envRepo from '../db/environment-repo';
@@ -191,6 +193,56 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.ENV_DELETE, async (_event, id: string) => {
     log.info('Deleting environment', { id });
     envRepo.deleteEnvironment(id);
+  });
+
+  // === Coder handlers ===
+
+  ipcMain.handle(IPC.CODER_LIST_WORKSPACES, async (_event, environmentId: string): Promise<CoderWorkspace[]> => {
+    const env = envRepo.getEnvironment(environmentId);
+    if (!env || env.type !== 'coder') {
+      throw new Error('Environment not found or not a Coder environment');
+    }
+    let binaryPath = 'coder';
+    try {
+      const cfg = JSON.parse(env.config) as Record<string, unknown>;
+      if (typeof cfg.binaryPath === 'string' && cfg.binaryPath.trim()) {
+        binaryPath = cfg.binaryPath.trim();
+      }
+    } catch { /* use default */ }
+
+    return new Promise<CoderWorkspace[]>((resolve, reject) => {
+      execFile(
+        binaryPath,
+        ['list', '--output', 'json'],
+        { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+          if (err) {
+            log.error('coder list failed', { error: err.message, stderr: String(stderr).slice(0, 500) });
+            reject(new Error(stderr ? String(stderr).trim() : err.message));
+            return;
+          }
+          try {
+            const raw = JSON.parse(String(stdout || '[]')) as unknown;
+            if (!Array.isArray(raw)) {
+              resolve([]);
+              return;
+            }
+            const workspaces: CoderWorkspace[] = raw.map((w: Record<string, unknown>) => {
+              const latestBuild = (w.latest_build as Record<string, unknown> | undefined) || {};
+              return {
+                name: String(w.name ?? ''),
+                owner: String(w.owner_name ?? w.owner ?? ''),
+                status: String(latestBuild.status ?? w.status ?? 'unknown'),
+              };
+            }).filter(w => w.name);
+            resolve(workspaces);
+          } catch (parseErr) {
+            log.error('Failed to parse coder list output', { error: parseErr instanceof Error ? parseErr.message : String(parseErr) });
+            reject(new Error('Failed to parse coder CLI output as JSON'));
+          }
+        },
+      );
+    });
   });
 
   // === Profile handlers ===

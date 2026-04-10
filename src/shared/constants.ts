@@ -12,6 +12,7 @@ export const IPC = {
   ENV_CREATE: 'environment:create',
   ENV_UPDATE: 'environment:update',
   ENV_DELETE: 'environment:delete',
+  CODER_LIST_WORKSPACES: 'coder:list-workspaces',
   PROFILE_LIST: 'profile:list',
   PROFILE_CREATE: 'profile:create',
   PROFILE_UPDATE: 'profile:update',

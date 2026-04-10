@@ -73,6 +73,17 @@ export interface CreateGitProviderOptions {
   token: string;
 }
 
+export interface CoderConfig {
+  /** Path to the `coder` CLI binary. Defaults to `coder` (must be on PATH). */
+  binaryPath?: string;
+}
+
+export interface CoderWorkspace {
+  name: string;
+  owner: string;
+  status: string;
+}
+
 export interface EnvironmentInfo {
   id: string;
   name: string;
@@ -208,6 +219,9 @@ export interface TetherAPI {
   };
   docs: {
     open(): Promise<void>;
+  };
+  coder: {
+    listWorkspaces(environmentId: string): Promise<CoderWorkspace[]>;
   };
   vault: {
     getConfig(): Promise<VaultConfig>;

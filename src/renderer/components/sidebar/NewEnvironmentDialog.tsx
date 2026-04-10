@@ -21,6 +21,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
   const [vaultPath, setVaultPath] = useState('');
   const [authMethod, setAuthMethod] = useState<'agent' | 'key' | 'password'>('agent');
   const [defaultDir, setDefaultDir] = useState('~');
+  const [coderBinary, setCoderBinary] = useState('coder');
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [vaultConnected, setVaultConnected] = useState(false);
   const [vaultMount, setVaultMount] = useState('secret');
@@ -81,6 +82,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
           config.password = password;
         }
       }
+    } else if (type === 'coder') {
+      config.binaryPath = coderBinary.trim() || 'coder';
     }
 
     onCreate(name.trim(), type, config, envVars);
@@ -88,6 +91,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
     setName(''); setHost(''); setPort('22'); setUsername('');
     setKeyPath(''); setPassword(''); setAuthMethod('agent'); setDefaultDir('~'); setEnvVars({});
     setStoreInVault(false); setVaultPath(''); setCreateError(null); setCreating(false);
+    setCoderBinary('coder');
     onClose();
   };
 
@@ -124,6 +128,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
             >
               <option value="ssh">SSH</option>
               <option value="local">Local</option>
+              <option value="coder">Coder</option>
             </select>
           </div>
 
@@ -248,6 +253,25 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
                   onChange={e => setDefaultDir(e.target.value)}
                   placeholder="~/repos"
                 />
+              </div>
+            </>
+          )}
+
+          {type === 'coder' && (
+            <>
+              <div className="form-group">
+                <label className="form-label">Coder CLI Path</label>
+                <input
+                  className="form-input"
+                  value={coderBinary}
+                  onChange={e => setCoderBinary(e.target.value)}
+                  placeholder="coder"
+                />
+                <span className="form-hint">
+                  Path to the `coder` binary. Leave as `coder` if it's on your PATH.
+                  Tether uses `coder ssh &lt;workspace&gt;` to connect, so you must be
+                  logged in via `coder login` before creating sessions.
+                </span>
               </div>
             </>
           )}

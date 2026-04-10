@@ -8,6 +8,7 @@ import type {
   CreateGitProviderOptions, GitProviderInfo, GitRepoInfo, CloneProgressInfo,
   VaultConfig, VaultStatus, VaultPlaintextSecret, MigrateSecretOptions,
   TranscriptInfo,
+  CoderWorkspace,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -115,6 +116,11 @@ const api: TetherAPI = {
 
   docs: {
     open: (): Promise<void> => ipcRenderer.invoke(IPC.DOCS_OPEN),
+  },
+
+  coder: {
+    listWorkspaces: (environmentId: string): Promise<CoderWorkspace[]> =>
+      ipcRenderer.invoke(IPC.CODER_LIST_WORKSPACES, environmentId),
   },
 
   vault: {

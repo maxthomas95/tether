@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { safeStorage } from 'electron';
 import { LocalTransport } from '../transport/local-transport';
 import { SSHTransport } from '../transport/ssh-transport';
+import { CoderTransport } from '../transport/coder-transport';
 import type { SessionTransport } from '../transport/types';
 import type { SSHConfig } from '../transport/ssh-transport';
 import { statusDetector } from '../status/status-detector';
@@ -84,7 +85,13 @@ async function createTransport(environmentId?: string): Promise<SessionTransport
     });
   }
 
-  // Coder: will use SSH-via-Coder-CLI approach (Phase 7)
+  if (env.type === 'coder') {
+    const raw = JSON.parse(env.config) as Record<string, unknown>;
+    return new CoderTransport({
+      binaryPath: typeof raw.binaryPath === 'string' ? raw.binaryPath : undefined,
+    });
+  }
+
   return new LocalTransport();
 }
 
