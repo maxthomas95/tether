@@ -7,31 +7,31 @@ interface DropZoneOverlayProps {
   layoutDispatch: React.Dispatch<LayoutAction>;
 }
 
-const ZONES: DropZone[] = ['left', 'right', 'top', 'bottom', 'center'];
+const ZONES: DropZone[] = ['left', 'right', 'top', 'bottom'];
 
 export function DropZoneOverlay({ paneId, layoutDispatch }: DropZoneOverlayProps) {
   const [activeZone, setActiveZone] = useState<DropZone | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const getZoneFromPosition = useCallback((clientX: number, clientY: number): DropZone | null => {
+  const getZoneFromPosition = useCallback((clientX: number, clientY: number): DropZone => {
     const el = overlayRef.current;
-    if (!el) return null;
+    if (!el) return 'right';
 
     const rect = el.getBoundingClientRect();
-    const x = (clientX - rect.left) / rect.width;
-    const y = (clientY - rect.top) / rect.height;
-
-    // Edges take priority over center
-    if (x < 0.25) return 'left';
-    if (x > 0.75) return 'right';
-    if (y < 0.25) return 'top';
-    if (y > 0.75) return 'bottom';
-    return 'center';
+    // Pick the closest edge (in absolute pixels, so aspect ratio doesn't skew it)
+    const distances: [DropZone, number][] = [
+      ['left', clientX - rect.left],
+      ['right', rect.right - clientX],
+      ['top', clientY - rect.top],
+      ['bottom', rect.bottom - clientY],
+    ];
+    distances.sort((a, b) => a[1] - b[1]);
+    return distances[0][0];
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
+    e.dataTransfer.dropEffect = 'move';
     const zone = getZoneFromPosition(e.clientX, e.clientY);
     setActiveZone(zone);
   }, [getZoneFromPosition]);
@@ -42,12 +42,18 @@ export function DropZoneOverlay({ paneId, layoutDispatch }: DropZoneOverlayProps
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    const sessionId = e.dataTransfer.getData('application/tether-session');
-    if (!sessionId || !activeZone) return;
+    if (!activeZone) return;
 
-    if (activeZone === 'center') {
-      layoutDispatch({ type: 'REPLACE_SESSION', paneId, sessionId });
-    } else {
+    const sourcePaneId = e.dataTransfer.getData('application/tether-pane');
+    const sessionId = e.dataTransfer.getData('application/tether-session');
+
+    if (sourcePaneId) {
+      // Moving an existing pane
+      if (sourcePaneId !== paneId) {
+        layoutDispatch({ type: 'MOVE_PANE', sourcePaneId, targetPaneId: paneId, zone: activeZone });
+      }
+    } else if (sessionId) {
+      // Dragging a new session from the sidebar
       layoutDispatch({ type: 'ADD_PANE', targetPaneId: paneId, sessionId, zone: activeZone });
     }
     setActiveZone(null);

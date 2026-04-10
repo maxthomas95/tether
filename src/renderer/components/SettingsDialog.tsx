@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { EnvVarEditor } from './EnvVarEditor';
 import { MigrateToVaultDialog } from './MigrateToVaultDialog';
 import { themeList } from '../styles/themes';
-import type { GitProviderInfo, GitProviderType, VaultConfig, VaultStatus } from '../../shared/types';
+import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus } from '../../shared/types';
 
 const COMMON_FLAGS = [
   { flag: '--dangerously-skip-permissions', label: 'Skip permission prompts' },
@@ -40,6 +40,14 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [loaded, setLoaded] = useState(false);
+
+  // Profile state
+  const [profiles, setProfiles] = useState<LaunchProfileInfo[]>([]);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [newProfileEnvVars, setNewProfileEnvVars] = useState<Record<string, string>>({});
+  const [newProfileCliFlags, setNewProfileCliFlags] = useState<string[]>([]);
+  const [showNewProfile, setShowNewProfile] = useState(false);
 
   // Git provider state
   const [gitProviders, setGitProviders] = useState<GitProviderInfo[]>([]);
@@ -79,6 +87,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setEnableResumePicker(picker !== 'false');
       setLoaded(true);
     });
+    window.electronAPI.profile.list().then(setProfiles).catch(() => {});
     window.electronAPI.gitProvider.list().then(setGitProviders).catch(() => {});
     window.electronAPI.vault.getConfig().then(setVaultConfig).catch(() => {});
     window.electronAPI.vault.status().then(setVaultStatus).catch(() => {});
@@ -302,6 +311,141 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
               </>
             )}
           </div>
+
+          {/* === Launch Profiles === */}
+          {loaded && (
+            <div className="form-group" style={{ marginTop: 20 }}>
+              <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+                Launch Profiles
+              </label>
+              <p className="form-hint" style={{ marginBottom: 12 }}>
+                Named presets of env vars and CLI flags. Pick a profile when creating a session to quickly switch between configurations (e.g. subscription vs API mode).
+              </p>
+
+              {profiles.map(p => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, padding: '6px 8px', background: 'var(--bg-tertiary)', borderRadius: 4 }}>
+                  <span style={{ flex: 1, fontWeight: 500 }}>
+                    {p.name}
+                    {p.isDefault && <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.6 }}>(default)</span>}
+                  </span>
+                  {!p.isDefault && (
+                    <button className="form-btn" style={{ fontSize: 11, padding: '2px 6px' }} onClick={async () => {
+                      await window.electronAPI.profile.update(p.id, { isDefault: true });
+                      const updated = await window.electronAPI.profile.list().catch(() => []);
+                      setProfiles(updated);
+                    }}>Set Default</button>
+                  )}
+                  <button className="form-btn" style={{ fontSize: 11, padding: '2px 6px' }} onClick={() => {
+                    setEditingProfileId(p.id);
+                    setNewProfileName(p.name);
+                    setNewProfileEnvVars(p.envVars);
+                    setNewProfileCliFlags(p.cliFlags);
+                    setShowNewProfile(true);
+                  }}>Edit</button>
+                  <button className="env-editor-btn env-editor-btn--remove" onClick={async () => {
+                    await window.electronAPI.profile.delete(p.id);
+                    const updated = await window.electronAPI.profile.list().catch(() => []);
+                    setProfiles(updated);
+                  }}>&times;</button>
+                </div>
+              ))}
+
+              {!showNewProfile && (
+                <button className="form-btn" style={{ marginTop: 4 }} onClick={() => {
+                  setEditingProfileId(null);
+                  setNewProfileName('');
+                  setNewProfileEnvVars({});
+                  setNewProfileCliFlags([]);
+                  setShowNewProfile(true);
+                }}>Add Profile</button>
+              )}
+
+              {showNewProfile && (
+                <div style={{ marginTop: 8, padding: 10, border: '1px solid var(--border-color)', borderRadius: 4 }}>
+                  <div className="form-group" style={{ marginBottom: 8 }}>
+                    <label className="form-label">Profile Name</label>
+                    <input
+                      className="form-input"
+                      value={newProfileName}
+                      onChange={e => setNewProfileName(e.target.value)}
+                      placeholder="e.g. API Mode"
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 8 }}>
+                    <label className="form-label">Environment Variables</label>
+                    <EnvVarEditor vars={newProfileEnvVars} onChange={setNewProfileEnvVars} compact />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 8 }}>
+                    <label className="form-label">CLI Flags</label>
+                    {newProfileCliFlags.map(flag => (
+                      <div key={flag} className="cli-flag-custom">
+                        <code className="cli-flag-code">{flag}</code>
+                        <button
+                          className="env-editor-btn env-editor-btn--remove"
+                          onClick={() => setNewProfileCliFlags(prev => prev.filter(f => f !== flag))}
+                        >&times;</button>
+                      </div>
+                    ))}
+                    <div className="form-row">
+                      <input
+                        className="form-input"
+                        placeholder="--flag-name"
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const f = (e.target as HTMLInputElement).value.trim();
+                            if (f && !newProfileCliFlags.includes(f)) {
+                              setNewProfileCliFlags(prev => [...prev, f]);
+                              (e.target as HTMLInputElement).value = '';
+                            }
+                          }
+                        }}
+                      />
+                      <button className="form-btn" onClick={e => {
+                        const input = (e.target as HTMLElement).parentElement?.querySelector('input') as HTMLInputElement;
+                        const f = input?.value?.trim();
+                        if (f && !newProfileCliFlags.includes(f)) {
+                          setNewProfileCliFlags(prev => [...prev, f]);
+                          if (input) input.value = '';
+                        }
+                      }}>Add</button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="form-btn form-btn--primary" onClick={async () => {
+                      if (!newProfileName.trim()) return;
+                      const opts: CreateLaunchProfileOptions = {
+                        name: newProfileName.trim(),
+                        envVars: Object.keys(newProfileEnvVars).length > 0 ? newProfileEnvVars : undefined,
+                        cliFlags: newProfileCliFlags.length > 0 ? newProfileCliFlags : undefined,
+                      };
+                      if (editingProfileId) {
+                        await window.electronAPI.profile.update(editingProfileId, opts);
+                      } else {
+                        await window.electronAPI.profile.create(opts);
+                      }
+                      const updated = await window.electronAPI.profile.list().catch(() => []);
+                      setProfiles(updated);
+                      setShowNewProfile(false);
+                      setEditingProfileId(null);
+                      setNewProfileName('');
+                      setNewProfileEnvVars({});
+                      setNewProfileCliFlags([]);
+                    }}>
+                      {editingProfileId ? 'Update' : 'Save'}
+                    </button>
+                    <button className="form-btn" onClick={() => {
+                      setShowNewProfile(false);
+                      setEditingProfileId(null);
+                      setNewProfileName('');
+                      setNewProfileEnvVars({});
+                      setNewProfileCliFlags([]);
+                    }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="form-group" style={{ marginTop: 20 }}>
             <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>

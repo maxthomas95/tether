@@ -1,17 +1,18 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
-import type { EnvironmentInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo } from '../../../shared/types';
+import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo } from '../../../shared/types';
 
 type SourceTab = 'local' | 'clone' | 'gitea' | 'ado';
 
 interface NewSessionDialogProps {
   isOpen: boolean;
   environments: EnvironmentInfo[];
+  profiles: LaunchProfileInfo[];
   onClose: () => void;
-  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[]) => void;
+  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string) => void;
 }
 
-export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: NewSessionDialogProps) {
+export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate }: NewSessionDialogProps) {
   const [envId, setEnvId] = useState<string>('');
   const [directory, setDirectory] = useState('');
   const [label, setLabel] = useState('');
@@ -24,6 +25,7 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
   const [defaultCliFlags, setDefaultCliFlags] = useState<string[]>([]);
   const [sessionCliFlags, setSessionCliFlags] = useState<string[]>([]);
   const [customFlag, setCustomFlag] = useState('');
+  const [profileId, setProfileId] = useState<string | null>(null);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<SourceTab>('local');
@@ -76,6 +78,14 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
       setEnvId(environments[0].id);
     }
   }, [isOpen, environments, envId]);
+
+  // Pre-select default profile when dialog opens
+  useEffect(() => {
+    if (isOpen && profiles.length > 0) {
+      const defaultProfile = profiles.find(p => p.isDefault);
+      setProfileId(defaultProfile ? defaultProfile.id : null);
+    }
+  }, [isOpen, profiles]);
 
   // Set default provider when tab changes to a provider tab
   useEffect(() => {
@@ -134,11 +144,13 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
 
   const selectedEnv = environments.find(e => e.id === envId);
   const isSSH = selectedEnv?.type === 'ssh';
+  const selectedProfile = profiles.find(p => p.id === profileId);
 
   const inheritedVars = useMemo(() => ({
     ...appDefaultEnvVars,
     ...(selectedEnv?.envVars || {}),
-  }), [appDefaultEnvVars, selectedEnv]);
+    ...(selectedProfile?.envVars || {}),
+  }), [appDefaultEnvVars, selectedEnv, selectedProfile]);
 
   // Derived repo name from clone URL
   const derivedRepoName = useMemo(() => {
@@ -165,7 +177,7 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
     if (!directory.trim()) return;
     const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
     const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
-    onCreate(directory.trim(), label.trim(), envId || undefined, env, args);
+    onCreate(directory.trim(), label.trim(), envId || undefined, env, args, undefined, profileId || undefined);
     resetAndClose();
   };
 
@@ -189,7 +201,7 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
       const clonedPath = await window.electronAPI.git.clone(url, fullDest);
       const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
       const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
-      onCreate(clonedPath, label.trim() || repoName, envId || undefined, env, args);
+      onCreate(clonedPath, label.trim() || repoName, envId || undefined, env, args, undefined, profileId || undefined);
       resetAndClose();
     } catch (err: unknown) {
       setCloneError(err instanceof Error ? err.message : String(err));
@@ -215,6 +227,7 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
     setSelectedRepo(null);
     setSelectedProviderId('');
     setRepoError('');
+    setProfileId(null);
     onClose();
   };
 
@@ -279,6 +292,30 @@ export function NewSessionDialog({ isOpen, environments, onClose, onCreate }: Ne
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {/* Profile picker */}
+          {profiles.length > 0 && (
+            <div className="form-group">
+              <label className="form-label">Profile</label>
+              <div className="repo-picker">
+                <button
+                  className={`repo-picker-item ${profileId === null ? 'repo-picker-item--selected' : ''}`}
+                  onClick={() => setProfileId(null)}
+                >
+                  None
+                </button>
+                {profiles.map(p => (
+                  <button
+                    key={p.id}
+                    className={`repo-picker-item ${profileId === p.id ? 'repo-picker-item--selected' : ''}`}
+                    onClick={() => setProfileId(p.id)}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

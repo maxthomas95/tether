@@ -26,9 +26,21 @@ export interface GitProviderRow {
   updated_at: string;
 }
 
+export interface LaunchProfileRow {
+  id: string;
+  name: string;
+  env_vars: string;       // JSON-encoded Record<string, string>
+  cli_flags: string;      // JSON-encoded string[]
+  is_default: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DbData {
   environments: EnvironmentRow[];
   sessions: SessionRow[];
+  launchProfiles: LaunchProfileRow[];
   config: Record<string, string>;
   defaultEnvVars: Record<string, string>;
   defaultCliFlags: string[];
@@ -94,6 +106,7 @@ export function getDb(): DbData {
         data = {
           environments: envs,
           sessions: loaded.sessions || [],
+          launchProfiles: loaded.launchProfiles || [],
           config: loaded.config || {},
           defaultEnvVars: loaded.defaultEnvVars || {},
           defaultCliFlags: loaded.defaultCliFlags || [],
@@ -101,10 +114,10 @@ export function getDb(): DbData {
           gitProviders: loaded.gitProviders || [],
         };
       } catch {
-        data = { environments: [], sessions: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], savedWorkspace: null, gitProviders: [] };
+        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], savedWorkspace: null, gitProviders: [] };
       }
     } else {
-      data = { environments: [], sessions: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], savedWorkspace: null, gitProviders: [] };
+      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], savedWorkspace: null, gitProviders: [] };
     }
   }
   return data;

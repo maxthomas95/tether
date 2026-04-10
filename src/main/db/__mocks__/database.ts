@@ -6,6 +6,7 @@ function createFreshDb(): DbData {
   return {
     environments: [],
     sessions: [],
+    launchProfiles: [],
     config: {},
     defaultEnvVars: {},
     defaultCliFlags: [],

@@ -6,6 +6,8 @@ import {
   replaceSession,
   updateRatio,
   removeSessionFromTree,
+  getLeaves,
+  findLeaf,
 } from '../lib/layout-tree';
 
 export type LayoutAction =
@@ -16,7 +18,8 @@ export type LayoutAction =
   | { type: 'UPDATE_RATIO'; splitId: string; ratio: number }
   | { type: 'SET_FOCUS'; paneId: string | null }
   | { type: 'TOGGLE_MAXIMIZE'; paneId: string }
-  | { type: 'REMOVE_SESSION'; sessionId: string };
+  | { type: 'REMOVE_SESSION'; sessionId: string }
+  | { type: 'MOVE_PANE'; sourcePaneId: string; targetPaneId: string; zone: DropZone };
 
 const initialState: LayoutState = {
   root: null,
@@ -30,6 +33,11 @@ function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
       return { ...state, root: action.root };
 
     case 'ADD_PANE': {
+      // Prevent duplicate: don't add if session is already in a pane
+      if (state.root) {
+        const leaves = getLeaves(state.root);
+        if (leaves.some(l => l.sessionId === action.sessionId)) return state;
+      }
       const newRoot = addPane(state.root, action.targetPaneId, action.sessionId, action.zone);
       return { ...state, root: newRoot };
     }
@@ -61,6 +69,20 @@ function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
     case 'TOGGLE_MAXIMIZE': {
       const maximized = state.maximizedPaneId === action.paneId ? null : action.paneId;
       return { ...state, maximizedPaneId: maximized };
+    }
+
+    case 'MOVE_PANE': {
+      if (!state.root) return state;
+      if (action.sourcePaneId === action.targetPaneId) return state;
+      const sourceLeaf = findLeaf(state.root, action.sourcePaneId);
+      if (!sourceLeaf) return state;
+      const afterRemove = removePane(state.root, action.sourcePaneId);
+      if (!afterRemove) return state;
+      const newRoot = addPane(afterRemove, action.targetPaneId, sourceLeaf.sessionId, action.zone);
+      const newLeaves = getLeaves(newRoot);
+      const oldLeaves = getLeaves(afterRemove);
+      const newLeaf = newLeaves.find(l => !oldLeaves.some(o => o.id === l.id));
+      return { ...state, root: newRoot, focusedPaneId: newLeaf?.id ?? state.focusedPaneId };
     }
 
     case 'REMOVE_SESSION': {
