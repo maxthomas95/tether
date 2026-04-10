@@ -11,6 +11,7 @@ interface TerminalPaneProps {
   session: SessionInfo | undefined;
   isFocused: boolean;
   isDragging: boolean;
+  onDragStateChange: (dragging: boolean) => void;
   layoutDispatch: React.Dispatch<LayoutAction>;
   termManager: TerminalManagerAPI;
 }
@@ -21,6 +22,7 @@ export function TerminalPane({
   session,
   isFocused,
   isDragging,
+  onDragStateChange,
   layoutDispatch,
   termManager,
 }: TerminalPaneProps) {
@@ -94,7 +96,17 @@ export function TerminalPane({
       onFocus={handleFocus}
       onMouseDown={handleFocus}
     >
-      <div className="terminal-pane-header">
+      <div
+        className="terminal-pane-header"
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('application/tether-pane', paneId);
+          e.dataTransfer.setData('application/tether-session', sessionId);
+          e.dataTransfer.effectAllowed = 'move';
+          onDragStateChange(true);
+        }}
+        onDragEnd={() => onDragStateChange(false)}
+      >
         <span className={`status-dot status-dot--${getStatusClass(session?.state)}`} />
         <span className="terminal-pane-header-label">
           {label}{path ? ` \u00b7 ${path}` : ''}

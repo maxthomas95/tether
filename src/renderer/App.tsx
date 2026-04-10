@@ -528,6 +528,7 @@ export function App() {
             termManager={termManager}
             sessions={sessions}
             isDragging={isDragging}
+            onDragStateChange={setIsDragging}
             focusedPaneId={layoutState.focusedPaneId}
             maximizedPaneId={layoutState.maximizedPaneId}
           />
