@@ -3,6 +3,7 @@ node_modules/
 out/
 dist/
 releases/
+tmpbuild/
 *.tsbuildinfo
 *.log
 npm-debug.log*
@@ -10,6 +11,13 @@ npm-debug.log*
 .env.*
 .DS_Store
 Thumbs.db
+
+# Claude Code agent state
 .claude/
+
+# Internal docs (not for public repo)
+IDEAS.md
+
+# Loose images (not in assets/)
 tether.jpg
 tether-transparent.png

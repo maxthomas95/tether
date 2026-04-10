@@ -67,4 +67,8 @@ npx electron .       # Direct launch (no Vite dev server for renderer)
 
 ## Status
 
-**v0.1.2-alpha.3** — Local and SSH sessions, environment management, theming, workspace persistence. See [CHANGELOG.md](CHANGELOG.md) for details.
+**v0.1.4-alpha.5** — Local and SSH sessions, environment management, theming, workspace persistence. See [CHANGELOG.md](CHANGELOG.md) for details.
+
+## License
+
+[MIT](LICENSE)

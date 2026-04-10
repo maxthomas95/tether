@@ -110,10 +110,10 @@ Asset names use the **package.json version** (e.g. `0.1.3`), not the tag suffix.
 The script reads your Gitea PAT from a file outside the repo:
 
 ```
-C:/Users/maxth/.tether/gitea-token
+~/.tether/gitea-token
 ```
 
-Override with `GITEA_TOKEN_FILE=/path/to/token`. The token needs `write:repository` scope (no `read:user` needed). **Never commit the token or paste it into chat.**
+Override with `GITEA_TOKEN_FILE=/path/to/token`. The GitHub token is read from `~/.tether/github-token` (override with `GITHUB_TOKEN_FILE`). Tokens need `write:repository` scope. **Never commit tokens or paste them into chat.**
 
 ## Manual release (fallback)
 

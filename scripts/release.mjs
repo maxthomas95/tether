@@ -21,9 +21,9 @@
 //
 // Environment:
 //   GITEA_TOKEN_FILE   override the default Gitea token path
-//                      (default: C:/Users/maxth/.tether/gitea-token)
+//                      (default: ~/.tether/gitea-token)
 //   GITHUB_TOKEN_FILE  override the default GitHub token path
-//                      (default: C:/Users/maxth/.tether/github-token)
+//                      (default: ~/.tether/github-token)
 
 import { execSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs';
@@ -37,12 +37,12 @@ import { dirname } from 'node:path';
 const REPO_OWNER = 'ThomasHomeCompany';
 const REPO_NAME  = 'tether';
 const GITEA_BASE = 'https://gitea.thomashomecompany.com';
-const DEFAULT_TOKEN_FILE = 'C:/Users/maxth/.tether/gitea-token';
+const DEFAULT_TOKEN_FILE = join(process.env.HOME || process.env.USERPROFILE, '.tether', 'gitea-token');
 
 const GITHUB_OWNER = 'maxthomas95';
 const GITHUB_REPO  = 'tether';
 const GITHUB_BASE  = 'https://api.github.com';
-const DEFAULT_GITHUB_TOKEN_FILE = 'C:/Users/maxth/.tether/github-token';
+const DEFAULT_GITHUB_TOKEN_FILE = join(process.env.HOME || process.env.USERPROFILE, '.tether', 'github-token');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
