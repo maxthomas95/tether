@@ -18,27 +18,46 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
   const [username, setUsername] = useState('');
   const [keyPath, setKeyPath] = useState('');
   const [password, setPassword] = useState('');
-  const [passwordFromVault, setPasswordFromVault] = useState(false);
-  const [vaultRef, setVaultRef] = useState('');
-  const [vaultTestResult, setVaultTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [storeInVault, setStoreInVault] = useState(false);
+  const [vaultPath, setVaultPath] = useState('');
   const [authMethod, setAuthMethod] = useState<'agent' | 'key' | 'password'>('agent');
   const [defaultDir, setDefaultDir] = useState('~');
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
-  const [vaultEnabled, setVaultEnabled] = useState(false);
+  const [vaultConnected, setVaultConnected] = useState(false);
+  const [vaultMount, setVaultMount] = useState('secret');
+  const [vaultIdentity, setVaultIdentity] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
-    window.electronAPI.vault.status().then(s => setVaultEnabled(s.enabled)).catch(() => setVaultEnabled(false));
+    window.electronAPI.vault.status().then(s => {
+      setVaultConnected(s.enabled && s.loggedIn);
+      if (s.identity) {
+        // Strip auth method prefix (e.g. "oidc-mathomas@uwcu.org" -> "mathomas@uwcu.org")
+        const clean = s.identity.replace(/^[a-z]+-/, '');
+        setVaultIdentity(clean);
+      }
+    }).catch(() => setVaultConnected(false));
+    window.electronAPI.vault.getConfig().then(c => { if (c.mount) setVaultMount(c.mount); }).catch(() => {});
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const passwordReady =
-    authMethod !== 'password' ||
-    (passwordFromVault ? vaultRef.startsWith(VAULT_REF_PREFIX) && vaultRef.length > VAULT_REF_PREFIX.length : !!password);
+    authMethod !== 'password' || !!password;
 
-  const handleCreate = () => {
+  const slugify = (s: string): string =>
+    s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'host';
+
+  const identitySegment = vaultIdentity ? `${vaultIdentity}/` : '';
+  const suggestedVaultPath = `${VAULT_REF_PREFIX}${vaultMount}/${identitySegment}tether/ssh/${slugify(name || host)}#password`;
+
+  const handleCreate = async () => {
     if (!name.trim() || (type === 'ssh' && !host.trim())) return;
+
+    setCreating(true);
+    setCreateError(null);
 
     const config: Record<string, unknown> = {};
     if (type === 'ssh') {
@@ -50,10 +69,18 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
         config.useAgent = true;
       } else if (authMethod === 'key' && keyPath.trim()) {
         config.privateKeyPath = keyPath.trim();
-      } else if (authMethod === 'password') {
-        if (passwordFromVault && vaultRef.startsWith(VAULT_REF_PREFIX)) {
-          config.password = vaultRef.trim();
-        } else if (password) {
+      } else if (authMethod === 'password' && password) {
+        if (storeInVault) {
+          const ref = (vaultPath || suggestedVaultPath).trim();
+          try {
+            await window.electronAPI.vault.writeSecret(ref, password);
+          } catch (err) {
+            setCreateError(`Failed to write to Vault: ${err instanceof Error ? err.message : String(err)}`);
+            setCreating(false);
+            return;
+          }
+          config.password = ref;
+        } else {
           config.password = password;
         }
       }
@@ -63,15 +90,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
     // Reset form
     setName(''); setHost(''); setPort('22'); setUsername('');
     setKeyPath(''); setPassword(''); setAuthMethod('agent'); setDefaultDir('~'); setEnvVars({});
-    setPasswordFromVault(false); setVaultRef(''); setVaultTestResult(null);
+    setStoreInVault(false); setVaultPath(''); setCreateError(null); setCreating(false);
     onClose();
-  };
-
-  const handleTestVaultRef = async () => {
-    if (!vaultRef.startsWith(VAULT_REF_PREFIX)) return;
-    setVaultTestResult({ ok: false, error: 'Testing...' });
-    const result = await window.electronAPI.vault.testRef(vaultRef);
-    setVaultTestResult(result);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -180,58 +200,44 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
                 )}
                 {authMethod === 'password' && (
                   <div style={{ marginTop: 6 }}>
-                    {vaultEnabled && (
-                      <label className="form-radio-label" style={{ marginBottom: 4 }}>
-                        <input
-                          type="checkbox"
-                          checked={passwordFromVault}
-                          onChange={e => {
-                            setPasswordFromVault(e.target.checked);
-                            setVaultTestResult(null);
-                            if (e.target.checked && !vaultRef) setVaultRef(VAULT_REF_PREFIX);
-                          }}
-                        />
-                        Source from Vault
-                      </label>
-                    )}
-                    {passwordFromVault ? (
+                    <input
+                      className="form-input"
+                      type="password"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="Enter password"
+                    />
+                    {vaultConnected && (
                       <>
-                        <div className="form-row">
+                        <label className="form-radio-label" style={{ marginTop: 6, marginBottom: 4 }}>
                           <input
-                            className="form-input"
-                            value={vaultRef}
-                            onChange={e => { setVaultRef(e.target.value); setVaultTestResult(null); }}
-                            placeholder="vault://secret/tether/ssh/host#password"
-                            spellCheck={false}
+                            type="checkbox"
+                            checked={storeInVault}
+                            onChange={e => setStoreInVault(e.target.checked)}
                           />
-                          <button
-                            className="form-btn"
-                            onClick={handleTestVaultRef}
-                            disabled={!vaultRef.startsWith(VAULT_REF_PREFIX)}
-                          >
-                            Test
-                          </button>
-                        </div>
-                        {vaultTestResult && (
-                          <p
-                            className="form-hint"
-                            style={{
-                              marginTop: 4,
-                              color: vaultTestResult.ok ? 'var(--status-running)' : 'var(--status-dead)',
-                            }}
-                          >
-                            {vaultTestResult.ok ? '\u2713 Resolved successfully' : (vaultTestResult.error || 'Failed')}
-                          </p>
+                          Store in Vault
+                        </label>
+                        {storeInVault && (
+                          <>
+                            <input
+                              className="form-input"
+                              value={vaultPath || suggestedVaultPath}
+                              onChange={e => setVaultPath(e.target.value)}
+                              placeholder={suggestedVaultPath}
+                              spellCheck={false}
+                              style={{ marginTop: 4, fontSize: '0.85em' }}
+                            />
+                            <p className="form-hint" style={{ marginTop: 2 }}>
+                              Password will be written to this Vault path on create.
+                            </p>
+                          </>
                         )}
                       </>
-                    ) : (
-                      <input
-                        className="form-input"
-                        type="password"
-                        value={password}
-                        onChange={e => setPassword(e.target.value)}
-                        placeholder="Enter password"
-                      />
+                    )}
+                    {createError && (
+                      <p className="form-hint" style={{ marginTop: 4, color: 'var(--status-dead)' }}>
+                        {createError}
+                      </p>
                     )}
                   </div>
                 )}
@@ -254,7 +260,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
               Environment Variables (optional)
             </summary>
             <div style={{ marginTop: 8 }}>
-              <EnvVarEditor vars={envVars} onChange={setEnvVars} compact vaultEnabled={vaultEnabled} />
+              <EnvVarEditor vars={envVars} onChange={setEnvVars} compact vaultEnabled={vaultConnected} />
             </div>
           </details>
         </div>
@@ -263,9 +269,9 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
           <button
             className="form-btn form-btn--primary"
             onClick={handleCreate}
-            disabled={!name.trim() || (type === 'ssh' && (!host.trim() || !passwordReady))}
+            disabled={creating || !name.trim() || (type === 'ssh' && (!host.trim() || !passwordReady))}
           >
-            Create Environment
+            {creating ? 'Creating\u2026' : 'Create Environment'}
           </button>
         </div>
       </div>

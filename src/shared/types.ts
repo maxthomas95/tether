@@ -219,6 +219,7 @@ export interface TetherAPI {
     listKeys(mount: string, path: string): Promise<string[]>;
     listPlaintext(): Promise<VaultPlaintextSecret[]>;
     migrateSecret(opts: MigrateSecretOptions): Promise<void>;
+    writeSecret(ref: string, value: string): Promise<void>;
     onStatusChange(cb: (status: VaultStatus) => void): () => void;
   };
 }

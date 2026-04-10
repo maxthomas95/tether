@@ -471,6 +471,15 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return client.kvList(mount, path);
   });
 
+  ipcMain.handle(IPC.VAULT_WRITE_SECRET, async (_event, ref: string, value: string): Promise<void> => {
+    const client = buildVaultClient();
+    if (!client) throw new Error('Vault integration is not enabled');
+    if (!client.hasToken()) throw new Error('Not logged in to Vault');
+    const parsed = parseRef(ref);
+    if (!parsed) throw new Error(`Malformed Vault reference: ${ref}`);
+    await client.kvWrite(parsed.mount, parsed.path, { [parsed.key]: value });
+  });
+
   ipcMain.handle(IPC.VAULT_LIST_PLAINTEXT, async (): Promise<VaultPlaintextSecret[]> => {
     const { getDb } = await import('../db/database');
     const db = getDb();

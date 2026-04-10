@@ -55,10 +55,7 @@ export class VaultClient {
       { authenticated: false },
     );
     const url = body?.data?.auth_url;
-    if (!url) {
-      console.error('[Vault] oidcAuthUrl response body:', JSON.stringify(body, null, 2));
-      throw new VaultError('Vault OIDC auth_url response missing auth_url field');
-    }
+    if (!url) throw new VaultError('Vault OIDC auth_url response missing auth_url field');
     return { auth_url: url };
   }
 

@@ -50,6 +50,7 @@ export const IPC = {
   VAULT_LIST_KEYS: 'vault:list-keys',
   VAULT_MIGRATE_SECRET: 'vault:migrate-secret',
   VAULT_LIST_PLAINTEXT: 'vault:list-plaintext',
+  VAULT_WRITE_SECRET: 'vault:write-secret',
 
   // Docs
   DOCS_OPEN: 'docs:open',

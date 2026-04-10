@@ -127,6 +127,7 @@ const api: TetherAPI = {
     listKeys: (mount: string, path: string): Promise<string[]> => ipcRenderer.invoke(IPC.VAULT_LIST_KEYS, mount, path),
     listPlaintext: (): Promise<VaultPlaintextSecret[]> => ipcRenderer.invoke(IPC.VAULT_LIST_PLAINTEXT),
     migrateSecret: (opts: MigrateSecretOptions): Promise<void> => ipcRenderer.invoke(IPC.VAULT_MIGRATE_SECRET, opts),
+    writeSecret: (ref: string, value: string): Promise<void> => ipcRenderer.invoke(IPC.VAULT_WRITE_SECRET, ref, value),
     onStatusChange(cb: (status: VaultStatus) => void): () => void {
       const h = (_e: Electron.IpcRendererEvent, status: VaultStatus) => cb(status);
       ipcRenderer.on(IPC.VAULT_STATUS_CHANGED, h);
