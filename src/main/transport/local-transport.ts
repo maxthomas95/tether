@@ -11,7 +11,7 @@ function getPty(): typeof import('node-pty') {
   if (!ptyModule) {
     ptyModule = require('node-pty');
   }
-  return ptyModule;
+  return ptyModule!;
 }
 
 interface IPty {

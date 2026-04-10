@@ -18,5 +18,6 @@
       "@shared/*": ["src/shared/*"]
     }
   },
-  "include": ["src/**/*", "forge.env.d.ts"]
+  "include": ["src/**/*", "forge.env.d.ts"],
+  "exclude": ["src/**/*.test.ts"]
 }

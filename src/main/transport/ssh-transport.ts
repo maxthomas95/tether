@@ -9,7 +9,7 @@ function getSsh2(): typeof import('ssh2') {
   if (!ssh2Module) {
     ssh2Module = require('ssh2');
   }
-  return ssh2Module;
+  return ssh2Module!;
 }
 
 export interface SSHConfig {
