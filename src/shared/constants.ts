@@ -47,6 +47,10 @@ export const IPC = {
   VAULT_MIGRATE_SECRET: 'vault:migrate-secret',
   VAULT_LIST_PLAINTEXT: 'vault:list-plaintext',
 
+  // Docs
+  DOCS_OPEN: 'docs:open',
+  DOCS_THEME_CHANGED: 'docs:theme-changed',
+
   // Main -> Renderer
   SESSION_DATA: 'session:data',
   SESSION_STATE_CHANGE: 'session:state-change',

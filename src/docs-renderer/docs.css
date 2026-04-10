@@ -1,0 +1,280 @@
+/* ===================================================================
+   Tether Documentation Window Styles
+   Uses the same CSS variables as the main app for theme consistency.
+   =================================================================== */
+
+:root {
+  --bg-primary: #1e1e2e;
+  --bg-sidebar: #181825;
+  --bg-header: #313244;
+  --bg-hover: #45475a;
+  --bg-active: #585b70;
+  --text-primary: #cdd6f4;
+  --text-secondary: #bac2de;
+  --text-muted: #6c7086;
+  --border-color: #585b70;
+  --accent: #b4befe;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow: hidden;
+}
+
+/* --- Layout --- */
+
+#docs-root {
+  height: 100%;
+  display: flex;
+}
+
+/* --- Navigation Sidebar --- */
+
+.docs-nav {
+  width: 220px;
+  min-width: 220px;
+  height: 100%;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  padding-top: 36px; /* Account for titlebar overlay */
+  -webkit-app-region: drag;
+}
+
+.docs-nav-header {
+  padding: 16px 16px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  -webkit-app-region: drag;
+}
+
+.docs-nav-item {
+  display: block;
+  padding: 8px 16px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 13px;
+  border-left: 2px solid transparent;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+}
+
+.docs-nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.docs-nav-item--active {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+.docs-nav-footer {
+  margin-top: auto;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color);
+  -webkit-app-region: no-drag;
+}
+
+.docs-nav-footer-text {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* --- Main Content --- */
+
+.docs-main {
+  flex: 1;
+  overflow-y: auto;
+  padding-top: 36px; /* Account for titlebar overlay */
+}
+
+.docs-article {
+  max-width: 740px;
+  margin: 0 auto;
+  padding: 32px 40px 64px;
+}
+
+/* --- Scrollbar --- */
+
+.docs-main::-webkit-scrollbar {
+  width: 8px;
+}
+
+.docs-main::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.docs-main::-webkit-scrollbar-thumb {
+  background: var(--bg-active);
+  border-radius: 4px;
+}
+
+.docs-main::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* --- Typography --- */
+
+.docs-article h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.docs-article h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-top: 32px;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.docs-article h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 24px;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.docs-article p {
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+}
+
+.docs-article strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* --- Links --- */
+
+.docs-article a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.docs-article a:hover {
+  text-decoration: underline;
+}
+
+/* --- Lists --- */
+
+.docs-article ul,
+.docs-article ol {
+  margin-bottom: 12px;
+  padding-left: 24px;
+  color: var(--text-secondary);
+}
+
+.docs-article li {
+  margin-bottom: 4px;
+}
+
+.docs-article li > ul,
+.docs-article li > ol {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+/* --- Code --- */
+
+.docs-article code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--bg-header);
+  color: var(--accent);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.docs-article pre {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: var(--bg-header);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.docs-article pre code {
+  padding: 0;
+  background: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* --- Tables --- */
+
+.docs-article table {
+  width: 100%;
+  margin-bottom: 16px;
+  border-collapse: collapse;
+}
+
+.docs-article th {
+  text-align: left;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.docs-article td {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--bg-hover);
+}
+
+.docs-article tr:last-child td {
+  border-bottom: none;
+}
+
+/* --- Blockquotes --- */
+
+.docs-article blockquote {
+  margin-bottom: 12px;
+  padding: 8px 16px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-header);
+  border-radius: 0 4px 4px 0;
+  color: var(--text-secondary);
+}
+
+.docs-article blockquote p {
+  margin-bottom: 0;
+}
+
+/* --- Horizontal Rules --- */
+
+.docs-article hr {
+  margin: 24px 0;
+  border: none;
+  border-top: 1px solid var(--border-color);
+}

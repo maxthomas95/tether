@@ -184,6 +184,9 @@ export interface TetherAPI {
     init(directory: string): Promise<string>;
     onCloneProgress(cb: (info: CloneProgressInfo) => void): () => void;
   };
+  docs: {
+    open(): Promise<void>;
+  };
   vault: {
     getConfig(): Promise<VaultConfig>;
     setConfig(config: VaultConfig): Promise<void>;

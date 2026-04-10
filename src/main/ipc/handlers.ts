@@ -212,6 +212,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const { getDb, saveDb } = await import('../db/database');
     getDb().config[key] = value;
     saveDb();
+    // Forward theme changes to the docs window so it stays in sync.
+    if (key === 'theme') {
+      const { getDocsWindow } = await import('../index');
+      const dw = getDocsWindow();
+      if (dw && !dw.isDestroyed()) {
+        dw.webContents.send(IPC.DOCS_THEME_CHANGED, value);
+      }
+    }
   });
 
   ipcMain.handle(IPC.CONFIG_GET_DEFAULT_CLI_FLAGS, async () => {

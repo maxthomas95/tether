@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tether Documentation</title>
+    <script>
+      // Apply the saved theme before any CSS/JS runs. The main process
+      // passes the theme name via ?theme=<name> on the URL (same pattern
+      // as index.html — see src/main/index.ts).
+      (function () {
+        var THEMES = {
+          mocha:          { bg:'#1e1e2e', sidebar:'#181825', text:'#cdd6f4', muted:'#6c7086', accent:'#b4befe', border:'#313244', hover:'#45475a', active:'#585b70', header:'#313244', textSecondary:'#bac2de' },
+          macchiato:      { bg:'#24273a', sidebar:'#1e2030', text:'#cad3f5', muted:'#6e738d', accent:'#b7bdf8', border:'#363a4f', hover:'#494d64', active:'#5b6078', header:'#363a4f', textSecondary:'#b8c0e0' },
+          frappe:         { bg:'#303446', sidebar:'#292c3c', text:'#c6d0f5', muted:'#737994', accent:'#babbf1', border:'#414559', hover:'#51576d', active:'#626880', header:'#414559', textSecondary:'#b5bfe2' },
+          latte:          { bg:'#eff1f5', sidebar:'#e6e9ef', text:'#4c4f69', muted:'#9ca0b0', accent:'#7287fd', border:'#ccd0da', hover:'#bcc0cc', active:'#acb0be', header:'#ccd0da', textSecondary:'#5c5f77' },
+          'default-dark': { bg:'#1e1e1e', sidebar:'#252526', text:'#cccccc', muted:'#5a5a5a', accent:'#4fc1e9', border:'#3c3c3c', hover:'#2a2d2e', active:'#37373d', header:'#3c3c3c', textSecondary:'#999999' },
+        };
+        var match = /[?&]theme=([^&]+)/.exec(location.search);
+        var name = match ? decodeURIComponent(match[1]) : 'mocha';
+        var t = THEMES[name] || THEMES.mocha;
+        var s = document.documentElement.style;
+        s.setProperty('--bg-primary', t.bg);
+        s.setProperty('--bg-sidebar', t.sidebar);
+        s.setProperty('--text-primary', t.text);
+        s.setProperty('--text-secondary', t.textSecondary);
+        s.setProperty('--text-muted', t.muted);
+        s.setProperty('--accent', t.accent);
+        s.setProperty('--border-color', t.border);
+        s.setProperty('--bg-hover', t.hover);
+        s.setProperty('--bg-active', t.active);
+        s.setProperty('--bg-header', t.header);
+      })();
+    </script>
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg-primary, #1e1e2e);
+        color: var(--text-primary, #cdd6f4);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        overflow: hidden;
+      }
+      #docs-root {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .docs-boot__text {
+        font-size: 13px;
+        color: var(--text-muted, #6c7086);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="docs-root">
+      <span class="docs-boot__text">Loading documentation&hellip;</span>
+    </div>
+    <script type="module" src="/src/docs-renderer/index.ts"></script>
+  </body>
+</html>

@@ -401,7 +401,7 @@ export function App() {
       items: [
         { label: 'Keyboard Shortcuts', shortcut: 'Ctrl+/', onClick: () => setShortcutsOpen(true) },
         { separator: true },
-        { label: 'Documentation', disabled: true },
+        { label: 'Documentation', onClick: () => window.electronAPI.docs.open() },
         { separator: true },
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],

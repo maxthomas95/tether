@@ -104,6 +104,10 @@ const api: TetherAPI = {
     },
   },
 
+  docs: {
+    open: (): Promise<void> => ipcRenderer.invoke(IPC.DOCS_OPEN),
+  },
+
   vault: {
     getConfig: (): Promise<VaultConfig> => ipcRenderer.invoke(IPC.VAULT_GET_CONFIG),
     setConfig: (config: VaultConfig): Promise<void> => ipcRenderer.invoke(IPC.VAULT_SET_CONFIG, config),

@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import squirrelStartup from 'electron-squirrel-startup';
 import { registerIpcHandlers } from './ipc/handlers';
@@ -7,6 +7,7 @@ import { getDb, closeDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
 import { markAllRunningAsStopped } from './db/session-repo';
 import { getLoaderTheme, DEFAULT_LOADER_THEME } from '../shared/loader-themes';
+import { IPC } from '../shared/constants';
 import { createLogger, closeLogger } from './logger';
 
 const log = createLogger('app');
@@ -21,6 +22,64 @@ if (squirrelStartup) {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let docsWindow: BrowserWindow | null = null;
+
+/** Returns the docs BrowserWindow if open, for theme-change forwarding. */
+export function getDocsWindow(): BrowserWindow | null {
+  return docsWindow;
+}
+
+function createDocsWindow(): void {
+  if (docsWindow && !docsWindow.isDestroyed()) {
+    docsWindow.focus();
+    return;
+  }
+
+  const db = getDb();
+  const savedThemeName = db.config.theme || DEFAULT_LOADER_THEME;
+  const loaderTheme = getLoaderTheme(savedThemeName);
+
+  docsWindow = new BrowserWindow({
+    width: 900,
+    height: 700,
+    minWidth: 500,
+    minHeight: 400,
+    title: 'Tether Documentation',
+    icon: path.join(__dirname, '../../assets/icon.ico'),
+    backgroundColor: loaderTheme.bg,
+    show: false,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: loaderTheme.sidebar,
+      symbolColor: loaderTheme.text,
+      height: 36,
+    },
+    webPreferences: {
+      preload: path.join(__dirname, 'docs-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  docsWindow.once('ready-to-show', () => {
+    docsWindow?.show();
+  });
+
+  const themeQuery = `theme=${encodeURIComponent(savedThemeName)}`;
+  if (DOCS_WINDOW_VITE_DEV_SERVER_URL) {
+    const sep = DOCS_WINDOW_VITE_DEV_SERVER_URL.includes('?') ? '&' : '?';
+    docsWindow.loadURL(`${DOCS_WINDOW_VITE_DEV_SERVER_URL}/docs-window.html${sep}${themeQuery}`);
+  } else {
+    docsWindow.loadFile(
+      path.join(__dirname, `../renderer/${DOCS_WINDOW_VITE_NAME}/docs-window.html`),
+      { search: themeQuery },
+    );
+  }
+
+  docsWindow.on('closed', () => {
+    docsWindow = null;
+  });
+}
 
 const createWindow = () => {
   // Initialize persistence
@@ -65,6 +124,8 @@ const createWindow = () => {
   });
 
   registerIpcHandlers(mainWindow);
+
+  ipcMain.handle(IPC.DOCS_OPEN, () => createDocsWindow());
 
   // Pass the saved theme name to the renderer via the URL so the inline
   // boot loader can apply matching colors before any JS runs.
