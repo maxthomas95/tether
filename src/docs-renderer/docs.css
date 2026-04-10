@@ -39,6 +39,8 @@ html, body {
 #docs-root {
   height: 100%;
   display: flex;
+  align-items: stretch;
+  justify-content: flex-start;
 }
 
 /* --- Navigation Sidebar --- */
@@ -104,6 +106,7 @@ html, body {
 
 .docs-main {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-top: 36px; /* Account for titlebar overlay */
 }
