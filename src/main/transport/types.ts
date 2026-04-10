@@ -14,6 +14,11 @@ export interface TransportStartOptions {
    * `--session-id` is omitted (the two flags are mutually exclusive).
    */
   resumeClaudeSessionId?: string;
+  /**
+   * Coder-only: if set, the transport runs `git clone <cloneUrl> <subDir>`
+   * inside the workspace before cd'ing into the subdir and launching claude.
+   */
+  cloneUrl?: string;
 }
 
 export interface TransportExitInfo {

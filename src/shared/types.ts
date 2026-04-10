@@ -116,6 +116,12 @@ export interface CreateSessionOptions {
   /** When set, launch claude with `--resume <id>` instead of `--session-id <new>`. */
   resumeClaudeSessionId?: string;
   profileId?: string;
+  /**
+   * When set (Coder only), the transport runs `git clone <cloneUrl> <workingDir>`
+   * inside the workspace before `cd`-ing and launching claude. Lets the
+   * interactive PTY handle clone output, errors, and auth prompts inline.
+   */
+  cloneUrl?: string;
 }
 
 export interface LaunchProfileInfo {

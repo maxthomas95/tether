@@ -4,12 +4,89 @@ import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, 
 
 type SourceTab = 'local' | 'clone' | 'gitea' | 'ado';
 
+interface CoderCloneTargetProps {
+  envId: string;
+  workspaces: CoderWorkspace[];
+  loadingCoder: boolean;
+  coderError: string;
+  refresh: () => void;
+  workspace: string;
+  setWorkspace: (v: string) => void;
+  clonePath: string;
+  setClonePath: (v: string) => void;
+  fullPath: string;
+  disabled: boolean;
+}
+
+function CoderCloneTarget({
+  envId,
+  workspaces,
+  loadingCoder,
+  coderError,
+  refresh,
+  workspace,
+  setWorkspace,
+  clonePath,
+  setClonePath,
+  fullPath,
+  disabled,
+}: CoderCloneTargetProps) {
+  return (
+    <>
+      <div className="form-group">
+        <label className="form-label">Coder workspace</label>
+        <div className="form-row">
+          <select
+            className="form-input"
+            value={workspace}
+            onChange={e => setWorkspace(e.target.value)}
+            disabled={disabled || loadingCoder || workspaces.length === 0}
+          >
+            <option value="">
+              {loadingCoder
+                ? 'Loading workspaces...'
+                : workspaces.length === 0
+                  ? 'No workspaces found'
+                  : 'Select a workspace'}
+            </option>
+            {workspaces.map(ws => (
+              <option key={`${ws.owner}/${ws.name}`} value={ws.name}>
+                {ws.owner}/{ws.name} ({ws.status})
+              </option>
+            ))}
+          </select>
+          <button className="form-btn" onClick={refresh} disabled={disabled || loadingCoder || !envId}>
+            Refresh
+          </button>
+        </div>
+        {coderError && (
+          <span className="form-hint" style={{ color: 'var(--status-dead)' }}>{coderError}</span>
+        )}
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Clone into (path inside workspace)</label>
+        <input
+          className="form-input"
+          value={clonePath}
+          onChange={e => setClonePath(e.target.value)}
+          placeholder="~"
+          disabled={disabled}
+        />
+        {fullPath && (
+          <span className="form-hint">Will clone to <code>{fullPath}</code> inside the workspace.</span>
+        )}
+      </div>
+    </>
+  );
+}
+
 interface NewSessionDialogProps {
   isOpen: boolean;
   environments: EnvironmentInfo[];
   profiles: LaunchProfileInfo[];
   onClose: () => void;
-  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string) => void;
+  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string, cloneUrl?: string) => void;
 }
 
 export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate }: NewSessionDialogProps) {
@@ -37,6 +114,10 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [cloning, setCloning] = useState(false);
   const [cloneProgress, setCloneProgress] = useState<CloneProgressInfo | null>(null);
   const [cloneError, setCloneError] = useState('');
+
+  // Coder-specific clone target: workspace to clone into + path template (supports `~`)
+  const [coderCloneWorkspace, setCoderCloneWorkspace] = useState('');
+  const [coderClonePath, setCoderClonePath] = useState('~');
 
   // Provider browse state
   const [providerSearchQuery, setProviderSearchQuery] = useState('');
@@ -196,6 +277,17 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     return `${cloneDestination}${sep}${derivedRepoName}`;
   }, [cloneDestination, derivedRepoName]);
 
+  // For Coder: joined "<parentPath>/<repoName>" inside the workspace.
+  const coderCloneFullPath = useMemo(() => {
+    const repoName = activeTab === 'clone'
+      ? derivedRepoName
+      : (selectedRepo?.fullName.split('/').pop() || '');
+    if (!repoName) return '';
+    const parent = coderClonePath.trim() || '~';
+    const trimmed = parent.endsWith('/') ? parent.slice(0, -1) : parent;
+    return `${trimmed}/${repoName}`;
+  }, [activeTab, derivedRepoName, selectedRepo, coderClonePath]);
+
   if (!isOpen) return null;
 
   const handleBrowse = async () => {
@@ -214,21 +306,42 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
 
   const handleClone = async () => {
     const url = activeTab === 'clone' ? cloneUrl.trim() : selectedRepo?.cloneUrl;
-    if (!url || !cloneDestination.trim()) return;
+    if (!url) return;
 
     const repoName = activeTab === 'clone'
       ? derivedRepoName
       : (selectedRepo?.fullName.split('/').pop() || '');
     if (!repoName) return;
 
-    const sep = cloneDestination.includes('/') ? '/' : '\\';
-    const fullDest = `${cloneDestination.trim()}${sep}${repoName}`;
-
     setCloning(true);
     setCloneError('');
     setCloneProgress(null);
 
     try {
+      if (isCoder) {
+        if (!coderCloneWorkspace || !envId) {
+          setCloneError('Pick a Coder workspace to clone into.');
+          setCloning(false);
+          return;
+        }
+        const destInside = coderCloneFullPath;
+        const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
+        const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
+        // Encode workspace + target subdir so CoderTransport runs
+        // `git clone <url> <subdir> && cd <subdir> && claude` inside the
+        // workspace PTY. All clone output streams to the terminal.
+        onCreate(`${coderCloneWorkspace}::${destInside}`, label.trim() || repoName, envId, env, args, undefined, profileId || undefined, url);
+        resetAndClose();
+        return;
+      }
+
+      if (!cloneDestination.trim()) {
+        setCloneError('Destination directory is required.');
+        setCloning(false);
+        return;
+      }
+      const sep = cloneDestination.includes('/') ? '/' : '\\';
+      const fullDest = `${cloneDestination.trim()}${sep}${repoName}`;
       const clonedPath = await window.electronAPI.git.clone(url, fullDest);
       const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
       const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
@@ -259,6 +372,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     setSelectedProviderId('');
     setRepoError('');
     setProfileId(null);
+    setCoderCloneWorkspace('');
+    setCoderClonePath('~');
     onClose();
   };
 
@@ -575,25 +690,41 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                 />
               </div>
 
-              <div className="form-group">
-                <label className="form-label">Destination directory</label>
-                <div className="form-row">
-                  <input
-                    className="form-input"
-                    value={cloneDestination}
-                    onChange={e => setCloneDestination(e.target.value)}
-                    placeholder="C:\repo"
-                    disabled={cloning}
-                  />
-                  <button className="form-btn" disabled={cloning} onClick={async () => {
-                    const dir = await window.electronAPI.dialog.openDirectory();
-                    if (dir) setCloneDestination(dir);
-                  }}>Browse</button>
+              {isCoder ? (
+                <CoderCloneTarget
+                  envId={envId}
+                  workspaces={coderWorkspaces}
+                  loadingCoder={loadingCoder}
+                  coderError={coderError}
+                  refresh={() => envId && fetchCoderWorkspaces(envId)}
+                  workspace={coderCloneWorkspace}
+                  setWorkspace={setCoderCloneWorkspace}
+                  clonePath={coderClonePath}
+                  setClonePath={setCoderClonePath}
+                  fullPath={coderCloneFullPath}
+                  disabled={cloning}
+                />
+              ) : (
+                <div className="form-group">
+                  <label className="form-label">Destination directory</label>
+                  <div className="form-row">
+                    <input
+                      className="form-input"
+                      value={cloneDestination}
+                      onChange={e => setCloneDestination(e.target.value)}
+                      placeholder="C:\repo"
+                      disabled={cloning}
+                    />
+                    <button className="form-btn" disabled={cloning} onClick={async () => {
+                      const dir = await window.electronAPI.dialog.openDirectory();
+                      if (dir) setCloneDestination(dir);
+                    }}>Browse</button>
+                  </div>
+                  {cloneFullPath && (
+                    <span className="form-hint">{cloneFullPath}</span>
+                  )}
                 </div>
-                {cloneFullPath && (
-                  <span className="form-hint">{cloneFullPath}</span>
-                )}
-              </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label">Label (optional)</label>
@@ -689,27 +820,43 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                 )}
               </div>
 
-              <div className="form-group">
-                <label className="form-label">Destination directory</label>
-                <div className="form-row">
-                  <input
-                    className="form-input"
-                    value={cloneDestination}
-                    onChange={e => setCloneDestination(e.target.value)}
-                    placeholder="C:\repo"
-                    disabled={cloning}
-                  />
-                  <button className="form-btn" disabled={cloning} onClick={async () => {
-                    const dir = await window.electronAPI.dialog.openDirectory();
-                    if (dir) setCloneDestination(dir);
-                  }}>Browse</button>
+              {isCoder ? (
+                <CoderCloneTarget
+                  envId={envId}
+                  workspaces={coderWorkspaces}
+                  loadingCoder={loadingCoder}
+                  coderError={coderError}
+                  refresh={() => envId && fetchCoderWorkspaces(envId)}
+                  workspace={coderCloneWorkspace}
+                  setWorkspace={setCoderCloneWorkspace}
+                  clonePath={coderClonePath}
+                  setClonePath={setCoderClonePath}
+                  fullPath={coderCloneFullPath}
+                  disabled={cloning}
+                />
+              ) : (
+                <div className="form-group">
+                  <label className="form-label">Destination directory</label>
+                  <div className="form-row">
+                    <input
+                      className="form-input"
+                      value={cloneDestination}
+                      onChange={e => setCloneDestination(e.target.value)}
+                      placeholder="C:\repo"
+                      disabled={cloning}
+                    />
+                    <button className="form-btn" disabled={cloning} onClick={async () => {
+                      const dir = await window.electronAPI.dialog.openDirectory();
+                      if (dir) setCloneDestination(dir);
+                    }}>Browse</button>
+                  </div>
+                  {selectedRepo && cloneDestination && (
+                    <span className="form-hint">
+                      {cloneDestination}{cloneDestination.includes('/') ? '/' : '\\'}{selectedRepo.fullName.split('/').pop()}
+                    </span>
+                  )}
                 </div>
-                {selectedRepo && cloneDestination && (
-                  <span className="form-hint">
-                    {cloneDestination}{cloneDestination.includes('/') ? '/' : '\\'}{selectedRepo.fullName.split('/').pop()}
-                  </span>
-                )}
-              </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label">Label (optional)</label>
@@ -752,11 +899,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
             <button
               className="form-btn form-btn--primary"
               onClick={handleClone}
-              disabled={
-                cloning ||
-                (activeTab === 'clone' ? (!cloneUrl.trim() || !cloneDestination.trim()) : !selectedRepo) ||
-                !cloneDestination.trim()
-              }
+              disabled={(() => {
+                if (cloning) return true;
+                if (activeTab === 'clone' && !cloneUrl.trim()) return true;
+                if (isProviderTab && !selectedRepo) return true;
+                if (isCoder) return !coderCloneWorkspace || !coderClonePath.trim();
+                return !cloneDestination.trim();
+              })()}
             >
               {cloning ? 'Cloning...' : 'Clone & Create Session'}
             </button>

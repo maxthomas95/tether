@@ -46,11 +46,16 @@ export class CoderTransport implements SessionTransport {
   async start(options: TransportStartOptions): Promise<void> {
     const pty = getPty();
 
-    // The workspace name is reused from the session's workingDir field.
-    const workspaceName = options.workingDir.trim();
-    if (!workspaceName) {
+    // workingDir holds the workspace name, optionally with a subdirectory
+    // inside the workspace separated by `::`. The subdir is cd'd into before
+    // launching claude so cloned-repo sessions open in the repo dir.
+    const raw = options.workingDir.trim();
+    if (!raw) {
       throw new Error('CoderTransport: workspace name (workingDir) is required');
     }
+    const sepIdx = raw.indexOf('::');
+    const workspaceName = sepIdx >= 0 ? raw.slice(0, sepIdx) : raw;
+    const subDir = sepIdx >= 0 ? raw.slice(sepIdx + 2) : '';
 
     // On Windows, node-pty's CreateProcess call doesn't resolve PATHEXT, so
     // bare names like "coder" (which is really "coder.cmd" or "coder.exe")
@@ -104,9 +109,24 @@ export class CoderTransport implements SessionTransport {
     const cliArgs = options.cliArgs?.join(' ') || '';
     const claudeCmd = cliArgs ? `claude ${cliArgs}` : 'claude';
 
-    const cmd = envParts.length > 0
-      ? `env ${envParts.join(' ')} ${claudeCmd}\n`
-      : `${claudeCmd}\n`;
+    const baseCmd = envParts.length > 0
+      ? `env ${envParts.join(' ')} ${claudeCmd}`
+      : claudeCmd;
+
+    // Shell-escape the subdir so paths with spaces work; let the remote shell
+    // expand ~. Only prepend cd when a subdir was supplied.
+    const escapedSubDir = subDir.replace(/"/g, '\\"');
+    const cdStep = subDir ? `cd "${escapedSubDir}"` : '';
+
+    // If cloneUrl is set, chain: git clone <url> <subDir> && cd <subDir> && claude.
+    // The clone runs inside the same PTY/SSH session, so its output — including
+    // auth prompts and progress — streams straight into xterm.js.
+    const cloneStep = options.cloneUrl && subDir
+      ? `git clone "${options.cloneUrl.replace(/"/g, '\\"')}" "${escapedSubDir}"`
+      : '';
+
+    const chain = [cloneStep, cdStep, baseCmd].filter(Boolean).join(' && ');
+    const cmd = `${chain}\n`;
 
     // Write optimistically — node-pty buffers until the remote shell is ready.
     // The `coder ssh` handshake output flows through onData so the user sees

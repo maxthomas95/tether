@@ -230,6 +230,7 @@ class SessionManager {
       cliArgs: resolvedCliArgs.length > 0 ? resolvedCliArgs : undefined,
       claudeSessionId,
       resumeClaudeSessionId: resumeId,
+      cloneUrl: opts.cloneUrl,
     });
 
     return session;
