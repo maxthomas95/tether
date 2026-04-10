@@ -15,6 +15,7 @@ interface TerminalPaneProps {
   onDragStateChange: (dragging: boolean, sourcePaneId?: string) => void;
   layoutDispatch: React.Dispatch<LayoutAction>;
   termManager: TerminalManagerAPI;
+  enablePaneSplitting: boolean;
 }
 
 export function TerminalPane({
@@ -27,6 +28,7 @@ export function TerminalPane({
   onDragStateChange,
   layoutDispatch,
   termManager,
+  enablePaneSplitting,
 }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
@@ -94,14 +96,16 @@ export function TerminalPane({
 
   return (
     <div
-      className={`terminal-pane ${isFocused ? 'terminal-pane--focused' : ''}`}
+      className={`terminal-pane ${isFocused && enablePaneSplitting ? 'terminal-pane--focused' : ''}`}
       onFocus={handleFocus}
       onMouseDown={handleFocus}
     >
       <div
         className="terminal-pane-header"
-        draggable
+        style={enablePaneSplitting ? undefined : { cursor: 'default' }}
+        draggable={enablePaneSplitting}
         onDragStart={(e) => {
+          if (!enablePaneSplitting) return;
           e.dataTransfer.setData('application/tether-pane', paneId);
           e.dataTransfer.setData('application/tether-session', sessionId);
           e.dataTransfer.effectAllowed = 'move';
@@ -133,7 +137,7 @@ export function TerminalPane({
           ref={containerRef}
           style={{ flex: 1, overflow: 'hidden', width: '100%', height: '100%' }}
         />
-        {isDragging && draggingPaneId !== paneId && (
+        {enablePaneSplitting && isDragging && draggingPaneId !== paneId && (
           <DropZoneOverlay paneId={paneId} layoutDispatch={layoutDispatch} />
         )}
       </div>

@@ -38,6 +38,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [resumePreviousChats, setResumePreviousChats] = useState(true);
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
+  const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   // Profile state
@@ -79,13 +80,15 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       window.electronAPI.config.get?.('resumePreviousChats')?.catch(() => null),
       window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
       window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
-    ]).then(([vars, restore, flags, resumeChats, badge, picker]) => {
+      window.electronAPI.config.get?.('enablePaneSplitting')?.catch(() => null),
+    ]).then(([vars, restore, flags, resumeChats, badge, picker, splitting]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlags(flags || []);
       setResumePreviousChats(resumeChats !== 'false');
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
+      setEnablePaneSplitting(splitting === 'true');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -106,10 +109,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     await window.electronAPI.config.set?.('resumePreviousChats', resumePreviousChats ? 'true' : 'false');
     await window.electronAPI.config.set?.('showResumeBadge', showResumeBadge ? 'true' : 'false');
     await window.electronAPI.config.set?.('enableResumePicker', enableResumePicker ? 'true' : 'false');
+    await window.electronAPI.config.set?.('enablePaneSplitting', enablePaneSplitting ? 'true' : 'false');
     await window.electronAPI.config.setDefaultCliFlags?.(cliFlags);
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, cliFlags, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, cliFlags, vaultConfig, onClose]);
 
   const handleVaultLogin = async () => {
     setVaultLoginError(null);
@@ -230,6 +234,21 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                 <option key={t.name} value={t.name}>{t.label}</option>
               ))}
             </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={enablePaneSplitting}
+                onChange={e => setEnablePaneSplitting(e.target.checked)}
+              />
+              Enable pane splitting (experimental)
+            </label>
+            <p className="form-hint">
+              Drag session headers to split the terminal area into multiple panes.
+              Disable if you hit layout bugs &mdash; new sessions will replace the focused pane instead.
+            </p>
           </div>
 
           <div className="form-group">

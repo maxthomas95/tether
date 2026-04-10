@@ -16,6 +16,7 @@ interface SplitLayoutProps {
   onDragStateChange: (dragging: boolean, sourcePaneId?: string) => void;
   focusedPaneId: string | null;
   maximizedPaneId: string | null;
+  enablePaneSplitting: boolean;
 }
 
 export function SplitLayout({
@@ -28,6 +29,7 @@ export function SplitLayout({
   onDragStateChange,
   focusedPaneId,
   maximizedPaneId,
+  enablePaneSplitting,
 }: SplitLayoutProps) {
   if (node.type === 'leaf') {
     const session = sessions.find(s => s.id === node.sessionId);
@@ -42,6 +44,7 @@ export function SplitLayout({
         onDragStateChange={onDragStateChange}
         layoutDispatch={layoutDispatch}
         termManager={termManager}
+        enablePaneSplitting={enablePaneSplitting}
       />
     );
   }
@@ -57,6 +60,7 @@ export function SplitLayout({
       onDragStateChange={onDragStateChange}
       focusedPaneId={focusedPaneId}
       maximizedPaneId={maximizedPaneId}
+      enablePaneSplitting={enablePaneSplitting}
     />
   );
 }
@@ -71,6 +75,7 @@ interface SplitContainerProps {
   onDragStateChange: (dragging: boolean, sourcePaneId?: string) => void;
   focusedPaneId: string | null;
   maximizedPaneId: string | null;
+  enablePaneSplitting: boolean;
 }
 
 function SplitContainer({
@@ -83,6 +88,7 @@ function SplitContainer({
   onDragStateChange,
   focusedPaneId,
   maximizedPaneId,
+  enablePaneSplitting,
 }: SplitContainerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -111,6 +117,7 @@ function SplitContainer({
           onDragStateChange={onDragStateChange}
           focusedPaneId={focusedPaneId}
           maximizedPaneId={maximizedPaneId}
+          enablePaneSplitting={enablePaneSplitting}
         />
       </div>
       <SplitDivider
@@ -133,6 +140,7 @@ function SplitContainer({
           onDragStateChange={onDragStateChange}
           focusedPaneId={focusedPaneId}
           maximizedPaneId={maximizedPaneId}
+          enablePaneSplitting={enablePaneSplitting}
         />
       </div>
     </div>

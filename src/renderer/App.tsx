@@ -35,6 +35,7 @@ export function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
+  const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
   const [resumePickerFor, setResumePickerFor] = useState<{ sessionId: string; workingDir: string; currentTranscriptId?: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null);
@@ -60,10 +61,12 @@ export function App() {
     Promise.all([
       window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
       window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
-    ]).then(([badge, picker]) => {
+      window.electronAPI.config.get?.('enablePaneSplitting')?.catch(() => null),
+    ]).then(([badge, picker, splitting]) => {
       if (cancelled) return;
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
+      setEnablePaneSplitting(splitting === 'true');
     });
     return () => { cancelled = true; };
   }, [settingsOpen]);
@@ -152,6 +155,24 @@ export function App() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [sessions, activeSessionId]);
 
+  // Enforce single-leaf layout invariant when pane splitting is disabled.
+  // Runs after toggling the setting off, and after workspace restore on an app
+  // launch where the setting is already off.
+  useEffect(() => {
+    if (enablePaneSplitting) return;
+    if (!layoutState.root || layoutState.root.type !== 'split') return;
+    const leaves = getLeaves(layoutState.root);
+    if (leaves.length === 0) return;
+    const focused = layoutState.focusedPaneId
+      ? leaves.find(l => l.id === layoutState.focusedPaneId)
+      : null;
+    const keep = focused ?? leaves[0];
+    const newPaneId = generatePaneId();
+    const root: LayoutNode = { type: 'leaf', id: newPaneId, sessionId: keep.sessionId };
+    layoutDispatch({ type: 'SET_ROOT', root });
+    layoutDispatch({ type: 'SET_FOCUS', paneId: newPaneId });
+  }, [enablePaneSplitting, layoutState.root, layoutState.focusedPaneId, layoutDispatch]);
+
   // Subscribe to PTY data and state changes
   useEffect(() => {
     const removeData = window.electronAPI.session.onData((sid, data) => {
@@ -181,6 +202,13 @@ export function App() {
         const root: LayoutNode = { type: 'leaf', id: paneId, sessionId: session.id };
         layoutDispatch({ type: 'SET_ROOT', root });
         layoutDispatch({ type: 'SET_FOCUS', paneId });
+      } else if (!enablePaneSplitting) {
+        // Single-pane mode: replace the focused pane's session instead of splitting.
+        const targetPaneId = layoutState.focusedPaneId ?? getLeaves(layoutState.root)[0]?.id;
+        if (targetPaneId) {
+          layoutDispatch({ type: 'REPLACE_SESSION', paneId: targetPaneId, sessionId: session.id });
+          layoutDispatch({ type: 'SET_FOCUS', paneId: targetPaneId });
+        }
       } else if (layoutState.focusedPaneId) {
         layoutDispatch({ type: 'ADD_PANE', targetPaneId: layoutState.focusedPaneId, sessionId: session.id, zone: 'right' });
       } else {
@@ -197,7 +225,7 @@ export function App() {
         message: extractErrorMessage(err),
       });
     }
-  }, [termManager, layoutState.root, layoutState.focusedPaneId, layoutDispatch, notify]);
+  }, [termManager, layoutState.root, layoutState.focusedPaneId, layoutDispatch, notify, enablePaneSplitting]);
 
   const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
     try {
@@ -541,6 +569,7 @@ export function App() {
             onDragStateChange={handlePaneDragStateChange}
             focusedPaneId={layoutState.focusedPaneId}
             maximizedPaneId={layoutState.maximizedPaneId}
+            enablePaneSplitting={enablePaneSplitting}
           />
         ) : (
           <div className="terminal-container">
