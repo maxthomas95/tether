@@ -11,7 +11,8 @@ import { getEnvironment } from '../db/environment-repo';
 import { getProfile } from '../db/profile-repo';
 import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
 import { transcriptExists } from '../claude/transcripts';
-import type { SessionState, SessionInfo, CreateSessionOptions } from '../../shared/types';
+import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId } from '../../shared/types';
+import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { createLogger } from '../logger';
 
 const log = createLogger('session');
@@ -204,12 +205,23 @@ class SessionManager {
     const appCliFlags = getDb().defaultCliFlags || [];
     const resolvedCliArgs = [...appCliFlags, ...profileCliFlags, ...(opts.cliArgs || [])];
 
-    // Decide on the Claude session UUID. We only manage this for local
-    // sessions — SSH/Coder transports don't currently understand the flag and
-    // we can't safely verify the remote JSONL exists before resuming.
+    // Resolve which CLI tool binary to launch for this environment.
+    let cliTool: CliToolId = 'claude';
+    let envConfig: Record<string, unknown> = {};
+    if (opts.environmentId) {
+      const envRow = getEnvironment(opts.environmentId);
+      if (envRow) {
+        cliTool = (envRow.cli_tool as CliToolId) || 'claude';
+        try { envConfig = JSON.parse(envRow.config); } catch { /* ignore */ }
+      }
+    }
+    const binaryName = getCliBinary(cliTool, envConfig);
+
+    // Decide on the Claude session UUID. Only for tools that support it
+    // and local sessions — SSH/Coder can't safely verify remote JSONL.
     let claudeSessionId: string | undefined;
     let resumeId: string | undefined;
-    if (transport instanceof LocalTransport) {
+    if (toolSupportsResume(cliTool) && transport instanceof LocalTransport) {
       if (opts.resumeClaudeSessionId && transcriptExists(opts.workingDir, opts.resumeClaudeSessionId)) {
         // Resume the existing transcript and reuse the same id going forward.
         resumeId = opts.resumeClaudeSessionId;
@@ -228,6 +240,7 @@ class SessionManager {
       cols: 120,
       rows: 30,
       cliArgs: resolvedCliArgs.length > 0 ? resolvedCliArgs : undefined,
+      binaryName,
       claudeSessionId,
       resumeClaudeSessionId: resumeId,
       cloneUrl: opts.cloneUrl,

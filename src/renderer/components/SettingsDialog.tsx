@@ -276,7 +276,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
               </label>
               <p className="form-hint">
                 Reopen the same Claude conversation each session was on, instead of starting fresh.
-                Local sessions only; SSH sessions always start fresh.
+                Claude Code on local environments only; other tools and SSH sessions always start fresh.
               </p>
 
               <label className="form-radio-label" style={{ marginTop: 6 }}>
@@ -308,10 +308,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
 
           <div className="form-group" style={{ marginTop: 20 }}>
             <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
-              Claude Code CLI Flags
+              Default CLI Flags
             </label>
             <p className="form-hint" style={{ marginBottom: 8 }}>
-              Applied to all sessions. These flags are passed to the <code>claude</code> command.
+              Applied to all sessions. These flags are passed to whichever CLI tool is configured on each environment.
             </p>
 
             {loaded && (

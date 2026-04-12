@@ -99,19 +99,20 @@ export class CoderTransport implements SessionTransport {
       }
     });
 
-    // Build the claude launch command to run inside the remote workspace shell.
+    // Build the CLI launch command to run inside the remote workspace shell.
     // Uses the same env-escaping pattern as SSHTransport so env vars are injected
     // without touching shell history.
+    const binary = options.binaryName || 'claude';
     const envParts = Object.entries(options.env || {})
       .filter(([, v]) => v)
       .map(([k, v]) => `${k}=${v.replace(/'/g, "'\\''")}`);
 
     const cliArgs = options.cliArgs?.join(' ') || '';
-    const claudeCmd = cliArgs ? `claude ${cliArgs}` : 'claude';
+    const cliCmd = cliArgs ? `${binary} ${cliArgs}` : binary;
 
     const baseCmd = envParts.length > 0
-      ? `env ${envParts.join(' ')} ${claudeCmd}`
-      : claudeCmd;
+      ? `env ${envParts.join(' ')} ${cliCmd}`
+      : cliCmd;
 
     // Shell-escape the subdir so paths with spaces work; let the remote shell
     // expand ~. Only prepend cd when a subdir was supplied.

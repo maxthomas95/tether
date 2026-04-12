@@ -37,18 +37,21 @@ export class LocalTransport implements SessionTransport {
     const pty = getPty();
     const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
 
-    // Build the claude argv. Resume takes precedence over fresh session-id —
-    // they're mutually exclusive flags on the CLI.
-    const claudeArgs = [...(options.cliArgs || [])];
-    if (options.resumeClaudeSessionId) {
-      claudeArgs.push('--resume', options.resumeClaudeSessionId);
-    } else if (options.claudeSessionId) {
-      claudeArgs.push('--session-id', options.claudeSessionId);
+    const binary = options.binaryName || 'claude';
+
+    // Build the CLI argv. Resume/session-id flags are Claude-specific.
+    const cliArgs = [...(options.cliArgs || [])];
+    if (binary === 'claude') {
+      if (options.resumeClaudeSessionId) {
+        cliArgs.push('--resume', options.resumeClaudeSessionId);
+      } else if (options.claudeSessionId) {
+        cliArgs.push('--session-id', options.claudeSessionId);
+      }
     }
 
     const args = process.platform === 'win32'
-      ? ['/c', 'claude', ...claudeArgs]
-      : ['-c', `claude ${claudeArgs.join(' ')}`];
+      ? ['/c', binary, ...cliArgs]
+      : ['-c', `${binary} ${cliArgs.join(' ')}`];
 
     log.info('Spawning local PTY', { shell, cwd: options.workingDir, args });
     this.ptyProcess = pty.spawn(shell, args, {

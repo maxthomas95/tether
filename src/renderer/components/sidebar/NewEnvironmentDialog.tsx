@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
-import type { EnvironmentType } from '../../../shared/types';
+import type { EnvironmentType, CliToolId } from '../../../shared/types';
+import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../../utils/vault-path';
 
 interface NewEnvironmentDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => void;
+  onCreate: (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>, cliTool?: CliToolId) => void;
 }
 
 export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironmentDialogProps) {
@@ -21,6 +22,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
   const [vaultPath, setVaultPath] = useState('');
   const [authMethod, setAuthMethod] = useState<'agent' | 'key' | 'password'>('agent');
   const [defaultDir, setDefaultDir] = useState('~');
+  const [cliTool, setCliTool] = useState<CliToolId>('claude');
+  const [customBinary, setCustomBinary] = useState('');
   const [coderBinary, setCoderBinary] = useState('coder');
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [vaultConnected, setVaultConnected] = useState(false);
@@ -85,13 +88,16 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
     } else if (type === 'coder') {
       config.binaryPath = coderBinary.trim() || 'coder';
     }
+    if (cliTool === 'custom' && customBinary.trim()) {
+      config.cliBinary = customBinary.trim();
+    }
 
-    onCreate(name.trim(), type, config, envVars);
+    onCreate(name.trim(), type, config, envVars, cliTool);
     // Reset form
     setName(''); setHost(''); setPort('22'); setUsername('');
     setKeyPath(''); setPassword(''); setAuthMethod('agent'); setDefaultDir('~'); setEnvVars({});
     setStoreInVault(false); setVaultPath(''); setCreateError(null); setCreating(false);
-    setCoderBinary('coder');
+    setCoderBinary('coder'); setCliTool('claude'); setCustomBinary('');
     onClose();
   };
 
@@ -131,6 +137,34 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
               <option value="coder">Coder</option>
             </select>
           </div>
+
+          <div className="form-group">
+            <label className="form-label">CLI Tool</label>
+            <select
+              className="form-input"
+              value={cliTool}
+              onChange={e => setCliTool(e.target.value as CliToolId)}
+            >
+              {Object.values(CLI_TOOL_REGISTRY).map(tool => (
+                <option key={tool.id} value={tool.id}>{tool.displayName}</option>
+              ))}
+            </select>
+          </div>
+
+          {cliTool === 'custom' && (
+            <div className="form-group">
+              <label className="form-label">Binary Name</label>
+              <input
+                className="form-input"
+                value={customBinary}
+                onChange={e => setCustomBinary(e.target.value)}
+                placeholder="my-cli"
+              />
+              <span className="form-hint">
+                Name or path of the CLI binary to run.
+              </span>
+            </div>
+          )}
 
           {type === 'ssh' && (
             <>
