@@ -12,7 +12,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows-blue" alt="Platform" />
-  <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status" />
+  <img src="https://img.shields.io/badge/status-beta-green" alt="Status" />
 </p>
 
 <p align="center">
@@ -20,6 +20,15 @@
 </p>
 
 ---
+
+## Download
+
+Grab the latest release from [GitHub Releases](https://github.com/maxthomas95/tether/releases):
+
+- **Setup installer** — `Tether-x.y.z-Setup.exe` (recommended)
+- **Portable zip** — `Tether-x.y.z-portable.zip` (no install required)
+
+> Windows only for now. Linux and macOS support planned.
 
 ## Why?
 
@@ -35,6 +44,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 ## Features
 
 - **Multiple concurrent sessions** with instant switching
+- **Split panes** — view multiple sessions side-by-side with flexible layouts
 - **Local and SSH environments** — node-pty locally, ssh2 for remote
 - **Status indicators** — green (running), amber (waiting), gray (idle), red (dead)
 - **Session grouping** — auto-grouped by working directory, collapsible
@@ -42,6 +52,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Env var cascade** — app defaults &rarr; environment &rarr; session overrides, with presets for common Claude Code vars
 - **CLI flag management** — app-wide and per-session (`--dangerously-skip-permissions`, `--verbose`, etc.)
 - **Workspace persistence** — sessions save on quit, restore on launch
+- **Resume previous chats** — pick up where Claude Code left off
 - **Catppuccin themes** — Mocha, Macchiato, Frappe, Latte, plus Default Dark
 - **Keyboard shortcuts** — `Ctrl+N` new, `Ctrl+1-9` switch, `Ctrl+B` toggle sidebar, `Ctrl+W` stop
 
@@ -50,6 +61,8 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 > **Dumb pipe, smart shell.** Never parse, intercept, or re-render Claude Code output. The PTY stream flows untouched into xterm.js. Status detection is a passive side-channel tap, not an interceptor.
 
 ## Quick Start
+
+Download a release (see above), or build from source:
 
 ```bash
 npm install       # install dependencies
@@ -72,12 +85,16 @@ npm run start     # launch in dev mode (Electron Forge + Vite)
 
 | | |
 |---|---|
-| [Architecture](ARCHITECTURE.md) | System design, component diagram, IPC, data schema |
-| [Transport Design](TRANSPORT_DESIGN.md) | Transport interface, Local/SSH adapter specs, data flow |
-| [UI Design](UI_DESIGN.md) | Layout, sidebar, terminal panel, interaction model |
-| [Product Spec](PRODUCT_SPEC.md) | Vision, user stories, feature requirements |
-| [MVP Scope](MVP_SCOPE.md) | Milestones and post-MVP roadmap |
+| [Architecture](docs/ARCHITECTURE.md) | System design, component diagram, IPC, data schema |
+| [Transport Design](docs/TRANSPORT_DESIGN.md) | Transport interface, Local/SSH adapter specs, data flow |
+| [UI Design](docs/UI_DESIGN.md) | Layout, sidebar, terminal panel, interaction model |
+| [Product Spec](docs/PRODUCT_SPEC.md) | Vision, user stories, feature requirements |
+| [MVP Scope](docs/MVP_SCOPE.md) | Milestones and post-MVP roadmap |
 | [Changelog](CHANGELOG.md) | Release history |
+
+## Contributing
+
+Tether is in active development. If you're interested in contributing, check the [Architecture](docs/ARCHITECTURE.md) doc to understand the codebase, then look at the open issues.
 
 ## License
 

@@ -34,20 +34,20 @@ Tether is a desktop session multiplexer for Claude Code. It provides a single un
 |---|---|
 | `README.md` | Project intro, problem/solution, core principles |
 | `CHANGELOG.md` | Release history with features and known issues per version |
-| `PRODUCT_SPEC.md` | Vision, target user, user stories (SF-01 through SF-34), non-goals |
-| `MVP_SCOPE.md` | Original MVP definition, milestones (M1-M5), post-MVP roadmap |
-| `ARCHITECTURE.md` | System diagram, component design, data schema, IPC design, key decisions |
-| `TRANSPORT_DESIGN.md` | Transport interface (TypeScript), Local/SSH adapter specs, data flow |
-| `UI_DESIGN.md` | Layout mockups, sidebar, terminal panel, dialogs, keyboard shortcuts, visual design |
+| `docs/PRODUCT_SPEC.md` | Vision, target user, user stories (SF-01 through SF-34), non-goals |
+| `docs/MVP_SCOPE.md` | Original MVP definition, milestones (M1-M5), post-MVP roadmap |
+| `docs/ARCHITECTURE.md` | System diagram, component design, data schema, IPC design, key decisions |
+| `docs/TRANSPORT_DESIGN.md` | Transport interface (TypeScript), Local/SSH adapter specs, data flow |
+| `docs/UI_DESIGN.md` | Layout mockups, sidebar, terminal panel, dialogs, keyboard shortcuts, visual design |
 
 ## Development Guidelines
 
 ### When implementing
 
-- Start from the MVP milestones in `MVP_SCOPE.md` (M1 through M5)
-- Follow the architecture in `ARCHITECTURE.md` — main process owns PTYs, renderer owns UI
-- Use the `SessionTransport` interface from `TRANSPORT_DESIGN.md` as the contract for all adapters
-- Follow UI specs in `UI_DESIGN.md` for layout, colors, keyboard shortcuts
+- Start from the MVP milestones in `docs/MVP_SCOPE.md` (M1 through M5)
+- Follow the architecture in `docs/ARCHITECTURE.md` — main process owns PTYs, renderer owns UI
+- Use the `SessionTransport` interface from `docs/TRANSPORT_DESIGN.md` as the contract for all adapters
+- Follow UI specs in `docs/UI_DESIGN.md` for layout, colors, keyboard shortcuts
 - Dark theme by default. Status colors: green (#22C55E), amber (#EAB308), gray (#6B7280), red (#EF4444)
 
 ### Session grouping
