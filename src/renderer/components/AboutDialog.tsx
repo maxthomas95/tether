@@ -19,7 +19,7 @@ export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
           <img src={logoSrc} alt="Tether" style={{ width: 64, height: 64, marginBottom: 12 }} />
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Tether</div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
-            Version 0.1.2-alpha.3
+            Version {__APP_VERSION__}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
             Desktop session multiplexer for Claude Code.
