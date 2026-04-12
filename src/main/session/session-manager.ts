@@ -237,8 +237,8 @@ class SessionManager {
     await transport.start({
       workingDir: opts.workingDir,
       env: resolvedEnv,
-      cols: 120,
-      rows: 30,
+      cols: 80,
+      rows: 24,
       cliArgs: resolvedCliArgs.length > 0 ? resolvedCliArgs : undefined,
       binaryName,
       claudeSessionId,
