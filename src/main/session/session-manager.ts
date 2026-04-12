@@ -29,6 +29,8 @@ export class Session {
   label: string;
   readonly workingDir: string;
   readonly environmentId: string | null;
+  readonly cliTool: CliToolId;
+  readonly customCliBinary: string | undefined;
   readonly createdAt: string;
   state: SessionState = 'starting';
   transport: SessionTransport | null = null;
@@ -37,11 +39,13 @@ export class Session {
   /** True when this session was launched via `--resume`. */
   resumed = false;
 
-  constructor(id: string, label: string, workingDir: string, environmentId?: string) {
+  constructor(id: string, label: string, workingDir: string, environmentId?: string, cliTool?: CliToolId, customCliBinary?: string) {
     this.id = id;
     this.label = label;
     this.workingDir = workingDir;
     this.environmentId = environmentId || null;
+    this.cliTool = cliTool || 'claude';
+    this.customCliBinary = customCliBinary;
     this.createdAt = new Date().toISOString();
   }
 
@@ -49,6 +53,8 @@ export class Session {
     return {
       id: this.id,
       environmentId: this.environmentId,
+      cliTool: this.cliTool !== 'claude' ? this.cliTool : undefined,
+      customCliBinary: this.customCliBinary,
       label: this.label,
       workingDir: this.workingDir,
       state: this.state,
@@ -124,8 +130,9 @@ class SessionManager {
   ): Promise<Session> {
     const id = uuidv4();
     const label = opts.label || opts.workingDir.split(/[\\/]/).pop() || 'Untitled';
-    log.info('Creating session', { id, label, workingDir: opts.workingDir, environmentId: opts.environmentId });
-    const session = new Session(id, label, opts.workingDir, opts.environmentId);
+    const cliTool: CliToolId = opts.cliTool || 'claude';
+    log.info('Creating session', { id, label, workingDir: opts.workingDir, environmentId: opts.environmentId, cliTool });
+    const session = new Session(id, label, opts.workingDir, opts.environmentId, cliTool, opts.customCliBinary);
     this.sessions.set(id, session);
     this.callbacksMap.set(id, callbacks);
 
@@ -205,17 +212,9 @@ class SessionManager {
     const appCliFlags = getDb().defaultCliFlags || [];
     const resolvedCliArgs = [...appCliFlags, ...profileCliFlags, ...(opts.cliArgs || [])];
 
-    // Resolve which CLI tool binary to launch for this environment.
-    let cliTool: CliToolId = 'claude';
-    let envConfig: Record<string, unknown> = {};
-    if (opts.environmentId) {
-      const envRow = getEnvironment(opts.environmentId);
-      if (envRow) {
-        cliTool = (envRow.cli_tool as CliToolId) || 'claude';
-        try { envConfig = JSON.parse(envRow.config); } catch { /* ignore */ }
-      }
-    }
-    const binaryName = getCliBinary(cliTool, envConfig);
+    // Resolve which CLI tool binary to launch. For 'custom', the binary
+    // name comes from the session creation options.
+    const binaryName = getCliBinary(cliTool, { cliBinary: opts.customCliBinary });
 
     // Decide on the Claude session UUID. Only for tools that support it
     // and local sessions — SSH/Coder can't safely verify remote JSONL.

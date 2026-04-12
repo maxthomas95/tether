@@ -6,6 +6,10 @@ export interface SavedSession {
   workingDir: string;
   label: string;
   environmentId?: string;
+  /** CLI tool used for this session (defaults to 'claude'). */
+  cliTool?: string;
+  /** Binary name for custom CLI tool. */
+  customCliBinary?: string;
   /** UUID of the Claude conversation to resume on next launch. */
   claudeSessionId?: string;
 }
@@ -52,7 +56,6 @@ export interface EnvironmentRow {
   id: string;
   name: string;
   type: 'local' | 'ssh' | 'coder';
-  cli_tool: string | null; // 'claude' | 'codex' | 'opencode' | 'custom' | null (null = 'claude')
   config: string;
   env_vars: string; // JSON-encoded Record<string, string>
   auth_mode: string | null;
@@ -103,7 +106,6 @@ export function getDb(): DbData {
         const envs = (loaded.environments || []).map((e: Record<string, unknown>) => ({
           ...e,
           env_vars: e.env_vars || '{}',
-          cli_tool: e.cli_tool || null,
         }));
         data = {
           environments: envs,

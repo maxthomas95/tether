@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
-import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderWorkspace } from '../../../shared/types';
+import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderWorkspace, CliToolId } from '../../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
+import type { CliToolDef } from '../../../shared/cli-tools';
 
 type SourceTab = 'local' | 'clone' | 'gitea' | 'ado';
 
@@ -87,7 +88,7 @@ interface NewSessionDialogProps {
   environments: EnvironmentInfo[];
   profiles: LaunchProfileInfo[];
   onClose: () => void;
-  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string, cloneUrl?: string) => void;
+  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string) => void;
 }
 
 export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate }: NewSessionDialogProps) {
@@ -104,6 +105,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [sessionCliFlags, setSessionCliFlags] = useState<string[]>([]);
   const [customFlag, setCustomFlag] = useState('');
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [cliTool, setCliTool] = useState<CliToolId>('claude');
+  const [customBinary, setCustomBinary] = useState('');
 
   // Tab state
   const [activeTab, setActiveTab] = useState<SourceTab>('local');
@@ -301,7 +304,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     if (!directory.trim()) return;
     const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
     const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
-    onCreate(directory.trim(), label.trim(), envId || undefined, env, args, undefined, profileId || undefined);
+    onCreate(directory.trim(), label.trim(), envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined);
     resetAndClose();
   };
 
@@ -331,7 +334,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
         // Encode workspace + target subdir so CoderTransport runs
         // `git clone <url> <subdir> && cd <subdir> && claude` inside the
         // workspace PTY. All clone output streams to the terminal.
-        onCreate(`${coderCloneWorkspace}::${destInside}`, label.trim() || repoName, envId, env, args, undefined, profileId || undefined, url);
+        onCreate(`${coderCloneWorkspace}::${destInside}`, label.trim() || repoName, envId, env, args, undefined, profileId || undefined, url, cliTool, cliTool === 'custom' ? customBinary : undefined);
         resetAndClose();
         return;
       }
@@ -346,7 +349,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       const clonedPath = await window.electronAPI.git.clone(url, fullDest);
       const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
       const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
-      onCreate(clonedPath, label.trim() || repoName, envId || undefined, env, args, undefined, profileId || undefined);
+      onCreate(clonedPath, label.trim() || repoName, envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined);
       resetAndClose();
     } catch (err: unknown) {
       setCloneError(err instanceof Error ? err.message : String(err));
@@ -375,6 +378,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     setProfileId(null);
     setCoderCloneWorkspace('');
     setCoderClonePath('~');
+    setCliTool('claude');
+    setCustomBinary('');
     onClose();
   };
 
@@ -435,10 +440,39 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               >
                 {environments.map(env => (
                   <option key={env.id} value={env.id}>
-                    {env.name} ({env.type}{env.cliTool && env.cliTool !== 'claude' ? `, ${CLI_TOOL_REGISTRY[env.cliTool]?.displayName || env.cliTool}` : ''})
+                    {env.name} ({env.type})
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {/* CLI tool selector */}
+          <div className="form-group">
+            <label className="form-label">CLI Tool</label>
+            <select
+              className="form-input"
+              value={cliTool}
+              onChange={e => setCliTool(e.target.value as CliToolId)}
+            >
+              {Object.values(CLI_TOOL_REGISTRY).map((tool: CliToolDef) => (
+                <option key={tool.id} value={tool.id}>{tool.displayName}</option>
+              ))}
+            </select>
+          </div>
+
+          {cliTool === 'custom' && (
+            <div className="form-group">
+              <label className="form-label">Binary Name</label>
+              <input
+                className="form-input"
+                value={customBinary}
+                onChange={e => setCustomBinary(e.target.value)}
+                placeholder="my-cli"
+              />
+              <span className="form-hint">
+                Name or path of the CLI binary to run.
+              </span>
             </div>
           )}
 
