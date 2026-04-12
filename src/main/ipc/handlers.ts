@@ -153,7 +153,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       id: env.id,
       name: env.name,
       type: env.type as EnvironmentInfo['type'],
-      cliTool: (env.cli_tool as EnvironmentInfo['cliTool']) || undefined,
       config: decryptConfigPassword(JSON.parse(env.config)),
       envVars: JSON.parse(env.env_vars || '{}'),
       sessionCount: sessions.filter(s => {
@@ -169,7 +168,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const env = envRepo.createEnvironment({
       name: opts.name,
       type: opts.type,
-      cli_tool: opts.cliTool,
       config: encryptConfigPassword(opts.config),
       envVars: opts.envVars,
     });
@@ -177,7 +175,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       id: env.id,
       name: env.name,
       type: env.type,
-      cliTool: (env.cli_tool as EnvironmentInfo['cliTool']) || undefined,
       config: decryptConfigPassword(JSON.parse(env.config)),
       envVars: JSON.parse(env.env_vars || '{}'),
       sessionCount: 0,
@@ -188,7 +185,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     envRepo.updateEnvironment(id, {
       name: opts.name,
       type: opts.type,
-      cli_tool: opts.cliTool,
       config: encryptConfigPassword(opts.config),
       envVars: opts.envVars,
     });

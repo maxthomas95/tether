@@ -91,7 +91,6 @@ export interface EnvironmentInfo {
   id: string;
   name: string;
   type: EnvironmentType;
-  cliTool?: CliToolId;
   config: Record<string, unknown>;
   envVars: Record<string, string>;
   sessionCount: number;
@@ -100,6 +99,9 @@ export interface EnvironmentInfo {
 export interface SessionInfo {
   id: string;
   environmentId: string | null;
+  cliTool?: CliToolId;
+  /** Binary name when cliTool is 'custom'. */
+  customCliBinary?: string;
   label: string;
   workingDir: string;
   state: SessionState;
@@ -115,6 +117,10 @@ export interface CreateSessionOptions {
   workingDir: string;
   label?: string;
   environmentId?: string;
+  /** CLI tool to run. Defaults to 'claude' when omitted. */
+  cliTool?: CliToolId;
+  /** Binary name for 'custom' cliTool (e.g. 'my-cli'). */
+  customCliBinary?: string;
   env?: Record<string, string>;
   cliArgs?: string[];
   /** When set, launch claude with `--resume <id>` instead of `--session-id <new>`. */
@@ -155,7 +161,6 @@ export interface TranscriptInfo {
 export interface CreateEnvironmentOptions {
   name: string;
   type: EnvironmentType;
-  cliTool?: CliToolId;
   config?: Record<string, unknown>;
   envVars?: Record<string, string>;
 }
@@ -209,8 +214,8 @@ export interface TetherAPI {
     writeText(text: string): void;
   };
   workspace: {
-    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; claudeSessionId?: string }>, activeIndex: number): Promise<void>;
-    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; claudeSessionId?: string }>; activeIndex: number } | null>;
+    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; claudeSessionId?: string }>, activeIndex: number): Promise<void>;
+    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; claudeSessionId?: string }>; activeIndex: number } | null>;
   };
   transcripts: {
     list(workingDir: string): Promise<TranscriptInfo[]>;

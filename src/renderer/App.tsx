@@ -17,7 +17,7 @@ import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
 import { generatePaneId, findLeaf, getLeaves } from './lib/layout-tree';
 import type { LayoutNode } from '../shared/layout-types';
-import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, CliToolId, LaunchProfileInfo } from '../shared/types';
+import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
 import logoSrc from './assets/logo.png';
 
@@ -98,6 +98,8 @@ export function App() {
             workingDir: saved.workingDir,
             label: saved.label || undefined,
             environmentId: saved.environmentId,
+            cliTool: saved.cliTool as CreateSessionOptions['cliTool'],
+            customCliBinary: saved.customCliBinary,
             resumeClaudeSessionId: resumeChats ? saved.claudeSessionId : undefined,
           });
           if (!mounted) return;
@@ -145,6 +147,8 @@ export function App() {
             workingDir: s.workingDir,
             label: s.label,
             environmentId: s.environmentId || undefined,
+            cliTool: s.cliTool,
+            customCliBinary: s.customCliBinary,
             claudeSessionId: s.claudeSessionId,
           })),
           Math.max(0, activeIndex),
@@ -191,9 +195,9 @@ export function App() {
     return () => { removeData(); removeState(); removeExit(); removeLabelChange(); };
   }, [termManager]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string, cloneUrl?: string) => {
+  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string) => {
     try {
-      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, env, cliArgs, resumeClaudeSessionId, profileId, cloneUrl });
+      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, cliTool, customCliBinary, env, cliArgs, resumeClaudeSessionId, profileId, cloneUrl });
       termManager.getOrCreate(session.id);
       setSessions(prev => [...prev, session]);
 
@@ -227,9 +231,9 @@ export function App() {
     }
   }, [termManager, layoutState.root, layoutState.focusedPaneId, layoutDispatch, notify, enablePaneSplitting]);
 
-  const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>, cliTool?: CliToolId) => {
+  const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
     try {
-      const env = await window.electronAPI.environment.create({ name, type, config, envVars, cliTool });
+      const env = await window.electronAPI.environment.create({ name, type, config, envVars });
       setEnvironments(prev => [...prev, env]);
     } catch (err) {
       console.error('Failed to create environment:', err);
@@ -529,7 +533,7 @@ export function App() {
                         onRename={handleRename}
                         onRemove={handleRemove}
                         onDuplicate={handleDuplicate}
-                        onResumePrevious={enableResumePicker && (!env.cliTool || env.cliTool === 'claude') ? handleOpenResumePicker : undefined}
+                        onResumePrevious={enableResumePicker ? handleOpenResumePicker : undefined}
                         showResumeBadge={showResumeBadge}
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
