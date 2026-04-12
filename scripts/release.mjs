@@ -258,9 +258,9 @@ function phaseCommitTag(version, prereleaseTag) {
     ok(`tag ${tag} already exists, skipping commit+tag`);
     return tag;
   }
-  // Are there changes to commit?
-  const status = sh('git status --porcelain');
-  if (status) {
+  // Are there staged or modified release files to commit?
+  const releaseFileDiff = sh('git diff --name-only HEAD -- package.json CHANGELOG.md');
+  if (releaseFileDiff) {
     sh('git add package.json CHANGELOG.md', { mutating: true });
     const msg = `Bump to v${version}, update CHANGELOG for ${prereleaseTag}`;
     sh(`git commit -m "${msg}"`, { mutating: true });
