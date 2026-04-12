@@ -4,6 +4,8 @@ export interface TransportStartOptions {
   cols: number;
   rows: number;
   cliArgs?: string[];
+  /** CLI binary to run. Defaults to 'claude' when omitted. */
+  binaryName?: string;
   /**
    * Pin a Claude session UUID via `--session-id`. Used on first launch so we
    * can resume the same conversation later.

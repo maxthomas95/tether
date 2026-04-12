@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
 import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderWorkspace } from '../../../shared/types';
+import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 
 type SourceTab = 'local' | 'clone' | 'gitea' | 'ado';
 
@@ -434,7 +435,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               >
                 {environments.map(env => (
                   <option key={env.id} value={env.id}>
-                    {env.name} ({env.type})
+                    {env.name} ({env.type}{env.cliTool && env.cliTool !== 'claude' ? `, ${CLI_TOOL_REGISTRY[env.cliTool]?.displayName || env.cliTool}` : ''})
                   </option>
                 ))}
               </select>

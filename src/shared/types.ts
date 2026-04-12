@@ -1,3 +1,6 @@
+import type { CliToolId } from './cli-tools';
+
+export type { CliToolId };
 export type SessionState = 'starting' | 'running' | 'waiting' | 'idle' | 'stopped' | 'dead';
 export type EnvironmentType = 'local' | 'ssh' | 'coder';
 export type GitProviderType = 'gitea' | 'ado';
@@ -88,6 +91,7 @@ export interface EnvironmentInfo {
   id: string;
   name: string;
   type: EnvironmentType;
+  cliTool?: CliToolId;
   config: Record<string, unknown>;
   envVars: Record<string, string>;
   sessionCount: number;
@@ -151,6 +155,7 @@ export interface TranscriptInfo {
 export interface CreateEnvironmentOptions {
   name: string;
   type: EnvironmentType;
+  cliTool?: CliToolId;
   config?: Record<string, unknown>;
   envVars?: Record<string, string>;
 }

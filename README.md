@@ -51,10 +51,22 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Environment management** — preconfigured environments with per-env settings
 - **Env var cascade** — app defaults &rarr; environment &rarr; session overrides, with presets for common Claude Code vars
 - **CLI flag management** — app-wide and per-session (`--dangerously-skip-permissions`, `--verbose`, etc.)
+- **Other CLI tools** — also supports Codex CLI, OpenCode, and custom binaries (see below)
 - **Workspace persistence** — sessions save on quit, restore on launch
 - **Resume previous chats** — pick up where Claude Code left off
 - **Catppuccin themes** — Mocha, Macchiato, Frappe, Latte, plus Default Dark
 - **Keyboard shortcuts** — `Ctrl+N` new, `Ctrl+1-9` switch, `Ctrl+B` toggle sidebar, `Ctrl+W` stop
+
+### Other CLI tools
+
+Tether is built around Claude Code, but since it's a dumb-pipe PTY multiplexer, it can run other interactive coding CLIs too. You can select a CLI tool per-environment:
+
+- **Claude Code** (`claude`) — full support including session resume and transcript browsing
+- **Codex CLI** (`codex`) — OpenAI's coding agent
+- **OpenCode** (`opencode`)
+- **Custom** — any binary you specify
+
+These are functional but not first-class citizens yet — features like session resume and status detection are Claude-specific. Broader tool support is on the roadmap.
 
 ## Core Principle
 

@@ -7,6 +7,7 @@ export type { EnvironmentRow };
 export interface CreateEnvironmentInput {
   name: string;
   type: 'local' | 'ssh' | 'coder';
+  cli_tool?: string;
   config?: Record<string, unknown>;
   envVars?: Record<string, string>;
   auth_mode?: string;
@@ -28,6 +29,7 @@ export function createEnvironment(input: CreateEnvironmentInput): EnvironmentRow
     id: uuidv4(),
     name: input.name,
     type: input.type,
+    cli_tool: input.cli_tool || null,
     config: JSON.stringify(input.config || {}),
     env_vars: JSON.stringify(input.envVars || {}),
     auth_mode: input.auth_mode || null,
@@ -47,6 +49,7 @@ export function updateEnvironment(id: string, updates: Partial<CreateEnvironment
   if (!env) return;
   if (updates.name !== undefined) env.name = updates.name;
   if (updates.type !== undefined) env.type = updates.type;
+  if (updates.cli_tool !== undefined) env.cli_tool = updates.cli_tool || null;
   if (updates.config !== undefined) env.config = JSON.stringify(updates.config);
   if (updates.envVars !== undefined) env.env_vars = JSON.stringify(updates.envVars);
   if (updates.auth_mode !== undefined) env.auth_mode = updates.auth_mode;

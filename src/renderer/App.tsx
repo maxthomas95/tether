@@ -17,7 +17,7 @@ import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
 import { generatePaneId, findLeaf, getLeaves } from './lib/layout-tree';
 import type { LayoutNode } from '../shared/layout-types';
-import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo } from '../shared/types';
+import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, CliToolId, LaunchProfileInfo } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
 import logoSrc from './assets/logo.png';
 
@@ -227,9 +227,9 @@ export function App() {
     }
   }, [termManager, layoutState.root, layoutState.focusedPaneId, layoutDispatch, notify, enablePaneSplitting]);
 
-  const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
+  const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>, cliTool?: CliToolId) => {
     try {
-      const env = await window.electronAPI.environment.create({ name, type, config, envVars });
+      const env = await window.electronAPI.environment.create({ name, type, config, envVars, cliTool });
       setEnvironments(prev => [...prev, env]);
     } catch (err) {
       console.error('Failed to create environment:', err);
@@ -529,7 +529,7 @@ export function App() {
                         onRename={handleRename}
                         onRemove={handleRemove}
                         onDuplicate={handleDuplicate}
-                        onResumePrevious={enableResumePicker ? handleOpenResumePicker : undefined}
+                        onResumePrevious={enableResumePicker && (!env.cliTool || env.cliTool === 'claude') ? handleOpenResumePicker : undefined}
                         showResumeBadge={showResumeBadge}
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}

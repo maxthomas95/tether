@@ -86,19 +86,20 @@ export class SSHTransport implements SessionTransport {
             this._connected = true;
 
             // Build the command: inject env vars via `env` (avoids shell history)
-            // then cd to the working directory and launch claude
+            // then cd to the working directory and launch the CLI tool
+            const binary = options.binaryName || 'claude';
             const envParts = Object.entries(options.env)
               .filter(([, v]) => v)
               .map(([k, v]) => `${k}=${v.replace(/'/g, "'\\''")}`);
 
             const cliArgs = options.cliArgs?.join(' ') || '';
-            const claudeCmd = cliArgs ? `claude ${cliArgs}` : 'claude';
+            const cliCmd = cliArgs ? `${binary} ${cliArgs}` : binary;
 
             let cmd: string;
             if (envParts.length > 0) {
-              cmd = `cd ${options.workingDir} && env ${envParts.join(' ')} ${claudeCmd}\n`;
+              cmd = `cd ${options.workingDir} && env ${envParts.join(' ')} ${cliCmd}\n`;
             } else {
-              cmd = `cd ${options.workingDir} && ${claudeCmd}\n`;
+              cmd = `cd ${options.workingDir} && ${cliCmd}\n`;
             }
 
             // Wire up data flow
