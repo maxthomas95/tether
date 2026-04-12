@@ -15,9 +15,10 @@
 //
 // Usage:
 //   node scripts/release.mjs alpha.N            # cut a new alpha
+//   node scripts/release.mjs beta.N             # cut a new beta
 //   node scripts/release.mjs alpha.N --resume   # skip phases that are already done
 //   node scripts/release.mjs alpha.N --dry-run  # print what would happen
-//   node scripts/release.mjs --next             # auto-pick next alpha number
+//   node scripts/release.mjs --next             # auto-pick next prerelease number
 //
 // Environment:
 //   GITEA_TOKEN_FILE   override the default Gitea token path
@@ -163,11 +164,11 @@ function bumpPatch(version) {
   return `${m[1]}.${m[2]}.${parseInt(m[3], 10) + 1}`;
 }
 
-async function nextAlphaNumber() {
+async function nextPrereleaseNumber(channel) {
   const releases = await gitea('GET', `/repos/${REPO_OWNER}/${REPO_NAME}/releases`);
   let max = 0;
   for (const r of releases) {
-    const m = r.tag_name.match(/-alpha\.(\d+)$/);
+    const m = r.tag_name.match(new RegExp(`-${channel}\\.(\\d+)$`));
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
   return max + 1;
@@ -209,13 +210,13 @@ function phaseVersion(targetVersion) {
   ok(`bumped package.json to ${targetVersion}`);
 }
 
-function phaseChangelog(version, alphaTag) {
+function phaseChangelog(version, prereleaseTag) {
   log(`Phase 3/9: changelog`);
   const path = join(REPO_ROOT, 'CHANGELOG.md');
   const content = readFileSync(path, 'utf8');
-  const heading = `## [${version}-${alphaTag}]`;
+  const heading = `## [${version}-${prereleaseTag}]`;
   if (content.includes(heading)) {
-    ok(`CHANGELOG.md already has section for ${version}-${alphaTag}`);
+    ok(`CHANGELOG.md already has section for ${version}-${prereleaseTag}`);
     return;
   }
   // Generate a draft from git log since the previous tag.
@@ -225,7 +226,7 @@ function phaseChangelog(version, alphaTag) {
   const commits = prevTag ? sh(`git log ${range} --oneline --no-merges`) : '';
   const today = new Date().toISOString().slice(0, 10);
   const draft = [
-    `## [${version}-${alphaTag}] — ${today}`,
+    `## [${version}-${prereleaseTag}] — ${today}`,
     '',
     '### New Features',
     '- _(fill in)_',
@@ -245,12 +246,12 @@ function phaseChangelog(version, alphaTag) {
   if (idx === -1) die('Could not find insertion point in CHANGELOG.md (expected `---` separator after header)');
   const newContent = content.slice(0, idx + insertAfter.length) + draft + content.slice(idx + insertAfter.length);
   if (!DRY_RUN) writeFileSync(path, newContent);
-  warn(`Drafted CHANGELOG.md section for ${version}-${alphaTag}. Edit it before publishing if needed.`);
+  warn(`Drafted CHANGELOG.md section for ${version}-${prereleaseTag}. Edit it before publishing if needed.`);
 }
 
-function phaseCommitTag(version, alphaTag) {
+function phaseCommitTag(version, prereleaseTag) {
   log(`Phase 4/9: commit + tag`);
-  const tag = `v${version}-${alphaTag}`;
+  const tag = `v${version}-${prereleaseTag}`;
   // Is the tag already there?
   const tagExists = sh(`git tag -l ${tag}`);
   if (tagExists) {
@@ -259,12 +260,15 @@ function phaseCommitTag(version, alphaTag) {
   }
   // Are there changes to commit?
   const status = sh('git status --porcelain');
-  if (!status) die(`No changes to commit for ${tag}. Did you bump version?`);
-  sh('git add package.json CHANGELOG.md', { mutating: true });
-  const msg = `Bump to v${version}, update CHANGELOG for ${alphaTag}`;
-  sh(`git commit -m "${msg}"`, { mutating: true });
+  if (status) {
+    sh('git add package.json CHANGELOG.md', { mutating: true });
+    const msg = `Bump to v${version}, update CHANGELOG for ${prereleaseTag}`;
+    sh(`git commit -m "${msg}"`, { mutating: true });
+  } else {
+    ok('version bump already committed, just tagging');
+  }
   sh(`git tag ${tag}`, { mutating: true });
-  ok(`committed and tagged ${tag}`);
+  ok(`tagged ${tag}`);
   return tag;
 }
 
@@ -475,38 +479,43 @@ async function phaseGithub(version, alphaTag, assets) {
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
-  // Parse alpha tag from positional arg
-  let alphaTag = args.find(a => /^alpha\.\d+$/.test(a));
-  if (!alphaTag && NEXT) {
-    const n = await nextAlphaNumber();
-    alphaTag = `alpha.${n}`;
-    log(`auto-picked alpha tag: ${alphaTag}`);
+  // Parse prerelease tag from positional arg (alpha.N or beta.N)
+  let prereleaseTag = args.find(a => /^(alpha|beta)\.\d+$/.test(a));
+  if (!prereleaseTag && NEXT) {
+    // Detect channel from args or default to alpha
+    const channel = args.find(a => /^(alpha|beta)$/.test(a)) || 'alpha';
+    const n = await nextPrereleaseNumber(channel);
+    prereleaseTag = `${channel}.${n}`;
+    log(`auto-picked prerelease tag: ${prereleaseTag}`);
   }
-  if (!alphaTag) die('Usage: node scripts/release.mjs alpha.N [--resume] [--dry-run]   (or: --next)');
+  if (!prereleaseTag) die('Usage: node scripts/release.mjs <alpha|beta>.N [--resume] [--dry-run]   (or: --next)');
 
   // Determine target package version. If we're resuming an in-flight release
   // where package.json is already bumped, use that. Otherwise bump patch.
   const cur = currentPackageVersion();
-  const tagForCur = `v${cur}-${alphaTag}`;
+  const tagForCur = `v${cur}-${prereleaseTag}`;
   const tagExists = sh(`git tag -l ${tagForCur}`);
   let targetVersion;
   if (tagExists) {
     targetVersion = cur;
     log(`resuming: tag ${tagForCur} already exists, using current package version ${cur}`);
+  } else if (RESUME) {
+    targetVersion = cur;
+    log(`resuming: using current package version ${cur} (${prereleaseTag})`);
   } else {
     targetVersion = bumpPatch(cur);
-    log(`current package version: ${cur} → target: ${targetVersion} (${alphaTag})`);
+    log(`current package version: ${cur} → target: ${targetVersion} (${prereleaseTag})`);
   }
 
   phasePreflight();
   phaseVersion(targetVersion);
-  phaseChangelog(targetVersion, alphaTag);
-  const tag = phaseCommitTag(targetVersion, alphaTag);
+  phaseChangelog(targetVersion, prereleaseTag);
+  const tag = phaseCommitTag(targetVersion, prereleaseTag);
   phasePush(tag);
   const builtPaths = phaseBuild(targetVersion);
   const assets = phaseAssets(targetVersion, builtPaths);
-  await phasePublish(targetVersion, alphaTag, assets);
-  await phaseGithub(targetVersion, alphaTag, assets);
+  await phasePublish(targetVersion, prereleaseTag, assets);
+  await phaseGithub(targetVersion, prereleaseTag, assets);
 }
 
 main().catch(e => die(e.stack || String(e)));
