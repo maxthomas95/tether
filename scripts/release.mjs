@@ -460,10 +460,8 @@ async function phaseGithub(version, prereleaseTag, assets) {
     ok(`created GitHub release ${tag} (id ${release.id})`);
   }
 
-  // Upload only the Setup.exe to GitHub (skip portable zip to save upload time).
-  const githubAssets = assets.filter(a => a.name.toLowerCase().includes('setup'));
   const existing = new Set((release.assets || []).map(a => a.name));
-  for (const asset of githubAssets) {
+  for (const asset of assets) {
     if (existing.has(asset.name)) {
       ok(`GitHub asset ${asset.name} already uploaded`);
       continue;
