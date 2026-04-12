@@ -347,13 +347,14 @@ function phaseAssets(version, { setupPath, zipPath }) {
   ];
 }
 
-async function phasePublish(version, alphaTag, assets) {
+async function phasePublish(version, prereleaseTag, assets) {
   log(`Phase 8/9: publish to Gitea`);
-  const tag = `v${version}-${alphaTag}`;
+  const tag = `v${version}-${prereleaseTag}`;
+  const isPrerelease = prereleaseTag.startsWith('alpha.');
 
   // Read the CHANGELOG section for this version to use as the release body.
   const changelog = readFileSync(join(REPO_ROOT, 'CHANGELOG.md'), 'utf8');
-  const sectionRe = new RegExp(`(## \\[${version}-${alphaTag}\\][\\s\\S]*?)(?=\\n## \\[|$)`);
+  const sectionRe = new RegExp(`(## \\[${version}-${prereleaseTag}\\][\\s\\S]*?)(?=\\n## \\[|$)`);
   const sectionMatch = changelog.match(sectionRe);
   let body = sectionMatch ? sectionMatch[1].trim() : `Release ${tag}`;
   // Strip the leading "## [version] — date" heading from the body since Gitea shows the title separately.
@@ -379,7 +380,7 @@ async function phasePublish(version, alphaTag, assets) {
         name: tag,
         body,
         draft: false,
-        prerelease: true,
+        prerelease: isPrerelease,
       },
     });
     ok(`created release ${tag} (id ${release.id})`);
@@ -402,13 +403,14 @@ async function phasePublish(version, alphaTag, assets) {
   console.log(`\n\x1b[32m✓\x1b[0m Release published: ${GITEA_BASE}/${REPO_OWNER}/${REPO_NAME}/releases/tag/${tag}\n`);
 }
 
-async function phaseGithub(version, alphaTag, assets) {
+async function phaseGithub(version, prereleaseTag, assets) {
   log(`Phase 9/9: publish to GitHub`);
-  const tag = `v${version}-${alphaTag}`;
+  const tag = `v${version}-${prereleaseTag}`;
+  const isPrerelease = prereleaseTag.startsWith('alpha.');
 
   // Read the CHANGELOG section for this version to use as the release body.
   const changelog = readFileSync(join(REPO_ROOT, 'CHANGELOG.md'), 'utf8');
-  const sectionRe = new RegExp(`(## \\[${version}-${alphaTag}\\][\\s\\S]*?)(?=\\n## \\[|$)`);
+  const sectionRe = new RegExp(`(## \\[${version}-${prereleaseTag}\\][\\s\\S]*?)(?=\\n## \\[|$)`);
   const sectionMatch = changelog.match(sectionRe);
   let body = sectionMatch ? sectionMatch[1].trim() : `Release ${tag}`;
   body = body.replace(/^## \[.*?\][^\n]*\n+/, '');
@@ -452,7 +454,7 @@ async function phaseGithub(version, alphaTag, assets) {
         name: tag,
         body,
         draft: false,
-        prerelease: true,
+        prerelease: isPrerelease,
       },
     });
     ok(`created GitHub release ${tag} (id ${release.id})`);
