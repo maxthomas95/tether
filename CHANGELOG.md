@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.2.0-beta.1] — 2026-04-12
+
+Tether's first beta release. All core features — local, SSH, and Coder sessions, split-pane tiling, Vault integration, and session auto-naming — are implemented and working together.
+
+### New Features
+- **Coder environment type** — connect to Coder workspaces with a workspace picker and PTY transport, including cloning repos directly into workspaces
+- **Split-pane tiling** — tile multiple terminals side-by-side with drag-and-drop rearranging and closest-edge drop zones
+- **Pane splitting toggle** — enable or disable pane splitting from the Settings dialog
+- **In-app documentation viewer** — browse project docs in a themed BrowserWindow
+- **Launch profiles** — quick auth mode switching for different environments
+- **Plan detector** — auto-rename sessions based on Claude's plan names
+
+### Improvements
+- **Vault coverage expanded** — "Store in Vault" now available for SSH passwords, git provider tokens, and environment variables
+- **Vault TLS reliability** — Vault requests use Electron `net.fetch` to avoid TLS failures on corporate networks
+- **Pane stability** — fixed self-drop zones and preserved terminal scrollback when moving panes between splits
+
+### Internal
+- **GitHub release publishing** — automated asset uploads via `scripts/release.mjs`
+
+---
+
 ## [0.1.4-alpha.5] — 2026-04-09
 
 ### New Features
