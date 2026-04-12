@@ -9,6 +9,8 @@ tmpbuild/
 npm-debug.log*
 .env
 .env.*
+*-token
+*-token.*
 .DS_Store
 Thumbs.db
 
