@@ -145,6 +145,12 @@ const createWindow = () => {
   });
 };
 
+// In dev mode, use a separate single-instance lock so the dev server
+// can run alongside a packaged exe without being blocked.
+if (!app.isPackaged) {
+  app.setName(app.getName() + '-dev');
+}
+
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
