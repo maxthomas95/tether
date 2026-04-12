@@ -87,7 +87,7 @@ function curlUpload(filePath, url, authHeader) {
     '-H', 'Content-Type: application/octet-stream',
     '--data-binary', `@${filePath}`,
     url,
-  ], { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'], shell: platform === 'win32' });
+  ], { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.status !== 0) {
     const stderr = r.stderr?.toString().trim() || '';
     throw new Error(`curl upload failed (exit ${r.status}): ${stderr}`);
