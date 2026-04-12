@@ -9,6 +9,7 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { MenuBar } from './components/MenuBar';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { AboutDialog } from './components/AboutDialog';
+import { SetupWizard } from './components/SetupWizard';
 import { Notifications, useNotifications } from './components/Notifications';
 import { useTerminalManager } from './hooks/useTerminalManager';
 import { useLayoutState } from './hooks/useLayoutState';
@@ -33,6 +34,7 @@ export function App() {
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [setupWizardOpen, setSetupWizardOpen] = useState(false);
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
@@ -70,6 +72,13 @@ export function App() {
     });
     return () => { cancelled = true; };
   }, [settingsOpen]);
+
+  // Check for first launch
+  useEffect(() => {
+    window.electronAPI.config.get('setupComplete').then(val => {
+      if (val !== 'true') setSetupWizardOpen(true);
+    }).catch(() => {});
+  }, []);
 
   // Load environments on mount, then restore workspace
   useEffect(() => {
@@ -360,6 +369,11 @@ export function App() {
     setIsDragging(false);
   }, [layoutState.root, layoutDispatch]);
 
+  const handleSetupWizardClose = useCallback(() => {
+    setSetupWizardOpen(false);
+    window.electronAPI.config.set('setupComplete', 'true');
+  }, []);
+
   // Keyboard shortcuts
   const shortcutActions = useMemo(() => ({
     onNewSession: () => setSessionDialogOpen(true),
@@ -445,6 +459,8 @@ export function App() {
         { label: 'Keyboard Shortcuts', shortcut: 'Ctrl+/', onClick: () => setShortcutsOpen(true) },
         { separator: true },
         { label: 'Documentation', onClick: () => window.electronAPI.docs.open() },
+        { separator: true },
+        { label: 'Setup Wizard...', onClick: () => setSetupWizardOpen(true) },
         { separator: true },
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
@@ -612,6 +628,7 @@ export function App() {
         isOpen={aboutOpen}
         onClose={() => setAboutOpen(false)}
       />
+      <SetupWizard isOpen={setupWizardOpen} onClose={handleSetupWizardClose} />
       {resumePickerFor && (
         <ResumeChatDialog
           isOpen={true}
