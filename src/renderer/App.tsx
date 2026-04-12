@@ -277,7 +277,7 @@ export function App() {
   const handleDuplicate = useCallback(async (id: string) => {
     const source = sessions.find(s => s.id === id);
     if (!source) return;
-    handleCreateSession(source.workingDir, '', source.environmentId || undefined);
+    handleCreateSession(source.workingDir, '', source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary);
   }, [sessions, handleCreateSession]);
 
   const handleOpenResumePicker = useCallback((id: string) => {
