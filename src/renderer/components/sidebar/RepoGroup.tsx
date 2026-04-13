@@ -35,26 +35,6 @@ export function RepoGroup({
 }: RepoGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
 
-  // Only show repo grouping when there are 2+ sessions in same dir
-  if (sessions.length === 1) {
-    return (
-      <SessionItem
-        session={sessions[0]}
-        isActive={sessions[0].id === activeSessionId}
-        onClick={() => onSelectSession(sessions[0].id)}
-        onStop={() => onStop(sessions[0].id)}
-        onKill={() => onKill(sessions[0].id)}
-        onRename={(label) => onRename(sessions[0].id, label)}
-        onRemove={() => onRemove(sessions[0].id)}
-        onDuplicate={() => onDuplicate(sessions[0].id)}
-        onResumePrevious={onResumePrevious ? () => onResumePrevious(sessions[0].id) : undefined}
-        showResumeBadge={showResumeBadge}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-      />
-    );
-  }
-
   const runningCount = sessions.filter(
     s => s.state === 'running' || s.state === 'waiting',
   ).length;
