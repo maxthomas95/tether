@@ -17,7 +17,16 @@ import { useLayoutState } from './hooks/useLayoutState';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
-import { generatePaneId, findLeaf, getLeaves } from './lib/layout-tree';
+import {
+  addPane,
+  clampMaxPanes,
+  generatePaneId,
+  findLeaf,
+  getLeaves,
+  getLeafCount,
+  isConstrainedLayout,
+  normalizeToConstrained,
+} from './lib/layout-tree';
 import type { LayoutNode } from '../shared/layout-types';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
@@ -39,6 +48,7 @@ export function App() {
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
+  const [maxPanes, setMaxPanes] = useState(4);
   const [resumePickerFor, setResumePickerFor] = useState<{ sessionId: string; workingDir: string; currentTranscriptId?: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null);
@@ -47,6 +57,7 @@ export function App() {
   const termManager = useTerminalManager(xtermTheme);
   const { layoutState, layoutDispatch } = useLayoutState();
   const { notifications, notify, dismiss } = useNotifications();
+  const effectiveMaxPanes = enablePaneSplitting ? maxPanes : 1;
 
   // Derive activeSessionId from focused pane
   const focusedLeaf = layoutState.focusedPaneId && layoutState.root
@@ -71,11 +82,13 @@ export function App() {
       window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
       window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
       window.electronAPI.config.get?.('enablePaneSplitting')?.catch(() => null),
-    ]).then(([badge, picker, splitting]) => {
+      window.electronAPI.config.get?.('maxPanes')?.catch(() => null),
+    ]).then(([badge, picker, splitting, maxPaneValue]) => {
       if (cancelled) return;
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
       setEnablePaneSplitting(splitting === 'true');
+      setMaxPanes(parseMaxPanes(maxPaneValue));
     });
     return () => { cancelled = true; };
   }, [settingsOpen]);
@@ -99,6 +112,9 @@ export function App() {
 
       const resumeSetting = await window.electronAPI.config.get?.('resumePreviousChats');
       const resumeChats = resumeSetting !== 'false';
+      const splittingSetting = await window.electronAPI.config.get?.('enablePaneSplitting');
+      const maxPaneSetting = await window.electronAPI.config.get?.('maxPanes');
+      const restoreMaxPanes = splittingSetting === 'true' ? parseMaxPanes(maxPaneSetting) : 1;
 
       const workspace = await window.electronAPI.workspace?.load?.();
       if (!workspace || !workspace.sessions.length) return;
@@ -130,7 +146,6 @@ export function App() {
             // Stack subsequent sessions to the right of the first leaf
             const leaves = getLeaves(root);
             if (leaves.length > 0) {
-              const { addPane } = await import('./lib/layout-tree');
               root = addPane(root, leaves[leaves.length - 1].id, session.id, 'right');
             }
           }
@@ -146,8 +161,15 @@ export function App() {
       }
 
       if (root) {
-        layoutDispatch({ type: 'SET_ROOT', root });
-        if (focusPaneId) layoutDispatch({ type: 'SET_FOCUS', paneId: focusPaneId });
+        const normalizedRoot = normalizeToConstrained(root, restoreMaxPanes, focusPaneId);
+        const focusedSessionId = focusPaneId ? findLeaf(root, focusPaneId)?.sessionId : null;
+        const normalizedFocusPaneId = normalizedRoot
+          ? getLeaves(normalizedRoot).find(l => l.sessionId === focusedSessionId)?.id
+            ?? getLeaves(normalizedRoot).find(l => l.sessionId !== null)?.id
+            ?? getLeaves(normalizedRoot)[0]?.id
+          : null;
+        layoutDispatch({ type: 'SET_ROOT', root: normalizedRoot });
+        if (normalizedFocusPaneId) layoutDispatch({ type: 'SET_FOCUS', paneId: normalizedFocusPaneId });
       }
     });
     return () => { mounted = false; };
@@ -175,23 +197,23 @@ export function App() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [sessions, activeSessionId]);
 
-  // Enforce single-leaf layout invariant when pane splitting is disabled.
-  // Runs after toggling the setting off, and after workspace restore on an app
-  // launch where the setting is already off.
+  // Enforce the constrained 1/2/4 layout invariant after setting changes,
+  // workspace restore, or legacy arbitrary split trees.
   useEffect(() => {
-    if (enablePaneSplitting) return;
-    if (!layoutState.root || layoutState.root.type !== 'split') return;
-    const leaves = getLeaves(layoutState.root);
-    if (leaves.length === 0) return;
-    const focused = layoutState.focusedPaneId
-      ? leaves.find(l => l.id === layoutState.focusedPaneId)
-      : null;
-    const keep = focused ?? leaves[0];
-    const newPaneId = generatePaneId();
-    const root: LayoutNode = { type: 'leaf', id: newPaneId, sessionId: keep.sessionId };
-    layoutDispatch({ type: 'SET_ROOT', root });
-    layoutDispatch({ type: 'SET_FOCUS', paneId: newPaneId });
-  }, [enablePaneSplitting, layoutState.root, layoutState.focusedPaneId, layoutDispatch]);
+    if (
+      layoutState.maxPanes === effectiveMaxPanes
+      && isConstrainedLayout(layoutState.root, effectiveMaxPanes)
+    ) {
+      return;
+    }
+    layoutDispatch({ type: 'SET_MAX_PANES', maxPanes: effectiveMaxPanes });
+  }, [
+    effectiveMaxPanes,
+    layoutState.root,
+    layoutState.focusedPaneId,
+    layoutState.maxPanes,
+    layoutDispatch,
+  ]);
 
   // Subscribe to PTY data and state changes
   useEffect(() => {
@@ -222,19 +244,27 @@ export function App() {
         const root: LayoutNode = { type: 'leaf', id: paneId, sessionId: session.id };
         layoutDispatch({ type: 'SET_ROOT', root });
         layoutDispatch({ type: 'SET_FOCUS', paneId });
-      } else if (!enablePaneSplitting) {
-        // Single-pane mode: replace the focused pane's session instead of splitting.
-        const targetPaneId = layoutState.focusedPaneId ?? getLeaves(layoutState.root)[0]?.id;
-        if (targetPaneId) {
-          layoutDispatch({ type: 'REPLACE_SESSION', paneId: targetPaneId, sessionId: session.id });
-          layoutDispatch({ type: 'SET_FOCUS', paneId: targetPaneId });
-        }
-      } else if (layoutState.focusedPaneId) {
-        layoutDispatch({ type: 'ADD_PANE', targetPaneId: layoutState.focusedPaneId, sessionId: session.id, zone: 'right' });
       } else {
         const leaves = getLeaves(layoutState.root);
-        if (leaves.length > 0) {
-          layoutDispatch({ type: 'ADD_PANE', targetPaneId: leaves[0].id, sessionId: session.id, zone: 'right' });
+        const focusedLeaf = layoutState.focusedPaneId
+          ? leaves.find(l => l.id === layoutState.focusedPaneId)
+          : null;
+        const emptyLeaf = focusedLeaf?.sessionId === null
+          ? focusedLeaf
+          : leaves.find(l => l.sessionId === null);
+        const targetPaneId = focusedLeaf?.id ?? leaves[0]?.id;
+
+        if (enablePaneSplitting && emptyLeaf) {
+          layoutDispatch({ type: 'REPLACE_SESSION', paneId: emptyLeaf.id, sessionId: session.id });
+          layoutDispatch({ type: 'SET_FOCUS', paneId: emptyLeaf.id });
+        } else if (!enablePaneSplitting || getLeafCount(layoutState.root) >= effectiveMaxPanes) {
+          // Single-pane mode or full constrained layout: replace the focused pane.
+          if (targetPaneId) {
+            layoutDispatch({ type: 'REPLACE_SESSION', paneId: targetPaneId, sessionId: session.id });
+            layoutDispatch({ type: 'SET_FOCUS', paneId: targetPaneId });
+          }
+        } else if (targetPaneId) {
+          layoutDispatch({ type: 'ADD_PANE', targetPaneId, sessionId: session.id, zone: 'right' });
         }
       }
     } catch (err) {
@@ -245,7 +275,7 @@ export function App() {
         message: extractErrorMessage(err),
       });
     }
-  }, [termManager, layoutState.root, layoutState.focusedPaneId, layoutDispatch, notify, enablePaneSplitting]);
+  }, [termManager, layoutState.root, layoutState.focusedPaneId, layoutDispatch, notify, enablePaneSplitting, effectiveMaxPanes]);
 
   const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
     try {
@@ -319,6 +349,18 @@ export function App() {
       if (existingLeaf) {
         layoutDispatch({ type: 'SET_FOCUS', paneId: existingLeaf.id });
         termManager.focusPane(existingLeaf.id);
+        return;
+      }
+
+      const focusedLeaf = layoutState.focusedPaneId
+        ? leaves.find(l => l.id === layoutState.focusedPaneId)
+        : null;
+      const emptyLeaf = focusedLeaf?.sessionId === null
+        ? focusedLeaf
+        : leaves.find(l => l.sessionId === null);
+      if (emptyLeaf) {
+        layoutDispatch({ type: 'REPLACE_SESSION', paneId: emptyLeaf.id, sessionId });
+        layoutDispatch({ type: 'SET_FOCUS', paneId: emptyLeaf.id });
         return;
       }
     }
@@ -506,6 +548,7 @@ export function App() {
   const isAlive = activeSession
     ? activeSession.state !== 'stopped' && activeSession.state !== 'dead'
     : false;
+  const currentLeafCount = getLeafCount(layoutState.root);
 
   const handleCheckForUpdates = useCallback(async () => {
     try {
@@ -722,6 +765,8 @@ export function App() {
             focusedPaneId={layoutState.focusedPaneId}
             maximizedPaneId={layoutState.maximizedPaneId}
             enablePaneSplitting={enablePaneSplitting}
+            currentLeafCount={currentLeafCount}
+            maxPanes={effectiveMaxPanes}
           />
         ) : (
           <div className="terminal-container">
@@ -783,4 +828,9 @@ function extractErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   const match = raw.match(/Error invoking remote method '[^']+':\s*(?:Error:\s*)?(.*)$/s);
   return match ? match[1].trim() : raw;
+}
+
+function parseMaxPanes(value: string | null | undefined): number {
+  const parsed = Number(value);
+  return clampMaxPanes(Number.isFinite(parsed) ? parsed : 4);
 }

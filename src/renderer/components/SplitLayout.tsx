@@ -1,10 +1,8 @@
-import { useRef, useCallback } from 'react';
-import type { LayoutNode, LayoutLeaf } from '../../shared/layout-types';
+import type { LayoutNode } from '../../shared/layout-types';
 import type { SessionInfo } from '../../shared/types';
 import type { TerminalManagerAPI } from '../hooks/useTerminalManager';
 import type { LayoutAction } from '../hooks/useLayoutState';
 import { TerminalPane } from './TerminalPane';
-import { SplitDivider } from './SplitDivider';
 
 interface SplitLayoutProps {
   node: LayoutNode;
@@ -17,6 +15,8 @@ interface SplitLayoutProps {
   focusedPaneId: string | null;
   maximizedPaneId: string | null;
   enablePaneSplitting: boolean;
+  currentLeafCount: number;
+  maxPanes: number;
 }
 
 export function SplitLayout({
@@ -30,9 +30,11 @@ export function SplitLayout({
   focusedPaneId,
   maximizedPaneId,
   enablePaneSplitting,
+  currentLeafCount,
+  maxPanes,
 }: SplitLayoutProps) {
   if (node.type === 'leaf') {
-    const session = sessions.find(s => s.id === node.sessionId);
+    const session = node.sessionId ? sessions.find(s => s.id === node.sessionId) : undefined;
     return (
       <TerminalPane
         paneId={node.id}
@@ -45,6 +47,8 @@ export function SplitLayout({
         layoutDispatch={layoutDispatch}
         termManager={termManager}
         enablePaneSplitting={enablePaneSplitting}
+        currentLeafCount={currentLeafCount}
+        maxPanes={maxPanes}
       />
     );
   }
@@ -61,6 +65,8 @@ export function SplitLayout({
       focusedPaneId={focusedPaneId}
       maximizedPaneId={maximizedPaneId}
       enablePaneSplitting={enablePaneSplitting}
+      currentLeafCount={currentLeafCount}
+      maxPanes={maxPanes}
     />
   );
 }
@@ -76,6 +82,8 @@ interface SplitContainerProps {
   focusedPaneId: string | null;
   maximizedPaneId: string | null;
   enablePaneSplitting: boolean;
+  currentLeafCount: number;
+  maxPanes: number;
 }
 
 function SplitContainer({
@@ -89,23 +97,18 @@ function SplitContainer({
   focusedPaneId,
   maximizedPaneId,
   enablePaneSplitting,
+  currentLeafCount,
+  maxPanes,
 }: SplitContainerProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  const handleRatioChange = useCallback((splitId: string, ratio: number) => {
-    layoutDispatch({ type: 'UPDATE_RATIO', splitId, ratio });
-  }, [layoutDispatch]);
-
   const [first, second] = node.children;
 
   return (
     <div
-      ref={containerRef}
       className={`split-container split-container--${node.direction}`}
     >
       <div
         className="split-child"
-        style={{ flex: node.ratio }}
+        style={{ flex: 0.5 }}
       >
         <SplitLayout
           node={first}
@@ -118,17 +121,14 @@ function SplitContainer({
           focusedPaneId={focusedPaneId}
           maximizedPaneId={maximizedPaneId}
           enablePaneSplitting={enablePaneSplitting}
+          currentLeafCount={currentLeafCount}
+          maxPanes={maxPanes}
         />
       </div>
-      <SplitDivider
-        direction={node.direction}
-        splitId={node.id}
-        onRatioChange={handleRatioChange}
-        parentRef={containerRef}
-      />
+      <div className={`split-separator split-separator--${node.direction}`} />
       <div
         className="split-child"
-        style={{ flex: 1 - node.ratio }}
+        style={{ flex: 0.5 }}
       >
         <SplitLayout
           node={second}
@@ -141,6 +141,8 @@ function SplitContainer({
           focusedPaneId={focusedPaneId}
           maximizedPaneId={maximizedPaneId}
           enablePaneSplitting={enablePaneSplitting}
+          currentLeafCount={currentLeafCount}
+          maxPanes={maxPanes}
         />
       </div>
     </div>

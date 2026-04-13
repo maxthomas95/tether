@@ -4,10 +4,11 @@ import type { SessionInfo, SessionState } from '../../shared/types';
 import type { TerminalManagerAPI } from '../hooks/useTerminalManager';
 import type { LayoutAction } from '../hooks/useLayoutState';
 import { DropZoneOverlay } from './DropZoneOverlay';
+import { CliToolBadge } from './CliToolBadge';
 
 interface TerminalPaneProps {
   paneId: string;
-  sessionId: string;
+  sessionId: string | null;
   session: SessionInfo | undefined;
   isFocused: boolean;
   isDragging: boolean;
@@ -16,6 +17,8 @@ interface TerminalPaneProps {
   layoutDispatch: React.Dispatch<LayoutAction>;
   termManager: TerminalManagerAPI;
   enablePaneSplitting: boolean;
+  currentLeafCount: number;
+  maxPanes: number;
 }
 
 export function TerminalPane({
@@ -29,14 +32,20 @@ export function TerminalPane({
   layoutDispatch,
   termManager,
   enablePaneSplitting,
+  currentLeafCount,
+  maxPanes,
 }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
+  const isPlaceholder = sessionId === null;
 
   // Mount terminal into container
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || sessionId === null) {
+      termManager.detachPane(paneId);
+      return;
+    }
 
     termManager.attachToPane(paneId, sessionId, container);
 
@@ -93,6 +102,9 @@ export function TerminalPane({
 
   const label = session?.label || 'Session';
   const path = session ? abbreviatePath(session.workingDir) : '';
+  const headerLabel = isPlaceholder ? 'Empty pane' : label;
+  const headerPath = isPlaceholder ? '' : path;
+  const canDragPane = enablePaneSplitting && sessionId !== null;
 
   return (
     <div
@@ -102,10 +114,10 @@ export function TerminalPane({
     >
       <div
         className="terminal-pane-header"
-        style={enablePaneSplitting ? undefined : { cursor: 'default' }}
-        draggable={enablePaneSplitting}
+        style={canDragPane ? undefined : { cursor: 'default' }}
+        draggable={canDragPane}
         onDragStart={(e) => {
-          if (!enablePaneSplitting) return;
+          if (!canDragPane) return;
           e.dataTransfer.setData('application/tether-pane', paneId);
           e.dataTransfer.setData('application/tether-session', sessionId);
           e.dataTransfer.effectAllowed = 'move';
@@ -114,8 +126,9 @@ export function TerminalPane({
         onDragEnd={() => onDragStateChange(false)}
       >
         <span className={`status-dot status-dot--${getStatusClass(session?.state)}`} />
+        {session && <CliToolBadge session={session} />}
         <span className="terminal-pane-header-label">
-          {label}{path ? ` \u00b7 ${path}` : ''}
+          {headerLabel}{headerPath ? ` \u00b7 ${headerPath}` : ''}
         </span>
         <button
           className="terminal-pane-header-btn"
@@ -132,13 +145,31 @@ export function TerminalPane({
           {'\u2715'}
         </button>
       </div>
-      <div className="terminal-pane-body" style={{ position: 'relative' }}>
-        <div
-          ref={containerRef}
-          style={{ flex: 1, overflow: 'hidden', width: '100%', height: '100%' }}
-        />
+      <div className={`terminal-pane-body ${isPlaceholder ? 'terminal-pane-body--placeholder' : ''}`}>
+        {isPlaceholder ? (
+          <button
+            type="button"
+            className="terminal-pane-placeholder"
+            onClick={handleFocus}
+          >
+            <span>Drag a session here</span>
+            <span>Click a session in the sidebar</span>
+          </button>
+        ) : (
+          <div
+            ref={containerRef}
+            style={{ flex: 1, overflow: 'hidden', width: '100%', height: '100%' }}
+          />
+        )}
         {enablePaneSplitting && isDragging && draggingPaneId !== paneId && (
-          <DropZoneOverlay paneId={paneId} layoutDispatch={layoutDispatch} />
+          <DropZoneOverlay
+            paneId={paneId}
+            layoutDispatch={layoutDispatch}
+            currentLeafCount={currentLeafCount}
+            maxPanes={maxPanes}
+            isTargetPlaceholder={isPlaceholder}
+            isPaneDrag={draggingPaneId !== null}
+          />
         )}
       </div>
     </div>

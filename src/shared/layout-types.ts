@@ -3,7 +3,7 @@ export type PaneId = string;
 export interface LayoutLeaf {
   type: 'leaf';
   id: PaneId;
-  sessionId: string;
+  sessionId: string | null;
 }
 
 export interface LayoutSplit {
@@ -20,6 +20,16 @@ export interface LayoutState {
   root: LayoutNode | null;
   focusedPaneId: PaneId | null;
   maximizedPaneId: PaneId | null;
+  maxPanes: number;
 }
 
-export type DropZone = 'left' | 'right' | 'top' | 'bottom' | 'center';
+export type DropZone =
+  | 'left'
+  | 'right'
+  | 'top'
+  | 'bottom'
+  | 'center'
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right';

@@ -1,13 +1,17 @@
 import { useReducer } from 'react';
 import type { LayoutNode, LayoutState, DropZone } from '../../shared/layout-types';
 import {
-  addPane,
   removePane,
   replaceSession,
-  updateRatio,
   removeSessionFromTree,
   getLeaves,
+  getLeafCount,
   findLeaf,
+  addPaneConstrained,
+  normalizeToConstrained,
+  isConstrainedLayout,
+  swapLeafSessions,
+  clampMaxPanes,
 } from '../lib/layout-tree';
 
 export type LayoutAction =
@@ -19,12 +23,14 @@ export type LayoutAction =
   | { type: 'SET_FOCUS'; paneId: string | null }
   | { type: 'TOGGLE_MAXIMIZE'; paneId: string }
   | { type: 'REMOVE_SESSION'; sessionId: string }
-  | { type: 'MOVE_PANE'; sourcePaneId: string; targetPaneId: string; zone: DropZone };
+  | { type: 'MOVE_PANE'; sourcePaneId: string; targetPaneId: string; zone: DropZone }
+  | { type: 'SET_MAX_PANES'; maxPanes: number };
 
 const initialState: LayoutState = {
   root: null,
   focusedPaneId: null,
   maximizedPaneId: null,
+  maxPanes: 4,
 };
 
 function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
@@ -38,16 +44,28 @@ function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
         const leaves = getLeaves(state.root);
         if (leaves.some(l => l.sessionId === action.sessionId)) return state;
       }
-      const newRoot = addPane(state.root, action.targetPaneId, action.sessionId, action.zone);
-      return { ...state, root: newRoot };
+      const { root: newRoot, newPaneId } = addPaneConstrained(
+        state.root,
+        action.sessionId,
+        state.maxPanes,
+        action.targetPaneId ?? state.focusedPaneId,
+        action.zone,
+      );
+      if (newRoot === state.root) return state;
+      return { ...state, root: newRoot, focusedPaneId: newPaneId };
     }
 
     case 'REMOVE_PANE': {
-      const newRoot = removePane(state.root, action.paneId);
-      let focused = state.focusedPaneId;
-      let maximized = state.maximizedPaneId;
-      if (focused === action.paneId) focused = null;
-      if (maximized === action.paneId) maximized = null;
+      const removedRoot = removePane(state.root, action.paneId);
+      const newRoot = normalizeToConstrained(
+        removedRoot,
+        state.maxPanes,
+        state.focusedPaneId === action.paneId ? null : state.focusedPaneId,
+      );
+      const focused = pickFocusPane(state.root, newRoot, state.focusedPaneId === action.paneId ? null : state.focusedPaneId);
+      const maximized = newRoot && state.maximizedPaneId && findLeaf(newRoot, state.maximizedPaneId)
+        ? state.maximizedPaneId
+        : null;
       return { ...state, root: newRoot, focusedPaneId: focused, maximizedPaneId: maximized };
     }
 
@@ -58,9 +76,7 @@ function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
     }
 
     case 'UPDATE_RATIO': {
-      if (!state.root) return state;
-      const newRoot = updateRatio(state.root, action.splitId, action.ratio);
-      return { ...state, root: newRoot };
+      return state;
     }
 
     case 'SET_FOCUS':
@@ -75,30 +91,88 @@ function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
       if (!state.root) return state;
       if (action.sourcePaneId === action.targetPaneId) return state;
       const sourceLeaf = findLeaf(state.root, action.sourcePaneId);
-      if (!sourceLeaf) return state;
+      const targetLeaf = findLeaf(state.root, action.targetPaneId);
+      if (!sourceLeaf || !targetLeaf || sourceLeaf.sessionId === null) return state;
+
+      if (getLeafCount(state.root) >= state.maxPanes) {
+        const newRoot = swapLeafSessions(state.root, action.sourcePaneId, action.targetPaneId);
+        return { ...state, root: newRoot, focusedPaneId: action.targetPaneId };
+      }
+
       const afterRemove = removePane(state.root, action.sourcePaneId);
       if (!afterRemove) return state;
-      const newRoot = addPane(afterRemove, action.targetPaneId, sourceLeaf.sessionId, action.zone);
-      const newLeaves = getLeaves(newRoot);
-      const oldLeaves = getLeaves(afterRemove);
-      const newLeaf = newLeaves.find(l => !oldLeaves.some(o => o.id === l.id));
-      return { ...state, root: newRoot, focusedPaneId: newLeaf?.id ?? state.focusedPaneId };
+      const { root: newRoot, newPaneId } = addPaneConstrained(
+        afterRemove,
+        sourceLeaf.sessionId,
+        state.maxPanes,
+        action.targetPaneId,
+        action.zone,
+      );
+      return { ...state, root: newRoot, focusedPaneId: newPaneId };
     }
 
     case 'REMOVE_SESSION': {
-      const newRoot = removeSessionFromTree(state.root, action.sessionId);
-      let focused = state.focusedPaneId;
-      let maximized = state.maximizedPaneId;
-      if (!newRoot) {
-        focused = null;
-        maximized = null;
-      }
+      const removedRoot = removeSessionFromTree(state.root, action.sessionId);
+      const newRoot = normalizeToConstrained(removedRoot, state.maxPanes, state.focusedPaneId);
+      const focused = pickFocusPane(state.root, newRoot, state.focusedPaneId);
+      const maximized = newRoot && state.maximizedPaneId && findLeaf(newRoot, state.maximizedPaneId)
+        ? state.maximizedPaneId
+        : null;
       return { ...state, root: newRoot, focusedPaneId: focused, maximizedPaneId: maximized };
+    }
+
+    case 'SET_MAX_PANES': {
+      const maxPanes = clampMaxPanes(action.maxPanes);
+      if (!state.root) {
+        return state.maxPanes === maxPanes ? state : { ...state, maxPanes };
+      }
+
+      if (state.maxPanes === maxPanes && isConstrainedLayout(state.root, maxPanes)) {
+        return state;
+      }
+
+      const newRoot = normalizeToConstrained(state.root, maxPanes, state.focusedPaneId);
+      const focused = pickFocusPane(state.root, newRoot, state.focusedPaneId);
+      const maximized = newRoot && state.maximizedPaneId && findLeaf(newRoot, state.maximizedPaneId)
+        ? state.maximizedPaneId
+        : null;
+      return { ...state, root: newRoot, focusedPaneId: focused, maximizedPaneId: maximized, maxPanes };
     }
 
     default:
       return state;
   }
+}
+
+function pickFocusPane(
+  previousRoot: LayoutNode | null,
+  nextRoot: LayoutNode | null,
+  previousFocusedPaneId: string | null,
+): string | null {
+  if (!nextRoot) return null;
+
+  const nextLeaves = getLeaves(nextRoot);
+  if (nextLeaves.length === 0) return null;
+
+  if (previousFocusedPaneId && nextLeaves.some(l => l.id === previousFocusedPaneId)) {
+    return previousFocusedPaneId;
+  }
+
+  const previousFocusedLeaf = previousRoot && previousFocusedPaneId
+    ? findLeaf(previousRoot, previousFocusedPaneId)
+    : null;
+
+  if (previousFocusedLeaf?.sessionId) {
+    const sameSessionLeaf = nextLeaves.find(l => l.sessionId === previousFocusedLeaf.sessionId);
+    if (sameSessionLeaf) return sameSessionLeaf.id;
+  }
+
+  if (previousFocusedLeaf?.sessionId === null) {
+    const emptyLeaf = nextLeaves.find(l => l.sessionId === null);
+    if (emptyLeaf) return emptyLeaf.id;
+  }
+
+  return nextLeaves.find(l => l.sessionId !== null)?.id ?? nextLeaves[0].id;
 }
 
 export function useLayoutState() {

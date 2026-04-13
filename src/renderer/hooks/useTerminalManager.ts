@@ -25,7 +25,7 @@ const BASE_TERMINAL_OPTIONS = {
 export interface TerminalManagerAPI {
   getOrCreate: (sessionId: string) => ManagedTerminal;
   writeData: (sessionId: string, data: string) => void;
-  attachToPane: (paneId: PaneId, sessionId: string, container: HTMLDivElement) => void;
+  attachToPane: (paneId: PaneId, sessionId: string | null, container: HTMLDivElement) => void;
   detachPane: (paneId: PaneId) => void;
   fitPane: (paneId: PaneId) => void;
   focusPane: (paneId: PaneId) => void;
@@ -122,7 +122,9 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
   }, []);
 
   // Attach a terminal to a pane container
-  const attachToPane = useCallback((paneId: PaneId, sessionId: string, container: HTMLDivElement) => {
+  const attachToPane = useCallback((paneId: PaneId, sessionId: string | null, container: HTMLDivElement) => {
+    if (sessionId === null) return;
+
     let terminal: Terminal;
     let fitAddon: FitAddon;
 

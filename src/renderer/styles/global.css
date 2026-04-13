@@ -390,11 +390,60 @@ html, body, #root {
 }
 
 .session-path {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.session-path-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cli-tool-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 76px;
+  height: 14px;
+  padding: 0 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  line-height: 12px;
+  letter-spacing: 0;
+}
+
+.cli-tool-badge--claude {
+  background: rgba(250, 179, 135, 0.1);
+  border-color: rgba(250, 179, 135, 0.45);
+  color: #fab387;
+}
+
+.cli-tool-badge--codex {
+  background: rgba(137, 220, 235, 0.1);
+  border-color: rgba(137, 220, 235, 0.45);
+  color: #89dceb;
+}
+
+.cli-tool-badge--opencode {
+  background: rgba(166, 227, 161, 0.1);
+  border-color: rgba(166, 227, 161, 0.45);
+  color: #a6e3a1;
+}
+
+.cli-tool-badge--custom {
+  background: rgba(205, 214, 244, 0.08);
+  border-color: rgba(205, 214, 244, 0.35);
   color: var(--text-secondary);
 }
 
@@ -1287,27 +1336,19 @@ input[type="password"].form-input {
   flex-direction: column;
 }
 
-/* Split divider */
-.split-divider {
+/* Split separator */
+.split-separator {
   flex-shrink: 0;
-  background: transparent;
-  transition: background 0.15s;
-  z-index: 10;
+  background: var(--border-color);
+  z-index: 5;
 }
 
-.split-divider--horizontal {
-  width: 4px;
-  cursor: col-resize;
+.split-separator--horizontal {
+  width: 2px;
 }
 
-.split-divider--vertical {
-  height: 4px;
-  cursor: row-resize;
-}
-
-.split-divider:hover,
-.split-divider--active {
-  background: var(--accent);
+.split-separator--vertical {
+  height: 2px;
 }
 
 /* Terminal pane */
@@ -1380,6 +1421,42 @@ input[type="password"].form-input {
   padding: 2px;
 }
 
+.terminal-pane-body--placeholder {
+  padding: 8px;
+}
+
+.terminal-pane-placeholder {
+  width: 100%;
+  height: 100%;
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-primary) 86%, transparent);
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.terminal-pane-placeholder:hover,
+.terminal-pane-placeholder:focus {
+  border-color: var(--accent);
+  color: var(--text-secondary);
+  outline: none;
+}
+
+.terminal-pane-placeholder span:first-child {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.terminal-pane-placeholder span:last-child {
+  font-size: 11px;
+}
+
 /* Hide the native text caret that bleeds through xterm.js's invisible helper
    textarea on Windows/Electron. Without this, a second cursor "ghost" follows
    the real terminal cursor around the screen. */
@@ -1393,46 +1470,70 @@ input[type="password"].form-input {
   inset: 0;
   z-index: 50;
   pointer-events: all;
+  background: color-mix(in srgb, var(--bg-primary) 35%, transparent);
 }
 
-.drop-zone-indicator {
+.drop-preview-grid {
   position: absolute;
-  transition: background 0.1s;
+  inset: 10px;
+  display: grid;
+  gap: 6px;
   pointer-events: none;
 }
 
-.drop-zone-indicator--left {
-  left: 0;
-  top: 0;
-  width: 50%;
-  height: 100%;
+.drop-preview-grid--single {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
 }
 
-.drop-zone-indicator--right {
-  right: 0;
-  top: 0;
-  width: 50%;
-  height: 100%;
+.drop-preview-grid--2h {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: 1fr;
 }
 
-.drop-zone-indicator--top {
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 50%;
+.drop-preview-grid--2v {
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
 }
 
-.drop-zone-indicator--bottom {
-  left: 0;
-  bottom: 0;
-  width: 100%;
-  height: 50%;
+.drop-preview-grid--4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
 }
 
-.drop-zone-indicator--active {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border: 1px dashed var(--accent);
+.drop-preview-cell {
+  min-width: 0;
+  min-height: 0;
   border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-header) 50%, transparent);
+}
+
+.drop-preview-cell--existing {
+  border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+}
+
+.drop-preview-cell--target {
+  border: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.drop-preview-cell--placeholder {
+  border: 1px dotted color-mix(in srgb, var(--text-muted) 75%, transparent);
+  background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+}
+
+.drop-preview-blocked {
+  position: absolute;
+  inset: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--status-dead);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--status-dead) 10%, transparent);
+  color: var(--text-secondary);
+  font-size: 12px;
+  pointer-events: none;
 }
 
 /* Empty terminal area drop target */

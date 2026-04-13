@@ -38,6 +38,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
+  const [maxPanes, setMaxPanes] = useState(4);
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true);
   const [quotaEnabled, setQuotaEnabled] = useState(true);
   const [loaded, setLoaded] = useState(false);
@@ -82,9 +83,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
       window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
       window.electronAPI.config.get?.('enablePaneSplitting')?.catch(() => null),
+      window.electronAPI.config.get?.('maxPanes')?.catch(() => null),
       window.electronAPI.config.get?.('updateCheckEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('quotaEnabled')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, updateCheck, quota]) => {
+    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -92,6 +94,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
       setEnablePaneSplitting(splitting === 'true');
+      setMaxPanes(parseMaxPanes(maxPaneValue));
       setUpdateCheckEnabled(updateCheck !== 'false');
       setQuotaEnabled(quota !== 'false');
       setLoaded(true);
@@ -115,6 +118,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     await window.electronAPI.config.set?.('showResumeBadge', showResumeBadge ? 'true' : 'false');
     await window.electronAPI.config.set?.('enableResumePicker', enableResumePicker ? 'true' : 'false');
     await window.electronAPI.config.set?.('enablePaneSplitting', enablePaneSplitting ? 'true' : 'false');
+    await window.electronAPI.config.set?.('maxPanes', String(maxPanes));
     await window.electronAPI.config.set?.('updateCheckEnabled', updateCheckEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('quotaEnabled', quotaEnabled ? 'true' : 'false');
     await window.electronAPI.quota.setEnabled(quotaEnabled);
@@ -123,7 +127,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, updateCheckEnabled, quotaEnabled, cliFlagsPerTool, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, cliFlagsPerTool, vaultConfig, onClose]);
 
   const handleVaultLogin = async () => {
     setVaultLoginError(null);
@@ -271,6 +275,26 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
               Drag session headers to split the terminal area into multiple panes.
               Disable if you hit layout bugs &mdash; new sessions will replace the focused pane instead.
             </p>
+            {enablePaneSplitting && (
+              <div style={{ marginLeft: 22, marginTop: 10 }}>
+                <label className="form-label" htmlFor="max-panes-select">
+                  Maximum panes
+                </label>
+                <select
+                  id="max-panes-select"
+                  className="form-input"
+                  value={maxPanes}
+                  onChange={e => setMaxPanes(parseMaxPanes(e.target.value))}
+                >
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                  <option value={4}>4</option>
+                </select>
+                <p className="form-hint">
+                  Panes use equal locked splits. Three-pane layouts are skipped.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="form-group">
@@ -845,4 +869,12 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       <MigrateToVaultDialog isOpen={showMigrateDialog} onClose={() => setShowMigrateDialog(false)} />
     </div>
   );
+}
+
+function parseMaxPanes(value: string | null | undefined): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 4;
+  if (parsed <= 1) return 1;
+  if (parsed <= 2) return 2;
+  return 4;
 }
