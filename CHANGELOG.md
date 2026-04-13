@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.2.3-beta.4] — 2026-04-13
+
+### New Features
+- **Coder workspace creation from templates** — create new Coder workspaces directly from Tether with template selection, parameter forms, live progress, and self-signed cert support
+- **SSH sudo elevation** — environments can now be configured to elevate via sudo on connect
+
+### Bug Fixes
+- Fixed Coder template listing failing due to nested Template key in API response
+- Fixed Coder workspace creation on Windows (path and shell handling)
+- Made Coder clone idempotent so workspace restarts don't fail
+- Improved Vault OIDC auth_url error messages with full response details
+
+### Improvements
+- Vault integration now available in launch profiles and new session dialog
+- Vite dev server cold starts significantly faster via pre-declared optimizeDeps
+
+---
+
 ## [0.2.2-beta.3] — 2026-04-13
 
 ### New Features
