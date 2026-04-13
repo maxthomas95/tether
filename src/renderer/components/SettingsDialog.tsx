@@ -490,7 +490,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                   </div>
                   <div className="form-group" style={{ marginBottom: 8 }}>
                     <label className="form-label">Environment Variables</label>
-                    <EnvVarEditor vars={newProfileEnvVars} onChange={setNewProfileEnvVars} cliTool={profileFlagTool} compact />
+                    <EnvVarEditor vars={newProfileEnvVars} onChange={setNewProfileEnvVars} cliTool={profileFlagTool} compact vaultEnabled={vaultStatus.enabled} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 8 }}>
                     <label className="form-label">CLI Flags</label>

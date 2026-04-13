@@ -192,6 +192,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [profileId, setProfileId] = useState<string | null>(null);
   const [cliTool, setCliTool] = useState<CliToolId>('claude');
   const [customBinary, setCustomBinary] = useState('');
+  const [vaultEnabled, setVaultEnabled] = useState(false);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<SourceTab>('local');
@@ -245,6 +246,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       }
     });
     window.electronAPI.gitProvider.list().then(setGitProviders).catch(() => {});
+    window.electronAPI.vault.status().then(s => setVaultEnabled(s.loggedIn)).catch(() => {});
   }, [isOpen]);
 
   // Auto-fill default directory when environment changes
@@ -795,6 +797,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                     inheritedVars={inheritedVars}
                     cliTool={cliTool}
                     compact
+                    vaultEnabled={vaultEnabled}
                   />
                 </div>
               </details>
