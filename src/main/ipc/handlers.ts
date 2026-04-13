@@ -286,11 +286,15 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
               resolve([]);
               return;
             }
-            const templates: CoderTemplate[] = raw.map((t: Record<string, unknown>) => ({
-              name: String(t.name ?? ''),
-              displayName: String(t.display_name || t.name || ''),
-              description: String(t.description ?? ''),
-            })).filter(t => t.name);
+            const templates: CoderTemplate[] = raw.map((entry: Record<string, unknown>) => {
+              // coder CLI wraps each template in a `Template` key
+              const t = (entry.Template || entry) as Record<string, unknown>;
+              return {
+                name: String(t.name ?? ''),
+                displayName: String(t.display_name || t.name || ''),
+                description: String(t.description ?? ''),
+              };
+            }).filter(t => t.name);
             resolve(templates);
           } catch (parseErr) {
             log.error('Failed to parse coder templates output', { error: parseErr instanceof Error ? parseErr.message : String(parseErr) });
