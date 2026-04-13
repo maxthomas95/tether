@@ -119,11 +119,12 @@ export class CoderTransport implements SessionTransport {
     const escapedSubDir = subDir.replace(/"/g, '\\"');
     const cdStep = subDir ? `cd "${escapedSubDir}"` : '';
 
-    // If cloneUrl is set, chain: git clone <url> <subDir> && cd <subDir> && claude.
-    // The clone runs inside the same PTY/SSH session, so its output — including
-    // auth prompts and progress — streams straight into xterm.js.
+    // If cloneUrl is set, clone the repo — but skip if the directory already
+    // exists (workspace restarts rerun startup scripts and the previous clone
+    // survives).  Uses `[ -d ... ] || git clone ...` so the chain continues
+    // either way: existing dir → no-op success, missing dir → clone.
     const cloneStep = options.cloneUrl && subDir
-      ? `git clone "${options.cloneUrl.replace(/"/g, '\\"')}" "${escapedSubDir}"`
+      ? `{ [ -d "${escapedSubDir}" ] || git clone "${options.cloneUrl.replace(/"/g, '\\"')}" "${escapedSubDir}"; }`
       : '';
 
     const chain = [cloneStep, cdStep, baseCmd].filter(Boolean).join(' && ');
