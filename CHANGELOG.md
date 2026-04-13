@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.2.0-beta.2] — 2026-04-12
+
+### New Features
+- **Multi-CLI tool support** — run Codex, OpenCode, or custom CLI tools alongside Claude Code, selectable per session
+- **First-launch setup wizard** — guided onboarding for repos root, git provider, and Vault configuration
+- **Per-session CLI tool selection** — CLI tool choice moved from environment to session level for finer control
+
+### Bug Fixes
+- Fixed duplicate session not preserving the selected CLI tool
+- Fixed cursor desync by matching initial PTY size to xterm.js defaults
+- Fixed `curlUpload` shell quoting on Windows for release asset uploads
+
+### Improvements
+- Dev server can now run alongside the packaged exe without port conflicts
+- About dialog version derived from package.json at build time
+- Portable zip now uploaded to GitHub releases alongside the installer
+
+---
+
 ## [0.2.0-beta.1] — 2026-04-12
 
 Tether's first beta release. All core features — local, SSH, and Coder sessions, split-pane tiling, Vault integration, and session auto-naming — are implemented and working together.
