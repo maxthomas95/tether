@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow, dialog, safeStorage, shell } from 'electron';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { IPC } from '../../shared/constants';
 import type {
   CreateSessionOptions,
@@ -397,24 +397,55 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
 
     return new Promise<CoderWorkspace>((resolve, reject) => {
-      execFile(
-        binaryPath,
-        args,
-        { timeout: 300_000, maxBuffer: 4 * 1024 * 1024 },
-        (err, _stdout, stderr) => {
-          if (err) {
-            log.error('coder create failed', { error: err.message, stderr: String(stderr).slice(0, 500) });
-            reject(new Error(stderr ? String(stderr).trim() : err.message));
-            return;
-          }
-          log.info('Coder workspace created', { name: opts.workspaceName });
-          resolve({
-            name: opts.workspaceName,
-            owner: 'me',
-            status: 'starting',
-          });
-        },
-      );
+      // Use spawn with shell:true so `coder create` gets a console handle on
+      // Windows. Stream stdout/stderr to the renderer as progress updates.
+      const proc = spawn(binaryPath, args, {
+        shell: true,
+        timeout: 300_000,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stderrBuf = '';
+
+      // Parse progress from coder create output. Lines like:
+      //   ==> ⧗ Planning Infrastructure
+      //   === ✔ Starting workspace [2606ms]
+      const progressRe = /^[=─┌│└┤├]+\s|^==>|^===|Planning|Initializing|Starting|Queued|Running|Setting up|Cleaning/;
+
+      const emitProgress = (line: string) => {
+        const trimmed = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+        if (trimmed && progressRe.test(trimmed)) {
+          send(IPC.CODER_CREATE_PROGRESS, trimmed);
+        }
+      };
+
+      proc.stdout.on('data', (chunk: Buffer) => {
+        for (const line of chunk.toString().split('\n')) emitProgress(line);
+      });
+      proc.stderr.on('data', (chunk: Buffer) => {
+        stderrBuf += chunk.toString();
+        for (const line of chunk.toString().split('\n')) emitProgress(line);
+      });
+
+      proc.on('error', (err) => {
+        log.error('coder create spawn error', { error: err.message });
+        reject(new Error(err.message));
+      });
+
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          const msg = stderrBuf.trim().slice(0, 500) || `coder create exited with code ${code}`;
+          log.error('coder create failed', { code, stderr: msg });
+          reject(new Error(msg));
+          return;
+        }
+        log.info('Coder workspace created', { name: opts.workspaceName });
+        resolve({
+          name: opts.workspaceName,
+          owner: 'me',
+          status: 'starting',
+        });
+      });
     });
   });
 

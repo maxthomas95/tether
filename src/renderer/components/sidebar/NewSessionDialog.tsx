@@ -20,6 +20,7 @@ interface CoderCreateInlineProps {
   paramValues: Record<string, string>;
   setParamValue: (name: string, value: string) => void;
   creating: boolean;
+  progress: string;
   error: string;
   onCancel: () => void;
   onCreate: () => void;
@@ -29,7 +30,7 @@ function CoderCreateInline({
   templates, loadingTemplates, selectedTemplate, setSelectedTemplate,
   workspaceName, setWorkspaceName,
   params, loadingParams, paramValues, setParamValue,
-  creating, error, onCancel, onCreate,
+  creating, progress, error, onCancel, onCreate,
 }: CoderCreateInlineProps) {
   const nameValid = workspaceName === '' || /^[a-z][a-z0-9-]*$/.test(workspaceName);
   return (
@@ -103,6 +104,10 @@ function CoderCreateInline({
           )}
         </div>
       ))}
+
+      {creating && progress && (
+        <span className="form-hint" style={{ color: 'var(--status-running)', marginTop: 8, display: 'block' }}>{progress}</span>
+      )}
 
       {error && (
         <span className="form-hint" style={{ color: 'var(--status-dead)', marginTop: 8, display: 'block' }}>{error}</span>
@@ -279,6 +284,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [createWorkspaceError, setCreateWorkspaceError] = useState('');
+  const [createProgress, setCreateProgress] = useState('');
 
   // Load repos root, app default env vars, CLI flags, and git providers
   useEffect(() => {
@@ -448,6 +454,10 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     if (!envId || !selectedTemplate || !newWorkspaceName.trim()) return;
     setCreatingWorkspace(true);
     setCreateWorkspaceError('');
+    setCreateProgress('Starting...');
+    const unsub = window.electronAPI.coder.onCreateProgress((line) => {
+      setCreateProgress(line);
+    });
     try {
       const ws = await window.electronAPI.coder.createWorkspace({
         environmentId: envId,
@@ -466,7 +476,9 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     } catch (err: unknown) {
       setCreateWorkspaceError(err instanceof Error ? err.message : String(err));
     } finally {
+      unsub();
       setCreatingWorkspace(false);
+      setCreateProgress('');
     }
   }, [envId, selectedTemplate, newWorkspaceName, paramValues]);
 
@@ -618,6 +630,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     setParamValues({});
     setCreatingWorkspace(false);
     setCreateWorkspaceError('');
+    setCreateProgress('');
     setCliTool('claude');
     setCustomBinary('');
     onClose();
@@ -824,6 +837,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                       paramValues={paramValues}
                       setParamValue={setParamValue}
                       creating={creatingWorkspace}
+                      progress={createProgress}
                       error={createWorkspaceError}
                       onCancel={toggleCreateWorkspace}
                       onCreate={handleCreateWorkspace}
@@ -1052,6 +1066,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                     paramValues,
                     setParamValue,
                     creating: creatingWorkspace,
+                    progress: createProgress,
                     error: createWorkspaceError,
                     onCreate: handleCreateWorkspace,
                   }}
@@ -1199,6 +1214,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                     paramValues,
                     setParamValue,
                     creating: creatingWorkspace,
+                    progress: createProgress,
                     error: createWorkspaceError,
                     onCreate: handleCreateWorkspace,
                   }}

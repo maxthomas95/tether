@@ -359,6 +359,7 @@ export interface TetherAPI {
     listTemplates(environmentId: string): Promise<CoderTemplate[]>;
     getTemplateParams(environmentId: string, templateVersionId: string): Promise<CoderTemplateParam[]>;
     createWorkspace(opts: CreateCoderWorkspaceOptions): Promise<CoderWorkspace>;
+    onCreateProgress(cb: (line: string) => void): () => void;
   };
   update: {
     check(): Promise<UpdateCheckResult>;

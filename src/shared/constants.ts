@@ -16,6 +16,7 @@ export const IPC = {
   CODER_LIST_TEMPLATES: 'coder:list-templates',
   CODER_GET_TEMPLATE_PARAMS: 'coder:get-template-params',
   CODER_CREATE_WORKSPACE: 'coder:create-workspace',
+  CODER_CREATE_PROGRESS: 'coder:create-progress',
   PROFILE_LIST: 'profile:list',
   PROFILE_CREATE: 'profile:create',
   PROFILE_UPDATE: 'profile:update',

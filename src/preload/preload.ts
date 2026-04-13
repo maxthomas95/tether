@@ -135,6 +135,11 @@ const api: TetherAPI = {
       ipcRenderer.invoke(IPC.CODER_GET_TEMPLATE_PARAMS, environmentId, templateVersionId),
     createWorkspace: (opts: CreateCoderWorkspaceOptions): Promise<CoderWorkspace> =>
       ipcRenderer.invoke(IPC.CODER_CREATE_WORKSPACE, opts),
+    onCreateProgress(cb: (line: string) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, line: string) => cb(line);
+      ipcRenderer.on(IPC.CODER_CREATE_PROGRESS, h);
+      return () => ipcRenderer.removeListener(IPC.CODER_CREATE_PROGRESS, h);
+    },
   },
 
   update: {
