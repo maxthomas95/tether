@@ -173,7 +173,7 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
     const entry = panes.current.get(paneId);
     if (!entry) return;
 
-    const { sessionId, terminal } = entry;
+    const { sessionId, terminal, fitAddon } = entry;
 
     // Check if any OTHER pane shows this session
     let otherPaneExists = false;
@@ -184,15 +184,20 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
       }
     }
 
-    // If no other pane shows this session, create a background terminal
+    // If no other pane shows this session, keep the existing terminal as a
+    // background terminal so the scrollback buffer is preserved.
     if (!otherPaneExists && !backgroundTerminals.current.has(sessionId)) {
-      const bg = createTerminal(sessionId);
-      backgroundTerminals.current.set(sessionId, bg);
+      // Detach from the DOM without disposing — the buffer stays intact
+      if (terminal.element?.parentElement) {
+        terminal.element.parentElement.removeChild(terminal.element);
+      }
+      backgroundTerminals.current.set(sessionId, { terminal, fitAddon });
+    } else {
+      terminal.dispose();
     }
 
-    terminal.dispose();
     panes.current.delete(paneId);
-  }, [createTerminal]);
+  }, []);
 
   // Fit a specific pane and send resize IPC
   const fitPane = useCallback((paneId: PaneId) => {
