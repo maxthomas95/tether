@@ -19,10 +19,13 @@ Thumbs.db
 
 # Internal docs (not for public repo)
 IDEAS.md
+AGENTS.md
 
 # Loose images (not in assets/)
 tether.jpg
 tether-transparent.png
+example1.png
+issue1.png
 
 # Branding source files
 branding/
