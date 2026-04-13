@@ -346,6 +346,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const req = mod.get(endpoint.href, {
         headers: { 'Coder-Session-Token': token },
         timeout: 10_000,
+        // Internal Coder deployments often use certs signed by a private CA
+        // that Node doesn't trust. The coder CLI handles this via the system
+        // store; we mirror that trust here for this authenticated request.
+        rejectUnauthorized: false,
       }, (res) => {
         let body = '';
         res.on('data', (chunk: Buffer) => { body += chunk; });
