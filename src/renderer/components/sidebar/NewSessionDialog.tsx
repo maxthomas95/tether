@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
-import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderWorkspace, CoderTemplate, CreateCoderWorkspaceOptions, CliToolId } from '../../../shared/types';
+import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderWorkspace, CoderTemplate, CoderTemplateParam, CreateCoderWorkspaceOptions, CliToolId } from '../../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import type { CliToolDef } from '../../../shared/cli-tools';
 
@@ -15,6 +15,10 @@ interface CoderCreateInlineProps {
   setSelectedTemplate: (v: string) => void;
   workspaceName: string;
   setWorkspaceName: (v: string) => void;
+  params: CoderTemplateParam[];
+  loadingParams: boolean;
+  paramValues: Record<string, string>;
+  setParamValue: (name: string, value: string) => void;
   creating: boolean;
   error: string;
   onCancel: () => void;
@@ -23,7 +27,9 @@ interface CoderCreateInlineProps {
 
 function CoderCreateInline({
   templates, loadingTemplates, selectedTemplate, setSelectedTemplate,
-  workspaceName, setWorkspaceName, creating, error, onCancel, onCreate,
+  workspaceName, setWorkspaceName,
+  params, loadingParams, paramValues, setParamValue,
+  creating, error, onCancel, onCreate,
 }: CoderCreateInlineProps) {
   const nameValid = workspaceName === '' || /^[a-z][a-z0-9-]*$/.test(workspaceName);
   return (
@@ -59,8 +65,47 @@ function CoderCreateInline({
         </span>
       )}
 
+      {loadingParams && (
+        <span className="form-hint">Loading template parameters...</span>
+      )}
+
+      {!loadingParams && params.length > 0 && params.map(p => (
+        <div key={p.name} style={{ marginTop: 8 }}>
+          <label className="form-label">
+            {p.displayName}
+            {!p.required && <span style={{ opacity: 0.5, fontWeight: 'normal' }}> (optional)</span>}
+          </label>
+          {p.description && (
+            <span className="form-hint" style={{ marginBottom: 4, display: 'block' }}>{p.description}</span>
+          )}
+          {p.options.length > 0 ? (
+            <select
+              className="form-input"
+              value={paramValues[p.name] ?? p.defaultValue}
+              onChange={e => setParamValue(p.name, e.target.value)}
+              disabled={creating}
+            >
+              {!p.required && !p.options.some(o => o.value === '') && (
+                <option value="">None</option>
+              )}
+              {p.options.map(o => (
+                <option key={o.value} value={o.value}>{o.name}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className="form-input"
+              value={paramValues[p.name] ?? p.defaultValue}
+              onChange={e => setParamValue(p.name, e.target.value)}
+              placeholder={p.defaultValue || ''}
+              disabled={creating}
+            />
+          )}
+        </div>
+      ))}
+
       {error && (
-        <span className="form-hint" style={{ color: 'var(--status-dead)' }}>{error}</span>
+        <span className="form-hint" style={{ color: 'var(--status-dead)', marginTop: 8, display: 'block' }}>{error}</span>
       )}
 
       <div className="form-row" style={{ marginTop: 8 }}>
@@ -68,7 +113,7 @@ function CoderCreateInline({
         <button
           className="form-btn form-btn--primary"
           onClick={onCreate}
-          disabled={!selectedTemplate || !workspaceName.trim() || !nameValid || creating}
+          disabled={!selectedTemplate || !workspaceName.trim() || !nameValid || creating || loadingParams}
         >
           {creating ? 'Creating...' : 'Create Workspace'}
         </button>
@@ -229,6 +274,9 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [templateParams, setTemplateParams] = useState<CoderTemplateParam[]>([]);
+  const [loadingParams, setLoadingParams] = useState(false);
+  const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [createWorkspaceError, setCreateWorkspaceError] = useState('');
 
@@ -369,6 +417,33 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       .finally(() => setLoadingTemplates(false));
   }, []);
 
+  // Fetch template parameters when user picks a template
+  const handleSelectTemplate = useCallback((templateName: string) => {
+    setSelectedTemplate(templateName);
+    setTemplateParams([]);
+    setParamValues({});
+    if (!templateName || !envId) return;
+    const tmpl = coderTemplates.find(t => t.name === templateName);
+    if (!tmpl?.activeVersionId) return;
+    setLoadingParams(true);
+    window.electronAPI.coder.getTemplateParams(envId, tmpl.activeVersionId)
+      .then(params => {
+        setTemplateParams(params);
+        // Pre-fill defaults
+        const defaults: Record<string, string> = {};
+        for (const p of params) {
+          if (p.defaultValue) defaults[p.name] = p.defaultValue;
+        }
+        setParamValues(defaults);
+      })
+      .catch(() => setTemplateParams([]))
+      .finally(() => setLoadingParams(false));
+  }, [envId, coderTemplates]);
+
+  const setParamValue = useCallback((name: string, value: string) => {
+    setParamValues(prev => ({ ...prev, [name]: value }));
+  }, []);
+
   const handleCreateWorkspace = useCallback(async () => {
     if (!envId || !selectedTemplate || !newWorkspaceName.trim()) return;
     setCreatingWorkspace(true);
@@ -378,6 +453,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
         environmentId: envId,
         templateName: selectedTemplate,
         workspaceName: newWorkspaceName.trim(),
+        parameters: paramValues,
       });
       setCoderWorkspaces(prev => [...prev, ws]);
       setDirectory(ws.name);
@@ -385,12 +461,14 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       setShowCreateWorkspace(false);
       setSelectedTemplate('');
       setNewWorkspaceName('');
+      setTemplateParams([]);
+      setParamValues({});
     } catch (err: unknown) {
       setCreateWorkspaceError(err instanceof Error ? err.message : String(err));
     } finally {
       setCreatingWorkspace(false);
     }
-  }, [envId, selectedTemplate, newWorkspaceName]);
+  }, [envId, selectedTemplate, newWorkspaceName, paramValues]);
 
   const toggleCreateWorkspace = useCallback(() => {
     setShowCreateWorkspace(prev => {
@@ -535,6 +613,9 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     setCoderTemplates([]);
     setSelectedTemplate('');
     setNewWorkspaceName('');
+    setTemplateParams([]);
+    setLoadingParams(false);
+    setParamValues({});
     setCreatingWorkspace(false);
     setCreateWorkspaceError('');
     setCliTool('claude');
@@ -735,9 +816,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                       templates={coderTemplates}
                       loadingTemplates={loadingTemplates}
                       selectedTemplate={selectedTemplate}
-                      setSelectedTemplate={setSelectedTemplate}
+                      setSelectedTemplate={handleSelectTemplate}
                       workspaceName={newWorkspaceName}
                       setWorkspaceName={setNewWorkspaceName}
+                      params={templateParams}
+                      loadingParams={loadingParams}
+                      paramValues={paramValues}
+                      setParamValue={setParamValue}
                       creating={creatingWorkspace}
                       error={createWorkspaceError}
                       onCancel={toggleCreateWorkspace}
@@ -959,9 +1044,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                     templates: coderTemplates,
                     loadingTemplates,
                     selectedTemplate,
-                    setSelectedTemplate,
+                    setSelectedTemplate: handleSelectTemplate,
                     workspaceName: newWorkspaceName,
                     setWorkspaceName: setNewWorkspaceName,
+                    params: templateParams,
+                    loadingParams,
+                    paramValues,
+                    setParamValue,
                     creating: creatingWorkspace,
                     error: createWorkspaceError,
                     onCreate: handleCreateWorkspace,
@@ -1102,9 +1191,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                     templates: coderTemplates,
                     loadingTemplates,
                     selectedTemplate,
-                    setSelectedTemplate,
+                    setSelectedTemplate: handleSelectTemplate,
                     workspaceName: newWorkspaceName,
                     setWorkspaceName: setNewWorkspaceName,
+                    params: templateParams,
+                    loadingParams,
+                    paramValues,
+                    setParamValue,
                     creating: creatingWorkspace,
                     error: createWorkspaceError,
                     onCreate: handleCreateWorkspace,

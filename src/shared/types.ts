@@ -91,12 +91,24 @@ export interface CoderTemplate {
   name: string;
   displayName: string;
   description: string;
+  activeVersionId: string;
+}
+
+export interface CoderTemplateParam {
+  name: string;
+  displayName: string;
+  description: string;
+  type: string;
+  defaultValue: string;
+  required: boolean;
+  options: Array<{ name: string; value: string }>;
 }
 
 export interface CreateCoderWorkspaceOptions {
   environmentId: string;
   templateName: string;
   workspaceName: string;
+  parameters?: Record<string, string>;
 }
 
 export interface EnvironmentInfo {
@@ -345,6 +357,7 @@ export interface TetherAPI {
   coder: {
     listWorkspaces(environmentId: string): Promise<CoderWorkspace[]>;
     listTemplates(environmentId: string): Promise<CoderTemplate[]>;
+    getTemplateParams(environmentId: string, templateVersionId: string): Promise<CoderTemplateParam[]>;
     createWorkspace(opts: CreateCoderWorkspaceOptions): Promise<CoderWorkspace>;
   };
   update: {

@@ -15,6 +15,7 @@ import type {
   MigrateSecretOptions,
   CoderWorkspace,
   CoderTemplate,
+  CoderTemplateParam,
   CreateCoderWorkspaceOptions,
   QuotaInfo,
   UsageInfo,
@@ -293,6 +294,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
                 name: String(t.name ?? ''),
                 displayName: String(t.display_name || t.name || ''),
                 description: String(t.description ?? ''),
+                activeVersionId: String(t.active_version_id ?? ''),
               };
             }).filter(t => t.name);
             resolve(templates);
@@ -305,15 +307,96 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     });
   });
 
+  // Fetch the Coder deployment URL and a short-lived session token so we can
+  // call REST endpoints that have no CLI equivalent (e.g. rich-parameters).
+  function getCoderAuth(binaryPath: string): Promise<{ url: string; token: string }> {
+    return new Promise((resolve, reject) => {
+      execFile(binaryPath, ['whoami', '--output', 'json'], { timeout: 10_000 }, (err, stdout) => {
+        if (err) { reject(new Error('Failed to get Coder URL: ' + err.message)); return; }
+        let url: string;
+        try {
+          const raw = JSON.parse(String(stdout));
+          const entry = Array.isArray(raw) ? raw[0] : raw;
+          url = String(entry.url || '').replace(/\/+$/, '');
+        } catch { reject(new Error('Failed to parse coder whoami output')); return; }
+        if (!url) { reject(new Error('Coder URL not found in whoami output')); return; }
+
+        execFile(binaryPath, ['tokens', 'create', '--lifetime', '5m'], { timeout: 10_000 }, (err2, stdout2) => {
+          if (err2) { reject(new Error('Failed to create Coder API token: ' + err2.message)); return; }
+          const token = String(stdout2).trim();
+          if (!token) { reject(new Error('Empty token from coder tokens create')); return; }
+          resolve({ url, token });
+        });
+      });
+    });
+  }
+
+  ipcMain.handle(IPC.CODER_GET_TEMPLATE_PARAMS, async (_event, environmentId: string, templateVersionId: string): Promise<CoderTemplateParam[]> => {
+    const binaryPath = resolveCoderBinary(environmentId);
+    const { url, token } = await getCoderAuth(binaryPath);
+
+    const https = await import('node:https');
+    const http = await import('node:http');
+    const { URL } = await import('node:url');
+
+    return new Promise<CoderTemplateParam[]>((resolve, reject) => {
+      const endpoint = new URL(`/api/v2/templateversions/${templateVersionId}/rich-parameters`, url);
+      const mod = endpoint.protocol === 'https:' ? https : http;
+
+      const req = mod.get(endpoint.href, {
+        headers: { 'Coder-Session-Token': token },
+        timeout: 10_000,
+      }, (res) => {
+        let body = '';
+        res.on('data', (chunk: Buffer) => { body += chunk; });
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            log.error('Coder rich-parameters API error', { status: res.statusCode, body: body.slice(0, 500) });
+            reject(new Error(`Coder API returned ${res.statusCode}`));
+            return;
+          }
+          try {
+            const raw = JSON.parse(body) as unknown;
+            if (!Array.isArray(raw)) { resolve([]); return; }
+            const params: CoderTemplateParam[] = raw
+              .filter((p: Record<string, unknown>) => !p.ephemeral)
+              .map((p: Record<string, unknown>) => ({
+                name: String(p.name ?? ''),
+                displayName: String(p.display_name || p.name || ''),
+                description: String(p.description ?? ''),
+                type: String(p.type ?? 'string'),
+                defaultValue: String(p.default_value ?? ''),
+                required: Boolean(p.required),
+                options: Array.isArray(p.options) ? p.options.map((o: Record<string, unknown>) => ({
+                  name: String(o.name ?? ''),
+                  value: String(o.value ?? ''),
+                })) : [],
+              }));
+            resolve(params);
+          } catch (parseErr) {
+            log.error('Failed to parse rich-parameters response', { error: parseErr instanceof Error ? parseErr.message : String(parseErr) });
+            reject(new Error('Failed to parse template parameters'));
+          }
+        });
+      });
+      req.on('error', (err: Error) => reject(new Error('Coder API request failed: ' + err.message)));
+    });
+  });
+
   ipcMain.handle(IPC.CODER_CREATE_WORKSPACE, async (_event, opts: CreateCoderWorkspaceOptions): Promise<CoderWorkspace> => {
     const binaryPath = resolveCoderBinary(opts.environmentId);
     log.info('Creating Coder workspace', { template: opts.templateName, name: opts.workspaceName });
 
+    const args = ['create', opts.workspaceName, '--template', opts.templateName, '--yes'];
+    for (const [name, value] of Object.entries(opts.parameters || {})) {
+      args.push('--parameter', `${name}=${value}`);
+    }
+
     return new Promise<CoderWorkspace>((resolve, reject) => {
       execFile(
         binaryPath,
-        ['create', opts.workspaceName, '--template', opts.templateName, '--yes'],
-        { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 },
+        args,
+        { timeout: 300_000, maxBuffer: 4 * 1024 * 1024 },
         (err, _stdout, stderr) => {
           if (err) {
             log.error('coder create failed', { error: err.message, stderr: String(stderr).slice(0, 500) });
