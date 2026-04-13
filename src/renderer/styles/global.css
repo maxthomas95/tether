@@ -1251,6 +1251,13 @@ input[type="password"].form-input {
   padding: 2px;
 }
 
+/* Hide the native text caret that bleeds through xterm.js's invisible helper
+   textarea on Windows/Electron. Without this, a second cursor "ghost" follows
+   the real terminal cursor around the screen. */
+.xterm .xterm-helper-textarea {
+  caret-color: transparent !important;
+}
+
 /* Drop zone overlay */
 .drop-zone-overlay {
   position: absolute;
