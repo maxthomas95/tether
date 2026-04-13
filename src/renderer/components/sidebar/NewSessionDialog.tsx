@@ -438,7 +438,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
         // Pre-fill defaults
         const defaults: Record<string, string> = {};
         for (const p of params) {
-          if (p.defaultValue) defaults[p.name] = p.defaultValue;
+          defaults[p.name] = p.defaultValue;
         }
         setParamValues(defaults);
       })

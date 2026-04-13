@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow, dialog, safeStorage, shell } from 'electron';
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { IPC } from '../../shared/constants';
 import type {
   CreateSessionOptions,
@@ -391,52 +391,61 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const binaryPath = resolveCoderBinary(opts.environmentId);
     log.info('Creating Coder workspace', { template: opts.templateName, name: opts.workspaceName });
 
-    const args = ['create', opts.workspaceName, '--template', opts.templateName, '--yes'];
-    for (const [name, value] of Object.entries(opts.parameters || {})) {
-      args.push('--parameter', `${name}=${value}`);
+    // Use node-pty (same as CoderTransport) so coder gets a real PTY. On
+    // Windows coder create requires a console handle even when all parameters
+    // are supplied — child_process.spawn/execFile can't provide one.
+    // Pass the full command as a single string to cmd.exe /c so special
+    // characters in parameter values (=, :, /) aren't mangled by arg splitting.
+    let ptyMod: typeof import('node-pty');
+    try { ptyMod = require('node-pty'); } catch (e) {
+      throw new Error('node-pty not available — cannot create Coder workspace');
     }
 
+    const q = (s: string) => `"${s.replace(/"/g, '\\"')}"`;
+    const cmdStr = [binaryPath, 'create', opts.workspaceName, '--template', opts.templateName, '--yes',
+      ...Object.entries(opts.parameters || {}).flatMap(([name, value]) => ['--parameter', q(`${name}=${value}`)]),
+    ].join(' ');
+
+    const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+    const spawnArgs = process.platform === 'win32' ? ['/c', cmdStr] : ['-c', cmdStr];
+
+    log.info('coder create via PTY', { cmd: cmdStr });
+
     return new Promise<CoderWorkspace>((resolve, reject) => {
-      // Use spawn with shell:true so `coder create` gets a console handle on
-      // Windows. Stream stdout/stderr to the renderer as progress updates.
-      const proc = spawn(binaryPath, args, {
-        shell: true,
-        timeout: 300_000,
-        stdio: ['ignore', 'pipe', 'pipe'],
+      const proc = ptyMod.spawn(shell, spawnArgs, {
+        name: 'xterm-256color',
+        cols: 120,
+        rows: 30,
+        cwd: process.cwd(),
+        env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string>,
       });
 
-      let stderrBuf = '';
+      let output = '';
+      const progressRe = /==>|===|Planning|Initializing|Starting|Queued|Running|Setting up|Cleaning/;
 
-      // Parse progress from coder create output. Lines like:
-      //   ==> ⧗ Planning Infrastructure
-      //   === ✔ Starting workspace [2606ms]
-      const progressRe = /^[=─┌│└┤├]+\s|^==>|^===|Planning|Initializing|Starting|Queued|Running|Setting up|Cleaning/;
-
-      const emitProgress = (line: string) => {
-        const trimmed = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
-        if (trimmed && progressRe.test(trimmed)) {
-          send(IPC.CODER_CREATE_PROGRESS, trimmed);
+      proc.onData((data: string) => {
+        output += data;
+        for (const line of data.split(/[\r\n]+/)) {
+          const clean = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+          if (clean && progressRe.test(clean)) {
+            send(IPC.CODER_CREATE_PROGRESS, clean);
+          }
         }
-      };
-
-      proc.stdout.on('data', (chunk: Buffer) => {
-        for (const line of chunk.toString().split('\n')) emitProgress(line);
-      });
-      proc.stderr.on('data', (chunk: Buffer) => {
-        stderrBuf += chunk.toString();
-        for (const line of chunk.toString().split('\n')) emitProgress(line);
       });
 
-      proc.on('error', (err) => {
-        log.error('coder create spawn error', { error: err.message });
-        reject(new Error(err.message));
-      });
+      const timeout = setTimeout(() => {
+        proc.kill();
+        reject(new Error('Workspace creation timed out after 5 minutes'));
+      }, 300_000);
 
-      proc.on('close', (code) => {
-        if (code !== 0) {
-          const msg = stderrBuf.trim().slice(0, 500) || `coder create exited with code ${code}`;
-          log.error('coder create failed', { code, stderr: msg });
-          reject(new Error(msg));
+      proc.onExit(({ exitCode }) => {
+        clearTimeout(timeout);
+        if (exitCode !== 0) {
+          // Extract the last meaningful error from the output
+          const lines = output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').split(/[\r\n]+/).filter(l => l.trim());
+          const errLine = lines.reverse().find(l => /error:|failed/i.test(l)) || lines[0] || `exit code ${exitCode}`;
+          log.error('coder create failed', { exitCode, error: errLine });
+          reject(new Error(errLine));
           return;
         }
         log.info('Coder workspace created', { name: opts.workspaceName });
