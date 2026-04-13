@@ -39,6 +39,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true);
+  const [quotaEnabled, setQuotaEnabled] = useState(true);
   const [loaded, setLoaded] = useState(false);
 
   // Profile state
@@ -82,7 +83,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
       window.electronAPI.config.get?.('enablePaneSplitting')?.catch(() => null),
       window.electronAPI.config.get?.('updateCheckEnabled')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, updateCheck]) => {
+      window.electronAPI.config.get?.('quotaEnabled')?.catch(() => null),
+    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, updateCheck, quota]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -91,6 +93,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setEnableResumePicker(picker !== 'false');
       setEnablePaneSplitting(splitting === 'true');
       setUpdateCheckEnabled(updateCheck !== 'false');
+      setQuotaEnabled(quota !== 'false');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -113,12 +116,14 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     await window.electronAPI.config.set?.('enableResumePicker', enableResumePicker ? 'true' : 'false');
     await window.electronAPI.config.set?.('enablePaneSplitting', enablePaneSplitting ? 'true' : 'false');
     await window.electronAPI.config.set?.('updateCheckEnabled', updateCheckEnabled ? 'true' : 'false');
+    await window.electronAPI.config.set?.('quotaEnabled', quotaEnabled ? 'true' : 'false');
+    await window.electronAPI.quota.setEnabled(quotaEnabled);
     for (const toolId of FLAG_TOOLS) {
       await window.electronAPI.config.setDefaultCliFlagsForTool?.(toolId, cliFlagsPerTool[toolId] || []);
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, updateCheckEnabled, cliFlagsPerTool, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, updateCheckEnabled, quotaEnabled, cliFlagsPerTool, vaultConfig, onClose]);
 
   const handleVaultLogin = async () => {
     setVaultLoginError(null);
@@ -704,6 +709,24 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
             </label>
             <p className="form-hint">
               Automatically check GitHub for new Tether releases when the app starts.
+            </p>
+          </div>
+
+          {/* Quota display */}
+          <div className="form-group" style={{ marginTop: 20 }}>
+            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              Usage Quota
+            </label>
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={quotaEnabled}
+                onChange={e => setQuotaEnabled(e.target.checked)}
+              />
+              Show usage quota in sidebar
+            </label>
+            <p className="form-hint">
+              Display Claude and Codex subscription usage (5-hour and 7-day windows) in the sidebar footer. Polls every 5 minutes.
             </p>
           </div>
 

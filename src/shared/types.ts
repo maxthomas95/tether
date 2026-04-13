@@ -173,6 +173,18 @@ export interface QuotaWindow {
   resetsAt: string | null;
 }
 
+export interface CodexQuotaWindow {
+  usedPercent: number | null;
+  resetAt: string | null;
+}
+
+export interface CodexQuota {
+  primary: CodexQuotaWindow;
+  secondary: CodexQuotaWindow;
+  planType: string | null;
+  error: string | null;
+}
+
 export interface QuotaInfo {
   fiveHour: QuotaWindow;
   sevenDay: QuotaWindow;
@@ -180,6 +192,7 @@ export interface QuotaInfo {
   rateLimitTier: string | null;
   lastUpdated: string | null;
   error: string | null;
+  codex: CodexQuota | null;
 }
 
 export interface CreateEnvironmentOptions {
@@ -286,6 +299,7 @@ export interface TetherAPI {
   quota: {
     get(): Promise<QuotaInfo>;
     refresh(): Promise<QuotaInfo>;
+    setEnabled(enabled: boolean): Promise<void>;
     onUpdate(cb: (info: QuotaInfo) => void): () => void;
   };
 }

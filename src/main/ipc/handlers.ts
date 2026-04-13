@@ -733,4 +733,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.QUOTA_REFRESH, async (): Promise<QuotaInfo> => {
     return quotaService.fetchQuota();
   });
+
+  ipcMain.handle(IPC.QUOTA_SET_ENABLED, async (_event, enabled: boolean): Promise<void> => {
+    quotaService.setEnabled(enabled);
+  });
 }

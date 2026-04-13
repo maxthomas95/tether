@@ -62,6 +62,7 @@ export const IPC = {
   // Quota
   QUOTA_GET: 'quota:get',
   QUOTA_REFRESH: 'quota:refresh',
+  QUOTA_SET_ENABLED: 'quota:set-enabled',
 
   // Update
   UPDATE_CHECK: 'update:check',

@@ -143,7 +143,14 @@ const createWindow = () => {
     }, 15_000);
 
     // Start quota polling after a short delay to avoid blocking startup
-    setTimeout(() => quotaService.start(), 5_000);
+    setTimeout(() => {
+      const db = getDb();
+      if (db.config.quotaEnabled === 'false') {
+        quotaService.setEnabled(false);
+      } else {
+        quotaService.start();
+      }
+    }, 5_000);
   });
 
   registerIpcHandlers(mainWindow);

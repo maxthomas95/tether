@@ -2,16 +2,19 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { createLogger } from '../logger';
-import type { QuotaInfo } from '../../shared/types';
+import type { QuotaInfo, CodexQuota } from '../../shared/types';
 
 const log = createLogger('quota');
 
 const POLL_INTERVAL_MS = 300_000; // 5 minutes
 const TOKEN_REFRESH_BUFFER_MS = 300_000; // refresh if <5 min until expiry
-const API_URL = 'https://api.anthropic.com/api/oauth/usage';
-const TOKEN_REFRESH_URL = 'https://platform.claude.com/v1/oauth/token';
-const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
-const CREDENTIALS_PATH = path.join(os.homedir(), '.claude', '.credentials.json');
+const CLAUDE_API_URL = 'https://api.anthropic.com/api/oauth/usage';
+const CLAUDE_TOKEN_REFRESH_URL = 'https://platform.claude.com/v1/oauth/token';
+const CLAUDE_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
+const CLAUDE_CREDENTIALS_PATH = path.join(os.homedir(), '.claude', '.credentials.json');
+
+const CODEX_API_URL = 'https://chatgpt.com/backend-api/wham/usage';
+const CODEX_AUTH_PATH = path.join(os.homedir(), '.codex', 'auth.json');
 
 interface ClaudeCredentials {
   accessToken: string;
@@ -21,9 +24,23 @@ interface ClaudeCredentials {
   rateLimitTier?: string;
 }
 
-interface ApiUsageResponse {
+interface CodexCredentials {
+  accessToken: string;
+  accountId?: string;
+}
+
+interface ClaudeApiResponse {
   five_hour?: { utilization: number; resets_at: string | null };
   seven_day?: { utilization: number; resets_at: string | null };
+  [key: string]: unknown;
+}
+
+interface CodexApiResponse {
+  rate_limit?: {
+    primary_window?: { used_percent: number; reset_at: string | null };
+    secondary_window?: { used_percent: number; reset_at: string | null };
+  };
+  plan_type?: string;
   [key: string]: unknown;
 }
 
@@ -35,6 +52,7 @@ function emptyQuota(error: string | null = null): QuotaInfo {
     rateLimitTier: null,
     lastUpdated: null,
     error,
+    codex: null,
   };
 }
 
@@ -42,12 +60,27 @@ class QuotaService {
   private pollInterval: ReturnType<typeof setInterval> | null = null;
   private lastQuota: QuotaInfo = emptyQuota();
   private callback: ((info: QuotaInfo) => void) | null = null;
+  private _enabled = true;
+
+  get enabled(): boolean { return this._enabled; }
+
+  setEnabled(enabled: boolean): void {
+    this._enabled = enabled;
+    if (!enabled) {
+      this.stop();
+      this.lastQuota = emptyQuota();
+      this.callback?.(this.lastQuota);
+    } else if (!this.pollInterval) {
+      this.start();
+    }
+  }
 
   onUpdate(cb: (info: QuotaInfo) => void): void {
     this.callback = cb;
   }
 
   start(): void {
+    if (!this._enabled) return;
     log.info('Quota polling started');
     this.fetchQuota();
     this.pollInterval = setInterval(() => this.fetchQuota(), POLL_INTERVAL_MS);
@@ -66,11 +99,27 @@ class QuotaService {
   }
 
   async fetchQuota(): Promise<QuotaInfo> {
-    const creds = this.readCredentials();
+    if (!this._enabled) return this.lastQuota;
+
+    // Fetch Claude and Codex in parallel
+    const [claudeResult, codexResult] = await Promise.all([
+      this.fetchClaude(),
+      this.fetchCodex(),
+    ]);
+
+    const info: QuotaInfo = {
+      ...claudeResult,
+      codex: codexResult,
+    };
+
+    this.update(info);
+    return info;
+  }
+
+  private async fetchClaude(): Promise<Omit<QuotaInfo, 'codex'>> {
+    const creds = this.readClaudeCredentials();
     if (!creds) {
-      const info = emptyQuota('No Claude credentials found');
-      this.update(info);
-      return info;
+      return { ...emptyQuota('No Claude credentials found') };
     }
 
     try {
@@ -79,17 +128,16 @@ class QuotaService {
       // Refresh token if close to expiry
       if (creds.expiresAt - Date.now() < TOKEN_REFRESH_BUFFER_MS) {
         try {
-          token = await this.refreshToken(creds.refreshToken);
+          token = await this.refreshClaudeToken(creds.refreshToken);
         } catch (err) {
-          log.warn('Token refresh failed', { error: err instanceof Error ? err.message : String(err) });
-          // Try with existing token anyway — it may still work
+          log.warn('Claude token refresh failed', { error: err instanceof Error ? err.message : String(err) });
         }
       }
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10_000);
 
-      const res = await fetch(API_URL, {
+      const res = await fetch(CLAUDE_API_URL, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': 'application/json',
@@ -100,26 +148,27 @@ class QuotaService {
       clearTimeout(timeout);
 
       if (res.status === 401 || res.status === 403) {
-        const info = emptyQuota("Claude credentials expired — run 'claude login' to refresh");
-        info.subscriptionType = creds.subscriptionType ?? null;
-        info.rateLimitTier = creds.rateLimitTier ?? null;
-        this.update(info);
-        return info;
+        return {
+          ...emptyQuota("Claude credentials expired — run 'claude login' to refresh"),
+          subscriptionType: creds.subscriptionType ?? null,
+          rateLimitTier: creds.rateLimitTier ?? null,
+        };
       }
 
       if (!res.ok) {
-        const info: QuotaInfo = {
-          ...this.lastQuota,
-          error: `API error: ${res.status}`,
+        return {
+          fiveHour: this.lastQuota.fiveHour,
+          sevenDay: this.lastQuota.sevenDay,
+          subscriptionType: creds.subscriptionType ?? null,
+          rateLimitTier: creds.rateLimitTier ?? null,
           lastUpdated: this.lastQuota.lastUpdated,
+          error: `Claude API error: ${res.status}`,
         };
-        this.update(info);
-        return info;
       }
 
-      const data: ApiUsageResponse = await res.json();
+      const data: ClaudeApiResponse = await res.json();
 
-      const info: QuotaInfo = {
+      return {
         fiveHour: {
           utilization: data.five_hour?.utilization ?? null,
           resetsAt: data.five_hour?.resets_at ?? null,
@@ -133,25 +182,86 @@ class QuotaService {
         lastUpdated: new Date().toISOString(),
         error: null,
       };
-
-      this.update(info);
-      return info;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      log.warn('Quota fetch failed', { error: message });
-
-      const info: QuotaInfo = {
-        ...this.lastQuota,
-        error: message.includes('abort') ? 'Request timed out' : `Network error: ${message}`,
+      log.warn('Claude quota fetch failed', { error: message });
+      return {
+        fiveHour: this.lastQuota.fiveHour,
+        sevenDay: this.lastQuota.sevenDay,
+        subscriptionType: this.lastQuota.subscriptionType,
+        rateLimitTier: this.lastQuota.rateLimitTier,
+        lastUpdated: this.lastQuota.lastUpdated,
+        error: message.includes('abort') ? 'Claude: request timed out' : `Claude: ${message}`,
       };
-      this.update(info);
-      return info;
     }
   }
 
-  private readCredentials(): ClaudeCredentials | null {
+  private async fetchCodex(): Promise<CodexQuota | null> {
+    const creds = this.readCodexCredentials();
+    if (!creds) return null; // No Codex installed / not logged in — just skip
+
     try {
-      const raw = fs.readFileSync(CREDENTIALS_PATH, 'utf-8');
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
+
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${creds.accessToken}`,
+        'Accept': 'application/json',
+      };
+      if (creds.accountId) {
+        headers['ChatGPT-Account-Id'] = creds.accountId;
+      }
+
+      const res = await fetch(CODEX_API_URL, { headers, signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (res.status === 401 || res.status === 403) {
+        return {
+          primary: { usedPercent: null, resetAt: null },
+          secondary: { usedPercent: null, resetAt: null },
+          planType: null,
+          error: "Codex credentials expired — run 'codex' to refresh",
+        };
+      }
+
+      if (!res.ok) {
+        return {
+          primary: this.lastQuota.codex?.primary ?? { usedPercent: null, resetAt: null },
+          secondary: this.lastQuota.codex?.secondary ?? { usedPercent: null, resetAt: null },
+          planType: this.lastQuota.codex?.planType ?? null,
+          error: `Codex API error: ${res.status}`,
+        };
+      }
+
+      const data: CodexApiResponse = await res.json();
+
+      return {
+        primary: {
+          usedPercent: data.rate_limit?.primary_window?.used_percent ?? null,
+          resetAt: data.rate_limit?.primary_window?.reset_at ?? null,
+        },
+        secondary: {
+          usedPercent: data.rate_limit?.secondary_window?.used_percent ?? null,
+          resetAt: data.rate_limit?.secondary_window?.reset_at ?? null,
+        },
+        planType: data.plan_type ?? null,
+        error: null,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn('Codex quota fetch failed', { error: message });
+      return {
+        primary: this.lastQuota.codex?.primary ?? { usedPercent: null, resetAt: null },
+        secondary: this.lastQuota.codex?.secondary ?? { usedPercent: null, resetAt: null },
+        planType: this.lastQuota.codex?.planType ?? null,
+        error: message.includes('abort') ? 'Codex: request timed out' : `Codex: ${message}`,
+      };
+    }
+  }
+
+  private readClaudeCredentials(): ClaudeCredentials | null {
+    try {
+      const raw = fs.readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8');
       const json = JSON.parse(raw);
       const oauth = json?.claudeAiOauth;
       if (!oauth?.accessToken) return null;
@@ -167,14 +277,29 @@ class QuotaService {
     }
   }
 
-  private async refreshToken(refreshToken: string): Promise<string> {
+  private readCodexCredentials(): CodexCredentials | null {
+    try {
+      const raw = fs.readFileSync(CODEX_AUTH_PATH, 'utf-8');
+      const json = JSON.parse(raw);
+      const token = json?.tokens?.access_token;
+      if (!token) return null;
+      return {
+        accessToken: token,
+        accountId: json?.tokens?.account_id,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async refreshClaudeToken(refreshToken: string): Promise<string> {
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
-      client_id: CLIENT_ID,
+      client_id: CLAUDE_CLIENT_ID,
     });
 
-    const res = await fetch(TOKEN_REFRESH_URL, {
+    const res = await fetch(CLAUDE_TOKEN_REFRESH_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
@@ -190,17 +315,17 @@ class QuotaService {
 
     // Write updated credentials back
     try {
-      const raw = fs.readFileSync(CREDENTIALS_PATH, 'utf-8');
+      const raw = fs.readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8');
       const json = JSON.parse(raw);
       json.claudeAiOauth.accessToken = newToken;
       json.claudeAiOauth.expiresAt = newExpiry;
       if (data.refresh_token) {
         json.claudeAiOauth.refreshToken = data.refresh_token;
       }
-      const tmpPath = CREDENTIALS_PATH + '.tmp';
+      const tmpPath = CLAUDE_CREDENTIALS_PATH + '.tmp';
       fs.writeFileSync(tmpPath, JSON.stringify(json, null, 2), 'utf-8');
-      fs.renameSync(tmpPath, CREDENTIALS_PATH);
-      log.info('Refreshed OAuth token');
+      fs.renameSync(tmpPath, CLAUDE_CREDENTIALS_PATH);
+      log.info('Refreshed Claude OAuth token');
     } catch (err) {
       log.warn('Failed to write refreshed token', { error: err instanceof Error ? err.message : String(err) });
     }

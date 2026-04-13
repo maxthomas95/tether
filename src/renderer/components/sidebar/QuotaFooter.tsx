@@ -46,11 +46,16 @@ function QuotaBar({ label, utilization, resetsAt }: QuotaBarProps) {
 }
 
 export function QuotaFooter() {
-  const { quota, refresh } = useQuota();
+  const { quota, refresh, enabled } = useQuota();
 
-  if (!quota) return null;
+  if (!enabled || !quota) return null;
 
-  if (quota.error && !quota.fiveHour.utilization && !quota.sevenDay.utilization) {
+  // Nothing to show — no Claude data and no Codex data
+  const hasClaudeData = quota.fiveHour.utilization !== null || quota.sevenDay.utilization !== null;
+  const hasCodexData = quota.codex?.primary.usedPercent !== null;
+  const hasAnyData = hasClaudeData || hasCodexData;
+
+  if (quota.error && !hasAnyData) {
     return (
       <div className="sidebar-footer" onClick={refresh} title="Click to retry">
         <div className="quota-error">{quota.error}</div>
@@ -60,11 +65,34 @@ export function QuotaFooter() {
 
   return (
     <div className="sidebar-footer" onClick={refresh} title="Click to refresh quota">
-      <QuotaBar label="5h" utilization={quota.fiveHour.utilization} resetsAt={quota.fiveHour.resetsAt} />
-      <QuotaBar label="7d" utilization={quota.sevenDay.utilization} resetsAt={quota.sevenDay.resetsAt} />
-      {quota.error && <div className="quota-error">{quota.error}</div>}
-      {quota.subscriptionType && (
-        <div className="quota-plan">{quota.subscriptionType}</div>
+      {/* Claude quota */}
+      {hasClaudeData && (
+        <div className="quota-section">
+          <div className="quota-section-header">
+            <span className="quota-provider">Claude</span>
+            {quota.subscriptionType && (
+              <span className="quota-plan">{quota.subscriptionType}</span>
+            )}
+          </div>
+          <QuotaBar label="5h" utilization={quota.fiveHour.utilization} resetsAt={quota.fiveHour.resetsAt} />
+          <QuotaBar label="7d" utilization={quota.sevenDay.utilization} resetsAt={quota.sevenDay.resetsAt} />
+          {quota.error && <div className="quota-error">{quota.error}</div>}
+        </div>
+      )}
+
+      {/* Codex quota */}
+      {quota.codex && hasCodexData && (
+        <div className="quota-section">
+          <div className="quota-section-header">
+            <span className="quota-provider">Codex</span>
+            {quota.codex.planType && (
+              <span className="quota-plan">{quota.codex.planType}</span>
+            )}
+          </div>
+          <QuotaBar label="1°" utilization={quota.codex.primary.usedPercent} resetsAt={quota.codex.primary.resetAt} />
+          <QuotaBar label="2°" utilization={quota.codex.secondary.usedPercent} resetsAt={quota.codex.secondary.resetAt} />
+          {quota.codex.error && <div className="quota-error">{quota.codex.error}</div>}
+        </div>
       )}
     </div>
   );

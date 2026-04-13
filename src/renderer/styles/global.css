@@ -309,16 +309,36 @@ html, body, #root {
   flex-shrink: 0;
 }
 
+.quota-section {
+  margin-bottom: 6px;
+}
+
+.quota-section:last-child {
+  margin-bottom: 0;
+}
+
+.quota-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.quota-provider {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 .quota-error {
   font-size: 10px;
   color: var(--status-dead);
 }
 
 .quota-plan {
-  font-size: 10px;
+  font-size: 9px;
   color: var(--text-muted);
   text-transform: capitalize;
-  margin-top: 2px;
 }
 
 /* Environment groups */

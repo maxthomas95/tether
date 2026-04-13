@@ -158,6 +158,7 @@ const api: TetherAPI = {
   quota: {
     get: (): Promise<QuotaInfo> => ipcRenderer.invoke(IPC.QUOTA_GET),
     refresh: (): Promise<QuotaInfo> => ipcRenderer.invoke(IPC.QUOTA_REFRESH),
+    setEnabled: (enabled: boolean): Promise<void> => ipcRenderer.invoke(IPC.QUOTA_SET_ENABLED, enabled),
     onUpdate(cb: (info: QuotaInfo) => void): () => void {
       const h = (_e: Electron.IpcRendererEvent, info: QuotaInfo) => cb(info);
       ipcRenderer.on(IPC.QUOTA_UPDATED, h);
