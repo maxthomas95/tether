@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.2.2-beta.3] — 2026-04-13
+
+### New Features
+- **First-class Codex support** — Codex is now a full peer alongside Claude Code with proper quota tracking and CLI badges
+- **Constrained pane layouts with snap previews** — pane tiling now uses defined layout zones with visual snap indicators
+- **Usage/cost tracking data layer** — foundational layer for per-session cost and token usage tracking
+- **Pinnable and draggable repo groups** — pin favorite groups to the top of the sidebar and reorder by drag-and-drop
+- **Subscription quota display** — sidebar footer shows remaining quota percentage for Claude and Codex
+- **Update check notifications** — Tether checks GitHub releases on launch and notifies when a new version is available
+- **CLI badges in session panel** — active CLI tool shown as a badge on each session for quick identification
+
+### Bug Fixes
+- Fixed quota display showing wrong remaining percentage and hiding errors
+- Fixed CLI flags leaking across tools when switching between Claude/Codex/OpenCode
+- Fixed ghost cursor caused by native caret bleeding through the xterm.js textarea
+- Fixed Codex labels in quota display
+
+### Improvements
+- Per-session CLI flag overrides — override default flags on individual sessions without affecting others
+- Repo group header always visible in sidebar, even for groups with a single session
+- Codex quota support in settings with toggle for usage display visibility
+
+---
+
 ## [0.2.1-beta.2] — 2026-04-12
 
 ### New Features
