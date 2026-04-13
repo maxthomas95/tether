@@ -3,13 +3,11 @@ import { EnvVarEditor } from './EnvVarEditor';
 import { MigrateToVaultDialog } from './MigrateToVaultDialog';
 import { themeList } from '../styles/themes';
 import { suggestVaultPath } from '../utils/vault-path';
-import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus } from '../../shared/types';
+import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId } from '../../shared/types';
+import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 
-const COMMON_FLAGS = [
-  { flag: '--dangerously-skip-permissions', label: 'Skip permission prompts' },
-  { flag: '--verbose', label: 'Verbose output' },
-  { flag: '--no-telemetry', label: 'Disable telemetry' },
-];
+/** CLI tools that have definable flags (exclude 'custom' which has no known flags). */
+const FLAG_TOOLS = (['claude', 'codex', 'opencode'] as const) satisfies readonly CliToolId[];
 
 function formatExpiry(expiresAt?: string): string {
   if (!expiresAt) return '';
@@ -32,7 +30,8 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }: SettingsDialogProps) {
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
-  const [cliFlags, setCliFlags] = useState<string[]>([]);
+  const [cliFlagsPerTool, setCliFlagsPerTool] = useState<Partial<Record<CliToolId, string[]>>>({});
+  const [flagTool, setFlagTool] = useState<CliToolId>('claude');
   const [customFlag, setCustomFlag] = useState('');
   const [restoreOnLaunch, setRestoreOnLaunch] = useState(true);
   const [resumePreviousChats, setResumePreviousChats] = useState(true);
@@ -77,16 +76,16 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     Promise.all([
       window.electronAPI.config.getDefaultEnvVars?.()?.catch(() => ({})),
       window.electronAPI.config.get?.('restoreOnLaunch')?.catch(() => null),
-      window.electronAPI.config.getDefaultCliFlags?.()?.catch(() => []),
+      window.electronAPI.config.getDefaultCliFlagsPerTool?.()?.catch(() => ({})),
       window.electronAPI.config.get?.('resumePreviousChats')?.catch(() => null),
       window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
       window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
       window.electronAPI.config.get?.('enablePaneSplitting')?.catch(() => null),
       window.electronAPI.config.get?.('updateCheckEnabled')?.catch(() => null),
-    ]).then(([vars, restore, flags, resumeChats, badge, picker, splitting, updateCheck]) => {
+    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, updateCheck]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
-      setCliFlags(flags || []);
+      setCliFlagsPerTool(perToolFlags || {});
       setResumePreviousChats(resumeChats !== 'false');
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
@@ -114,10 +113,12 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     await window.electronAPI.config.set?.('enableResumePicker', enableResumePicker ? 'true' : 'false');
     await window.electronAPI.config.set?.('enablePaneSplitting', enablePaneSplitting ? 'true' : 'false');
     await window.electronAPI.config.set?.('updateCheckEnabled', updateCheckEnabled ? 'true' : 'false');
-    await window.electronAPI.config.setDefaultCliFlags?.(cliFlags);
+    for (const toolId of FLAG_TOOLS) {
+      await window.electronAPI.config.setDefaultCliFlagsForTool?.(toolId, cliFlagsPerTool[toolId] || []);
+    }
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, updateCheckEnabled, cliFlags, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, updateCheckEnabled, cliFlagsPerTool, vaultConfig, onClose]);
 
   const handleVaultLogin = async () => {
     setVaultLoginError(null);
@@ -140,22 +141,32 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     setVaultStatus(status);
   };
 
+  const currentToolFlags = cliFlagsPerTool[flagTool] || [];
+
   const toggleFlag = (flag: string) => {
-    setCliFlags(prev =>
-      prev.includes(flag) ? prev.filter(f => f !== flag) : [...prev, flag],
-    );
+    setCliFlagsPerTool(prev => {
+      const cur = prev[flagTool] || [];
+      const next = cur.includes(flag) ? cur.filter(f => f !== flag) : [...cur, flag];
+      return { ...prev, [flagTool]: next };
+    });
   };
 
   const addCustomFlag = () => {
     const f = customFlag.trim();
-    if (f && !cliFlags.includes(f)) {
-      setCliFlags(prev => [...prev, f]);
+    if (f && !currentToolFlags.includes(f)) {
+      setCliFlagsPerTool(prev => ({
+        ...prev,
+        [flagTool]: [...(prev[flagTool] || []), f],
+      }));
       setCustomFlag('');
     }
   };
 
   const removeFlag = (flag: string) => {
-    setCliFlags(prev => prev.filter(f => f !== flag));
+    setCliFlagsPerTool(prev => ({
+      ...prev,
+      [flagTool]: (prev[flagTool] || []).filter(f => f !== flag),
+    }));
   };
 
   const suggestedProviderVaultPath = suggestVaultPath(
@@ -214,8 +225,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
 
   if (!isOpen) return null;
 
-  const commonFlagSet = new Set(COMMON_FLAGS.map(f => f.flag));
-  const extraFlags = cliFlags.filter(f => !commonFlagSet.has(f));
+  const toolDef = CLI_TOOL_REGISTRY[flagTool];
+  const commonFlags = toolDef?.commonFlags || [];
+  const commonFlagSet = new Set(commonFlags.map(f => f.flag));
+  const extraFlags = currentToolFlags.filter(f => !commonFlagSet.has(f));
 
   return (
     <div className="dialog-overlay" onClick={onClose}>
@@ -315,22 +328,37 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
               Default CLI Flags
             </label>
             <p className="form-hint" style={{ marginBottom: 8 }}>
-              Applied to all sessions. These flags are passed to whichever CLI tool is configured on each environment.
+              Applied to sessions using the selected CLI tool.
             </p>
+
+            <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+              {FLAG_TOOLS.map(id => (
+                <button
+                  key={id}
+                  className={`form-btn${flagTool === id ? ' form-btn--primary' : ''}`}
+                  style={{ fontSize: 12, padding: '3px 10px' }}
+                  onClick={() => { setFlagTool(id); setCustomFlag(''); }}
+                >
+                  {CLI_TOOL_REGISTRY[id].displayName}
+                </button>
+              ))}
+            </div>
 
             {loaded && (
               <>
-                {COMMON_FLAGS.map(({ flag, label }) => (
+                {commonFlags.length > 0 ? commonFlags.map(({ flag, label }) => (
                   <label key={flag} className="form-radio-label" style={{ marginBottom: 4 }}>
                     <input
                       type="checkbox"
-                      checked={cliFlags.includes(flag)}
+                      checked={currentToolFlags.includes(flag)}
                       onChange={() => toggleFlag(flag)}
                     />
                     <code className="cli-flag-code">{flag}</code>
                     <span className="form-hint" style={{ display: 'inline', marginLeft: 6 }}>{label}</span>
                   </label>
-                ))}
+                )) : (
+                  <p className="form-hint" style={{ marginBottom: 8 }}>No common flags defined for {toolDef?.displayName || flagTool}.</p>
+                )}
 
                 {extraFlags.length > 0 && (
                   <div style={{ marginTop: 8 }}>

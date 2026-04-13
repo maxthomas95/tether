@@ -123,6 +123,8 @@ export interface CreateSessionOptions {
   customCliBinary?: string;
   env?: Record<string, string>;
   cliArgs?: string[];
+  /** Inherited flags the user explicitly disabled for this session. */
+  disabledInheritedFlags?: string[];
   /** When set, launch claude with `--resume <id>` instead of `--session-id <new>`. */
   resumeClaudeSessionId?: string;
   profileId?: string;
@@ -212,6 +214,8 @@ export interface TetherAPI {
     setDefaultEnvVars(vars: Record<string, string>): Promise<void>;
     getDefaultCliFlags(): Promise<string[]>;
     setDefaultCliFlags(flags: string[]): Promise<void>;
+    getDefaultCliFlagsPerTool(): Promise<Partial<Record<CliToolId, string[]>>>;
+    setDefaultCliFlagsForTool(toolId: CliToolId, flags: string[]): Promise<void>;
   };
   titlebar: {
     updateOverlay(color: string, symbolColor: string): Promise<void>;

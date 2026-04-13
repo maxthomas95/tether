@@ -10,6 +10,7 @@ import type {
   VaultConfig, VaultStatus, VaultPlaintextSecret, MigrateSecretOptions,
   TranscriptInfo,
   CoderWorkspace,
+  CliToolId,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -72,6 +73,8 @@ const api: TetherAPI = {
     setDefaultEnvVars: (vars: Record<string, string>): Promise<void> => ipcRenderer.invoke(IPC.CONFIG_SET_DEFAULT_ENV_VARS, vars),
     getDefaultCliFlags: (): Promise<string[]> => ipcRenderer.invoke(IPC.CONFIG_GET_DEFAULT_CLI_FLAGS),
     setDefaultCliFlags: (flags: string[]): Promise<void> => ipcRenderer.invoke(IPC.CONFIG_SET_DEFAULT_CLI_FLAGS, flags),
+    getDefaultCliFlagsPerTool: (): Promise<Partial<Record<CliToolId, string[]>>> => ipcRenderer.invoke(IPC.CONFIG_GET_DEFAULT_CLI_FLAGS_PER_TOOL),
+    setDefaultCliFlagsForTool: (toolId: CliToolId, flags: string[]): Promise<void> => ipcRenderer.invoke(IPC.CONFIG_SET_DEFAULT_CLI_FLAGS_FOR_TOOL, toolId, flags),
   },
 
   titlebar: {

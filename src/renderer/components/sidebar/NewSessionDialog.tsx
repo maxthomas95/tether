@@ -4,6 +4,8 @@ import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, 
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import type { CliToolDef } from '../../../shared/cli-tools';
 
+type CliFlagsPerTool = Partial<Record<CliToolId, string[]>>;
+
 type SourceTab = 'local' | 'clone' | 'gitea' | 'ado';
 
 interface CoderCloneTargetProps {
@@ -88,7 +90,7 @@ interface NewSessionDialogProps {
   environments: EnvironmentInfo[];
   profiles: LaunchProfileInfo[];
   onClose: () => void;
-  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string) => void;
+  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[]) => void;
 }
 
 export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate }: NewSessionDialogProps) {
@@ -101,7 +103,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [reposRootInput, setReposRootInput] = useState('');
   const [sessionEnvVars, setSessionEnvVars] = useState<Record<string, string>>({});
   const [appDefaultEnvVars, setAppDefaultEnvVars] = useState<Record<string, string>>({});
-  const [defaultCliFlags, setDefaultCliFlags] = useState<string[]>([]);
+  const [defaultCliFlagsPerTool, setDefaultCliFlagsPerTool] = useState<CliFlagsPerTool>({});
+  const [disabledFlags, setDisabledFlags] = useState<Set<string>>(new Set());
   const [sessionCliFlags, setSessionCliFlags] = useState<string[]>([]);
   const [customFlag, setCustomFlag] = useState('');
   const [profileId, setProfileId] = useState<string | null>(null);
@@ -141,7 +144,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   useEffect(() => {
     if (!isOpen) return;
     window.electronAPI.config.getDefaultEnvVars?.()?.then(setAppDefaultEnvVars).catch(() => {});
-    window.electronAPI.config.getDefaultCliFlags?.()?.then(setDefaultCliFlags).catch(() => {});
+    window.electronAPI.config.getDefaultCliFlagsPerTool?.()?.then(v => setDefaultCliFlagsPerTool(v || {})).catch(() => {});
     window.electronAPI.config.get('reposRoot').then(val => {
       setReposRoot(val);
       if (val) {
@@ -237,6 +240,15 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const isCoder = selectedEnv?.type === 'coder';
   const selectedProfile = profiles.find(p => p.id === profileId);
 
+  // Effective default flags for the selected CLI tool
+  const effectiveDefaultFlags = useMemo(
+    () => defaultCliFlagsPerTool[cliTool] || [],
+    [defaultCliFlagsPerTool, cliTool],
+  );
+
+  // Reset disabled flags when CLI tool changes (different tool = different defaults)
+  useEffect(() => { setDisabledFlags(new Set()); }, [cliTool]);
+
   const fetchCoderWorkspaces = useCallback((id: string) => {
     setLoadingCoder(true);
     setCoderError('');
@@ -304,7 +316,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     if (!directory.trim()) return;
     const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
     const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
-    onCreate(directory.trim(), label.trim(), envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined);
+    const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
+    onCreate(directory.trim(), label.trim(), envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled);
     resetAndClose();
   };
 
@@ -334,7 +347,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
         // Encode workspace + target subdir so CoderTransport runs
         // `git clone <url> <subdir> && cd <subdir> && claude` inside the
         // workspace PTY. All clone output streams to the terminal.
-        onCreate(`${coderCloneWorkspace}::${destInside}`, label.trim() || repoName, envId, env, args, undefined, profileId || undefined, url, cliTool, cliTool === 'custom' ? customBinary : undefined);
+        const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
+        onCreate(`${coderCloneWorkspace}::${destInside}`, label.trim() || repoName, envId, env, args, undefined, profileId || undefined, url, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled);
         resetAndClose();
         return;
       }
@@ -349,7 +363,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       const clonedPath = await window.electronAPI.git.clone(url, fullDest);
       const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
       const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
-      onCreate(clonedPath, label.trim() || repoName, envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined);
+      const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
+      onCreate(clonedPath, label.trim() || repoName, envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled);
       resetAndClose();
     } catch (err: unknown) {
       setCloneError(err instanceof Error ? err.message : String(err));
@@ -621,18 +636,48 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               <details className="form-group">
                 <summary className="form-label" style={{ cursor: 'pointer' }}>
                   CLI Flags
-                  {defaultCliFlags.length > 0 && (
+                  {effectiveDefaultFlags.length > 0 && (
                     <span className="form-hint" style={{ display: 'inline', marginLeft: 8 }}>
-                      ({defaultCliFlags.length} from defaults)
+                      ({effectiveDefaultFlags.length} from defaults)
                     </span>
                   )}
                 </summary>
                 <div style={{ marginTop: 8 }}>
-                  {defaultCliFlags.length > 0 && (
-                    <div style={{ marginBottom: 8, opacity: 0.5 }}>
-                      <span className="form-hint">Inherited from defaults:</span>
-                      {defaultCliFlags.map(f => (
-                        <code key={f} className="cli-flag-code" style={{ marginLeft: 6 }}>{f}</code>
+                  {effectiveDefaultFlags.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <span className="form-hint">Inherited from defaults (uncheck to disable):</span>
+                      {effectiveDefaultFlags.map(f => (
+                        <label key={f} className="form-radio-label" style={{ marginTop: 4, opacity: disabledFlags.has(f) ? 0.4 : 0.7 }}>
+                          <input
+                            type="checkbox"
+                            checked={!disabledFlags.has(f)}
+                            onChange={() => setDisabledFlags(prev => {
+                              const next = new Set(prev);
+                              next.has(f) ? next.delete(f) : next.add(f);
+                              return next;
+                            })}
+                          />
+                          <code className="cli-flag-code">{f}</code>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {selectedProfile && selectedProfile.cliFlags.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <span className="form-hint">From profile (uncheck to disable):</span>
+                      {selectedProfile.cliFlags.map(f => (
+                        <label key={`p-${f}`} className="form-radio-label" style={{ marginTop: 4, opacity: disabledFlags.has(f) ? 0.4 : 0.7 }}>
+                          <input
+                            type="checkbox"
+                            checked={!disabledFlags.has(f)}
+                            onChange={() => setDisabledFlags(prev => {
+                              const next = new Set(prev);
+                              next.has(f) ? next.delete(f) : next.add(f);
+                              return next;
+                            })}
+                          />
+                          <code className="cli-flag-code">{f}</code>
+                        </label>
                       ))}
                     </div>
                   )}

@@ -28,6 +28,8 @@ export const IPC = {
   CONFIG_SET_DEFAULT_ENV_VARS: 'config:set-default-env-vars',
   CONFIG_GET_DEFAULT_CLI_FLAGS: 'config:get-default-cli-flags',
   CONFIG_SET_DEFAULT_CLI_FLAGS: 'config:set-default-cli-flags',
+  CONFIG_GET_DEFAULT_CLI_FLAGS_PER_TOOL: 'config:get-default-cli-flags-per-tool',
+  CONFIG_SET_DEFAULT_CLI_FLAGS_FOR_TOOL: 'config:set-default-cli-flags-for-tool',
 
   TITLEBAR_UPDATE: 'titlebar:update',
 

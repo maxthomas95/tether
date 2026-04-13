@@ -10,6 +10,7 @@ function createFreshDb(): DbData {
     config: {},
     defaultEnvVars: {},
     defaultCliFlags: [],
+    defaultCliFlagsPerTool: {},
     savedWorkspace: null,
     gitProviders: [],
   };

@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
+import type { CliToolId } from '../../shared/cli-tools';
 
 export interface SavedSession {
   workingDir: string;
@@ -48,6 +49,7 @@ export interface DbData {
   config: Record<string, string>;
   defaultEnvVars: Record<string, string>;
   defaultCliFlags: string[];
+  defaultCliFlagsPerTool: Partial<Record<CliToolId, string[]>>;
   savedWorkspace: SavedWorkspace | null;
   gitProviders: GitProviderRow[];
 }
@@ -107,21 +109,29 @@ export function getDb(): DbData {
           ...e,
           env_vars: e.env_vars || '{}',
         }));
+        // Migrate flat defaultCliFlags -> per-tool storage (all old flags were Claude flags)
+        let perTool: Partial<Record<CliToolId, string[]>> = loaded.defaultCliFlagsPerTool || {};
+        let flatFlags: string[] = loaded.defaultCliFlags || [];
+        if (!loaded.defaultCliFlagsPerTool && flatFlags.length > 0) {
+          perTool = { claude: [...flatFlags] };
+          flatFlags = [];
+        }
         data = {
           environments: envs,
           sessions: loaded.sessions || [],
           launchProfiles: loaded.launchProfiles || [],
           config: loaded.config || {},
           defaultEnvVars: loaded.defaultEnvVars || {},
-          defaultCliFlags: loaded.defaultCliFlags || [],
+          defaultCliFlags: flatFlags,
+          defaultCliFlagsPerTool: perTool,
           savedWorkspace: loaded.savedWorkspace || null,
           gitProviders: loaded.gitProviders || [],
         };
       } catch {
-        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], savedWorkspace: null, gitProviders: [] };
+        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [] };
       }
     } else {
-      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], savedWorkspace: null, gitProviders: [] };
+      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [] };
     }
   }
   return data;

@@ -329,6 +329,23 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     saveDb();
   });
 
+  ipcMain.handle(IPC.CONFIG_GET_DEFAULT_CLI_FLAGS_PER_TOOL, async () => {
+    const { getDb } = await import('../db/database');
+    return getDb().defaultCliFlagsPerTool;
+  });
+
+  ipcMain.handle(IPC.CONFIG_SET_DEFAULT_CLI_FLAGS_FOR_TOOL, async (_event, toolId: string, flags: string[]) => {
+    const { getDb, saveDb } = await import('../db/database');
+    const db = getDb();
+    if (!db.defaultCliFlagsPerTool) db.defaultCliFlagsPerTool = {};
+    if (flags.length > 0) {
+      (db.defaultCliFlagsPerTool as Record<string, string[]>)[toolId] = flags;
+    } else {
+      delete (db.defaultCliFlagsPerTool as Record<string, string[]>)[toolId];
+    }
+    saveDb();
+  });
+
   ipcMain.handle(IPC.CONFIG_GET_DEFAULT_ENV_VARS, async () => {
     const { getDb } = await import('../db/database');
     return getDb().defaultEnvVars;

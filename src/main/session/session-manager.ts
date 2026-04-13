@@ -208,9 +208,14 @@ class SessionManager {
       throw err;
     }
 
-    // Resolve CLI flags: app defaults + profile + session-specific
-    const appCliFlags = getDb().defaultCliFlags || [];
-    const resolvedCliArgs = [...appCliFlags, ...profileCliFlags, ...(opts.cliArgs || [])];
+    // Resolve CLI flags: tool-scoped app defaults + profile + session-specific
+    const perToolFlags = getDb().defaultCliFlagsPerTool || {};
+    const appCliFlags = perToolFlags[cliTool] || [];
+    let resolvedCliArgs = [...appCliFlags, ...profileCliFlags, ...(opts.cliArgs || [])];
+    if (opts.disabledInheritedFlags?.length) {
+      const disabled = new Set(opts.disabledInheritedFlags);
+      resolvedCliArgs = resolvedCliArgs.filter(f => !disabled.has(f));
+    }
 
     // Resolve which CLI tool binary to launch. For 'custom', the binary
     // name comes from the session creation options.

@@ -204,9 +204,9 @@ export function App() {
     return () => { removeData(); removeState(); removeExit(); removeLabelChange(); };
   }, [termManager]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string) => {
+  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[]) => {
     try {
-      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, cliTool, customCliBinary, env, cliArgs, resumeClaudeSessionId, profileId, cloneUrl });
+      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, cliTool, customCliBinary, env, cliArgs, disabledInheritedFlags, resumeClaudeSessionId, profileId, cloneUrl });
       termManager.getOrCreate(session.id);
       setSessions(prev => [...prev, session]);
 
