@@ -5,7 +5,7 @@ import type {
   CreateEnvironmentOptions, EnvironmentInfo,
   CreateLaunchProfileOptions, LaunchProfileInfo,
   TetherAPI,
-  CreateGitProviderOptions, GitProviderInfo, GitRepoInfo, CloneProgressInfo,
+  CreateGitProviderOptions, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderTemplate, CreateCoderWorkspaceOptions,
   UpdateCheckResult,
   VaultConfig, VaultStatus, VaultPlaintextSecret, MigrateSecretOptions,
   TranscriptInfo,
@@ -129,6 +129,10 @@ const api: TetherAPI = {
   coder: {
     listWorkspaces: (environmentId: string): Promise<CoderWorkspace[]> =>
       ipcRenderer.invoke(IPC.CODER_LIST_WORKSPACES, environmentId),
+    listTemplates: (environmentId: string): Promise<CoderTemplate[]> =>
+      ipcRenderer.invoke(IPC.CODER_LIST_TEMPLATES, environmentId),
+    createWorkspace: (opts: CreateCoderWorkspaceOptions): Promise<CoderWorkspace> =>
+      ipcRenderer.invoke(IPC.CODER_CREATE_WORKSPACE, opts),
   },
 
   update: {

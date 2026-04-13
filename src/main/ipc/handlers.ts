@@ -14,6 +14,8 @@ import type {
   VaultPlaintextSecret,
   MigrateSecretOptions,
   CoderWorkspace,
+  CoderTemplate,
+  CreateCoderWorkspaceOptions,
   QuotaInfo,
   UsageInfo,
   SessionUsage,
@@ -212,18 +214,22 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // === Coder handlers ===
 
-  ipcMain.handle(IPC.CODER_LIST_WORKSPACES, async (_event, environmentId: string): Promise<CoderWorkspace[]> => {
+  function resolveCoderBinary(environmentId: string): string {
     const env = envRepo.getEnvironment(environmentId);
     if (!env || env.type !== 'coder') {
       throw new Error('Environment not found or not a Coder environment');
     }
-    let binaryPath = 'coder';
     try {
       const cfg = JSON.parse(env.config) as Record<string, unknown>;
       if (typeof cfg.binaryPath === 'string' && cfg.binaryPath.trim()) {
-        binaryPath = cfg.binaryPath.trim();
+        return cfg.binaryPath.trim();
       }
     } catch { /* use default */ }
+    return 'coder';
+  }
+
+  ipcMain.handle(IPC.CODER_LIST_WORKSPACES, async (_event, environmentId: string): Promise<CoderWorkspace[]> => {
+    const binaryPath = resolveCoderBinary(environmentId);
 
     return new Promise<CoderWorkspace[]>((resolve, reject) => {
       execFile(
@@ -255,6 +261,67 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             log.error('Failed to parse coder list output', { error: parseErr instanceof Error ? parseErr.message : String(parseErr) });
             reject(new Error('Failed to parse coder CLI output as JSON'));
           }
+        },
+      );
+    });
+  });
+
+  ipcMain.handle(IPC.CODER_LIST_TEMPLATES, async (_event, environmentId: string): Promise<CoderTemplate[]> => {
+    const binaryPath = resolveCoderBinary(environmentId);
+
+    return new Promise<CoderTemplate[]>((resolve, reject) => {
+      execFile(
+        binaryPath,
+        ['templates', 'list', '--output', 'json'],
+        { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+          if (err) {
+            log.error('coder templates list failed', { error: err.message, stderr: String(stderr).slice(0, 500) });
+            reject(new Error(stderr ? String(stderr).trim() : err.message));
+            return;
+          }
+          try {
+            const raw = JSON.parse(String(stdout || '[]')) as unknown;
+            if (!Array.isArray(raw)) {
+              resolve([]);
+              return;
+            }
+            const templates: CoderTemplate[] = raw.map((t: Record<string, unknown>) => ({
+              name: String(t.name ?? ''),
+              displayName: String(t.display_name || t.name || ''),
+              description: String(t.description ?? ''),
+            })).filter(t => t.name);
+            resolve(templates);
+          } catch (parseErr) {
+            log.error('Failed to parse coder templates output', { error: parseErr instanceof Error ? parseErr.message : String(parseErr) });
+            reject(new Error('Failed to parse coder CLI output as JSON'));
+          }
+        },
+      );
+    });
+  });
+
+  ipcMain.handle(IPC.CODER_CREATE_WORKSPACE, async (_event, opts: CreateCoderWorkspaceOptions): Promise<CoderWorkspace> => {
+    const binaryPath = resolveCoderBinary(opts.environmentId);
+    log.info('Creating Coder workspace', { template: opts.templateName, name: opts.workspaceName });
+
+    return new Promise<CoderWorkspace>((resolve, reject) => {
+      execFile(
+        binaryPath,
+        ['create', opts.workspaceName, '--template', opts.templateName, '--yes'],
+        { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 },
+        (err, _stdout, stderr) => {
+          if (err) {
+            log.error('coder create failed', { error: err.message, stderr: String(stderr).slice(0, 500) });
+            reject(new Error(stderr ? String(stderr).trim() : err.message));
+            return;
+          }
+          log.info('Coder workspace created', { name: opts.workspaceName });
+          resolve({
+            name: opts.workspaceName,
+            owner: 'me',
+            status: 'starting',
+          });
         },
       );
     });

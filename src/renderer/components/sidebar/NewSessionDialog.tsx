@@ -1,12 +1,81 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
-import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderWorkspace, CliToolId } from '../../../shared/types';
+import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderWorkspace, CoderTemplate, CreateCoderWorkspaceOptions, CliToolId } from '../../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import type { CliToolDef } from '../../../shared/cli-tools';
 
 type CliFlagsPerTool = Partial<Record<CliToolId, string[]>>;
 
 type SourceTab = 'local' | 'clone' | 'gitea' | 'ado';
+
+interface CoderCreateInlineProps {
+  templates: CoderTemplate[];
+  loadingTemplates: boolean;
+  selectedTemplate: string;
+  setSelectedTemplate: (v: string) => void;
+  workspaceName: string;
+  setWorkspaceName: (v: string) => void;
+  creating: boolean;
+  error: string;
+  onCancel: () => void;
+  onCreate: () => void;
+}
+
+function CoderCreateInline({
+  templates, loadingTemplates, selectedTemplate, setSelectedTemplate,
+  workspaceName, setWorkspaceName, creating, error, onCancel, onCreate,
+}: CoderCreateInlineProps) {
+  const nameValid = workspaceName === '' || /^[a-z][a-z0-9-]*$/.test(workspaceName);
+  return (
+    <div className="form-group" style={{ borderLeft: '2px solid var(--accent)', paddingLeft: 12, marginTop: 8 }}>
+      <label className="form-label">Template</label>
+      <select
+        className="form-input"
+        value={selectedTemplate}
+        onChange={e => setSelectedTemplate(e.target.value)}
+        disabled={loadingTemplates || creating}
+      >
+        <option value="">
+          {loadingTemplates ? 'Loading templates...' : 'Select a template'}
+        </option>
+        {templates.map(t => (
+          <option key={t.name} value={t.name}>
+            {t.displayName}{t.description ? ` \u2014 ${t.description}` : ''}
+          </option>
+        ))}
+      </select>
+
+      <label className="form-label" style={{ marginTop: 8 }}>Workspace Name</label>
+      <input
+        className="form-input"
+        value={workspaceName}
+        onChange={e => setWorkspaceName(e.target.value)}
+        placeholder="my-workspace"
+        disabled={creating}
+      />
+      {!nameValid && (
+        <span className="form-hint" style={{ color: 'var(--status-dead)' }}>
+          Lowercase letters, numbers, and hyphens only. Must start with a letter.
+        </span>
+      )}
+
+      {error && (
+        <span className="form-hint" style={{ color: 'var(--status-dead)' }}>{error}</span>
+      )}
+
+      <div className="form-row" style={{ marginTop: 8 }}>
+        <button className="form-btn" onClick={onCancel} disabled={creating}>Cancel</button>
+        <button
+          className="form-btn form-btn--primary"
+          onClick={onCreate}
+          disabled={!selectedTemplate || !workspaceName.trim() || !nameValid || creating}
+        >
+          {creating ? 'Creating...' : 'Create Workspace'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 interface CoderCloneTargetProps {
   envId: string;
@@ -20,6 +89,9 @@ interface CoderCloneTargetProps {
   setClonePath: (v: string) => void;
   fullPath: string;
   disabled: boolean;
+  showCreate: boolean;
+  onToggleCreate: () => void;
+  createProps: Omit<CoderCreateInlineProps, 'onCancel'>;
 }
 
 function CoderCloneTarget({
@@ -34,6 +106,9 @@ function CoderCloneTarget({
   setClonePath,
   fullPath,
   disabled,
+  showCreate,
+  onToggleCreate,
+  createProps,
 }: CoderCloneTargetProps) {
   return (
     <>
@@ -62,11 +137,18 @@ function CoderCloneTarget({
           <button className="form-btn" onClick={refresh} disabled={disabled || loadingCoder || !envId}>
             Refresh
           </button>
+          <button className="form-btn" onClick={onToggleCreate} disabled={disabled || loadingCoder} title="Create new workspace from template">
+            + New
+          </button>
         </div>
         {coderError && (
           <span className="form-hint" style={{ color: 'var(--status-dead)' }}>{coderError}</span>
         )}
       </div>
+
+      {showCreate && (
+        <CoderCreateInline {...createProps} onCancel={onToggleCreate} />
+      )}
 
       <div className="form-group">
         <label className="form-label">Clone into (path inside workspace)</label>
@@ -139,6 +221,15 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [coderWorkspaces, setCoderWorkspaces] = useState<CoderWorkspace[]>([]);
   const [loadingCoder, setLoadingCoder] = useState(false);
   const [coderError, setCoderError] = useState('');
+
+  // Coder workspace creation state
+  const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
+  const [coderTemplates, setCoderTemplates] = useState<CoderTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const [createWorkspaceError, setCreateWorkspaceError] = useState('');
 
   // Load repos root, app default env vars, CLI flags, and git providers
   useEffect(() => {
@@ -267,6 +358,47 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
         setLoadingCoder(false);
       });
   }, []);
+
+  const fetchCoderTemplates = useCallback((id: string) => {
+    setLoadingTemplates(true);
+    window.electronAPI.coder.listTemplates(id)
+      .then(setCoderTemplates)
+      .catch(() => setCoderTemplates([]))
+      .finally(() => setLoadingTemplates(false));
+  }, []);
+
+  const handleCreateWorkspace = useCallback(async () => {
+    if (!envId || !selectedTemplate || !newWorkspaceName.trim()) return;
+    setCreatingWorkspace(true);
+    setCreateWorkspaceError('');
+    try {
+      const ws = await window.electronAPI.coder.createWorkspace({
+        environmentId: envId,
+        templateName: selectedTemplate,
+        workspaceName: newWorkspaceName.trim(),
+      });
+      setCoderWorkspaces(prev => [...prev, ws]);
+      setDirectory(ws.name);
+      setCoderCloneWorkspace(ws.name);
+      setShowCreateWorkspace(false);
+      setSelectedTemplate('');
+      setNewWorkspaceName('');
+    } catch (err: unknown) {
+      setCreateWorkspaceError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreatingWorkspace(false);
+    }
+  }, [envId, selectedTemplate, newWorkspaceName]);
+
+  const toggleCreateWorkspace = useCallback(() => {
+    setShowCreateWorkspace(prev => {
+      if (!prev && coderTemplates.length === 0 && envId) {
+        fetchCoderTemplates(envId);
+      }
+      return !prev;
+    });
+    setCreateWorkspaceError('');
+  }, [coderTemplates.length, envId, fetchCoderTemplates]);
 
   // Load Coder workspaces when a Coder env is selected
   useEffect(() => {
@@ -397,6 +529,12 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     setProfileId(null);
     setCoderCloneWorkspace('');
     setCoderClonePath('~');
+    setShowCreateWorkspace(false);
+    setCoderTemplates([]);
+    setSelectedTemplate('');
+    setNewWorkspaceName('');
+    setCreatingWorkspace(false);
+    setCreateWorkspaceError('');
     setCliTool('claude');
     setCustomBinary('');
     onClose();
@@ -540,47 +678,71 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               )}
 
               {isCoder ? (
-                <div className="form-group">
-                  <label className="form-label">Workspace</label>
-                  <div className="form-row">
-                    <select
-                      className="form-input"
-                      value={directory}
-                      onChange={e => setDirectory(e.target.value)}
-                      disabled={loadingCoder || coderWorkspaces.length === 0}
-                    >
-                      <option value="">
-                        {loadingCoder
-                          ? 'Loading workspaces...'
-                          : coderWorkspaces.length === 0
-                            ? 'No workspaces found'
-                            : 'Select a workspace'}
-                      </option>
-                      {coderWorkspaces.map(ws => (
-                        <option key={`${ws.owner}/${ws.name}`} value={ws.name}>
-                          {ws.owner}/{ws.name} ({ws.status})
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Workspace</label>
+                    <div className="form-row">
+                      <select
+                        className="form-input"
+                        value={directory}
+                        onChange={e => setDirectory(e.target.value)}
+                        disabled={loadingCoder || coderWorkspaces.length === 0}
+                      >
+                        <option value="">
+                          {loadingCoder
+                            ? 'Loading workspaces...'
+                            : coderWorkspaces.length === 0
+                              ? 'No workspaces found'
+                              : 'Select a workspace'}
                         </option>
-                      ))}
-                    </select>
-                    <button
-                      className="form-btn"
-                      onClick={() => envId && fetchCoderWorkspaces(envId)}
-                      disabled={loadingCoder}
-                    >
-                      Refresh
-                    </button>
+                        {coderWorkspaces.map(ws => (
+                          <option key={`${ws.owner}/${ws.name}`} value={ws.name}>
+                            {ws.owner}/{ws.name} ({ws.status})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="form-btn"
+                        onClick={() => envId && fetchCoderWorkspaces(envId)}
+                        disabled={loadingCoder}
+                      >
+                        Refresh
+                      </button>
+                      <button
+                        className="form-btn"
+                        onClick={toggleCreateWorkspace}
+                        disabled={loadingCoder}
+                        title="Create new workspace from template"
+                      >
+                        + New
+                      </button>
+                    </div>
+                    {coderError && (
+                      <span className="form-hint" style={{ color: 'var(--status-dead)' }}>
+                        {coderError}
+                      </span>
+                    )}
+                    {!coderError && !showCreateWorkspace && (
+                      <span className="form-hint">
+                        Workspace must be running. Start it from the Coder UI if stopped.
+                      </span>
+                    )}
                   </div>
-                  {coderError && (
-                    <span className="form-hint" style={{ color: 'var(--status-dead)' }}>
-                      {coderError}
-                    </span>
+                  {showCreateWorkspace && (
+                    <CoderCreateInline
+                      templates={coderTemplates}
+                      loadingTemplates={loadingTemplates}
+                      selectedTemplate={selectedTemplate}
+                      setSelectedTemplate={setSelectedTemplate}
+                      workspaceName={newWorkspaceName}
+                      setWorkspaceName={setNewWorkspaceName}
+                      creating={creatingWorkspace}
+                      error={createWorkspaceError}
+                      onCancel={toggleCreateWorkspace}
+                      onCreate={handleCreateWorkspace}
+                    />
                   )}
-                  {!coderError && (
-                    <span className="form-hint">
-                      Workspace must be running. Start it from the Coder UI if stopped.
-                    </span>
-                  )}
-                </div>
+                </>
               ) : (
                 <div className="form-group">
                   <label className="form-label">
@@ -788,6 +950,19 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                   setClonePath={setCoderClonePath}
                   fullPath={coderCloneFullPath}
                   disabled={cloning}
+                  showCreate={showCreateWorkspace}
+                  onToggleCreate={toggleCreateWorkspace}
+                  createProps={{
+                    templates: coderTemplates,
+                    loadingTemplates,
+                    selectedTemplate,
+                    setSelectedTemplate,
+                    workspaceName: newWorkspaceName,
+                    setWorkspaceName: setNewWorkspaceName,
+                    creating: creatingWorkspace,
+                    error: createWorkspaceError,
+                    onCreate: handleCreateWorkspace,
+                  }}
                 />
               ) : (
                 <div className="form-group">
@@ -918,6 +1093,19 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                   setClonePath={setCoderClonePath}
                   fullPath={coderCloneFullPath}
                   disabled={cloning}
+                  showCreate={showCreateWorkspace}
+                  onToggleCreate={toggleCreateWorkspace}
+                  createProps={{
+                    templates: coderTemplates,
+                    loadingTemplates,
+                    selectedTemplate,
+                    setSelectedTemplate,
+                    workspaceName: newWorkspaceName,
+                    setWorkspaceName: setNewWorkspaceName,
+                    creating: creatingWorkspace,
+                    error: createWorkspaceError,
+                    onCreate: handleCreateWorkspace,
+                  }}
                 />
               ) : (
                 <div className="form-group">
