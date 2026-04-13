@@ -10,7 +10,7 @@ export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
 
   return (
     <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog" style={{ width: 360 }} onClick={e => e.stopPropagation()}>
+      <div className="dialog" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
         <div className="dialog-header">
           <span>About Tether</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>
