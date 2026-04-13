@@ -274,22 +274,23 @@ function phaseCommitTag(version, prereleaseTag) {
 
 function phasePush(tag) {
   log(`Phase 5/9: push`);
-  // Check if origin/main is behind local main.
-  sh('git fetch origin main');
-  const ahead = sh(`git rev-list origin/main..main --count`);
-  if (parseInt(ahead, 10) > 0) {
-    sh('git push origin main', { mutating: true });
-    ok('pushed main');
-  } else {
-    ok('main already pushed');
-  }
-  // Check remote tag.
-  const remoteTag = sh(`git ls-remote origin refs/tags/${tag}`);
-  if (remoteTag) {
-    ok(`tag ${tag} already on origin`);
-  } else {
-    sh(`git push origin ${tag}`, { mutating: true });
-    ok(`pushed tag ${tag}`);
+  // Push to both remotes (origin=Gitea, github=GitHub). No mirror exists.
+  for (const remote of ['origin', 'github']) {
+    sh(`git fetch ${remote} main`);
+    const ahead = sh(`git rev-list ${remote}/main..main --count`);
+    if (parseInt(ahead, 10) > 0) {
+      sh(`git push ${remote} main`, { mutating: true });
+      ok(`pushed main to ${remote}`);
+    } else {
+      ok(`main already pushed to ${remote}`);
+    }
+    const remoteTag = sh(`git ls-remote ${remote} refs/tags/${tag}`);
+    if (remoteTag) {
+      ok(`tag ${tag} already on ${remote}`);
+    } else {
+      sh(`git push ${remote} ${tag}`, { mutating: true });
+      ok(`pushed tag ${tag} to ${remote}`);
+    }
   }
 }
 
@@ -416,23 +417,12 @@ async function phaseGithub(version, prereleaseTag, assets) {
   body = body.replace(/^## \[.*?\][^\n]*\n+/, '');
   body = body.replace(/\n+---\s*$/, '').trim();
 
-  // Wait for the Gitea push mirror to sync the tag to GitHub.
-  // Poll up to 60s — the mirror fires on push, so it's usually fast.
+  // Tag should already be on GitHub — phasePush pushes to both remotes.
   const tagUrl = `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/ref/tags/${tag}`;
-  let tagSynced = false;
-  for (let attempt = 0; attempt < 12; attempt++) {
-    try {
-      await github('GET', tagUrl);
-      tagSynced = true;
-      break;
-    } catch {
-      if (attempt === 0) log('waiting for tag to sync to GitHub...');
-      await new Promise(r => setTimeout(r, 5000));
-    }
-  }
-  if (!tagSynced) {
-    warn(`tag ${tag} not yet on GitHub — mirror may be delayed. Skipping GitHub release.`);
-    return;
+  try {
+    await github('GET', tagUrl);
+  } catch {
+    die(`tag ${tag} not found on GitHub — phasePush should have pushed it`);
   }
   ok(`tag ${tag} exists on GitHub`);
 
