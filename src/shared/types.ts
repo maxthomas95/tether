@@ -107,9 +107,11 @@ export interface SessionInfo {
   state: SessionState;
   pid?: number;
   createdAt: string;
-  /** UUID passed to `claude --session-id`; used by `--resume` next launch. */
+  /** Tool-native session id used for resume on the next launch. */
+  toolSessionId?: string;
+  /** Legacy Claude Code session id alias. */
   claudeSessionId?: string;
-  /** True if this session was started by resuming a prior Claude transcript. */
+  /** True if this session was started by resuming a prior tool transcript. */
   resumed?: boolean;
 }
 
@@ -125,12 +127,14 @@ export interface CreateSessionOptions {
   cliArgs?: string[];
   /** Inherited flags the user explicitly disabled for this session. */
   disabledInheritedFlags?: string[];
-  /** When set, launch claude with `--resume <id>` instead of `--session-id <new>`. */
+  /** When set, launch the selected CLI tool by resuming this tool-native session id. */
+  resumeToolSessionId?: string;
+  /** Legacy alias for Claude Code resume. */
   resumeClaudeSessionId?: string;
   profileId?: string;
   /**
    * When set (Coder only), the transport runs `git clone <cloneUrl> <workingDir>`
-   * inside the workspace before `cd`-ing and launching claude. Lets the
+   * inside the workspace before `cd`-ing and launching the selected CLI. Lets the
    * interactive PTY handle clone output, errors, and auth prompts inline.
    */
   cloneUrl?: string;
@@ -140,6 +144,7 @@ export interface LaunchProfileInfo {
   id: string;
   name: string;
   envVars: Record<string, string>;
+  cliFlagsPerTool?: Partial<Record<CliToolId, string[]>>;
   cliFlags: string[];
   isDefault: boolean;
 }
@@ -147,6 +152,7 @@ export interface LaunchProfileInfo {
 export interface CreateLaunchProfileOptions {
   name: string;
   envVars?: Record<string, string>;
+  cliFlagsPerTool?: Partial<Record<CliToolId, string[]>>;
   cliFlags?: string[];
   isDefault?: boolean;
 }
@@ -158,6 +164,8 @@ export interface TranscriptInfo {
   mtime: string;
   /** First user prompt from the transcript, truncated. Empty if not found. */
   preview: string;
+  cliTool?: CliToolId;
+  sourcePath?: string;
 }
 
 export interface UpdateCheckResult {
@@ -300,11 +308,11 @@ export interface TetherAPI {
     writeText(text: string): void;
   };
   workspace: {
-    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; claudeSessionId?: string }>, activeIndex: number): Promise<void>;
-    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; claudeSessionId?: string }>; activeIndex: number } | null>;
+    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string }>, activeIndex: number): Promise<void>;
+    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string }>; activeIndex: number } | null>;
   };
   transcripts: {
-    list(workingDir: string): Promise<TranscriptInfo[]>;
+    list(workingDir: string, cliTool?: CliToolId): Promise<TranscriptInfo[]>;
   };
   gitProvider: {
     list(): Promise<GitProviderInfo[]>;

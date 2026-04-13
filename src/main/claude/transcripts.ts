@@ -97,6 +97,8 @@ export function listTranscripts(cwd: string, limit = 50): TranscriptInfo[] {
       id,
       mtime: new Date(mtimeMs).toISOString(),
       preview: extractFirstUserPrompt(full),
+      cliTool: 'claude',
+      sourcePath: full,
     });
   }
   rows.sort((a, b) => b.mtime.localeCompare(a.mtime));

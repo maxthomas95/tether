@@ -12,7 +12,9 @@ export interface SavedSession {
   cliTool?: string;
   /** Binary name for custom CLI tool. */
   customCliBinary?: string;
-  /** UUID of the Claude conversation to resume on next launch. */
+  /** Tool-native session id to resume on next launch. */
+  toolSessionId?: string;
+  /** Legacy UUID of the Claude conversation to resume on next launch. */
   claudeSessionId?: string;
 }
 
@@ -37,6 +39,7 @@ export interface LaunchProfileRow {
   name: string;
   env_vars: string;       // JSON-encoded Record<string, string>
   cli_flags: string;      // JSON-encoded string[]
+  cli_flags_per_tool: string; // JSON-encoded Partial<Record<CliToolId, string[]>>
   is_default: boolean;
   sort_order: number;
   created_at: string;
@@ -111,6 +114,7 @@ export interface SessionRow {
 
 let data: DbData | null = null;
 let dbPath: string | null = null;
+const CLI_TOOL_IDS: CliToolId[] = ['claude', 'codex', 'opencode', 'custom'];
 
 function getDbPath(): string {
   if (!dbPath) {
@@ -121,6 +125,58 @@ function getDbPath(): string {
     dbPath = path.join(dataDir, 'data.json');
   }
   return dbPath;
+}
+
+function parseStringArrayJson(value: unknown): string[] {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeFlagsPerTool(
+  value: unknown,
+  legacyFlags: string[],
+): Partial<Record<CliToolId, string[]>> {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const result: Partial<Record<CliToolId, string[]>> = {};
+      const record = parsed as Record<string, unknown>;
+      for (const toolId of CLI_TOOL_IDS) {
+        const flags = record[toolId];
+        if (Array.isArray(flags)) {
+          result[toolId] = flags.filter((item): item is string => typeof item === 'string');
+        }
+      }
+      if (Object.keys(result).length > 0) {
+        return result;
+      }
+    }
+  } catch {
+    // Fall back to legacy Claude flags below.
+  }
+
+  return legacyFlags.length > 0 ? { claude: legacyFlags } : {};
+}
+
+function normalizeLaunchProfiles(profiles: unknown): LaunchProfileRow[] {
+  if (!Array.isArray(profiles)) {
+    return [];
+  }
+  return profiles.map((profile) => {
+    const record = profile as Record<string, unknown>;
+    const legacyFlags = parseStringArrayJson(record.cli_flags);
+    const flagsPerTool = normalizeFlagsPerTool(record.cli_flags_per_tool, legacyFlags);
+    return {
+      ...record,
+      env_vars: typeof record.env_vars === 'string' ? record.env_vars : '{}',
+      cli_flags: JSON.stringify(legacyFlags),
+      cli_flags_per_tool: JSON.stringify(flagsPerTool),
+    } as LaunchProfileRow;
+  });
 }
 
 export function getDb(): DbData {
@@ -144,7 +200,7 @@ export function getDb(): DbData {
         data = {
           environments: envs,
           sessions: loaded.sessions || [],
-          launchProfiles: loaded.launchProfiles || [],
+          launchProfiles: normalizeLaunchProfiles(loaded.launchProfiles),
           config: loaded.config || {},
           defaultEnvVars: loaded.defaultEnvVars || {},
           defaultCliFlags: flatFlags,

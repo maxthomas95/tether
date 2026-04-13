@@ -11,7 +11,7 @@ interface SessionItemProps {
   onRename: (label: string) => void;
   onRemove: () => void;
   onDuplicate: () => void;
-  /** When provided, the context menu shows "Resume previous chat…". */
+  /** When provided, the context menu shows "Resume previous conversation...". */
   onResumePrevious?: () => void;
   /** When true, render a small ↻ marker for sessions launched via resume. */
   showResumeBadge?: boolean;
@@ -119,7 +119,7 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
           </div>
           {onResumePrevious && (
             <div className="context-menu-item" onClick={() => { setShowMenu(false); onResumePrevious(); }}>
-              Resume previous chat…
+              Resume previous conversation...
             </div>
           )}
           {isAlive && (

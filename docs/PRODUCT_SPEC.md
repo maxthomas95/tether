@@ -100,7 +100,7 @@ A dropdown or hotkey to re-launch the current session with a different model (e.
 - **Built-in task management.** Claude Code has native tasks (`Ctrl+T`). We don't duplicate this.
 - **Agent orchestration.** No multi-agent coordination, no task queues, no swarm logic. Tether manages sessions, not agents.
 - **Web-based access.** MVP is a desktop app. A web version (for accessing sessions from a phone/tablet) is a future possibility but out of scope.
-- **Model-agnostic agent support.** This is for Claude Code specifically. Other agents (Codex, Aider, Gemini CLI) are a nice-to-have extension, not a design driver.
+- **Broad model-agnostic agent support.** Claude Code and Codex CLI are first-class targets. Other agents (Aider, Gemini CLI, etc.) are a nice-to-have extension, not a design driver.
 
 ## Success Metrics
 

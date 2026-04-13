@@ -9,6 +9,17 @@ import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 /** CLI tools that have definable flags (exclude 'custom' which has no known flags). */
 const FLAG_TOOLS = (['claude', 'codex', 'opencode'] as const) satisfies readonly CliToolId[];
 
+function compactFlagsPerTool(flags: Partial<Record<CliToolId, string[]>>): Partial<Record<CliToolId, string[]>> {
+  const result: Partial<Record<CliToolId, string[]>> = {};
+  for (const toolId of FLAG_TOOLS) {
+    const toolFlags = flags[toolId]?.filter(Boolean) || [];
+    if (toolFlags.length > 0) {
+      result[toolId] = toolFlags;
+    }
+  }
+  return result;
+}
+
 function formatExpiry(expiresAt?: string): string {
   if (!expiresAt) return '';
   const ms = Date.parse(expiresAt) - Date.now();
@@ -48,7 +59,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [newProfileName, setNewProfileName] = useState('');
   const [newProfileEnvVars, setNewProfileEnvVars] = useState<Record<string, string>>({});
-  const [newProfileCliFlags, setNewProfileCliFlags] = useState<string[]>([]);
+  const [newProfileCliFlagsPerTool, setNewProfileCliFlagsPerTool] = useState<Partial<Record<CliToolId, string[]>>>({});
+  const [profileFlagTool, setProfileFlagTool] = useState<CliToolId>('claude');
   const [showNewProfile, setShowNewProfile] = useState(false);
 
   // Git provider state
@@ -151,6 +163,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   };
 
   const currentToolFlags = cliFlagsPerTool[flagTool] || [];
+  const currentProfileToolFlags = newProfileCliFlagsPerTool[profileFlagTool] || [];
 
   const toggleFlag = (flag: string) => {
     setCliFlagsPerTool(prev => {
@@ -318,11 +331,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                   disabled={!restoreOnLaunch}
                   onChange={e => setResumePreviousChats(e.target.checked)}
                 />
-                Resume previous chats
+                Resume previous conversations
               </label>
               <p className="form-hint">
-                Reopen the same Claude conversation each session was on, instead of starting fresh.
-                Claude Code on local environments only; other tools and SSH sessions always start fresh.
+                Reopen the same Claude Code or Codex CLI conversation each session was on, instead of starting fresh.
+                Local environments only; SSH and Coder sessions always start fresh.
               </p>
 
               <label className="form-radio-label" style={{ marginTop: 6 }}>
@@ -335,7 +348,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                 Show a badge on resumed sessions
               </label>
               <p className="form-hint">
-                Adds a small ↻ marker next to sessions that were resumed from a prior chat.
+                Adds a small ↻ marker next to sessions that were resumed from a prior conversation.
               </p>
 
               <label className="form-radio-label" style={{ marginTop: 6 }}>
@@ -344,10 +357,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                   checked={enableResumePicker}
                   onChange={e => setEnableResumePicker(e.target.checked)}
                 />
-                Enable &ldquo;Resume previous chat…&rdquo; in the right-click menu
+                Enable "Resume previous conversation..." in the right-click menu
               </label>
               <p className="form-hint">
-                Lets you manually pick an older Claude conversation for a session&rsquo;s working directory.
+                Lets you manually pick an older Claude Code or Codex CLI conversation for a session&rsquo;s working directory.
               </p>
             </div>
           </div>
@@ -441,7 +454,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                     setEditingProfileId(p.id);
                     setNewProfileName(p.name);
                     setNewProfileEnvVars(p.envVars);
-                    setNewProfileCliFlags(p.cliFlags);
+                    setNewProfileCliFlagsPerTool(p.cliFlagsPerTool || (p.cliFlags.length > 0 ? { claude: p.cliFlags } : {}));
+                    setProfileFlagTool('claude');
                     setShowNewProfile(true);
                   }}>Edit</button>
                   <button className="env-editor-btn env-editor-btn--remove" onClick={async () => {
@@ -457,7 +471,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                   setEditingProfileId(null);
                   setNewProfileName('');
                   setNewProfileEnvVars({});
-                  setNewProfileCliFlags([]);
+                  setNewProfileCliFlagsPerTool({});
+                  setProfileFlagTool('claude');
                   setShowNewProfile(true);
                 }}>Add Profile</button>
               )}
@@ -475,16 +490,31 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                   </div>
                   <div className="form-group" style={{ marginBottom: 8 }}>
                     <label className="form-label">Environment Variables</label>
-                    <EnvVarEditor vars={newProfileEnvVars} onChange={setNewProfileEnvVars} compact />
+                    <EnvVarEditor vars={newProfileEnvVars} onChange={setNewProfileEnvVars} cliTool={profileFlagTool} compact />
                   </div>
                   <div className="form-group" style={{ marginBottom: 8 }}>
                     <label className="form-label">CLI Flags</label>
-                    {newProfileCliFlags.map(flag => (
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                      {FLAG_TOOLS.map(id => (
+                        <button
+                          key={id}
+                          className={`form-btn${profileFlagTool === id ? ' form-btn--primary' : ''}`}
+                          style={{ fontSize: 12, padding: '3px 10px' }}
+                          onClick={() => setProfileFlagTool(id)}
+                        >
+                          {CLI_TOOL_REGISTRY[id].displayName}
+                        </button>
+                      ))}
+                    </div>
+                    {currentProfileToolFlags.map(flag => (
                       <div key={flag} className="cli-flag-custom">
                         <code className="cli-flag-code">{flag}</code>
                         <button
                           className="env-editor-btn env-editor-btn--remove"
-                          onClick={() => setNewProfileCliFlags(prev => prev.filter(f => f !== flag))}
+                          onClick={() => setNewProfileCliFlagsPerTool(prev => ({
+                            ...prev,
+                            [profileFlagTool]: (prev[profileFlagTool] || []).filter(f => f !== flag),
+                          }))}
                         >&times;</button>
                       </div>
                     ))}
@@ -496,8 +526,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                           if (e.key === 'Enter') {
                             e.preventDefault();
                             const f = (e.target as HTMLInputElement).value.trim();
-                            if (f && !newProfileCliFlags.includes(f)) {
-                              setNewProfileCliFlags(prev => [...prev, f]);
+                            if (f && !currentProfileToolFlags.includes(f)) {
+                              setNewProfileCliFlagsPerTool(prev => ({
+                                ...prev,
+                                [profileFlagTool]: [...(prev[profileFlagTool] || []), f],
+                              }));
                               (e.target as HTMLInputElement).value = '';
                             }
                           }
@@ -506,8 +539,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                       <button className="form-btn" onClick={e => {
                         const input = (e.target as HTMLElement).parentElement?.querySelector('input') as HTMLInputElement;
                         const f = input?.value?.trim();
-                        if (f && !newProfileCliFlags.includes(f)) {
-                          setNewProfileCliFlags(prev => [...prev, f]);
+                        if (f && !currentProfileToolFlags.includes(f)) {
+                          setNewProfileCliFlagsPerTool(prev => ({
+                            ...prev,
+                            [profileFlagTool]: [...(prev[profileFlagTool] || []), f],
+                          }));
                           if (input) input.value = '';
                         }
                       }}>Add</button>
@@ -516,10 +552,12 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="form-btn form-btn--primary" onClick={async () => {
                       if (!newProfileName.trim()) return;
+                      const profileFlags = compactFlagsPerTool(newProfileCliFlagsPerTool);
                       const opts: CreateLaunchProfileOptions = {
                         name: newProfileName.trim(),
                         envVars: Object.keys(newProfileEnvVars).length > 0 ? newProfileEnvVars : undefined,
-                        cliFlags: newProfileCliFlags.length > 0 ? newProfileCliFlags : undefined,
+                        cliFlagsPerTool: Object.keys(profileFlags).length > 0 ? profileFlags : undefined,
+                        cliFlags: profileFlags.claude,
                       };
                       if (editingProfileId) {
                         await window.electronAPI.profile.update(editingProfileId, opts);
@@ -532,7 +570,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                       setEditingProfileId(null);
                       setNewProfileName('');
                       setNewProfileEnvVars({});
-                      setNewProfileCliFlags([]);
+                      setNewProfileCliFlagsPerTool({});
+                      setProfileFlagTool('claude');
                     }}>
                       {editingProfileId ? 'Update' : 'Save'}
                     </button>
@@ -541,7 +580,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                       setEditingProfileId(null);
                       setNewProfileName('');
                       setNewProfileEnvVars({});
-                      setNewProfileCliFlags([]);
+                      setNewProfileCliFlagsPerTool({});
+                      setProfileFlagTool('claude');
                     }}>Cancel</button>
                   </div>
                 </div>

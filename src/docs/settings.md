@@ -37,6 +37,7 @@ When creating a session, select a profile from the dropdown in the New Session d
 Set default environment variables that apply to all new sessions. Common uses:
 
 - `ANTHROPIC_API_KEY` -- your Anthropic API key for Claude Code
+- `OPENAI_API_KEY` -- your OpenAI API key for Codex CLI
 - `CLAUDE_CODE_MAX_TOKENS` -- token limit per request
 - Custom variables for your development workflow
 
@@ -48,7 +49,7 @@ For sensitive values like API keys, Tether supports HashiCorp Vault integration.
 
 ## CLI Flags
 
-Set default CLI flags passed to every Claude Code session. These are appended to the `claude` command when launching sessions.
+Set default CLI flags per tool. Claude Code flags are appended to `claude`, Codex flags are appended to `codex`, and profile or session-level flags can override the defaults.
 
 Like environment variables, CLI flags follow the layered override model: global defaults < environment defaults < session overrides.
 

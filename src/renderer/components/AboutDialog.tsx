@@ -22,7 +22,7 @@ export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
             Version {__APP_VERSION__}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            Desktop session multiplexer for Claude Code.
+            Desktop session multiplexer for Claude Code and Codex CLI.
             <br />
             Manage multiple sessions across local, SSH, and container environments.
           </div>

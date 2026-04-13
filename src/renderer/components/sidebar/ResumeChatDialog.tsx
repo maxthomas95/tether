@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { TranscriptInfo } from '../../../shared/types';
+import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
+import type { CliToolId, TranscriptInfo } from '../../../shared/types';
 
 interface ResumeChatDialogProps {
   isOpen: boolean;
   workingDir: string;
+  cliTool: CliToolId;
   /** ID of the transcript currently in use by the source session, if any. */
   currentTranscriptId?: string;
   onClose: () => void;
@@ -24,20 +26,21 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-export function ResumeChatDialog({ isOpen, workingDir, currentTranscriptId, onClose, onPick }: ResumeChatDialogProps) {
+export function ResumeChatDialog({ isOpen, workingDir, cliTool, currentTranscriptId, onClose, onPick }: ResumeChatDialogProps) {
   const [transcripts, setTranscripts] = useState<TranscriptInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toolName = CLI_TOOL_REGISTRY[cliTool]?.displayName || 'CLI';
 
   useEffect(() => {
     if (!isOpen) return;
     setLoading(true);
     setError(null);
-    window.electronAPI.transcripts.list(workingDir)
+    window.electronAPI.transcripts.list(workingDir, cliTool)
       .then(setTranscripts)
       .catch(err => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
-  }, [isOpen, workingDir]);
+  }, [isOpen, workingDir, cliTool]);
 
   if (!isOpen) return null;
 
@@ -45,19 +48,19 @@ export function ResumeChatDialog({ isOpen, workingDir, currentTranscriptId, onCl
     <div className="dialog-overlay" onClick={onClose}>
       <div className="dialog dialog--wide" onClick={e => e.stopPropagation()}>
         <div className="dialog-header">
-          <span>Resume previous chat</span>
+          <span>Resume previous conversation</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>
         </div>
         <div className="dialog-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
           <p className="form-hint" style={{ marginBottom: 12 }}>
-            Recent Claude conversations in <code>{workingDir}</code>. Picking one starts a new session
-            that resumes that chat.
+            Recent {toolName} conversations in <code>{workingDir}</code>. Picking one starts a new session
+            that resumes that conversation.
           </p>
 
           {loading && <p className="form-hint">Loading…</p>}
           {error && <p className="form-hint" style={{ color: 'var(--status-dead)' }}>{error}</p>}
           {!loading && !error && transcripts.length === 0 && (
-            <p className="form-hint">No previous chats found for this directory.</p>
+            <p className="form-hint">No previous conversations found for this directory.</p>
           )}
 
           {transcripts.map(t => {

@@ -17,6 +17,7 @@ import type {
   QuotaInfo,
   UsageInfo,
   SessionUsage,
+  CliToolId,
 } from '../../shared/types';
 import { sessionManager } from '../session/session-manager';
 import { quotaService } from '../quota/quota-service';
@@ -266,6 +267,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       id: p.id,
       name: p.name,
       envVars: JSON.parse(p.env_vars || '{}'),
+      cliFlagsPerTool: JSON.parse(p.cli_flags_per_tool || '{}'),
       cliFlags: JSON.parse(p.cli_flags || '[]'),
       isDefault: p.is_default,
     }));
@@ -275,6 +277,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const p = profileRepo.createProfile({
       name: opts.name,
       envVars: opts.envVars,
+      cliFlagsPerTool: opts.cliFlagsPerTool,
       cliFlags: opts.cliFlags,
       isDefault: opts.isDefault,
     });
@@ -282,6 +285,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       id: p.id,
       name: p.name,
       envVars: JSON.parse(p.env_vars || '{}'),
+      cliFlagsPerTool: JSON.parse(p.cli_flags_per_tool || '{}'),
       cliFlags: JSON.parse(p.cli_flags || '[]'),
       isDefault: p.is_default,
     } as LaunchProfileInfo;
@@ -291,6 +295,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     profileRepo.updateProfile(id, {
       name: opts.name,
       envVars: opts.envVars,
+      cliFlagsPerTool: opts.cliFlagsPerTool,
       cliFlags: opts.cliFlags,
       isDefault: opts.isDefault,
     });
@@ -390,9 +395,20 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // === Workspace save/restore ===
 
-  ipcMain.handle(IPC.WORKSPACE_SAVE, async (_event, sessions: Array<{ workingDir: string; label: string; environmentId?: string; claudeSessionId?: string }>, activeIndex: number) => {
+  ipcMain.handle(IPC.WORKSPACE_SAVE, async (_event, sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string }>, activeIndex: number) => {
     const { getDb, saveDb } = await import('../db/database');
-    getDb().savedWorkspace = { sessions, activeIndex };
+    const needsCodexLookup = sessions.some(session => session.cliTool === 'codex' && !session.toolSessionId);
+    const sessionsToSave = needsCodexLookup
+      ? await Promise.all(sessions.map(async (session) => {
+        if (session.cliTool !== 'codex' || session.toolSessionId) {
+          return session;
+        }
+        const { findLatestCodexTranscript } = await import('../codex/transcripts');
+        const latest = findLatestCodexTranscript(session.workingDir);
+        return latest ? { ...session, toolSessionId: latest.id } : session;
+      }))
+      : sessions;
+    getDb().savedWorkspace = { sessions: sessionsToSave, activeIndex };
     saveDb();
   });
 
@@ -401,7 +417,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getDb().savedWorkspace;
   });
 
-  ipcMain.handle(IPC.TRANSCRIPTS_LIST, async (_event, workingDir: string) => {
+  ipcMain.handle(IPC.TRANSCRIPTS_LIST, async (_event, workingDir: string, cliTool: CliToolId = 'claude') => {
+    if (cliTool === 'codex') {
+      const { listCodexTranscripts } = await import('../codex/transcripts');
+      return listCodexTranscripts(workingDir);
+    }
     const { listTranscripts } = await import('../claude/transcripts');
     return listTranscripts(workingDir);
   });

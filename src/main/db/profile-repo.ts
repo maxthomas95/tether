@@ -1,12 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb, saveDb } from './database';
 import type { LaunchProfileRow } from './database';
+import type { CliToolId } from '../../shared/cli-tools';
 
 export type { LaunchProfileRow };
 
 export interface CreateProfileInput {
   name: string;
   envVars?: Record<string, string>;
+  cliFlagsPerTool?: Partial<Record<CliToolId, string[]>>;
   cliFlags?: string[];
   isDefault?: boolean;
 }
@@ -31,6 +33,7 @@ export function createProfile(input: CreateProfileInput): LaunchProfileRow {
     name: input.name,
     env_vars: JSON.stringify(input.envVars || {}),
     cli_flags: JSON.stringify(input.cliFlags || []),
+    cli_flags_per_tool: JSON.stringify(input.cliFlagsPerTool || (input.cliFlags ? { claude: input.cliFlags } : {})),
     is_default: input.isDefault || false,
     sort_order: 0,
     created_at: now,
@@ -52,6 +55,7 @@ export function updateProfile(id: string, updates: Partial<CreateProfileInput>):
   if (updates.name !== undefined) profile.name = updates.name;
   if (updates.envVars !== undefined) profile.env_vars = JSON.stringify(updates.envVars);
   if (updates.cliFlags !== undefined) profile.cli_flags = JSON.stringify(updates.cliFlags);
+  if (updates.cliFlagsPerTool !== undefined) profile.cli_flags_per_tool = JSON.stringify(updates.cliFlagsPerTool);
   if (updates.isDefault !== undefined) profile.is_default = updates.isDefault;
   profile.updated_at = new Date().toISOString();
   saveDb();

@@ -1,16 +1,16 @@
 # Environments
 
-Environments define where Claude Code sessions run. Each environment has its own connection settings, default directory, and configuration. Tether comes with a **Local** environment pre-configured.
+Environments define where CLI sessions run. Each environment has its own connection settings, default directory, and configuration. Tether comes with a **Local** environment pre-configured.
 
 ## Environment Types
 
 ### Local
 
-Runs Claude Code directly on your machine using a local PTY (pseudo-terminal). This is the default and requires no additional setup.
+Runs the selected CLI directly on your machine using a local PTY (pseudo-terminal). This is the default and requires no additional setup.
 
 ### SSH
 
-Connects to a remote machine over SSH and runs Claude Code there. Useful for running sessions on a Linux VM, dev server, or any machine you can SSH into.
+Connects to a remote machine over SSH and runs the selected CLI there. Useful for running sessions on a Linux VM, dev server, or any machine you can SSH into.
 
 SSH environments require:
 
@@ -36,7 +36,7 @@ Coder environments only need one setting:
 
 - **Coder CLI Path** -- defaults to `coder`. Override only if the binary isn't on your PATH.
 
-When you create a session in a Coder environment, Tether calls `coder list --output json` and shows your workspaces in a dropdown. Pick a running workspace and Tether will spawn `coder ssh <workspace>` and launch Claude Code inside it.
+When you create a session in a Coder environment, Tether calls `coder list --output json` and shows your workspaces in a dropdown. Pick a running workspace and Tether will spawn `coder ssh <workspace>` and launch the selected CLI inside it.
 
 **Phase 1 limitations:**
 

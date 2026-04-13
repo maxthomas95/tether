@@ -90,7 +90,7 @@ interface NewSessionDialogProps {
   environments: EnvironmentInfo[];
   profiles: LaunchProfileInfo[];
   onClose: () => void;
-  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[]) => void;
+  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[]) => void;
 }
 
 export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate }: NewSessionDialogProps) {
@@ -245,9 +245,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     () => defaultCliFlagsPerTool[cliTool] || [],
     [defaultCliFlagsPerTool, cliTool],
   );
+  const selectedProfileFlags = useMemo(
+    () => selectedProfile?.cliFlagsPerTool?.[cliTool] || (cliTool === 'claude' ? selectedProfile?.cliFlags : []) || [],
+    [selectedProfile, cliTool],
+  );
 
   // Reset disabled flags when CLI tool changes (different tool = different defaults)
-  useEffect(() => { setDisabledFlags(new Set()); }, [cliTool]);
+  useEffect(() => { setDisabledFlags(new Set()); }, [cliTool, profileId]);
 
   const fetchCoderWorkspaces = useCallback((id: string) => {
     setLoadingCoder(true);
@@ -345,7 +349,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
         const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
         const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
         // Encode workspace + target subdir so CoderTransport runs
-        // `git clone <url> <subdir> && cd <subdir> && claude` inside the
+        // `git clone <url> <subdir> && cd <subdir> && <cli>` inside the
         // workspace PTY. All clone output streams to the terminal.
         const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
         onCreate(`${coderCloneWorkspace}::${destInside}`, label.trim() || repoName, envId, env, args, undefined, profileId || undefined, url, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled);
@@ -627,6 +631,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                     vars={sessionEnvVars}
                     onChange={setSessionEnvVars}
                     inheritedVars={inheritedVars}
+                    cliTool={cliTool}
                     compact
                   />
                 </div>
@@ -662,10 +667,10 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                       ))}
                     </div>
                   )}
-                  {selectedProfile && selectedProfile.cliFlags.length > 0 && (
+                  {selectedProfile && selectedProfileFlags.length > 0 && (
                     <div style={{ marginBottom: 8 }}>
                       <span className="form-hint">From profile (uncheck to disable):</span>
-                      {selectedProfile.cliFlags.map(f => (
+                      {selectedProfileFlags.map(f => (
                         <label key={`p-${f}`} className="form-radio-label" style={{ marginTop: 4, opacity: disabledFlags.has(f) ? 0.4 : 0.7 }}>
                           <input
                             type="checkbox"

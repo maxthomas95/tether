@@ -27,4 +27,4 @@ All shortcuts use **Ctrl** on Windows/Linux (or **Cmd** on macOS).
 
 ## Terminal
 
-All other keyboard input is passed directly to the active terminal session. Tether does not intercept or modify terminal keystrokes -- what you type goes straight to Claude Code.
+All other keyboard input is passed directly to the active terminal session. Tether does not intercept or modify terminal keystrokes -- what you type goes straight to the selected CLI.

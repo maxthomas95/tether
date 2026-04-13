@@ -27,6 +27,7 @@ import {
   isConstrainedLayout,
   normalizeToConstrained,
 } from './lib/layout-tree';
+import { toolSupportsHistory } from '../shared/cli-tools';
 import type { LayoutNode } from '../shared/layout-types';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
@@ -49,7 +50,7 @@ export function App() {
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
   const [maxPanes, setMaxPanes] = useState(4);
-  const [resumePickerFor, setResumePickerFor] = useState<{ sessionId: string; workingDir: string; currentTranscriptId?: string } | null>(null);
+  const [resumePickerFor, setResumePickerFor] = useState<{ sessionId: string; workingDir: string; cliTool: CreateSessionOptions['cliTool']; currentTranscriptId?: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null);
   const [repoGroupPrefs, setRepoGroupPrefs] = useState<RepoGroupPref[]>([]);
@@ -64,6 +65,7 @@ export function App() {
     ? findLeaf(layoutState.root, layoutState.focusedPaneId)
     : null;
   const activeSessionId = focusedLeaf?.sessionId ?? null;
+  const environmentById = useMemo(() => new Map(environments.map(env => [env.id, env])), [environments]);
 
   // Load profiles on mount
   useEffect(() => {
@@ -132,7 +134,10 @@ export function App() {
             environmentId: saved.environmentId,
             cliTool: saved.cliTool as CreateSessionOptions['cliTool'],
             customCliBinary: saved.customCliBinary,
-            resumeClaudeSessionId: resumeChats ? saved.claudeSessionId : undefined,
+            resumeToolSessionId: resumeChats ? saved.toolSessionId || saved.claudeSessionId : undefined,
+            resumeClaudeSessionId: resumeChats && (!saved.cliTool || saved.cliTool === 'claude')
+              ? saved.claudeSessionId || saved.toolSessionId
+              : undefined,
           });
           if (!mounted) return;
           termManager.getOrCreate(session.id);
@@ -187,6 +192,7 @@ export function App() {
             environmentId: s.environmentId || undefined,
             cliTool: s.cliTool,
             customCliBinary: s.customCliBinary,
+            toolSessionId: s.toolSessionId || s.claudeSessionId,
             claudeSessionId: s.claudeSessionId,
           })),
           Math.max(0, activeIndex),
@@ -233,9 +239,22 @@ export function App() {
     return () => { removeData(); removeState(); removeExit(); removeLabelChange(); };
   }, [termManager]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeClaudeSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[]) => {
+  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[]) => {
     try {
-      const session = await window.electronAPI.session.create({ workingDir, label: label || undefined, environmentId, cliTool, customCliBinary, env, cliArgs, disabledInheritedFlags, resumeClaudeSessionId, profileId, cloneUrl });
+      const session = await window.electronAPI.session.create({
+        workingDir,
+        label: label || undefined,
+        environmentId,
+        cliTool,
+        customCliBinary,
+        env,
+        cliArgs,
+        disabledInheritedFlags,
+        resumeToolSessionId,
+        resumeClaudeSessionId: !cliTool || cliTool === 'claude' ? resumeToolSessionId : undefined,
+        profileId,
+        cloneUrl,
+      });
       termManager.getOrCreate(session.id);
       setSessions(prev => [...prev, session]);
 
@@ -317,13 +336,22 @@ export function App() {
     handleCreateSession(source.workingDir, '', source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary);
   }, [sessions, handleCreateSession]);
 
+  const canResumePrevious = useCallback((session: SessionInfo) => {
+    if (!enableResumePicker) return false;
+    const cliTool = session.cliTool || 'claude';
+    if (!toolSupportsHistory(cliTool)) return false;
+    if (!session.environmentId) return true;
+    return environmentById.get(session.environmentId)?.type === 'local';
+  }, [enableResumePicker, environmentById]);
+
   const handleOpenResumePicker = useCallback((id: string) => {
     const source = sessions.find(s => s.id === id);
     if (!source) return;
     setResumePickerFor({
       sessionId: id,
       workingDir: source.workingDir,
-      currentTranscriptId: source.claudeSessionId,
+      cliTool: source.cliTool || 'claude',
+      currentTranscriptId: source.toolSessionId || source.claudeSessionId,
     });
   }, [sessions]);
 
@@ -338,6 +366,10 @@ export function App() {
       undefined,
       undefined,
       transcriptId,
+      undefined,
+      undefined,
+      source.cliTool,
+      source.customCliBinary,
     );
   }, [resumePickerFor, sessions, handleCreateSession]);
 
@@ -723,7 +755,8 @@ export function App() {
                         onRename={handleRename}
                         onRemove={handleRemove}
                         onDuplicate={handleDuplicate}
-                        onResumePrevious={enableResumePicker ? handleOpenResumePicker : undefined}
+                        onResumePrevious={handleOpenResumePicker}
+                        canResumePrevious={canResumePrevious}
                         showResumeBadge={showResumeBadge}
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
@@ -814,6 +847,7 @@ export function App() {
         <ResumeChatDialog
           isOpen={true}
           workingDir={resumePickerFor.workingDir}
+          cliTool={resumePickerFor.cliTool || 'claude'}
           currentTranscriptId={resumePickerFor.currentTranscriptId}
           onClose={() => setResumePickerFor(null)}
           onPick={handlePickResume}

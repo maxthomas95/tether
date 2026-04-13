@@ -11,11 +11,43 @@ import { getEnvironment } from '../db/environment-repo';
 import { getProfile } from '../db/profile-repo';
 import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
 import { transcriptExists } from '../claude/transcripts';
+import { codexTranscriptExists } from '../codex/transcripts';
 import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { createLogger } from '../logger';
 
 const log = createLogger('session');
+const CLI_TOOL_IDS: CliToolId[] = ['claude', 'codex', 'opencode', 'custom'];
+
+function parseStringArray(value: string | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseCliFlagsPerTool(value: string | undefined): Partial<Record<CliToolId, string[]>> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    const result: Partial<Record<CliToolId, string[]>> = {};
+    for (const toolId of CLI_TOOL_IDS) {
+      const flags = parsed[toolId];
+      if (Array.isArray(flags)) {
+        result[toolId] = flags.filter((item): item is string => typeof item === 'string');
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
 
 export interface SessionCallbacks {
   onData(sessionId: string, data: string): void;
@@ -34,9 +66,11 @@ export class Session {
   readonly createdAt: string;
   state: SessionState = 'starting';
   transport: SessionTransport | null = null;
-  /** UUID we passed to `claude --session-id` (or `--resume`). */
+  /** Tool-native session id used for resume. */
+  toolSessionId: string | null = null;
+  /** Legacy Claude Code session id alias. */
   claudeSessionId: string | null = null;
-  /** True when this session was launched via `--resume`. */
+  /** True when this session was launched by resuming prior tool history. */
   resumed = false;
 
   constructor(id: string, label: string, workingDir: string, environmentId?: string, cliTool?: CliToolId, customCliBinary?: string) {
@@ -59,6 +93,7 @@ export class Session {
       workingDir: this.workingDir,
       state: this.state,
       createdAt: this.createdAt,
+      toolSessionId: this.toolSessionId || undefined,
       claudeSessionId: this.claudeSessionId || undefined,
       resumed: this.resumed || undefined,
     };
@@ -136,7 +171,7 @@ class SessionManager {
     this.sessions.set(id, session);
     this.callbacksMap.set(id, callbacks);
 
-    statusDetector.register(id);
+    statusDetector.register(id, cliTool);
     planDetector.register(id);
 
     let transport: SessionTransport;
@@ -183,8 +218,9 @@ class SessionManager {
       if (profile?.env_vars) {
         try { profileEnvVars = JSON.parse(profile.env_vars); } catch { /* ignore */ }
       }
-      if (profile?.cli_flags) {
-        try { profileCliFlags = JSON.parse(profile.cli_flags); } catch { /* ignore */ }
+      if (profile) {
+        const perToolProfileFlags = parseCliFlagsPerTool(profile.cli_flags_per_tool);
+        profileCliFlags = perToolProfileFlags[cliTool] || (cliTool === 'claude' ? parseStringArray(profile.cli_flags) : []);
       }
     }
     const mergedEnv: Record<string, string> = {
@@ -221,21 +257,28 @@ class SessionManager {
     // name comes from the session creation options.
     const binaryName = getCliBinary(cliTool, { cliBinary: opts.customCliBinary });
 
-    // Decide on the Claude session UUID. Only for tools that support it
-    // and local sessions — SSH/Coder can't safely verify remote JSONL.
-    let claudeSessionId: string | undefined;
+    // Decide on the tool-native session id. Only local sessions can verify
+    // on-disk history; SSH/Coder history is remote and transport-specific.
+    let toolSessionId: string | undefined;
     let resumeId: string | undefined;
     if (toolSupportsResume(cliTool) && transport instanceof LocalTransport) {
-      if (opts.resumeClaudeSessionId && transcriptExists(opts.workingDir, opts.resumeClaudeSessionId)) {
+      const requestedResumeId = opts.resumeToolSessionId || (cliTool === 'claude' ? opts.resumeClaudeSessionId : undefined);
+      if (cliTool === 'claude' && requestedResumeId && transcriptExists(opts.workingDir, requestedResumeId)) {
         // Resume the existing transcript and reuse the same id going forward.
-        resumeId = opts.resumeClaudeSessionId;
-        claudeSessionId = opts.resumeClaudeSessionId;
+        resumeId = requestedResumeId;
+        toolSessionId = requestedResumeId;
         session.resumed = true;
-      } else {
-        // Fresh session — pin a new id so we can resume it next launch.
-        claudeSessionId = uuidv4();
+      } else if (cliTool === 'claude') {
+        // Fresh Claude session: pin a new id so we can resume it next launch.
+        toolSessionId = uuidv4();
       }
-      session.claudeSessionId = claudeSessionId;
+      session.claudeSessionId = cliTool === 'claude' ? toolSessionId || null : null;
+      if (cliTool === 'codex' && requestedResumeId && codexTranscriptExists(opts.workingDir, requestedResumeId)) {
+        resumeId = requestedResumeId;
+        toolSessionId = requestedResumeId;
+        session.resumed = true;
+      }
+      session.toolSessionId = toolSessionId || null;
     }
 
     await transport.start({
@@ -244,9 +287,12 @@ class SessionManager {
       cols: 80,
       rows: 24,
       cliArgs: resolvedCliArgs.length > 0 ? resolvedCliArgs : undefined,
+      cliTool,
       binaryName,
-      claudeSessionId,
-      resumeClaudeSessionId: resumeId,
+      toolSessionId,
+      resumeToolSessionId: resumeId,
+      claudeSessionId: cliTool === 'claude' ? toolSessionId : undefined,
+      resumeClaudeSessionId: cliTool === 'claude' ? resumeId : undefined,
       cloneUrl: opts.cloneUrl,
     });
 

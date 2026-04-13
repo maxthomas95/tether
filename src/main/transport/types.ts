@@ -1,11 +1,19 @@
+import type { CliToolId } from '../../shared/cli-tools';
+
 export interface TransportStartOptions {
   workingDir: string;
   env: Record<string, string>;
   cols: number;
   rows: number;
   cliArgs?: string[];
+  /** CLI tool being launched. Defaults to 'claude' when omitted. */
+  cliTool?: CliToolId;
   /** CLI binary to run. Defaults to 'claude' when omitted. */
   binaryName?: string;
+  /** Tool-native session id to pin when the selected CLI supports it. */
+  toolSessionId?: string;
+  /** Tool-native session id to resume when the selected CLI supports it. */
+  resumeToolSessionId?: string;
   /**
    * Pin a Claude session UUID via `--session-id`. Used on first launch so we
    * can resume the same conversation later.
@@ -18,7 +26,7 @@ export interface TransportStartOptions {
   resumeClaudeSessionId?: string;
   /**
    * Coder-only: if set, the transport runs `git clone <cloneUrl> <subDir>`
-   * inside the workspace before cd'ing into the subdir and launching claude.
+   * inside the workspace before cd'ing into the subdir and launching the selected CLI.
    */
   cloneUrl?: string;
 }

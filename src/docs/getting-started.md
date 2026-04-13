@@ -1,6 +1,6 @@
 # Getting Started
 
-Tether is a desktop session multiplexer for Claude Code. It provides a single unified interface to manage multiple Claude Code sessions across local, SSH, and containerized environments -- preserving the exact native terminal experience.
+Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provides a single unified interface to manage multiple agent CLI sessions across local, SSH, and containerized environments -- preserving the exact native terminal experience.
 
 ## First Launch
 
@@ -10,11 +10,12 @@ When you first open Tether, you'll see the sidebar on the left and an empty term
 
 1. Click **+ New session** in the sidebar, or press **Ctrl+N**
 2. Select an environment (Local is the default)
-3. Choose a working directory -- this is where Claude Code will start
-4. Optionally set a label, environment variables, or CLI flags
-5. Click **Create**
+3. Choose a working directory -- this is where the selected CLI will start
+4. Pick Claude Code, Codex CLI, OpenCode, or a custom binary
+5. Optionally set a label, environment variables, or CLI flags
+6. Click **Create**
 
-The session will launch and you'll see the Claude Code terminal appear in the main panel.
+The session will launch and you'll see the CLI terminal appear in the main panel.
 
 ## The Interface
 
@@ -30,7 +31,7 @@ You can collapse environment groups, resize the sidebar by dragging its edge (18
 
 ### Terminal Panel
 
-The main area displays the active session's terminal. This is a real terminal emulator (xterm.js) -- the same one used by VS Code. Claude Code's output flows through byte-for-byte, untouched. What you see is exactly what Claude Code produces.
+The main area displays the active session's terminal. This is a real terminal emulator (xterm.js) -- the same one used by VS Code. CLI output flows through byte-for-byte, untouched. What you see is exactly what the tool produces.
 
 Click a session in the sidebar to switch to it. You can also use **Ctrl+1** through **Ctrl+9** to switch by position, or **Ctrl+ArrowUp/Down** to move between sessions.
 

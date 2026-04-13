@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { suggestVaultPath } from '../utils/vault-path';
+import type { CliToolId } from '../../shared/types';
 
 const CLAUDE_PRESETS = [
   { key: 'ANTHROPIC_API_KEY', label: 'API Key' },
@@ -13,6 +14,15 @@ const CLAUDE_PRESETS = [
   { key: 'AWS_REGION', label: 'AWS Region' },
 ];
 
+const CODEX_PRESETS = [
+  { key: 'OPENAI_API_KEY', label: 'API Key' },
+];
+
+const PRESETS_BY_TOOL: Partial<Record<CliToolId, Array<{ key: string; label: string }>>> = {
+  claude: CLAUDE_PRESETS,
+  codex: CODEX_PRESETS,
+};
+
 const SENSITIVE_PATTERNS = /key|secret|token|password/i;
 const VAULT_REF_PREFIX = 'vault://';
 const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
@@ -22,6 +32,7 @@ interface EnvVarEditorProps {
   onChange: (vars: Record<string, string>) => void;
   inheritedVars?: Record<string, string>;
   compact?: boolean;
+  cliTool?: CliToolId;
   /** When true, sensitive rows show a "Vault" toggle that switches the value field to a vault://... ref input. */
   vaultEnabled?: boolean;
 }
@@ -46,7 +57,7 @@ function toRecord(rows: VarRow[]): Record<string, string> {
   return result;
 }
 
-export function EnvVarEditor({ vars, onChange, inheritedVars, compact, vaultEnabled }: EnvVarEditorProps) {
+export function EnvVarEditor({ vars, onChange, inheritedVars, compact, cliTool, vaultEnabled }: EnvVarEditorProps) {
   const [rows, setRows] = useState<VarRow[]>(() => toRows(vars));
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [showPresets, setShowPresets] = useState(false);
@@ -104,6 +115,9 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, vaultEnab
 
   const isSensitive = (key: string) => SENSITIVE_PATTERNS.test(key);
   const existingKeys = new Set(rows.map(r => r.key));
+  const presets = cliTool
+    ? PRESETS_BY_TOOL[cliTool] || []
+    : [...CLAUDE_PRESETS, ...CODEX_PRESETS];
 
   const toggleVaultMode = useCallback((id: number) => {
     const row = rows.find(r => r.id === id);
@@ -288,7 +302,7 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, vaultEnab
           </button>
           {showPresets && (
             <div className="env-editor-presets">
-              {CLAUDE_PRESETS.filter(p => !existingKeys.has(p.key)).map(preset => (
+              {presets.filter(p => !existingKeys.has(p.key)).map(preset => (
                 <div
                   key={preset.key}
                   className="env-editor-preset-item"
@@ -298,7 +312,12 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, vaultEnab
                   <span className="env-editor-preset-label">{preset.label}</span>
                 </div>
               ))}
-              {CLAUDE_PRESETS.every(p => existingKeys.has(p.key)) && (
+              {presets.length === 0 && (
+                <div className="env-editor-preset-item" style={{ opacity: 0.5 }}>
+                  No presets for this tool
+                </div>
+              )}
+              {presets.length > 0 && presets.every(p => existingKeys.has(p.key)) && (
                 <div className="env-editor-preset-item" style={{ opacity: 0.5 }}>
                   All presets added
                 </div>

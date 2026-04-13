@@ -5,7 +5,7 @@
 <h1 align="center">Tether</h1>
 
 <p align="center">
-  A desktop session multiplexer for <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a>.<br/>
+  A desktop session multiplexer for <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> and Codex CLI.<br/>
   Manage multiple sessions across local, SSH, and container environments — with the full native terminal experience.
 </p>
 
@@ -32,14 +32,14 @@ Grab the latest release from [GitHub Releases](https://github.com/maxthomas95/te
 
 ## Why?
 
-Claude Code is great, but managing multiple sessions across environments is painful:
+Agent CLIs are powerful, but managing multiple sessions across environments is painful:
 
 - Sessions scattered across terminals, tmux panes, SSH connections, and container shells
 - Context switching means remembering which tab has which repo on which machine
 - SSH disconnects kill sessions; laptop sleep interrupts work
-- Tools that parse and re-render Claude Code output break the native experience
+- Tools that parse and re-render CLI output break the native experience
 
-Tether gives you a **single window** with a sidebar to manage it all — while every session stays a real PTY piped byte-for-byte into xterm.js. Claude Code doesn't know it's being managed.
+Tether gives you a **single window** with a sidebar to manage it all — while every session stays a real PTY piped byte-for-byte into xterm.js. Claude Code and Codex CLI do not know they are being managed.
 
 ## Features
 
@@ -49,28 +49,28 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Status indicators** — green (running), amber (waiting), gray (idle), red (dead)
 - **Session grouping** — auto-grouped by working directory, collapsible
 - **Environment management** — preconfigured environments with per-env settings
-- **Env var cascade** — app defaults &rarr; environment &rarr; session overrides, with presets for common Claude Code vars
-- **CLI flag management** — app-wide and per-session (`--dangerously-skip-permissions`, `--verbose`, etc.)
+- **Env var cascade** — app defaults &rarr; environment &rarr; session overrides, with presets for common Claude Code and Codex CLI vars
+- **CLI flag management** — app-wide, per-profile, and per-session flags scoped by CLI tool
 - **Other CLI tools** — also supports Codex CLI, OpenCode, and custom binaries (see below)
 - **Workspace persistence** — sessions save on quit, restore on launch
-- **Resume previous chats** — pick up where Claude Code left off
+- **Resume previous chats** — pick up where Claude Code or Codex CLI left off
 - **Catppuccin themes** — Mocha, Macchiato, Frappe, Latte, plus Default Dark
 - **Keyboard shortcuts** — `Ctrl+N` new, `Ctrl+1-9` switch, `Ctrl+B` toggle sidebar, `Ctrl+W` stop
 
 ### Other CLI tools
 
-Tether is built around Claude Code, but since it's a dumb-pipe PTY multiplexer, it can run other interactive coding CLIs too. You can select a CLI tool per-environment:
+Tether is a dumb-pipe PTY multiplexer for interactive coding CLIs. You can select a CLI tool per session:
 
 - **Claude Code** (`claude`) — full support including session resume and transcript browsing
-- **Codex CLI** (`codex`) — OpenAI's coding agent
+- **Codex CLI** (`codex`) — OpenAI's coding agent, with session resume and transcript browsing for local sessions
 - **OpenCode** (`opencode`)
 - **Custom** — any binary you specify
 
-These are functional but not first-class citizens yet — features like session resume and status detection are Claude-specific. Broader tool support is on the roadmap.
+OpenCode and custom tools run as raw PTY sessions without tool-specific resume support.
 
 ## Core Principle
 
-> **Dumb pipe, smart shell.** Never parse, intercept, or re-render Claude Code output. The PTY stream flows untouched into xterm.js. Status detection is a passive side-channel tap, not an interceptor.
+> **Dumb pipe, smart shell.** Never parse, intercept, or re-render CLI output. The PTY stream flows untouched into xterm.js. Status detection is a passive side-channel tap, not an interceptor.
 
 ## Quick Start
 

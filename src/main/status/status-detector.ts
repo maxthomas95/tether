@@ -1,21 +1,32 @@
-import type { SessionState } from '../../shared/types';
+import type { CliToolId, SessionState } from '../../shared/types';
 
 const RUNNING_TIMEOUT = 3000;   // No data for 3s after last output → check prompt
 const IDLE_TIMEOUT = 30000;     // No data for 30s → idle
 const DEBOUNCE_MS = 500;        // Debounce state transitions
 
-// Heuristic: Claude Code's prompt patterns (byte-level, not ANSI-parsed)
-// These are the last few visible characters when Claude shows its input prompt
-const PROMPT_HINTS = [
+// Heuristic prompt patterns (byte-level, not ANSI-parsed).
+// These are the last few visible characters when a supported CLI shows input.
+const CLAUDE_PROMPT_HINTS = [
   '> ',       // The standard prompt character
   '\u276f ',  // The "heavy right-pointing angle quotation mark" Claude uses
   '❯ ',       // Alternative prompt character
 ];
 
+const PROMPT_HINTS: Record<CliToolId, string[]> = {
+  claude: CLAUDE_PROMPT_HINTS,
+  codex: [
+    '> ',
+    '\u203a ',
+  ],
+  opencode: ['> '],
+  custom: ['> '],
+};
+
 export class StatusDetector {
   private states = new Map<string, SessionState>();
   private lastDataTime = new Map<string, number>();
   private lastChunk = new Map<string, string>();
+  private cliTools = new Map<string, CliToolId>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private callback: ((sessionId: string, state: SessionState) => void) | null = null;
@@ -24,12 +35,14 @@ export class StatusDetector {
     this.callback = callback;
   }
 
-  register(sessionId: string): void {
+  register(sessionId: string, cliTool: CliToolId = 'claude'): void {
     this.states.set(sessionId, 'starting');
+    this.cliTools.set(sessionId, cliTool);
   }
 
   unregister(sessionId: string): void {
     this.states.delete(sessionId);
+    this.cliTools.delete(sessionId);
     this.lastDataTime.delete(sessionId);
     this.lastChunk.delete(sessionId);
     const timer = this.timers.get(sessionId);
@@ -56,7 +69,7 @@ export class StatusDetector {
     // After RUNNING_TIMEOUT of silence, check if prompt is showing
     this.timers.set(sessionId, setTimeout(() => {
       const lastChunk = this.lastChunk.get(sessionId) || '';
-      if (this.looksLikePrompt(lastChunk)) {
+      if (this.looksLikePrompt(sessionId, lastChunk)) {
         this.transition(sessionId, 'waiting');
       }
 
@@ -101,11 +114,13 @@ export class StatusDetector {
     this.callback?.(sessionId, state);
   }
 
-  private looksLikePrompt(chunk: string): boolean {
+  private looksLikePrompt(sessionId: string, chunk: string): boolean {
     // Strip ANSI escape sequences for matching
     const stripped = chunk.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
     const lastLine = stripped.split('\n').pop()?.trim() || '';
-    return PROMPT_HINTS.some(hint => lastLine.endsWith(hint) || lastLine === hint.trim());
+    const cliTool = this.cliTools.get(sessionId) || 'claude';
+    const hints = PROMPT_HINTS[cliTool] || PROMPT_HINTS.claude;
+    return hints.some(hint => lastLine.endsWith(hint) || lastLine === hint.trim());
   }
 
   dispose(): void {
@@ -116,6 +131,7 @@ export class StatusDetector {
     this.states.clear();
     this.lastDataTime.clear();
     this.lastChunk.clear();
+    this.cliTools.clear();
   }
 }
 

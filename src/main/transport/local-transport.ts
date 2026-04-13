@@ -2,6 +2,7 @@
 // if the native binary has an ABI mismatch
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
 import { createLogger } from '../logger';
+import { buildCliArgsForTool } from '../../shared/cli-tools';
 
 const log = createLogger('local-pty');
 
@@ -39,15 +40,12 @@ export class LocalTransport implements SessionTransport {
 
     const binary = options.binaryName || 'claude';
 
-    // Build the CLI argv. Resume/session-id flags are Claude-specific.
-    const cliArgs = [...(options.cliArgs || [])];
-    if (binary === 'claude') {
-      if (options.resumeClaudeSessionId) {
-        cliArgs.push('--resume', options.resumeClaudeSessionId);
-      } else if (options.claudeSessionId) {
-        cliArgs.push('--session-id', options.claudeSessionId);
-      }
-    }
+    const resumeToolSessionId = options.resumeToolSessionId || options.resumeClaudeSessionId;
+    const toolSessionId = options.toolSessionId || options.claudeSessionId;
+    const cliArgs = buildCliArgsForTool(options.cliTool || 'claude', options.cliArgs || [], {
+      resumeToolSessionId,
+      toolSessionId,
+    });
 
     const args = process.platform === 'win32'
       ? ['/c', binary, ...cliArgs]

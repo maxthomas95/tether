@@ -169,7 +169,7 @@ export function SetupWizard({ isOpen, onClose }: SetupWizardProps) {
               <img src={logoSrc} alt="Tether" style={{ width: 72, height: 72 }} />
               <div className="wizard-welcome-title">Welcome to Tether</div>
               <div className="wizard-welcome-desc">
-                Tether helps you manage Claude Code sessions across your machines.
+                Tether helps you manage Claude Code and Codex CLI sessions across your machines.
                 Let's get a few things set up so you can hit the ground running.
               </div>
             </div>

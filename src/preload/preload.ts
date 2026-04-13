@@ -93,14 +93,14 @@ const api: TetherAPI = {
   },
 
   workspace: {
-    save: (sessions: Array<{ workingDir: string; label: string; environmentId?: string; claudeSessionId?: string }>, activeIndex: number): Promise<void> =>
+    save: (sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string }>, activeIndex: number): Promise<void> =>
       ipcRenderer.invoke(IPC.WORKSPACE_SAVE, sessions, activeIndex),
-    load: (): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; claudeSessionId?: string }>; activeIndex: number } | null> =>
+    load: (): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string }>; activeIndex: number } | null> =>
       ipcRenderer.invoke(IPC.WORKSPACE_LOAD),
   },
 
   transcripts: {
-    list: (workingDir: string): Promise<TranscriptInfo[]> => ipcRenderer.invoke(IPC.TRANSCRIPTS_LIST, workingDir),
+    list: (workingDir: string, cliTool?: CliToolId): Promise<TranscriptInfo[]> => ipcRenderer.invoke(IPC.TRANSCRIPTS_LIST, workingDir, cliTool),
   },
 
   gitProvider: {
