@@ -15,31 +15,32 @@ function formatResetTime(iso: string | null): string {
   return `${days}d ${remainHrs}h`;
 }
 
-function barClass(pct: number): string {
-  if (pct > 80) return 'quota-bar-fill--crit';
-  if (pct > 50) return 'quota-bar-fill--warn';
+/** Color class based on how much remains (high remaining = green). */
+function remainingBarClass(remaining: number): string {
+  if (remaining < 20) return 'quota-bar-fill--crit';
+  if (remaining < 50) return 'quota-bar-fill--warn';
   return 'quota-bar-fill--ok';
 }
 
 interface QuotaBarProps {
   label: string;
-  utilization: number | null;
+  used: number | null;
   resetsAt: string | null;
 }
 
-function QuotaBar({ label, utilization, resetsAt }: QuotaBarProps) {
-  if (utilization === null) return null;
-  const pct = Math.round(utilization);
+function QuotaBar({ label, used, resetsAt }: QuotaBarProps) {
+  if (used === null) return null;
+  const remaining = Math.max(0, Math.round(100 - used));
   return (
-    <div className="quota-row">
+    <div className="quota-row" title={`${Math.round(used)}% used · ${remaining}% left${resetsAt ? ` · resets in ${formatResetTime(resetsAt)}` : ''}`}>
       <span className="quota-label">{label}</span>
       <div className="quota-bar-track">
         <div
-          className={`quota-bar-fill ${barClass(pct)}`}
-          style={{ width: `${pct}%` }}
+          className={`quota-bar-fill ${remainingBarClass(remaining)}`}
+          style={{ width: `${remaining}%` }}
         />
       </div>
-      <span className="quota-pct">{pct}%</span>
+      <span className="quota-pct">{remaining}%</span>
       {resetsAt && <span className="quota-reset">{formatResetTime(resetsAt)}</span>}
     </div>
   );
@@ -50,23 +51,19 @@ export function QuotaFooter() {
 
   if (!enabled || !quota) return null;
 
-  // Nothing to show — no Claude data and no Codex data
   const hasClaudeData = quota.fiveHour.utilization !== null || quota.sevenDay.utilization !== null;
-  const hasCodexData = quota.codex?.primary.usedPercent !== null;
-  const hasAnyData = hasClaudeData || hasCodexData;
+  const hasCodexData = quota.codex != null && quota.codex.primary.usedPercent !== null;
 
-  if (quota.error && !hasAnyData) {
-    return (
-      <div className="sidebar-footer" onClick={refresh} title="Click to retry">
-        <div className="quota-error">{quota.error}</div>
-      </div>
-    );
-  }
+  // Show section when we have data OR an error (so errors aren't silently swallowed)
+  const showClaude = hasClaudeData || quota.error !== null;
+  const showCodex = quota.codex != null && (hasCodexData || quota.codex.error !== null);
+
+  if (!showClaude && !showCodex) return null;
 
   return (
     <div className="sidebar-footer" onClick={refresh} title="Click to refresh quota">
       {/* Claude quota */}
-      {hasClaudeData && (
+      {showClaude && (
         <div className="quota-section">
           <div className="quota-section-header">
             <span className="quota-provider">Claude</span>
@@ -74,14 +71,14 @@ export function QuotaFooter() {
               <span className="quota-plan">{quota.subscriptionType}</span>
             )}
           </div>
-          <QuotaBar label="5h" utilization={quota.fiveHour.utilization} resetsAt={quota.fiveHour.resetsAt} />
-          <QuotaBar label="7d" utilization={quota.sevenDay.utilization} resetsAt={quota.sevenDay.resetsAt} />
+          <QuotaBar label="5h" used={quota.fiveHour.utilization} resetsAt={quota.fiveHour.resetsAt} />
+          <QuotaBar label="7d" used={quota.sevenDay.utilization} resetsAt={quota.sevenDay.resetsAt} />
           {quota.error && <div className="quota-error">{quota.error}</div>}
         </div>
       )}
 
       {/* Codex quota */}
-      {quota.codex && hasCodexData && (
+      {showCodex && quota.codex && (
         <div className="quota-section">
           <div className="quota-section-header">
             <span className="quota-provider">Codex</span>
@@ -89,8 +86,8 @@ export function QuotaFooter() {
               <span className="quota-plan">{quota.codex.planType}</span>
             )}
           </div>
-          <QuotaBar label="1°" utilization={quota.codex.primary.usedPercent} resetsAt={quota.codex.primary.resetAt} />
-          <QuotaBar label="2°" utilization={quota.codex.secondary.usedPercent} resetsAt={quota.codex.secondary.resetAt} />
+          <QuotaBar label="5h" used={quota.codex.primary.usedPercent} resetsAt={quota.codex.primary.resetAt} />
+          <QuotaBar label="7d" used={quota.codex.secondary.usedPercent} resetsAt={quota.codex.secondary.resetAt} />
           {quota.codex.error && <div className="quota-error">{quota.codex.error}</div>}
         </div>
       )}
