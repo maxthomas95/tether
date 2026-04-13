@@ -119,13 +119,10 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, cliTool, 
     ? PRESETS_BY_TOOL[cliTool] || []
     : [...CLAUDE_PRESETS, ...CODEX_PRESETS];
 
-  const toggleVaultMode = useCallback((id: number) => {
-    const row = rows.find(r => r.id === id);
-    if (!row) return;
-    // Toggle: if currently a vault ref, clear it. Otherwise, seed with the prefix.
-    const newValue = isVaultRef(row.value) ? '' : VAULT_REF_PREFIX;
-    update(rows.map(r => r.id === id ? { ...r, value: newValue } : r));
+  const clearVaultRef = useCallback((id: number) => {
+    update(rows.map(r => r.id === id ? { ...r, value: '' } : r));
     setVaultTestResult(prev => { const next = { ...prev }; delete next[id]; return next; });
+    setVaultWriteResult(prev => { const next = { ...prev }; delete next[id]; return next; });
   }, [rows, update]);
 
   const testVaultRef = useCallback(async (id: number) => {
@@ -190,7 +187,6 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, cliTool, 
       {rows.map(row => {
         const sensitive = isSensitive(row.key);
         const vaultMode = isVaultRef(row.value);
-        const showVaultToggle = vaultEnabled && sensitive;
         const canStoreInVault = vaultEnabled && vaultLoggedIn && sensitive && !!row.value && !vaultMode;
         const testResult = vaultTestResult[row.id];
         const writeResult = vaultWriteResult[row.id];
@@ -209,7 +205,7 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, cliTool, 
                   type={vaultMode ? 'text' : (sensitive && !revealed.has(row.id) ? 'password' : 'text')}
                   value={row.value}
                   onChange={e => updateRow(row.id, 'value', e.target.value)}
-                  placeholder={vaultMode ? 'vault://secret/path#key' : 'value'}
+                  placeholder="value"
                   spellCheck={false}
                 />
                 {sensitive && !vaultMode && (
@@ -222,23 +218,22 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, cliTool, 
                   </button>
                 )}
               </div>
-              {showVaultToggle && (
-                <button
-                  className="env-editor-btn"
-                  onClick={() => toggleVaultMode(row.id)}
-                  title={vaultMode ? 'Switch to literal value' : 'Source from Vault'}
-                  style={vaultMode ? { background: 'var(--accent)', color: 'var(--btn-primary-text)' } : undefined}
-                >
-                  Vault
-                </button>
-              )}
               {canStoreInVault && (
                 <button
                   className="env-editor-btn"
                   onClick={() => storeInVault(row.id)}
-                  title="Write this value to Vault and replace with a reference"
+                  title="Store this value in Vault"
                 >
-                  {'\u2192 Vault'}
+                  Vault
+                </button>
+              )}
+              {vaultEnabled && sensitive && vaultMode && (
+                <button
+                  className="env-editor-btn"
+                  onClick={() => clearVaultRef(row.id)}
+                  title="Switch back to a literal value"
+                >
+                  Undo
                 </button>
               )}
               {vaultMode && (
