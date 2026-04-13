@@ -130,10 +130,12 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
 
     // Reuse background terminal if it exists — it has the scrollback buffer
     const bg = backgroundTerminals.current.get(sessionId);
+    let wasBackground = false;
     if (bg) {
       terminal = bg.terminal;
       fitAddon = bg.fitAddon;
       backgroundTerminals.current.delete(sessionId);
+      wasBackground = true;
 
       if (!terminal.element) {
         terminal.open(container);
@@ -162,6 +164,14 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
     };
     requestAnimationFrame(() => {
       doFit();
+      if (wasBackground) {
+        // After DOM reattachment, xterm.js's renderer and viewport may be
+        // stale — the renderer skips paints while the element is detached,
+        // and the viewport's scroll area can desync. Force a full repaint
+        // and scroll-area recalculation so scrollback works again.
+        terminal.refresh(0, terminal.rows - 1);
+        terminal.scrollToBottom();
+      }
       terminal.focus();
       // Second fit after another frame to catch late layout shifts
       requestAnimationFrame(doFit);
