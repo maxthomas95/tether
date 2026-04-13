@@ -12,4 +12,14 @@ export default defineConfig({
       '@shared': '/src/shared',
     },
   },
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'react-dom/client',
+      'react/jsx-runtime',
+      'xterm',
+      'xterm-addon-fit',
+    ],
+  },
 });
