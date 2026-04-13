@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [0.2.0-beta.2] — 2026-04-12
+## [0.2.1-beta.2] — 2026-04-12
 
 ### New Features
 - **Multi-CLI tool support** — run Codex, OpenCode, or custom CLI tools alongside Claude Code, selectable per session
