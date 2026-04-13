@@ -121,6 +121,25 @@ const createWindow = () => {
   // This avoids a blank/white flash on launch.
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+
+    // Background update check — non-blocking, 15s after window shows.
+    // TODO: Replace with electron-updater auto-update when code signing is implemented.
+    setTimeout(async () => {
+      try {
+        const db = getDb();
+        if (db.config.updateCheckEnabled === 'false') return;
+
+        const { checkForUpdates } = await import('./update/update-checker');
+        const result = await checkForUpdates();
+        if (!result.updateAvailable) return;
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IPC.UPDATE_AVAILABLE, result);
+        }
+      } catch {
+        // Silent fail — don't annoy user on network/parse errors
+      }
+    }, 15_000);
   });
 
   registerIpcHandlers(mainWindow);

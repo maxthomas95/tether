@@ -6,6 +6,7 @@ import type {
   CreateLaunchProfileOptions, LaunchProfileInfo,
   TetherAPI,
   CreateGitProviderOptions, GitProviderInfo, GitRepoInfo, CloneProgressInfo,
+  UpdateCheckResult,
   VaultConfig, VaultStatus, VaultPlaintextSecret, MigrateSecretOptions,
   TranscriptInfo,
   CoderWorkspace,
@@ -121,6 +122,16 @@ const api: TetherAPI = {
   coder: {
     listWorkspaces: (environmentId: string): Promise<CoderWorkspace[]> =>
       ipcRenderer.invoke(IPC.CODER_LIST_WORKSPACES, environmentId),
+  },
+
+  update: {
+    check: (): Promise<UpdateCheckResult> => ipcRenderer.invoke(IPC.UPDATE_CHECK),
+    openReleasePage: (url: string): Promise<void> => ipcRenderer.invoke(IPC.UPDATE_OPEN_RELEASE_PAGE, url),
+    onUpdateAvailable(cb: (result: UpdateCheckResult) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, result: UpdateCheckResult) => cb(result);
+      ipcRenderer.on(IPC.UPDATE_AVAILABLE, h);
+      return () => ipcRenderer.removeListener(IPC.UPDATE_AVAILABLE, h);
+    },
   },
 
   vault: {

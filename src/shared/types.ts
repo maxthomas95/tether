@@ -158,6 +158,14 @@ export interface TranscriptInfo {
   preview: string;
 }
 
+export interface UpdateCheckResult {
+  updateAvailable: boolean;
+  latestVersion: string;
+  latestTag: string;
+  releaseUrl: string;
+  currentVersion: string;
+}
+
 export interface CreateEnvironmentOptions {
   name: string;
   type: EnvironmentType;
@@ -238,6 +246,11 @@ export interface TetherAPI {
   };
   coder: {
     listWorkspaces(environmentId: string): Promise<CoderWorkspace[]>;
+  };
+  update: {
+    check(): Promise<UpdateCheckResult>;
+    openReleasePage(url: string): Promise<void>;
+    onUpdateAvailable(cb: (result: UpdateCheckResult) => void): () => void;
   };
   vault: {
     getConfig(): Promise<VaultConfig>;

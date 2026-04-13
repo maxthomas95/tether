@@ -5,12 +5,14 @@ export interface Notification {
   type: 'error' | 'info' | 'success';
   title: string;
   message?: string;
+  action?: { label: string; onClick: () => void };
 }
 
 export interface NotifyOptions {
   type?: Notification['type'];
   title: string;
   message?: string;
+  action?: { label: string; onClick: () => void };
 }
 
 let notificationCounter = 0;
@@ -33,6 +35,7 @@ export function useNotifications() {
       type: opts.type || 'info',
       title: opts.title,
       message: opts.message,
+      action: opts.action,
     };
     setNotifications(prev => [...prev, next]);
     return id;
@@ -57,7 +60,7 @@ export function Notifications({ notifications, onDismiss }: NotificationsProps) 
 }
 
 function NotificationItem({ notification, onDismiss }: { notification: Notification; onDismiss: (id: string) => void }) {
-  const ttl = notification.type === 'error' ? 12000 : 5000;
+  const ttl = notification.action ? 20000 : notification.type === 'error' ? 12000 : 5000;
 
   useEffect(() => {
     const timer = setTimeout(() => onDismiss(notification.id), ttl);
@@ -70,6 +73,17 @@ function NotificationItem({ notification, onDismiss }: { notification: Notificat
         <div className="notification-title">{notification.title}</div>
         {notification.message && (
           <div className="notification-message">{notification.message}</div>
+        )}
+        {notification.action && (
+          <button
+            className="notification-action"
+            onClick={(e) => {
+              e.stopPropagation();
+              notification.action!.onClick();
+            }}
+          >
+            {notification.action.label}
+          </button>
         )}
       </div>
       <button

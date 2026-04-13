@@ -18,7 +18,7 @@ import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
 import { generatePaneId, findLeaf, getLeaves } from './lib/layout-tree';
 import type { LayoutNode } from '../shared/layout-types';
-import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions } from '../shared/types';
+import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
 import logoSrc from './assets/logo.png';
 
@@ -420,6 +420,43 @@ export function App() {
     ? activeSession.state !== 'stopped' && activeSession.state !== 'dead'
     : false;
 
+  const handleCheckForUpdates = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.update.check();
+      if (result.updateAvailable) {
+        notify({
+          type: 'info',
+          title: `Update available: v${result.latestVersion}`,
+          message: `A new version of Tether is available (you have v${result.currentVersion}).`,
+          action: {
+            label: 'View Release',
+            onClick: () => window.electronAPI.update.openReleasePage(result.releaseUrl),
+          },
+        });
+      } else {
+        notify({ type: 'success', title: 'You\'re up to date', message: `Tether v${result.currentVersion} is the latest version.` });
+      }
+    } catch {
+      notify({ type: 'error', title: 'Update check failed', message: 'Could not reach the update server.' });
+    }
+  }, [notify]);
+
+  // Listen for background update check result from main process
+  useEffect(() => {
+    const cleanup = window.electronAPI.update.onUpdateAvailable((result: UpdateCheckResult) => {
+      notify({
+        type: 'info',
+        title: `Update available: v${result.latestVersion}`,
+        message: `A new version of Tether is available (you have v${result.currentVersion}).`,
+        action: {
+          label: 'View Release',
+          onClick: () => window.electronAPI.update.openReleasePage(result.releaseUrl),
+        },
+      });
+    });
+    return cleanup;
+  }, [notify]);
+
   const menus: MenuDef[] = useMemo(() => [
     {
       label: 'File',
@@ -466,10 +503,12 @@ export function App() {
         { separator: true },
         { label: 'Setup Wizard...', onClick: () => setSetupWizardOpen(true) },
         { separator: true },
+        { label: 'Check for Updates...', onClick: handleCheckForUpdates },
+        { separator: true },
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleKill, handleRemove, handleDuplicate, shortcutActions]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleKill, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates]);
 
   return (
     <div className="app-layout">

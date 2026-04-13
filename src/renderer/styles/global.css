@@ -1110,6 +1110,23 @@ input[type="password"].form-input {
   color: var(--text-primary);
 }
 
+.notification-action {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--accent);
+  color: var(--bg-primary);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.notification-action:hover {
+  opacity: 0.85;
+}
+
 @keyframes notification-in {
   from { opacity: 0; transform: translateX(8px); }
   to { opacity: 1; transform: translateX(0); }

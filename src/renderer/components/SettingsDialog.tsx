@@ -39,6 +39,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
+  const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true);
   const [loaded, setLoaded] = useState(false);
 
   // Profile state
@@ -81,7 +82,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
       window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
       window.electronAPI.config.get?.('enablePaneSplitting')?.catch(() => null),
-    ]).then(([vars, restore, flags, resumeChats, badge, picker, splitting]) => {
+      window.electronAPI.config.get?.('updateCheckEnabled')?.catch(() => null),
+    ]).then(([vars, restore, flags, resumeChats, badge, picker, splitting, updateCheck]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlags(flags || []);
@@ -89,6 +91,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
       setEnablePaneSplitting(splitting === 'true');
+      setUpdateCheckEnabled(updateCheck !== 'false');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -110,10 +113,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     await window.electronAPI.config.set?.('showResumeBadge', showResumeBadge ? 'true' : 'false');
     await window.electronAPI.config.set?.('enableResumePicker', enableResumePicker ? 'true' : 'false');
     await window.electronAPI.config.set?.('enablePaneSplitting', enablePaneSplitting ? 'true' : 'false');
+    await window.electronAPI.config.set?.('updateCheckEnabled', updateCheckEnabled ? 'true' : 'false');
     await window.electronAPI.config.setDefaultCliFlags?.(cliFlags);
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, cliFlags, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, updateCheckEnabled, cliFlags, vaultConfig, onClose]);
 
   const handleVaultLogin = async () => {
     setVaultLoginError(null);
@@ -655,6 +659,24 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Updates */}
+          <div className="form-group" style={{ marginTop: 20 }}>
+            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              Updates
+            </label>
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={updateCheckEnabled}
+                onChange={e => setUpdateCheckEnabled(e.target.checked)}
+              />
+              Check for updates on launch
+            </label>
+            <p className="form-hint">
+              Automatically check GitHub for new Tether releases when the app starts.
+            </p>
           </div>
 
           {/* Vault */}

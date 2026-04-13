@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, dialog, safeStorage } from 'electron';
+import { ipcMain, BrowserWindow, dialog, safeStorage, shell } from 'electron';
 import { execFile } from 'node:child_process';
 import { IPC } from '../../shared/constants';
 import type {
@@ -597,6 +597,17 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
 
     return out;
+  });
+
+  // === Update check ===
+
+  ipcMain.handle(IPC.UPDATE_CHECK, async () => {
+    const { checkForUpdates } = await import('../update/update-checker');
+    return checkForUpdates();
+  });
+
+  ipcMain.handle(IPC.UPDATE_OPEN_RELEASE_PAGE, async (_event, url: string) => {
+    await shell.openExternal(url);
   });
 
   ipcMain.handle(IPC.VAULT_MIGRATE_SECRET, async (_event, opts: MigrateSecretOptions): Promise<void> => {

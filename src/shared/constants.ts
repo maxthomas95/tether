@@ -57,7 +57,12 @@ export const IPC = {
   DOCS_OPEN: 'docs:open',
   DOCS_THEME_CHANGED: 'docs:theme-changed',
 
+  // Update
+  UPDATE_CHECK: 'update:check',
+  UPDATE_OPEN_RELEASE_PAGE: 'update:open-release',
+
   // Main -> Renderer
+  UPDATE_AVAILABLE: 'update:available',
   SESSION_DATA: 'session:data',
   SESSION_STATE_CHANGE: 'session:state-change',
   SESSION_EXITED: 'session:exited',
