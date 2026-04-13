@@ -15,9 +15,12 @@ import type {
   MigrateSecretOptions,
   CoderWorkspace,
   QuotaInfo,
+  UsageInfo,
+  SessionUsage,
 } from '../../shared/types';
 import { sessionManager } from '../session/session-manager';
 import { quotaService } from '../quota/quota-service';
+import { usageService } from '../usage/usage-service';
 import * as envRepo from '../db/environment-repo';
 import * as sessionRepo from '../db/session-repo';
 import * as profileRepo from '../db/profile-repo';
@@ -97,6 +100,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       },
       onExit(sessionId, exitCode) {
         send(IPC.SESSION_EXITED, sessionId, exitCode);
+        const s = sessionManager.getSession(sessionId);
+        if (s?.claudeSessionId) {
+          usageService.untrackSession(s.claudeSessionId);
+        }
       },
       onLabelChanged(sessionId, label) {
         send(IPC.SESSION_LABEL_CHANGED, sessionId, label);
@@ -114,6 +121,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     // Use the manager's session id, not the DB row id — they're the same uuid
     // Actually the DB creates its own id. Let me fix this by passing the id.
     // For now, the in-memory session manager is the source of truth for live sessions.
+
+    // Start tracking usage for Claude sessions
+    if (session.claudeSessionId) {
+      usageService.trackSession(session.claudeSessionId, session.workingDir);
+    }
 
     return session.toInfo();
   });
@@ -753,5 +765,23 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(IPC.QUOTA_SET_ENABLED, async (_event, enabled: boolean): Promise<void> => {
     quotaService.setEnabled(enabled);
+  });
+
+  // === Usage tracking ===
+
+  usageService.onUpdate((info: UsageInfo) => {
+    send(IPC.USAGE_UPDATED, info);
+  });
+
+  ipcMain.handle(IPC.USAGE_GET_SESSION, async (_event, claudeSessionId: string): Promise<SessionUsage | null> => {
+    return usageService.getSessionUsage(claudeSessionId);
+  });
+
+  ipcMain.handle(IPC.USAGE_GET_ALL, async (): Promise<UsageInfo> => {
+    return usageService.getAll();
+  });
+
+  ipcMain.handle(IPC.USAGE_REFRESH, async (_event, claudeSessionId?: string): Promise<UsageInfo> => {
+    return usageService.refresh(claudeSessionId);
   });
 }

@@ -14,6 +14,7 @@ function createFreshDb(): DbData {
     savedWorkspace: null,
     gitProviders: [],
     repoGroupPrefs: [],
+    usageSummaries: [],
   };
 }
 

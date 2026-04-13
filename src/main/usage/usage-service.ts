@@ -1,0 +1,360 @@
+import * as fs from 'node:fs';
+import { createLogger } from '../logger';
+import { transcriptPath } from '../claude/transcripts';
+import { parseJsonlFile, type ParsedMessage } from './jsonl-parser';
+import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
+import type { SessionUsage, UsageModelBreakdown, UsageInfo, DailyUsage } from '../../shared/types';
+
+const log = createLogger('usage');
+
+const WATCH_DEBOUNCE_MS = 300;
+const WATCH_RETRY_INTERVAL_MS = 2_000;
+const WATCH_RETRY_MAX = 30;
+
+interface TrackedSession {
+  claudeSessionId: string;
+  workingDir: string;
+  filePath: string;
+  watcher: fs.FSWatcher | null;
+  debounceTimer: ReturnType<typeof setTimeout> | null;
+  retryTimer: ReturnType<typeof setTimeout> | null;
+  retryCount: number;
+  usage: SessionUsage;
+}
+
+function emptySessionUsage(claudeSessionId: string): SessionUsage {
+  return {
+    claudeSessionId,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    totalCost: 0,
+    models: [],
+    messageCount: 0,
+    firstMessageAt: null,
+    lastMessageAt: null,
+    parsedByteOffset: 0,
+  };
+}
+
+function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOffset: number): SessionUsage {
+  if (messages.length === 0) return { ...existing, parsedByteOffset: newOffset };
+
+  // Accumulate model breakdowns
+  const modelMap = new Map<string, UsageModelBreakdown>();
+  for (const m of existing.models) {
+    modelMap.set(m.model, { ...m });
+  }
+
+  let { inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, totalCost, messageCount } = existing;
+  let firstMessageAt = existing.firstMessageAt;
+  let lastMessageAt = existing.lastMessageAt;
+
+  for (const msg of messages) {
+    inputTokens += msg.inputTokens;
+    outputTokens += msg.outputTokens;
+    cacheCreationTokens += msg.cacheCreation5m + msg.cacheCreation1h;
+    cacheReadTokens += msg.cacheReadTokens;
+    totalCost += msg.cost;
+    messageCount++;
+
+    if (!firstMessageAt || msg.timestamp < firstMessageAt) {
+      firstMessageAt = msg.timestamp;
+    }
+    if (!lastMessageAt || msg.timestamp > lastMessageAt) {
+      lastMessageAt = msg.timestamp;
+    }
+
+    const mb = modelMap.get(msg.model) || {
+      model: msg.model,
+      inputTokens: 0, outputTokens: 0,
+      cacheCreationTokens: 0, cacheReadTokens: 0, cost: 0,
+    };
+    mb.inputTokens += msg.inputTokens;
+    mb.outputTokens += msg.outputTokens;
+    mb.cacheCreationTokens += msg.cacheCreation5m + msg.cacheCreation1h;
+    mb.cacheReadTokens += msg.cacheReadTokens;
+    mb.cost += msg.cost;
+    modelMap.set(msg.model, mb);
+  }
+
+  return {
+    claudeSessionId: existing.claudeSessionId,
+    inputTokens,
+    outputTokens,
+    cacheCreationTokens,
+    cacheReadTokens,
+    totalCost,
+    models: Array.from(modelMap.values()),
+    messageCount,
+    firstMessageAt,
+    lastMessageAt,
+    parsedByteOffset: newOffset,
+  };
+}
+
+class UsageService {
+  private tracked = new Map<string, TrackedSession>();
+  private callback: ((info: UsageInfo) => void) | null = null;
+
+  onUpdate(cb: (info: UsageInfo) => void): void {
+    this.callback = cb;
+  }
+
+  start(): void {
+    log.info('Usage service started');
+    // Load persisted summaries into memory
+    const db = getDb();
+    for (const summary of db.usageSummaries) {
+      if (!this.tracked.has(summary.claudeSessionId)) {
+        this.tracked.set(summary.claudeSessionId, {
+          claudeSessionId: summary.claudeSessionId,
+          workingDir: summary.workingDir,
+          filePath: transcriptPath(summary.workingDir, summary.claudeSessionId),
+          watcher: null,
+          debounceTimer: null,
+          retryTimer: null,
+          retryCount: 0,
+          usage: {
+            claudeSessionId: summary.claudeSessionId,
+            inputTokens: summary.inputTokens,
+            outputTokens: summary.outputTokens,
+            cacheCreationTokens: summary.cacheCreationTokens,
+            cacheReadTokens: summary.cacheReadTokens,
+            totalCost: summary.totalCost,
+            models: summary.models,
+            messageCount: summary.messageCount,
+            firstMessageAt: summary.firstMessageAt,
+            lastMessageAt: summary.lastMessageAt,
+            parsedByteOffset: summary.parsedByteOffset,
+          },
+        });
+      }
+    }
+  }
+
+  trackSession(claudeSessionId: string, workingDir: string): void {
+    if (this.tracked.has(claudeSessionId)) return;
+
+    const filePath = transcriptPath(workingDir, claudeSessionId);
+    log.info('Tracking session', { claudeSessionId, filePath });
+
+    // Check for persisted data
+    const db = getDb();
+    const persisted = db.usageSummaries.find(s => s.claudeSessionId === claudeSessionId);
+
+    const session: TrackedSession = {
+      claudeSessionId,
+      workingDir,
+      filePath,
+      watcher: null,
+      debounceTimer: null,
+      retryTimer: null,
+      retryCount: 0,
+      usage: persisted ? {
+        claudeSessionId,
+        inputTokens: persisted.inputTokens,
+        outputTokens: persisted.outputTokens,
+        cacheCreationTokens: persisted.cacheCreationTokens,
+        cacheReadTokens: persisted.cacheReadTokens,
+        totalCost: persisted.totalCost,
+        models: persisted.models,
+        messageCount: persisted.messageCount,
+        firstMessageAt: persisted.firstMessageAt,
+        lastMessageAt: persisted.lastMessageAt,
+        parsedByteOffset: persisted.parsedByteOffset,
+      } : emptySessionUsage(claudeSessionId),
+    };
+
+    this.tracked.set(claudeSessionId, session);
+
+    // Initial parse
+    this.parseSession(session);
+
+    // Start watching
+    this.startWatching(session);
+  }
+
+  untrackSession(claudeSessionId: string): void {
+    const session = this.tracked.get(claudeSessionId);
+    if (!session) return;
+
+    log.info('Untracking session', { claudeSessionId });
+
+    // Final parse
+    this.parseSession(session);
+
+    // Close watcher
+    this.closeWatcher(session);
+
+    // Keep data in map for queries — don't delete
+  }
+
+  getSessionUsage(claudeSessionId: string): SessionUsage | null {
+    return this.tracked.get(claudeSessionId)?.usage ?? null;
+  }
+
+  getAll(): UsageInfo {
+    const sessions: Record<string, SessionUsage> = {};
+    let totalCost = 0;
+
+    for (const [id, tracked] of this.tracked) {
+      sessions[id] = tracked.usage;
+      totalCost += tracked.usage.totalCost;
+    }
+
+    return {
+      sessions,
+      daily: this.buildDailyRollups(),
+      totalCost,
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  async refresh(claudeSessionId?: string): Promise<UsageInfo> {
+    if (claudeSessionId) {
+      const session = this.tracked.get(claudeSessionId);
+      if (session) this.parseSession(session);
+    } else {
+      for (const session of this.tracked.values()) {
+        this.parseSession(session);
+      }
+    }
+    return this.getAll();
+  }
+
+  private parseSession(session: TrackedSession): void {
+    try {
+      const result = parseJsonlFile(session.filePath, session.usage.parsedByteOffset);
+      if (result.messages.length > 0 || result.newByteOffset !== session.usage.parsedByteOffset) {
+        session.usage = mergeMessages(session.usage, result.messages, result.newByteOffset);
+        this.persistSession(session);
+        this.notifyUpdate();
+      }
+    } catch (err) {
+      log.warn('Failed to parse session JSONL', {
+        claudeSessionId: session.claudeSessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private persistSession(session: TrackedSession): void {
+    const db = getDb();
+    const entry: PersistedSessionUsage = {
+      claudeSessionId: session.claudeSessionId,
+      workingDir: session.workingDir,
+      inputTokens: session.usage.inputTokens,
+      outputTokens: session.usage.outputTokens,
+      cacheCreationTokens: session.usage.cacheCreationTokens,
+      cacheReadTokens: session.usage.cacheReadTokens,
+      totalCost: session.usage.totalCost,
+      models: session.usage.models,
+      messageCount: session.usage.messageCount,
+      firstMessageAt: session.usage.firstMessageAt,
+      lastMessageAt: session.usage.lastMessageAt,
+      parsedByteOffset: session.usage.parsedByteOffset,
+    };
+
+    const idx = db.usageSummaries.findIndex(s => s.claudeSessionId === session.claudeSessionId);
+    if (idx >= 0) {
+      db.usageSummaries[idx] = entry;
+    } else {
+      db.usageSummaries.push(entry);
+    }
+    saveDb();
+  }
+
+  private startWatching(session: TrackedSession): void {
+    try {
+      session.watcher = fs.watch(session.filePath, () => {
+        this.debouncedParse(session);
+      });
+      session.watcher.on('error', () => {
+        // File may have been deleted — just close
+        this.closeWatcher(session);
+      });
+    } catch {
+      // File doesn't exist yet — retry
+      if (session.retryCount < WATCH_RETRY_MAX) {
+        session.retryCount++;
+        session.retryTimer = setTimeout(() => {
+          session.retryTimer = null;
+          this.startWatching(session);
+        }, WATCH_RETRY_INTERVAL_MS);
+      }
+    }
+  }
+
+  private debouncedParse(session: TrackedSession): void {
+    if (session.debounceTimer) clearTimeout(session.debounceTimer);
+    session.debounceTimer = setTimeout(() => {
+      session.debounceTimer = null;
+      this.parseSession(session);
+    }, WATCH_DEBOUNCE_MS);
+  }
+
+  private closeWatcher(session: TrackedSession): void {
+    if (session.watcher) {
+      session.watcher.close();
+      session.watcher = null;
+    }
+    if (session.debounceTimer) {
+      clearTimeout(session.debounceTimer);
+      session.debounceTimer = null;
+    }
+    if (session.retryTimer) {
+      clearTimeout(session.retryTimer);
+      session.retryTimer = null;
+    }
+  }
+
+  private buildDailyRollups(): DailyUsage[] {
+    const dayMap = new Map<string, DailyUsage>();
+
+    for (const tracked of this.tracked.values()) {
+      const u = tracked.usage;
+      if (!u.lastMessageAt) continue;
+
+      const date = u.lastMessageAt.slice(0, 10); // YYYY-MM-DD
+      const day = dayMap.get(date) || {
+        date,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+        totalCost: 0,
+        sessionCount: 0,
+      };
+
+      day.inputTokens += u.inputTokens;
+      day.outputTokens += u.outputTokens;
+      day.cacheCreationTokens += u.cacheCreationTokens;
+      day.cacheReadTokens += u.cacheReadTokens;
+      day.totalCost += u.totalCost;
+      day.sessionCount++;
+      dayMap.set(date, day);
+    }
+
+    return Array.from(dayMap.values()).sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  private notifyUpdate(): void {
+    this.callback?.(this.getAll());
+  }
+
+  stop(): void {
+    for (const session of this.tracked.values()) {
+      this.closeWatcher(session);
+    }
+    log.info('Usage service stopped');
+  }
+
+  dispose(): void {
+    this.stop();
+    this.tracked.clear();
+  }
+}
+
+export const usageService = new UsageService();

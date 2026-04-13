@@ -195,6 +195,46 @@ export interface QuotaInfo {
   codex: CodexQuota | null;
 }
 
+export interface UsageModelBreakdown {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  cost: number;
+}
+
+export interface SessionUsage {
+  claudeSessionId: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalCost: number;
+  models: UsageModelBreakdown[];
+  messageCount: number;
+  firstMessageAt: string | null;
+  lastMessageAt: string | null;
+  parsedByteOffset: number;
+}
+
+export interface DailyUsage {
+  date: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalCost: number;
+  sessionCount: number;
+}
+
+export interface UsageInfo {
+  sessions: Record<string, SessionUsage>;
+  daily: DailyUsage[];
+  totalCost: number;
+  lastUpdated: string | null;
+}
+
 export interface RepoGroupPref {
   environmentId: string;
   workingDir: string;
@@ -312,6 +352,12 @@ export interface TetherAPI {
   repoGroup: {
     getPrefs(): Promise<RepoGroupPref[]>;
     setPrefs(environmentId: string, prefs: RepoGroupPref[]): Promise<void>;
+  };
+  usage: {
+    getSession(claudeSessionId: string): Promise<SessionUsage | null>;
+    getAll(): Promise<UsageInfo>;
+    refresh(claudeSessionId?: string): Promise<UsageInfo>;
+    onUpdate(cb: (info: UsageInfo) => void): () => void;
   };
 }
 

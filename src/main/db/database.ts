@@ -54,6 +54,29 @@ export interface DbData {
   savedWorkspace: SavedWorkspace | null;
   gitProviders: GitProviderRow[];
   repoGroupPrefs: RepoGroupPref[];
+  usageSummaries: PersistedSessionUsage[];
+}
+
+export interface PersistedSessionUsage {
+  claudeSessionId: string;
+  workingDir: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalCost: number;
+  models: Array<{
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreationTokens: number;
+    cacheReadTokens: number;
+    cost: number;
+  }>;
+  messageCount: number;
+  firstMessageAt: string | null;
+  lastMessageAt: string | null;
+  parsedByteOffset: number;
 }
 
 export interface EnvironmentRow {
@@ -129,12 +152,13 @@ export function getDb(): DbData {
           savedWorkspace: loaded.savedWorkspace || null,
           gitProviders: loaded.gitProviders || [],
           repoGroupPrefs: loaded.repoGroupPrefs || [],
+          usageSummaries: loaded.usageSummaries || [],
         };
       } catch {
-        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [] };
+        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], usageSummaries: [] };
       }
     } else {
-      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [] };
+      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], usageSummaries: [] };
     }
   }
   return data;

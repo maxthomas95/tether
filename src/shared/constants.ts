@@ -67,11 +67,17 @@ export const IPC = {
   QUOTA_REFRESH: 'quota:refresh',
   QUOTA_SET_ENABLED: 'quota:set-enabled',
 
+  // Usage
+  USAGE_GET_SESSION: 'usage:get-session',
+  USAGE_GET_ALL: 'usage:get-all',
+  USAGE_REFRESH: 'usage:refresh',
+
   // Update
   UPDATE_CHECK: 'update:check',
   UPDATE_OPEN_RELEASE_PAGE: 'update:open-release',
 
   // Main -> Renderer
+  USAGE_UPDATED: 'usage:updated',
   QUOTA_UPDATED: 'quota:updated',
   UPDATE_AVAILABLE: 'update:available',
   SESSION_DATA: 'session:data',

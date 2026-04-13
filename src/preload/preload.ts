@@ -13,6 +13,8 @@ import type {
   CliToolId,
   QuotaInfo,
   RepoGroupPref,
+  SessionUsage,
+  UsageInfo,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -169,6 +171,19 @@ const api: TetherAPI = {
   repoGroup: {
     getPrefs: (): Promise<RepoGroupPref[]> => ipcRenderer.invoke(IPC.REPOGROUP_GET_PREFS),
     setPrefs: (environmentId: string, prefs: RepoGroupPref[]): Promise<void> => ipcRenderer.invoke(IPC.REPOGROUP_SET_PREFS, environmentId, prefs),
+  },
+  usage: {
+    getSession: (claudeSessionId: string): Promise<SessionUsage | null> =>
+      ipcRenderer.invoke(IPC.USAGE_GET_SESSION, claudeSessionId),
+    getAll: (): Promise<UsageInfo> =>
+      ipcRenderer.invoke(IPC.USAGE_GET_ALL),
+    refresh: (claudeSessionId?: string): Promise<UsageInfo> =>
+      ipcRenderer.invoke(IPC.USAGE_REFRESH, claudeSessionId),
+    onUpdate(cb: (info: UsageInfo) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, info: UsageInfo) => cb(info);
+      ipcRenderer.on(IPC.USAGE_UPDATED, h);
+      return () => ipcRenderer.removeListener(IPC.USAGE_UPDATED, h);
+    },
   },
 };
 

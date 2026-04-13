@@ -4,6 +4,7 @@ import squirrelStartup from 'electron-squirrel-startup';
 import { registerIpcHandlers } from './ipc/handlers';
 import { sessionManager } from './session/session-manager';
 import { quotaService } from './quota/quota-service';
+import { usageService } from './usage/usage-service';
 import { getDb, closeDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
 import { markAllRunningAsStopped } from './db/session-repo';
@@ -142,6 +143,9 @@ const createWindow = () => {
       }
     }, 15_000);
 
+    // Start usage tracking
+    setTimeout(() => usageService.start(), 3_000);
+
     // Start quota polling after a short delay to avoid blocking startup
     setTimeout(() => {
       const db = getDb();
@@ -212,6 +216,7 @@ if (!gotTheLock) {
 
   app.on('before-quit', () => {
     log.info('App shutting down');
+    usageService.dispose();
     quotaService.dispose();
     sessionManager.dispose();
     closeDb();
