@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { SessionInfo, SessionState } from '../../../shared/types';
+import { CliToolBadge } from '../CliToolBadge';
 
 interface SessionItemProps {
   session: SessionInfo;
@@ -100,7 +101,10 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
                 </span>
               )}
             </span>
-            <span className="session-path">{abbreviatePath(session.workingDir)}</span>
+            <span className="session-path">
+              <CliToolBadge session={session} />
+              <span className="session-path-text">{abbreviatePath(session.workingDir)}</span>
+            </span>
           </>
         )}
       </div>
