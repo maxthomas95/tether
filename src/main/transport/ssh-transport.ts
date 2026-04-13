@@ -19,6 +19,7 @@ export interface SSHConfig {
   privateKeyPath?: string;
   useAgent?: boolean;
   password?: string;
+  useSudo?: boolean;
 }
 
 export class SSHTransport implements SessionTransport {
@@ -119,10 +120,95 @@ export class SSHTransport implements SessionTransport {
               }
             });
 
-            // Send the command to start claude
-            stream.write(cmd);
+            // Send the command to start the CLI tool — either immediately
+            // or after sudo elevation if useSudo is enabled.
+            if (this.sshConfig.useSudo) {
+              const SUDO_TIMEOUT = 15_000;
+              const PROMPT_RE = /[$#>❯]\s*$/;
+              const PASSWORD_RE = /[Pp]assword.*:\s*$/;
+              const FAILURE_RE = /Sorry|incorrect password|Authentication failure|not in the sudoers/i;
+              const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
 
-            resolve();
+              let state: 'waitShell' | 'waitPassword' | 'waitElevated' = 'waitShell';
+              let buffer = '';
+              let passwordSent = false;
+              let settled = false;
+
+              const timer = setTimeout(() => {
+                if (!settled) {
+                  settled = true;
+                  log.error('Sudo elevation timed out', { host: this.sshConfig.host });
+                  reject(new Error('Sudo elevation timed out after 15s'));
+                }
+              }, SUDO_TIMEOUT);
+
+              const lastNonEmptyLine = (text: string): string =>
+                text.split('\n').filter(l => l.trim()).pop()?.trim() || '';
+
+              const onElevationData = (data: Buffer) => {
+                if (settled) return;
+                const stripped = stripAnsi(data.toString('utf-8'));
+                buffer += stripped;
+                const last = lastNonEmptyLine(buffer);
+
+                if (state === 'waitShell') {
+                  if (PROMPT_RE.test(last)) {
+                    log.info('Shell prompt detected, sending sudo -i');
+                    state = 'waitPassword';
+                    buffer = '';
+                    stream.write('sudo -i\n');
+                  }
+                } else if (state === 'waitPassword') {
+                  if (FAILURE_RE.test(buffer)) {
+                    settled = true;
+                    clearTimeout(timer);
+                    reject(new Error('Sudo authentication failed'));
+                    return;
+                  }
+                  if (PASSWORD_RE.test(last)) {
+                    log.info('Password prompt detected, sending password');
+                    passwordSent = true;
+                    state = 'waitElevated';
+                    buffer = '';
+                    stream.write((this.sshConfig.password || '') + '\n');
+                  } else if (PROMPT_RE.test(last) && buffer.length > 5) {
+                    // NOPASSWD: root shell appeared without password prompt
+                    log.info('NOPASSWD sudo detected, elevated without password');
+                    settled = true;
+                    clearTimeout(timer);
+                    stream.write(cmd);
+                    resolve();
+                  }
+                } else if (state === 'waitElevated') {
+                  if (FAILURE_RE.test(buffer)) {
+                    settled = true;
+                    clearTimeout(timer);
+                    reject(new Error('Sudo authentication failed'));
+                    return;
+                  }
+                  if (PASSWORD_RE.test(last) && passwordSent) {
+                    // Second password prompt means first password was wrong
+                    settled = true;
+                    clearTimeout(timer);
+                    reject(new Error('Sudo authentication failed — incorrect password'));
+                    return;
+                  }
+                  if (PROMPT_RE.test(last)) {
+                    log.info('Root shell prompt detected, sending launch command');
+                    settled = true;
+                    clearTimeout(timer);
+                    stream.write(cmd);
+                    resolve();
+                  }
+                }
+              };
+
+              stream.on('data', onElevationData);
+            } else {
+              // No sudo — send command immediately
+              stream.write(cmd);
+              resolve();
+            }
           },
         );
       });

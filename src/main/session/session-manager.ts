@@ -124,6 +124,7 @@ async function createTransport(environmentId?: string): Promise<SessionTransport
       privateKeyPath: config.privateKeyPath,
       useAgent: config.useAgent ?? (!config.privateKeyPath && !password),
       password,
+      useSudo: !!raw.useSudo,
     });
   }
 

@@ -21,6 +21,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
   const [vaultPath, setVaultPath] = useState('');
   const [authMethod, setAuthMethod] = useState<'agent' | 'key' | 'password'>('agent');
   const [defaultDir, setDefaultDir] = useState('~');
+  const [useSudo, setUseSudo] = useState(false);
   const [coderBinary, setCoderBinary] = useState('coder');
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [vaultConnected, setVaultConnected] = useState(false);
@@ -82,6 +83,9 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
           config.password = password;
         }
       }
+      if (useSudo) {
+        config.useSudo = true;
+      }
     } else if (type === 'coder') {
       config.binaryPath = coderBinary.trim() || 'coder';
     }
@@ -89,7 +93,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
     // Reset form
     setName(''); setHost(''); setPort('22'); setUsername('');
     setKeyPath(''); setPassword(''); setAuthMethod('agent'); setDefaultDir('~'); setEnvVars({});
-    setStoreInVault(false); setVaultPath(''); setCreateError(null); setCreating(false);
+    setStoreInVault(false); setVaultPath(''); setCreateError(null); setCreating(false); setUseSudo(false);
     setCoderBinary('coder');
     onClose();
   };
@@ -253,6 +257,22 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
                   placeholder="~/repos"
                 />
               </div>
+
+              {authMethod === 'password' && (
+                <div className="form-group">
+                  <label className="form-radio-label">
+                    <input
+                      type="checkbox"
+                      checked={useSudo}
+                      onChange={e => setUseSudo(e.target.checked)}
+                    />
+                    Run as root (sudo -i)
+                  </label>
+                  <span className="form-hint">
+                    Elevate to root via sudo before launching. Uses the SSH password.
+                  </span>
+                </div>
+              )}
             </>
           )}
 
