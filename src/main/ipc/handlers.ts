@@ -14,8 +14,10 @@ import type {
   VaultPlaintextSecret,
   MigrateSecretOptions,
   CoderWorkspace,
+  QuotaInfo,
 } from '../../shared/types';
 import { sessionManager } from '../session/session-manager';
+import { quotaService } from '../quota/quota-service';
 import * as envRepo from '../db/environment-repo';
 import * as sessionRepo from '../db/session-repo';
 import * as profileRepo from '../db/profile-repo';
@@ -716,5 +718,19 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     // 3) Replace the in-DB value with the reference and persist
     writebackRef();
     saveDb();
+  });
+
+  // === Quota ===
+
+  quotaService.onUpdate((info: QuotaInfo) => {
+    send(IPC.QUOTA_UPDATED, info);
+  });
+
+  ipcMain.handle(IPC.QUOTA_GET, async (): Promise<QuotaInfo> => {
+    return quotaService.getQuota();
+  });
+
+  ipcMain.handle(IPC.QUOTA_REFRESH, async (): Promise<QuotaInfo> => {
+    return quotaService.fetchQuota();
   });
 }

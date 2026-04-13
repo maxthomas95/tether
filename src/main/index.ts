@@ -3,6 +3,7 @@ import path from 'node:path';
 import squirrelStartup from 'electron-squirrel-startup';
 import { registerIpcHandlers } from './ipc/handlers';
 import { sessionManager } from './session/session-manager';
+import { quotaService } from './quota/quota-service';
 import { getDb, closeDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
 import { markAllRunningAsStopped } from './db/session-repo';
@@ -140,6 +141,9 @@ const createWindow = () => {
         // Silent fail — don't annoy user on network/parse errors
       }
     }, 15_000);
+
+    // Start quota polling after a short delay to avoid blocking startup
+    setTimeout(() => quotaService.start(), 5_000);
   });
 
   registerIpcHandlers(mainWindow);
@@ -201,6 +205,7 @@ if (!gotTheLock) {
 
   app.on('before-quit', () => {
     log.info('App shutting down');
+    quotaService.dispose();
     sessionManager.dispose();
     closeDb();
     closeLogger();

@@ -248,6 +248,79 @@ html, body, #root {
   padding: 8px 0;
 }
 
+/* Quota footer */
+.sidebar-footer {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.sidebar-footer:hover {
+  background: var(--bg-hover);
+}
+
+.quota-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+}
+
+.quota-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  width: 18px;
+  flex-shrink: 0;
+}
+
+.quota-bar-track {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-hover);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.quota-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.quota-bar-fill--ok { background: var(--status-running); }
+.quota-bar-fill--warn { background: var(--status-waiting); }
+.quota-bar-fill--crit { background: var(--status-dead); }
+
+.quota-pct {
+  font-size: 10px;
+  color: var(--text-secondary);
+  width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.quota-reset {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.quota-error {
+  font-size: 10px;
+  color: var(--status-dead);
+}
+
+.quota-plan {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: capitalize;
+  margin-top: 2px;
+}
+
 /* Environment groups */
 .env-group {
   margin-bottom: 4px;

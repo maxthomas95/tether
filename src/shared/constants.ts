@@ -59,11 +59,16 @@ export const IPC = {
   DOCS_OPEN: 'docs:open',
   DOCS_THEME_CHANGED: 'docs:theme-changed',
 
+  // Quota
+  QUOTA_GET: 'quota:get',
+  QUOTA_REFRESH: 'quota:refresh',
+
   // Update
   UPDATE_CHECK: 'update:check',
   UPDATE_OPEN_RELEASE_PAGE: 'update:open-release',
 
   // Main -> Renderer
+  QUOTA_UPDATED: 'quota:updated',
   UPDATE_AVAILABLE: 'update:available',
   SESSION_DATA: 'session:data',
   SESSION_STATE_CHANGE: 'session:state-change',

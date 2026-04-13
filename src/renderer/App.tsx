@@ -5,6 +5,7 @@ import { NewSessionDialog } from './components/sidebar/NewSessionDialog';
 import { NewEnvironmentDialog } from './components/sidebar/NewEnvironmentDialog';
 import { ResumeChatDialog } from './components/sidebar/ResumeChatDialog';
 import { SidebarResizeHandle } from './components/sidebar/SidebarResizeHandle';
+import { QuotaFooter } from './components/sidebar/QuotaFooter';
 import { SettingsDialog } from './components/SettingsDialog';
 import { MenuBar } from './components/MenuBar';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
@@ -608,6 +609,7 @@ export function App() {
             );
           })}
         </div>
+        <QuotaFooter />
       </aside>
       {sidebarVisible && <SidebarResizeHandle onResize={setSidebarWidth} />}
       <main

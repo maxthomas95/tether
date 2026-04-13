@@ -11,6 +11,7 @@ import type {
   TranscriptInfo,
   CoderWorkspace,
   CliToolId,
+  QuotaInfo,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -152,6 +153,15 @@ const api: TetherAPI = {
       const h = (_e: Electron.IpcRendererEvent, status: VaultStatus) => cb(status);
       ipcRenderer.on(IPC.VAULT_STATUS_CHANGED, h);
       return () => ipcRenderer.removeListener(IPC.VAULT_STATUS_CHANGED, h);
+    },
+  },
+  quota: {
+    get: (): Promise<QuotaInfo> => ipcRenderer.invoke(IPC.QUOTA_GET),
+    refresh: (): Promise<QuotaInfo> => ipcRenderer.invoke(IPC.QUOTA_REFRESH),
+    onUpdate(cb: (info: QuotaInfo) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, info: QuotaInfo) => cb(info);
+      ipcRenderer.on(IPC.QUOTA_UPDATED, h);
+      return () => ipcRenderer.removeListener(IPC.QUOTA_UPDATED, h);
     },
   },
 };

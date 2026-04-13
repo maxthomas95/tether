@@ -168,6 +168,20 @@ export interface UpdateCheckResult {
   currentVersion: string;
 }
 
+export interface QuotaWindow {
+  utilization: number | null;
+  resetsAt: string | null;
+}
+
+export interface QuotaInfo {
+  fiveHour: QuotaWindow;
+  sevenDay: QuotaWindow;
+  subscriptionType: string | null;
+  rateLimitTier: string | null;
+  lastUpdated: string | null;
+  error: string | null;
+}
+
 export interface CreateEnvironmentOptions {
   name: string;
   type: EnvironmentType;
@@ -268,6 +282,11 @@ export interface TetherAPI {
     migrateSecret(opts: MigrateSecretOptions): Promise<void>;
     writeSecret(ref: string, value: string): Promise<void>;
     onStatusChange(cb: (status: VaultStatus) => void): () => void;
+  };
+  quota: {
+    get(): Promise<QuotaInfo>;
+    refresh(): Promise<QuotaInfo>;
+    onUpdate(cb: (info: QuotaInfo) => void): () => void;
   };
 }
 
