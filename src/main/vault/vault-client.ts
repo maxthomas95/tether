@@ -55,7 +55,12 @@ export class VaultClient {
       { authenticated: false },
     );
     const url = body?.data?.auth_url;
-    if (!url) throw new VaultError('Vault OIDC auth_url response missing auth_url field');
+    if (!url) {
+      const snippet = JSON.stringify(body)?.slice(0, 512) ?? '(empty)';
+      throw new VaultError(
+        `Vault OIDC auth_url response missing auth_url field. Role: "${role}", redirect_uri: "${redirectUri}". Response body: ${snippet}`,
+      );
+    }
     return { auth_url: url };
   }
 
