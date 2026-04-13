@@ -7,9 +7,12 @@ interface NewEnvironmentDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onCreate: (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => void;
+  /** When set, the dialog opens in edit mode with pre-filled values. */
+  editing?: { id: string; name: string; type: EnvironmentType; config: Record<string, unknown>; envVars: Record<string, string> } | null;
+  onUpdate?: (id: string, name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => void;
 }
 
-export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironmentDialogProps) {
+export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpdate }: NewEnvironmentDialogProps) {
   const [name, setName] = useState('');
   const [type, setType] = useState<EnvironmentType>('ssh');
   const [host, setHost] = useState('');
@@ -29,6 +32,36 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
   const [vaultIdentity, setVaultIdentity] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Pre-fill form when editing
+  useEffect(() => {
+    if (!isOpen || !editing) return;
+    setName(editing.name);
+    setType(editing.type);
+    setEnvVars(editing.envVars || {});
+    const cfg = editing.config || {};
+    if (editing.type === 'ssh') {
+      setHost((cfg.host as string) || '');
+      setPort(String(cfg.port || 22));
+      setUsername((cfg.username as string) || '');
+      setDefaultDir((cfg.defaultDir as string) || '~');
+      setUseSudo(!!(cfg.useSudo));
+      if (cfg.useAgent) {
+        setAuthMethod('agent');
+      } else if (cfg.privateKeyPath) {
+        setAuthMethod('key');
+        setKeyPath(cfg.privateKeyPath as string);
+      } else if (cfg.password) {
+        setAuthMethod('password');
+        // Don't pre-fill actual password for security — show placeholder
+        setPassword('');
+      } else {
+        setAuthMethod('agent');
+      }
+    } else if (editing.type === 'coder') {
+      setCoderBinary((cfg.binaryPath as string) || 'coder');
+    }
+  }, [isOpen, editing]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -52,7 +85,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
     'password',
   );
 
-  const handleCreate = async () => {
+  const handleSubmit = async () => {
     if (!name.trim() || (type === 'ssh' && !host.trim())) return;
 
     setCreating(true);
@@ -82,6 +115,9 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
         } else {
           config.password = password;
         }
+      } else if (authMethod === 'password' && !password && editing) {
+        // Editing mode: keep existing password if not changed
+        config.password = editing.config.password;
       }
       if (useSudo) {
         config.useSudo = true;
@@ -89,25 +125,34 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
     } else if (type === 'coder') {
       config.binaryPath = coderBinary.trim() || 'coder';
     }
-    onCreate(name.trim(), type, config, envVars);
+
+    if (editing && onUpdate) {
+      onUpdate(editing.id, name.trim(), type, config, envVars);
+    } else {
+      onCreate(name.trim(), type, config, envVars);
+    }
     // Reset form
+    resetForm();
+    onClose();
+  };
+
+  const resetForm = () => {
     setName(''); setHost(''); setPort('22'); setUsername('');
     setKeyPath(''); setPassword(''); setAuthMethod('agent'); setDefaultDir('~'); setEnvVars({});
     setStoreInVault(false); setVaultPath(''); setCreateError(null); setCreating(false); setUseSudo(false);
     setCoderBinary('coder');
-    onClose();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') onClose();
-    if (e.key === 'Enter' && name.trim() && (type !== 'ssh' || host.trim())) handleCreate();
+    if (e.key === 'Enter' && name.trim() && (type !== 'ssh' || host.trim())) handleSubmit();
   };
 
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div className="dialog" onClick={e => e.stopPropagation()} onKeyDown={handleKeyDown}>
         <div className="dialog-header">
-          <span>New Environment</span>
+          <span>{editing ? 'Edit Environment' : 'New Environment'}</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>
         </div>
         <div className="dialog-body">
@@ -128,6 +173,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
               className="form-input"
               value={type}
               onChange={e => setType(e.target.value as EnvironmentType)}
+              disabled={!!editing}
             >
               <option value="ssh">SSH</option>
               <option value="local">Local</option>
@@ -210,7 +256,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
                       type="password"
                       value={password}
                       onChange={e => setPassword(e.target.value)}
-                      placeholder="Enter password"
+                      placeholder={editing ? 'Leave empty to keep current' : 'Enter password'}
                     />
                     {vaultConnected && (
                       <>
@@ -308,10 +354,12 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate }: NewEnvironme
           <button className="form-btn" onClick={onClose}>Cancel</button>
           <button
             className="form-btn form-btn--primary"
-            onClick={handleCreate}
-            disabled={creating || !name.trim() || (type === 'ssh' && (!host.trim() || !passwordReady))}
+            onClick={handleSubmit}
+            disabled={creating || !name.trim() || (type === 'ssh' && (!host.trim() || (!editing && !passwordReady)))}
           >
-            {creating ? 'Creating\u2026' : 'Create Environment'}
+            {creating
+              ? (editing ? 'Saving\u2026' : 'Creating\u2026')
+              : (editing ? 'Save Changes' : 'Create Environment')}
           </button>
         </div>
       </div>

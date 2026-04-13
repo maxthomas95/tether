@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { SplitLayout } from './components/SplitLayout';
 import { RepoGroup } from './components/sidebar/RepoGroup';
 import { NewSessionDialog } from './components/sidebar/NewSessionDialog';
@@ -54,6 +54,9 @@ export function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null);
   const [repoGroupPrefs, setRepoGroupPrefs] = useState<RepoGroupPref[]>([]);
+  const [editingEnv, setEditingEnv] = useState<EnvironmentInfo | null>(null);
+  const [envMenuOpenId, setEnvMenuOpenId] = useState<string | null>(null);
+  const envMenuRef = useRef<HTMLDivElement>(null);
   const { themeName, setTheme, xtermTheme } = useTheme();
   const termManager = useTerminalManager(xtermTheme);
   const { layoutState, layoutDispatch } = useLayoutState();
@@ -309,6 +312,63 @@ export function App() {
       });
     }
   }, [notify]);
+
+  const handleUpdateEnvironment = useCallback(async (id: string, name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
+    try {
+      await window.electronAPI.environment.update(id, { name, type, config, envVars });
+      setEnvironments(prev => prev.map(env =>
+        env.id === id ? { ...env, name, type, config, envVars } : env,
+      ));
+    } catch (err) {
+      console.error('Failed to update environment:', err);
+      notify({
+        type: 'error',
+        title: 'Failed to update environment',
+        message: extractErrorMessage(err),
+      });
+    }
+  }, [notify]);
+
+  const handleDeleteEnvironment = useCallback(async (env: EnvironmentInfo) => {
+    const envSessions = sessions.filter(s =>
+      env.type === 'local' ? (!s.environmentId || s.environmentId === env.id) : s.environmentId === env.id,
+    );
+    const msg = envSessions.length > 0
+      ? `Delete "${env.name}"? ${envSessions.length} session(s) will be removed.`
+      : `Delete "${env.name}"?`;
+    if (!confirm(msg)) return;
+
+    try {
+      // Remove associated sessions first
+      for (const s of envSessions) {
+        await window.electronAPI.session.remove(s.id);
+        termManager.remove(s.id);
+        layoutDispatch({ type: 'REMOVE_SESSION', sessionId: s.id });
+      }
+      await window.electronAPI.environment.delete(env.id);
+      setEnvironments(prev => prev.filter(e => e.id !== env.id));
+      setSessions(prev => prev.filter(s => !envSessions.some(es => es.id === s.id)));
+    } catch (err) {
+      console.error('Failed to delete environment:', err);
+      notify({
+        type: 'error',
+        title: 'Failed to delete environment',
+        message: extractErrorMessage(err),
+      });
+    }
+  }, [sessions, termManager, layoutDispatch, notify]);
+
+  // Close env context menu on outside click
+  useEffect(() => {
+    if (!envMenuOpenId) return;
+    const handleClick = (e: MouseEvent) => {
+      if (envMenuRef.current && !envMenuRef.current.contains(e.target as Node)) {
+        setEnvMenuOpenId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [envMenuOpenId]);
 
   const handleStop = useCallback(async (id: string) => {
     await window.electronAPI.session.stop(id);
@@ -720,7 +780,8 @@ export function App() {
                 <div
                   className="env-group-header"
                   onClick={() => toggleGroup(env.id)}
-                  style={{ cursor: 'pointer' }}
+                  onContextMenu={e => { e.preventDefault(); setEnvMenuOpenId(prev => prev === env.id ? null : env.id); }}
+                  style={{ cursor: 'pointer', position: 'relative' }}
                 >
                   <span>
                     {isCollapsed ? '\u25b6' : '\u25bc'} {env.name}
@@ -729,6 +790,16 @@ export function App() {
                     )}
                   </span>
                   <span className="env-group-count">({envSessions.length})</span>
+                  {envMenuOpenId === env.id && (
+                    <div ref={envMenuRef} className="context-menu" onClick={e => e.stopPropagation()}>
+                      <div className="context-menu-item" onClick={() => { setEnvMenuOpenId(null); setEditingEnv(env); setEnvDialogOpen(true); }}>
+                        Edit
+                      </div>
+                      <div className="context-menu-item context-menu-item--danger" onClick={() => { setEnvMenuOpenId(null); handleDeleteEnvironment(env); }}>
+                        Delete
+                      </div>
+                    </div>
+                  )}
                 </div>
                 {!isCollapsed && envSessions.length > 0 && (
                   (() => {
@@ -822,8 +893,10 @@ export function App() {
       />
       <NewEnvironmentDialog
         isOpen={envDialogOpen}
-        onClose={() => setEnvDialogOpen(false)}
+        onClose={() => { setEnvDialogOpen(false); setEditingEnv(null); }}
         onCreate={handleCreateEnvironment}
+        editing={editingEnv}
+        onUpdate={handleUpdateEnvironment}
       />
       <SettingsDialog
         isOpen={settingsOpen}
