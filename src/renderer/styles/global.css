@@ -513,6 +513,42 @@ html, body, #root {
   color: var(--status-running);
 }
 
+.repo-group-pin-btn {
+  opacity: 0;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+  padding: 0 2px;
+}
+
+.repo-group-header:hover .repo-group-pin-btn,
+.repo-group-header--pinned .repo-group-pin-btn {
+  opacity: 1;
+}
+
+.repo-group-header--pinned .repo-group-pin-btn {
+  color: var(--accent);
+}
+
+.repo-group-header--drop-above {
+  border-top: 2px solid var(--accent);
+}
+
+.repo-group-header--drop-below {
+  border-bottom: 2px solid var(--accent);
+}
+
+.repo-group-header[draggable] {
+  cursor: grab;
+}
+
+.repo-group-header[draggable]:active {
+  cursor: grabbing;
+  opacity: 0.6;
+}
+
 /* Nested session items (inside repo groups) */
 .session-item--nested {
   padding-left: 28px;

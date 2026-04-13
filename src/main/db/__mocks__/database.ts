@@ -13,6 +13,7 @@ function createFreshDb(): DbData {
     defaultCliFlagsPerTool: {},
     savedWorkspace: null,
     gitProviders: [],
+    repoGroupPrefs: [],
   };
 }
 

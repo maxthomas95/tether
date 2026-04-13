@@ -359,6 +359,23 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     saveDb();
   });
 
+  // === Repo group preferences ===
+
+  ipcMain.handle(IPC.REPOGROUP_GET_PREFS, async () => {
+    const { getDb } = await import('../db/database');
+    return getDb().repoGroupPrefs;
+  });
+
+  ipcMain.handle(IPC.REPOGROUP_SET_PREFS, async (_event, environmentId: string, prefs: Array<{ environmentId: string; workingDir: string; pinned: boolean; sortOrder: number }>) => {
+    const { getDb, saveDb } = await import('../db/database');
+    const db = getDb();
+    db.repoGroupPrefs = [
+      ...db.repoGroupPrefs.filter(p => p.environmentId !== environmentId),
+      ...prefs,
+    ];
+    saveDb();
+  });
+
   // === Workspace save/restore ===
 
   ipcMain.handle(IPC.WORKSPACE_SAVE, async (_event, sessions: Array<{ workingDir: string; label: string; environmentId?: string; claudeSessionId?: string }>, activeIndex: number) => {

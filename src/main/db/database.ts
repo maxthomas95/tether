@@ -2,6 +2,7 @@ import { app } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { CliToolId } from '../../shared/cli-tools';
+import type { RepoGroupPref } from '../../shared/types';
 
 export interface SavedSession {
   workingDir: string;
@@ -52,6 +53,7 @@ export interface DbData {
   defaultCliFlagsPerTool: Partial<Record<CliToolId, string[]>>;
   savedWorkspace: SavedWorkspace | null;
   gitProviders: GitProviderRow[];
+  repoGroupPrefs: RepoGroupPref[];
 }
 
 export interface EnvironmentRow {
@@ -126,12 +128,13 @@ export function getDb(): DbData {
           defaultCliFlagsPerTool: perTool,
           savedWorkspace: loaded.savedWorkspace || null,
           gitProviders: loaded.gitProviders || [],
+          repoGroupPrefs: loaded.repoGroupPrefs || [],
         };
       } catch {
-        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [] };
+        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [] };
       }
     } else {
-      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [] };
+      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [] };
     }
   }
   return data;

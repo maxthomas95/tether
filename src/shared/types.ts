@@ -195,6 +195,13 @@ export interface QuotaInfo {
   codex: CodexQuota | null;
 }
 
+export interface RepoGroupPref {
+  environmentId: string;
+  workingDir: string;
+  pinned: boolean;
+  sortOrder: number;
+}
+
 export interface CreateEnvironmentOptions {
   name: string;
   type: EnvironmentType;
@@ -301,6 +308,10 @@ export interface TetherAPI {
     refresh(): Promise<QuotaInfo>;
     setEnabled(enabled: boolean): Promise<void>;
     onUpdate(cb: (info: QuotaInfo) => void): () => void;
+  };
+  repoGroup: {
+    getPrefs(): Promise<RepoGroupPref[]>;
+    setPrefs(environmentId: string, prefs: RepoGroupPref[]): Promise<void>;
   };
 }
 

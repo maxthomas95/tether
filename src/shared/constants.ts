@@ -31,6 +31,9 @@ export const IPC = {
   CONFIG_GET_DEFAULT_CLI_FLAGS_PER_TOOL: 'config:get-default-cli-flags-per-tool',
   CONFIG_SET_DEFAULT_CLI_FLAGS_FOR_TOOL: 'config:set-default-cli-flags-for-tool',
 
+  REPOGROUP_GET_PREFS: 'repogroup:get-prefs',
+  REPOGROUP_SET_PREFS: 'repogroup:set-prefs',
+
   TITLEBAR_UPDATE: 'titlebar:update',
 
   // Git provider & clone

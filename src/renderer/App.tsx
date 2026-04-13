@@ -19,7 +19,7 @@ import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
 import { generatePaneId, findLeaf, getLeaves } from './lib/layout-tree';
 import type { LayoutNode } from '../shared/layout-types';
-import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult } from '../shared/types';
+import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
 import logoSrc from './assets/logo.png';
 
@@ -42,6 +42,7 @@ export function App() {
   const [resumePickerFor, setResumePickerFor] = useState<{ sessionId: string; workingDir: string; currentTranscriptId?: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null);
+  const [repoGroupPrefs, setRepoGroupPrefs] = useState<RepoGroupPref[]>([]);
   const { themeName, setTheme, xtermTheme } = useTheme();
   const termManager = useTerminalManager(xtermTheme);
   const { layoutState, layoutDispatch } = useLayoutState();
@@ -56,6 +57,11 @@ export function App() {
   // Load profiles on mount
   useEffect(() => {
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
+  }, []);
+
+  // Load repo group preferences on mount
+  useEffect(() => {
+    window.electronAPI.repoGroup.getPrefs().then(setRepoGroupPrefs).catch(() => {});
   }, []);
 
   // Load resume-related UI settings
@@ -346,6 +352,86 @@ export function App() {
     setDraggingPaneId(null);
   }, []);
 
+  // Repo group pin/reorder helpers
+  const sortRepoGroups = useCallback((
+    entries: [string, SessionInfo[]][],
+    envId: string,
+  ): [string, SessionInfo[]][] => {
+    const envPrefs = repoGroupPrefs.filter(p => p.environmentId === envId);
+    const prefMap = new Map(envPrefs.map(p => [p.workingDir, p]));
+    return entries.sort((a, b) => {
+      const pa = prefMap.get(a[0]);
+      const pb = prefMap.get(b[0]);
+      const pinnedA = pa?.pinned ?? false;
+      const pinnedB = pb?.pinned ?? false;
+      if (pinnedA !== pinnedB) return pinnedA ? -1 : 1;
+      const orderA = pa?.sortOrder ?? Infinity;
+      const orderB = pb?.sortOrder ?? Infinity;
+      if (orderA !== orderB) return orderA - orderB;
+      return a[0].localeCompare(b[0]);
+    });
+  }, [repoGroupPrefs]);
+
+  const handleTogglePin = useCallback(async (environmentId: string, workingDir: string) => {
+    const envPrefs = repoGroupPrefs.filter(p => p.environmentId === environmentId);
+    const existing = envPrefs.find(p => p.workingDir === workingDir);
+    const newPinned = !(existing?.pinned ?? false);
+    let updated: RepoGroupPref[];
+    if (existing) {
+      updated = envPrefs.map(p =>
+        p.workingDir === workingDir ? { ...p, pinned: newPinned } : p,
+      );
+    } else {
+      updated = [...envPrefs, { environmentId, workingDir, pinned: newPinned, sortOrder: envPrefs.length }];
+    }
+    setRepoGroupPrefs(prev => [
+      ...prev.filter(p => p.environmentId !== environmentId),
+      ...updated,
+    ]);
+    await window.electronAPI.repoGroup.setPrefs(environmentId, updated);
+  }, [repoGroupPrefs]);
+
+  const handleDropRepoGroup = useCallback(async (
+    environmentId: string,
+    sourceDir: string,
+    targetDir: string,
+    position: 'above' | 'below',
+  ) => {
+    // Get current sorted order for this environment
+    const envSessions = sessions.filter(s => {
+      const env = environments.find(e => e.id === environmentId);
+      if (!env) return false;
+      if (env.type === 'local') return !s.environmentId || s.environmentId === env.id;
+      return s.environmentId === env.id;
+    });
+    const dirs = [...new Set(envSessions.map(s => s.workingDir))];
+    const sorted = sortRepoGroups(
+      dirs.map(d => [d, []] as [string, SessionInfo[]]),
+      environmentId,
+    ).map(([d]) => d);
+    // Remove source, insert at target position
+    const without = sorted.filter(d => d !== sourceDir);
+    const targetIdx = without.indexOf(targetDir);
+    const insertIdx = position === 'above' ? targetIdx : targetIdx + 1;
+    without.splice(insertIdx, 0, sourceDir);
+    // Build updated prefs preserving pinned status
+    const envPrefs = repoGroupPrefs.filter(p => p.environmentId === environmentId);
+    const updated = without.map((dir, index) => {
+      const existing = envPrefs.find(p => p.workingDir === dir);
+      return {
+        environmentId,
+        workingDir: dir,
+        pinned: existing?.pinned ?? false,
+        sortOrder: index,
+      };
+    });
+    setRepoGroupPrefs(prev => [
+      ...prev.filter(p => p.environmentId !== environmentId),
+      ...updated,
+    ]);
+    await window.electronAPI.repoGroup.setPrefs(environmentId, updated);
+  }, [sessions, environments, repoGroupPrefs, sortRepoGroups]);
+
   // Drag handler for pane header drags
   const handlePaneDragStateChange = useCallback((dragging: boolean, sourcePaneId?: string) => {
     setIsDragging(dragging);
@@ -577,12 +663,17 @@ export function App() {
                       if (!byDir.has(dir)) byDir.set(dir, []);
                       byDir.get(dir)!.push(s);
                     }
-                    return Array.from(byDir.entries()).map(([dir, dirSessions]) => (
+                    const sortedEntries = sortRepoGroups(Array.from(byDir.entries()), env.id);
+                    return sortedEntries.map(([dir, dirSessions]) => (
                       <RepoGroup
                         key={dir}
                         repoPath={dir}
+                        environmentId={env.id}
                         sessions={dirSessions}
                         activeSessionId={activeSessionId}
+                        pinned={repoGroupPrefs.find(p => p.environmentId === env.id && p.workingDir === dir)?.pinned ?? false}
+                        onTogglePin={handleTogglePin}
+                        onDropRepoGroup={handleDropRepoGroup}
                         onSelectSession={handleSelectSession}
                         onStop={handleStop}
                         onKill={handleKill}

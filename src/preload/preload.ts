@@ -12,6 +12,7 @@ import type {
   CoderWorkspace,
   CliToolId,
   QuotaInfo,
+  RepoGroupPref,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -164,6 +165,10 @@ const api: TetherAPI = {
       ipcRenderer.on(IPC.QUOTA_UPDATED, h);
       return () => ipcRenderer.removeListener(IPC.QUOTA_UPDATED, h);
     },
+  },
+  repoGroup: {
+    getPrefs: (): Promise<RepoGroupPref[]> => ipcRenderer.invoke(IPC.REPOGROUP_GET_PREFS),
+    setPrefs: (environmentId: string, prefs: RepoGroupPref[]): Promise<void> => ipcRenderer.invoke(IPC.REPOGROUP_SET_PREFS, environmentId, prefs),
   },
 };
 
