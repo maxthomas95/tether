@@ -37,11 +37,32 @@ interface ClaudeApiResponse {
 
 interface CodexApiResponse {
   rate_limit?: {
-    primary_window?: { used_percent: number; reset_at: string | null };
-    secondary_window?: { used_percent: number; reset_at: string | null };
+    primary_window?: { used_percent: number; reset_at: string | number | null };
+    secondary_window?: { used_percent: number; reset_at: string | number | null };
   };
   plan_type?: string;
   [key: string]: unknown;
+}
+
+export function normalizeCodexResetAt(value: string | number | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    const millis = value < 10_000_000_000 ? value * 1000 : value;
+    const date = new Date(millis);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    return normalizeCodexResetAt(Number(trimmed));
+  }
+
+  const date = new Date(trimmed);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function emptyQuota(error: string | null = null): QuotaInfo {
@@ -238,11 +259,11 @@ class QuotaService {
       return {
         primary: {
           usedPercent: data.rate_limit?.primary_window?.used_percent ?? null,
-          resetAt: data.rate_limit?.primary_window?.reset_at ?? null,
+          resetAt: normalizeCodexResetAt(data.rate_limit?.primary_window?.reset_at),
         },
         secondary: {
           usedPercent: data.rate_limit?.secondary_window?.used_percent ?? null,
-          resetAt: data.rate_limit?.secondary_window?.reset_at ?? null,
+          resetAt: normalizeCodexResetAt(data.rate_limit?.secondary_window?.reset_at),
         },
         planType: data.plan_type ?? null,
         error: null,
