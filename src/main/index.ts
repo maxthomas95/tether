@@ -63,6 +63,8 @@ function createDocsWindow(): void {
     },
   });
 
+  docsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
   docsWindow.once('ready-to-show', () => {
     docsWindow?.show();
   });
@@ -117,6 +119,8 @@ const createWindow = () => {
       nodeIntegration: false,
     },
   });
+
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   // Wait until the renderer has painted its first frame (which includes
   // the inline boot loader in index.html) before showing the window.

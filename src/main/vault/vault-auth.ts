@@ -218,6 +218,10 @@ export async function loginOidc(): Promise<VaultStatus> {
 
   try {
     const { auth_url } = await client.oidcAuthUrl(config.role, redirectUri);
+    const authU = new URL(auth_url);
+    if (authU.protocol !== 'https:' && authU.protocol !== 'http:') {
+      throw new VaultError(`Refusing to open auth_url with scheme ${authU.protocol}`);
+    }
     await shell.openExternal(auth_url);
     const { state, code, idToken } = await waitForCallback;
     const callback = await client.oidcCallback(state, code, idToken);
