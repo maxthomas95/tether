@@ -55,7 +55,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [quotaEnabled, setQuotaEnabled] = useState(true);
   const [usageStripEnabled, setUsageStripEnabled] = useState(true);
   const [globalUsageEnabled, setGlobalUsageEnabled] = useState(true);
-  const [hideTerminalCursor, setHideTerminalCursor] = useState(false);
+  const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
   const [loaded, setLoaded] = useState(false);
 
   // Profile state
@@ -121,7 +121,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setQuotaEnabled(quota !== 'false');
       setUsageStripEnabled(usageStrip !== 'false');
       setGlobalUsageEnabled(globalUsage !== 'false');
-      setHideTerminalCursor(hideCursor === 'true');
+      setHideTerminalCursor(hideCursor !== 'false');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -308,7 +308,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
               Suppress the xterm.js block cursor. Claude Code, Codex, and OpenCode draw
               their own input indicator, so the xterm cursor often reads as a redundant
               second cursor that bounces around during thinking animations.
-              Leave off if you use plain shells, vim, or htop in Tether.
+              Turn this off if you use plain shells, vim, or htop in Tether.
             </p>
           </div>
 
