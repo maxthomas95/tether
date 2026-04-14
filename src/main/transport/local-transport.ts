@@ -36,8 +36,6 @@ export class LocalTransport implements SessionTransport {
 
   async start(options: TransportStartOptions): Promise<void> {
     const pty = getPty();
-    const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
-
     const binary = options.binaryName || 'claude';
 
     const resumeToolSessionId = options.resumeToolSessionId || options.resumeClaudeSessionId;
@@ -47,12 +45,14 @@ export class LocalTransport implements SessionTransport {
       toolSessionId,
     });
 
-    const args = process.platform === 'win32'
-      ? ['/c', binary, ...cliArgs]
-      : ['-c', `${binary} ${cliArgs.join(' ')}`];
+    // Spawn the CLI binary directly on Unix instead of `sh -c "${binary} ${cliArgs.join(' ')}"`,
+    // which would interpret shell metachars in cliArgs. Windows keeps the cmd.exe wrapper
+    // because node-pty's Windows host expects it for proper PTY semantics.
+    const spawnFile = process.platform === 'win32' ? 'cmd.exe' : binary;
+    const spawnArgs = process.platform === 'win32' ? ['/c', binary, ...cliArgs] : cliArgs;
 
-    log.info('Spawning local PTY', { shell, cwd: options.workingDir, args });
-    this.ptyProcess = pty.spawn(shell, args, {
+    log.info('Spawning local PTY', { spawnFile, cwd: options.workingDir, args: spawnArgs });
+    this.ptyProcess = pty.spawn(spawnFile, spawnArgs, {
       name: 'xterm-256color',
       cols: options.cols,
       rows: options.rows,
