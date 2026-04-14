@@ -152,8 +152,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
   };
 
   return (
-    <div className="dialog-overlay" role="presentation">
-      <div className="dialog" onKeyDown={handleKeyDown}>
+    <div className="dialog-overlay">
+      <div className="dialog" role="dialog" aria-modal="true" onKeyDown={handleKeyDown}>
         <div className="dialog-header">
           <span>{editing ? 'Edit Environment' : 'New Environment'}</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>

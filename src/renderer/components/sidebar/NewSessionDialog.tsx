@@ -654,8 +654,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const matchingProviders = gitProviders.filter(p => p.type === activeTab);
 
   return (
-    <div className="dialog-overlay" role="presentation">
-      <div className={dialogClass} onKeyDown={handleKeyDown}>
+    <div className="dialog-overlay">
+      <div className={dialogClass} role="dialog" aria-modal="true" onKeyDown={handleKeyDown}>
         <div className="dialog-header">
           <span>New session</span>
           <button className="dialog-close" onClick={resetAndClose}>&times;</button>

@@ -273,8 +273,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const extraFlags = currentToolFlags.filter(f => !commonFlagSet.has(f));
 
   return (
-    <div className="dialog-overlay" role="presentation">
-      <div className="dialog dialog--wide">
+    <div className="dialog-overlay">
+      <div className="dialog dialog--wide" role="dialog" aria-modal="true">
         <div className="dialog-header">
           <span>Settings</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>
