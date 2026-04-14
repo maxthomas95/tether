@@ -1584,6 +1584,14 @@ input[type="password"].form-input {
   line-height: 0 !important;
 }
 
+/* When "Hide terminal cursor" is enabled, suppress the xterm cursor entirely.
+   AI CLIs (Claude Code, Codex, OpenCode) draw their own colored block as the
+   input indicator, so the xterm cursor reads as a redundant second cursor that
+   bounces around during rapid redraws (e.g. thinking spinners). */
+body.tether-hide-cursor .xterm-cursor {
+  visibility: hidden !important;
+}
+
 /* Drop zone overlay */
 .drop-zone-overlay {
   position: absolute;

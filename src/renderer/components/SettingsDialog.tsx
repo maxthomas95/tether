@@ -54,6 +54,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [quotaEnabled, setQuotaEnabled] = useState(true);
   const [usageStripEnabled, setUsageStripEnabled] = useState(true);
   const [globalUsageEnabled, setGlobalUsageEnabled] = useState(true);
+  const [hideTerminalCursor, setHideTerminalCursor] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   // Profile state
@@ -102,7 +103,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       window.electronAPI.config.get?.('quotaEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('usageStripEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('globalUsageEnabled')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage]) => {
+      window.electronAPI.config.get?.('hideTerminalCursor')?.catch(() => null),
+    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, hideCursor]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -115,6 +117,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setQuotaEnabled(quota !== 'false');
       setUsageStripEnabled(usageStrip !== 'false');
       setGlobalUsageEnabled(globalUsage !== 'false');
+      setHideTerminalCursor(hideCursor === 'true');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -142,13 +145,14 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     await window.electronAPI.quota.setEnabled(quotaEnabled);
     await window.electronAPI.config.set?.('usageStripEnabled', usageStripEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('globalUsageEnabled', globalUsageEnabled ? 'true' : 'false');
+    await window.electronAPI.config.set?.('hideTerminalCursor', hideTerminalCursor ? 'true' : 'false');
     window.dispatchEvent(new CustomEvent('tether:settings-changed'));
     for (const toolId of FLAG_TOOLS) {
       await window.electronAPI.config.setDefaultCliFlagsForTool?.(toolId, cliFlagsPerTool[toolId] || []);
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliFlagsPerTool, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, hideTerminalCursor, cliFlagsPerTool, vaultConfig, onClose]);
 
   const handleVaultLogin = async () => {
     setVaultLoginError(null);
@@ -282,6 +286,23 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                 <option key={t.name} value={t.name}>{t.label}</option>
               ))}
             </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={hideTerminalCursor}
+                onChange={e => setHideTerminalCursor(e.target.checked)}
+              />
+              Hide terminal cursor
+            </label>
+            <p className="form-hint">
+              Suppress the xterm.js block cursor. Claude Code, Codex, and OpenCode draw
+              their own input indicator, so the xterm cursor often reads as a redundant
+              second cursor that bounces around during thinking animations.
+              Leave off if you use plain shells, vim, or htop in Tether.
+            </p>
           </div>
 
           <div className="form-group">
