@@ -132,9 +132,9 @@ function gh(args, opts = {}) {
     log(`[dry-run] would run: gh ${args.join(' ')}`);
     return '';
   }
-  // shell:false — gh ships as gh.exe on Windows so no cmd.exe wrapper is needed,
-  // and shell:true causes cmd.exe to re-split args on whitespace (breaks titles/bodies).
-  const r = spawnSync('gh', args, { cwd: REPO_ROOT, encoding: 'utf8', shell: false });
+  // Do NOT use shell: true — on Windows it collapses args into a cmd.exe string
+  // and splits values with spaces (e.g. --title "Release v0.3.0-beta.1").
+  const r = spawnSync('gh', args, { cwd: REPO_ROOT, encoding: 'utf8' });
   if (r.status !== 0) {
     const stderr = r.stderr?.toString().trim() || '';
     throw new Error(`gh ${args.join(' ')} failed (exit ${r.status}): ${stderr}`);
