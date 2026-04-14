@@ -248,6 +248,65 @@ html, body, #root {
   padding: 8px 0;
 }
 
+/* Global usage footer */
+.global-usage-footer {
+  padding: 6px 12px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  cursor: default;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.global-usage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 16px;
+}
+
+.global-usage-row + .global-usage-row {
+  margin-top: 3px;
+}
+
+.global-usage-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  width: 32px;
+  flex-shrink: 0;
+}
+
+.global-usage-value {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.global-usage-sparkline {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 12px;
+}
+
+.global-usage-spark-bar {
+  flex: 1;
+  background: var(--accent);
+  opacity: 0.4;
+  border-radius: 1px;
+  min-height: 2px;
+}
+
+.global-usage-spark-bar--today {
+  opacity: 0.9;
+}
+
 /* Quota footer */
 .sidebar-footer {
   padding: 8px 12px;
