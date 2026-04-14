@@ -274,6 +274,23 @@ export interface RepoGroupPref {
   sortOrder: number;
 }
 
+export interface KnownHostInfo {
+  id: string;
+  hostKey: string;
+  keyHash: string;
+  keyType: string;
+  trustedAt: string;
+  firstSeen: string;
+}
+
+export interface HostVerifyRequest {
+  token: string;
+  host: string;
+  port: number;
+  username?: string;
+  keyHash: string;
+}
+
 export interface CreateEnvironmentOptions {
   name: string;
   type: EnvironmentType;
@@ -393,6 +410,14 @@ export interface TetherAPI {
     getAll(): Promise<UsageInfo>;
     refresh(claudeSessionId?: string): Promise<UsageInfo>;
     onUpdate(cb: (info: UsageInfo) => void): () => void;
+  };
+  ssh: {
+    respondToHostVerify(token: string, trust: boolean): void;
+    onHostVerifyRequest(cb: (req: HostVerifyRequest) => void): () => void;
+  };
+  knownHosts: {
+    list(): Promise<KnownHostInfo[]>;
+    delete(id: string): Promise<void>;
   };
 }
 

@@ -1,5 +1,6 @@
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
 import { createLogger } from '../logger';
+import { verifyHost } from '../ssh/host-verifier';
 
 const log = createLogger('ssh');
 
@@ -29,6 +30,9 @@ export class SSHTransport implements SessionTransport {
   private exitCallbacks: Array<(info: TransportExitInfo) => void> = [];
   private _connected = false;
   private sshConfig: SSHConfig;
+  /** Captured during host verification when the connection should fail with a
+   *  human-friendly explanation (key changed, prompt rejected, dispatcher missing). */
+  private verifyError: string | null = null;
 
   constructor(sshConfig: SSHConfig) {
     this.sshConfig = sshConfig;
@@ -53,6 +57,23 @@ export class SSHTransport implements SessionTransport {
         keepaliveInterval: 10000,
         keepaliveCountMax: 3,
         readyTimeout: 15000,
+        hostHash: 'sha256',
+        hostVerifier: (key: string | Buffer, callback: (accept: boolean) => void) => {
+          // With hostHash set, ssh2 hands us a hex string. Normalize to lowercase
+          // so we compare deterministically with stored hashes.
+          const keyHash = (typeof key === 'string' ? key : key.toString('hex')).toLowerCase();
+          verifyHost(this.sshConfig.host, this.sshConfig.port || 22, keyHash, this.sshConfig.username)
+            .then((result) => {
+              if (!result.trust && result.reason) {
+                this.verifyError = result.reason;
+              }
+              callback(result.trust);
+            })
+            .catch((err: Error) => {
+              this.verifyError = err.message || 'Host key verification failed';
+              callback(false);
+            });
+        },
       };
 
       // Authentication: agent, private key, or password
@@ -214,15 +235,18 @@ export class SSHTransport implements SessionTransport {
       });
 
       this.client!.on('error', (err: Error) => {
-        log.error('SSH connection error', { host: this.sshConfig.host, error: err.message });
+        // If we already captured a clearer reason in the host verifier,
+        // surface that to the user instead of the generic ssh2 error.
+        const message = this.verifyError || err.message;
+        log.error('SSH connection error', { host: this.sshConfig.host, error: message });
         this._connected = false;
         if (this.stream) {
-          const info: TransportExitInfo = { exitCode: 1, signal: err.message };
+          const info: TransportExitInfo = { exitCode: 1, signal: message };
           for (const cb of this.exitCallbacks) {
             cb(info);
           }
         } else {
-          reject(err);
+          reject(new Error(message));
         }
       });
 

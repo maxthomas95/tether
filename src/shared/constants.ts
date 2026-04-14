@@ -80,6 +80,12 @@ export const IPC = {
   UPDATE_CHECK: 'update:check',
   UPDATE_OPEN_RELEASE_PAGE: 'update:open-release',
 
+  // SSH known hosts
+  SSH_HOST_VERIFY_REQUEST: 'ssh:host-verify-request',
+  SSH_HOST_VERIFY_RESPONSE: 'ssh:host-verify-response',
+  KNOWN_HOSTS_LIST: 'known-hosts:list',
+  KNOWN_HOSTS_DELETE: 'known-hosts:delete',
+
   // Main -> Renderer
   USAGE_UPDATED: 'usage:updated',
   QUOTA_UPDATED: 'quota:updated',

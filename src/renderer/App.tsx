@@ -11,6 +11,7 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { MenuBar } from './components/MenuBar';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { AboutDialog } from './components/AboutDialog';
+import { HostKeyVerifyDialog } from './components/HostKeyVerifyDialog';
 import { SetupWizard } from './components/SetupWizard';
 import { Notifications, useNotifications } from './components/Notifications';
 import { useTerminalManager } from './hooks/useTerminalManager';
@@ -30,7 +31,7 @@ import {
 } from './lib/layout-tree';
 import { toolSupportsHistory } from '../shared/cli-tools';
 import type { LayoutNode } from '../shared/layout-types';
-import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref } from '../shared/types';
+import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, HostVerifyRequest } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
 import logoSrc from './assets/logo.png';
 
@@ -47,6 +48,7 @@ export function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [setupWizardOpen, setSetupWizardOpen] = useState(false);
+  const [hostVerifyRequest, setHostVerifyRequest] = useState<HostVerifyRequest | null>(null);
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
@@ -679,6 +681,21 @@ export function App() {
     return cleanup;
   }, [notify]);
 
+  useEffect(() => {
+    const cleanup = window.electronAPI.ssh.onHostVerifyRequest((req: HostVerifyRequest) => {
+      // Only show one prompt at a time. If another request arrives while one is
+      // pending, auto-reject the newcomer to avoid silently dropping it.
+      setHostVerifyRequest(prev => {
+        if (prev) {
+          window.electronAPI.ssh.respondToHostVerify(req.token, false);
+          return prev;
+        }
+        return req;
+      });
+    });
+    return cleanup;
+  }, []);
+
   const menus: MenuDef[] = useMemo(() => [
     {
       label: 'File',
@@ -915,6 +932,21 @@ export function App() {
       <AboutDialog
         isOpen={aboutOpen}
         onClose={() => setAboutOpen(false)}
+      />
+      <HostKeyVerifyDialog
+        request={hostVerifyRequest}
+        onTrust={() => {
+          if (hostVerifyRequest) {
+            window.electronAPI.ssh.respondToHostVerify(hostVerifyRequest.token, true);
+          }
+          setHostVerifyRequest(null);
+        }}
+        onReject={() => {
+          if (hostVerifyRequest) {
+            window.electronAPI.ssh.respondToHostVerify(hostVerifyRequest.token, false);
+          }
+          setHostVerifyRequest(null);
+        }}
       />
       <SetupWizard isOpen={setupWizardOpen} onClose={handleSetupWizardClose} />
       {resumePickerFor && (

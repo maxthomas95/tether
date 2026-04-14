@@ -15,6 +15,7 @@ function createFreshDb(): DbData {
     gitProviders: [],
     repoGroupPrefs: [],
     usageSummaries: [],
+    knownHosts: [],
   };
 }
 
