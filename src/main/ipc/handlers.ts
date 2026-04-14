@@ -109,10 +109,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           usageService.untrackSession(s.claudeSessionId);
         }
       },
-      onLabelChanged(sessionId, label) {
-        send(IPC.SESSION_LABEL_CHANGED, sessionId, label);
-        sessionRepo.updateSessionLabel(sessionId, label);
-      },
     });
 
     // Persist to DB
@@ -147,7 +143,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.SESSION_RENAME, async (_event, sessionId: string, label: string) => {
-    sessionManager.renameSession(sessionId, label, 'user');
+    sessionManager.renameSession(sessionId, label);
+    sessionRepo.updateSessionLabel(sessionId, label);
   });
 
   ipcMain.handle(IPC.SESSION_REMOVE, async (_event, sessionId: string) => {
