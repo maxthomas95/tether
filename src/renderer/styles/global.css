@@ -1266,6 +1266,59 @@ select.form-input {
   max-width: 160px;
 }
 
+.known-hosts-list {
+  gap: 8px;
+}
+
+.known-host-row {
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.known-host-details {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.known-host-name {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.known-host-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.known-host-fingerprint {
+  font-family: var(--font-mono);
+}
+
+.known-host-revoke {
+  align-self: center;
+  flex-shrink: 0;
+  color: var(--status-dead);
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
+.known-host-revoke:hover {
+  color: var(--status-dead);
+}
+
 /* Password input */
 input[type="password"].form-input {
   font-family: var(--font-mono);
