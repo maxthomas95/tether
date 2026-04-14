@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   test:
-    name: test
+    name: tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +26,7 @@ jobs:
       - run: npm test
 
   audit:
-    name: audit
+    name: npm audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
