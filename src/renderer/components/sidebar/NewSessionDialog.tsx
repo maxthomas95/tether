@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderWorkspace, CoderTemplate, CoderTemplateParam, CreateCoderWorkspaceOptions, CliToolId } from '../../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import type { CliToolDef } from '../../../shared/cli-tools';
@@ -532,6 +533,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     return `${trimmed}/${repoName}`;
   }, [activeTab, derivedRepoName, selectedRepo, coderClonePath]);
 
+  useEscapeKey(() => resetAndClose(), isOpen);
+
   if (!isOpen) return null;
 
   const handleBrowse = async () => {
@@ -638,7 +641,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && activeTab === 'local' && directory.trim()) handleCreate();
-    if (e.key === 'Escape') resetAndClose();
+    // Esc handled by useEscapeKey at document level (works regardless of focus)
   };
 
   const dirName = (fullPath: string) => fullPath.split(/[\\/]/).pop() || fullPath;
@@ -651,8 +654,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const matchingProviders = gitProviders.filter(p => p.type === activeTab);
 
   return (
-    <div className="dialog-overlay" onClick={resetAndClose}>
-      <div className={dialogClass} onClick={e => e.stopPropagation()} onKeyDown={handleKeyDown}>
+    <div className="dialog-overlay" role="presentation">
+      <div className={dialogClass} onKeyDown={handleKeyDown}>
         <div className="dialog-header">
           <span>New session</span>
           <button className="dialog-close" onClick={resetAndClose}>&times;</button>

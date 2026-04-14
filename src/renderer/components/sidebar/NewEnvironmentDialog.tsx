@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 import type { EnvironmentType } from '../../../shared/types';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../../utils/vault-path';
 
@@ -71,6 +72,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
     }).catch(() => setVaultConnected(false));
     window.electronAPI.vault.getConfig().then(c => { if (c.mount) setVaultMount(c.mount); }).catch(() => {});
   }, [isOpen]);
+
+  useEscapeKey(onClose, isOpen);
 
   if (!isOpen) return null;
 
@@ -149,8 +152,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
   };
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog" onClick={e => e.stopPropagation()} onKeyDown={handleKeyDown}>
+    <div className="dialog-overlay" role="presentation">
+      <div className="dialog" onKeyDown={handleKeyDown}>
         <div className="dialog-header">
           <span>{editing ? 'Edit Environment' : 'New Environment'}</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>
