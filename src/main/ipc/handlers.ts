@@ -870,6 +870,16 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.UPDATE_OPEN_RELEASE_PAGE, async (_event, url: string) => {
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'https:' || u.host !== 'github.com' || !u.pathname.startsWith('/maxthomas95/tether/')) {
+        log.warn('Refusing to open non-release URL', { url });
+        return;
+      }
+    } catch {
+      log.warn('Refusing to open malformed URL', { url });
+      return;
+    }
     await shell.openExternal(url);
   });
 
