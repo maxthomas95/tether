@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.3.0-beta.1] — 2026-04-14
+
+Minor bump to mark a process milestone — this is the first release cut through proper PR review with Sonar Quality Gate, CodeQL, and CI all gating the release commit.
+
+### New Features
+- **SSH host key verification (TOFU + Known Hosts management)** — first-connect host keys are pinned and verified on subsequent connects; known hosts are manageable from settings
+- **Global usage footer** — today's cost and 7-day sparkline in the sidebar footer
+- **Per-session cost strip** — cost/token usage shown below each terminal pane (Layer 2)
+- **Edit and delete environments** from the sidebar context menu
+- **Hide terminal cursor** setting for a distraction-free view
+- **Esc-to-close on dialog overlays** — all dialogs now dismiss on Escape
+
+### Security
+- **Electron security hardening** — CSP headers, locked-down `window.open`, URL validation on navigation
+- **Release flow runs through PR review + quality gates** — release commits can no longer bypass Sonar, CodeQL, or CI
+
+### Bug Fixes
+- Fixed duplicate terminal cursor caused by native caret bleeding through the xterm.js textarea
+- Fixed Codex quota reset timestamp calculation
+- Fixed blank docs window in packaged builds
+- Fixed scrollback being dropped when switching between sessions
+- Fixed SSH session scrollback lost when switching tabs
+
+### Improvements
+- Polished SSH known hosts settings row
+- Local CLI binaries are spawned directly instead of via `sh -c`
+- Form-bearing dialogs no longer close on outside click (only on Escape or explicit cancel)
+- Simplified Vault UX for env vars — one-click store instead of raw `vault://` entry
+- Widened About dialog so the tagline fits on one line
+
+### Internal
+- Added CI workflow running tests and `npm audit` on every push/PR
+- Added SonarCloud badges and Automatic Analysis integration
+- Added CodeQL scanning via GitHub's default setup
+- Rewrote release script for PR-based flow; dropped all Gitea code paths
+- Added `--minor` flag to the release script for milestone version bumps
+
+---
+
 ## [0.2.3-beta.4] — 2026-04-13
 
 ### New Features
