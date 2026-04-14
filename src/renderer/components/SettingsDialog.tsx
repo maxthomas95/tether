@@ -52,6 +52,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [maxPanes, setMaxPanes] = useState(4);
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true);
   const [quotaEnabled, setQuotaEnabled] = useState(true);
+  const [usageStripEnabled, setUsageStripEnabled] = useState(true);
   const [loaded, setLoaded] = useState(false);
 
   // Profile state
@@ -98,7 +99,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       window.electronAPI.config.get?.('maxPanes')?.catch(() => null),
       window.electronAPI.config.get?.('updateCheckEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('quotaEnabled')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota]) => {
+      window.electronAPI.config.get?.('usageStripEnabled')?.catch(() => null),
+    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -109,6 +111,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setMaxPanes(parseMaxPanes(maxPaneValue));
       setUpdateCheckEnabled(updateCheck !== 'false');
       setQuotaEnabled(quota !== 'false');
+      setUsageStripEnabled(usageStrip !== 'false');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -134,12 +137,14 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     await window.electronAPI.config.set?.('updateCheckEnabled', updateCheckEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('quotaEnabled', quotaEnabled ? 'true' : 'false');
     await window.electronAPI.quota.setEnabled(quotaEnabled);
+    await window.electronAPI.config.set?.('usageStripEnabled', usageStripEnabled ? 'true' : 'false');
+    window.dispatchEvent(new CustomEvent('tether:settings-changed'));
     for (const toolId of FLAG_TOOLS) {
       await window.electronAPI.config.setDefaultCliFlagsForTool?.(toolId, cliFlagsPerTool[toolId] || []);
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, cliFlagsPerTool, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, cliFlagsPerTool, vaultConfig, onClose]);
 
   const handleVaultLogin = async () => {
     setVaultLoginError(null);
@@ -791,6 +796,17 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
             </label>
             <p className="form-hint">
               Display Claude and Codex subscription usage (5-hour and 7-day windows) in the sidebar footer. Polls every 5 minutes.
+            </p>
+            <label className="form-radio-label" style={{ marginTop: 8 }}>
+              <input
+                type="checkbox"
+                checked={usageStripEnabled}
+                onChange={e => setUsageStripEnabled(e.target.checked)}
+              />
+              Show per-session cost strip below terminal
+            </label>
+            <p className="form-hint">
+              Display the active session's model, message count, and API-equivalent cost below each terminal pane. Updates live as Claude responds.
             </p>
           </div>
 

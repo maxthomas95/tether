@@ -1421,6 +1421,58 @@ input[type="password"].form-input {
   padding: 2px;
 }
 
+.terminal-pane-content {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.terminal-pane-xterm {
+  flex: 1;
+  overflow: hidden;
+  width: 100%;
+  min-height: 0;
+}
+
+.pane-status-strip {
+  height: 22px;
+  background: var(--bg-header);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 8px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: default;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.pane-status-strip-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pane-status-strip-separator {
+  color: var(--text-muted);
+  opacity: 0.4;
+}
+
+.pane-status-strip-cost {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.pane-status-strip-model {
+  color: var(--accent);
+  opacity: 0.85;
+}
+
 .terminal-pane-body--placeholder {
   padding: 8px;
 }
@@ -1458,10 +1510,19 @@ input[type="password"].form-input {
 }
 
 /* Hide the native text caret that bleeds through xterm.js's invisible helper
-   textarea on Windows/Electron. Without this, a second cursor "ghost" follows
-   the real terminal cursor around the screen. */
-.xterm .xterm-helper-textarea {
+   textarea on Windows/Electron. caret-color alone isn't enough — during IME
+   focus transitions and rapid redraws (e.g. Claude Code's thinking spinner)
+   Chromium still paints a caret sized from the textarea's font metrics. Zeroing
+   the font size leaves the caret nothing to render, and transparent colors
+   cover any residual paint. */
+.xterm .xterm-helper-textarea,
+.xterm-helper-textarea {
   caret-color: transparent !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  text-shadow: none !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
 }
 
 /* Drop zone overlay */

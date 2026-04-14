@@ -5,6 +5,7 @@ import type { TerminalManagerAPI } from '../hooks/useTerminalManager';
 import type { LayoutAction } from '../hooks/useLayoutState';
 import { DropZoneOverlay } from './DropZoneOverlay';
 import { CliToolBadge } from './CliToolBadge';
+import { PaneStatusStrip } from './PaneStatusStrip';
 
 interface TerminalPaneProps {
   paneId: string;
@@ -156,10 +157,13 @@ export function TerminalPane({
             <span>Click a session in the sidebar</span>
           </button>
         ) : (
-          <div
-            ref={containerRef}
-            style={{ flex: 1, overflow: 'hidden', width: '100%', height: '100%' }}
-          />
+          <div className="terminal-pane-content">
+            <div
+              ref={containerRef}
+              className="terminal-pane-xterm"
+            />
+            <PaneStatusStrip claudeSessionId={session?.claudeSessionId} />
+          </div>
         )}
         {enablePaneSplitting && isDragging && draggingPaneId !== paneId && (
           <DropZoneOverlay
