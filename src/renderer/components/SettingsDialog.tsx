@@ -811,24 +811,20 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                 on first connect.
               </p>
             ) : (
-              <div className="provider-list">
+              <div className="provider-list known-hosts-list">
                 {knownHosts.map(h => (
-                  <div key={h.id} className="provider-row" style={{ alignItems: 'center' }}>
-                    <span className="provider-name" style={{ fontFamily: 'var(--font-mono, monospace)' }}>
-                      {h.hostKey}
-                    </span>
-                    <span
-                      className="form-hint"
-                      title={`SHA256:${h.keyHash}`}
-                      style={{ display: 'inline', marginLeft: 4, fontFamily: 'var(--font-mono, monospace)', fontSize: 11 }}
-                    >
-                      SHA256:{h.keyHash.slice(0, 12)}…
-                    </span>
-                    <span className="form-hint" style={{ display: 'inline', marginLeft: 4, fontSize: 11 }}>
-                      trusted {new Date(h.trustedAt).toLocaleDateString()}
-                    </span>
+                  <div key={h.id} className="provider-row known-host-row">
+                    <div className="known-host-details">
+                      <span className="known-host-name">{h.hostKey}</span>
+                      <span className="known-host-meta">
+                        <span title={`SHA256:${h.keyHash}`} className="known-host-fingerprint">
+                          SHA256:{h.keyHash.slice(0, 12)}...
+                        </span>
+                        <span>trusted {new Date(h.trustedAt).toLocaleDateString()}</span>
+                      </span>
+                    </div>
                     <button
-                      className="env-editor-btn env-editor-btn--remove"
+                      className="env-editor-btn known-host-revoke"
                       title="Revoke this trusted host"
                       onClick={async () => {
                         await window.electronAPI.knownHosts.delete(h.id);
