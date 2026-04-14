@@ -237,10 +237,7 @@ export function App() {
       const managed = termManager.getOrCreate(sid);
       managed.terminal.write('\r\n\x1b[90m[Session ended]\x1b[0m\r\n');
     });
-    const removeLabelChange = window.electronAPI.session.onLabelChanged((sid, label) => {
-      setSessions(prev => prev.map(s => s.id === sid ? { ...s, label } : s));
-    });
-    return () => { removeData(); removeState(); removeExit(); removeLabelChange(); };
+    return () => { removeData(); removeState(); removeExit(); };
   }, [termManager]);
 
   const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[]) => {

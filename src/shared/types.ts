@@ -296,7 +296,6 @@ export interface TetherAPI {
     onData(callback: (sessionId: string, data: string) => void): () => void;
     onStateChange(callback: (sessionId: string, state: SessionState) => void): () => void;
     onExited(callback: (sessionId: string, exitCode: number) => void): () => void;
-    onLabelChanged(callback: (sessionId: string, label: string) => void): () => void;
   };
   environment: {
     list(): Promise<EnvironmentInfo[]>;
