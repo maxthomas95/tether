@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import { EnvVarEditor } from './EnvVarEditor';
 import { MigrateToVaultDialog } from './MigrateToVaultDialog';
 import { themeList } from '../styles/themes';
@@ -262,6 +263,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     setProviderTestResult(prev => ({ ...prev, [id]: result }));
   };
 
+  useEscapeKey(onClose, isOpen);
+
   if (!isOpen) return null;
 
   const toolDef = CLI_TOOL_REGISTRY[flagTool];
@@ -270,8 +273,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const extraFlags = currentToolFlags.filter(f => !commonFlagSet.has(f));
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog dialog--wide" onClick={e => e.stopPropagation()}>
+    <div className="dialog-overlay">
+      <div className="dialog dialog--wide" role="dialog" aria-modal="true">
         <div className="dialog-header">
           <span>Settings</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>

@@ -69,12 +69,7 @@ export function MigrateToVaultDialog({ isOpen, onClose }: MigrateToVaultDialogPr
   const pendingCount = rows.filter(r => r.status !== 'done').length;
 
   return (
-    <div
-      className="dialog-overlay"
-      role="presentation"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
-    >
+    <div className="dialog-overlay" role="presentation">
       <div className="dialog dialog--wide">
         <div className="dialog-header">
           <span>Migrate Secrets to Vault</span>
