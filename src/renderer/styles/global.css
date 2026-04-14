@@ -1637,10 +1637,10 @@ input[type="password"].form-input {
   line-height: 0 !important;
 }
 
-/* When "Hide terminal cursor" is enabled, suppress the xterm cursor entirely.
-   AI CLIs (Claude Code, Codex, OpenCode) draw their own colored block as the
-   input indicator, so the xterm cursor reads as a redundant second cursor that
-   bounces around during rapid redraws (e.g. thinking spinners). */
+/* When "Hide terminal cursor" is enabled, suppress DOM-rendered xterm cursors.
+   App.tsx also hides canvas-rendered cursors by overriding the xterm cursor
+   theme color. AI CLIs draw their own input indicator, so the xterm cursor
+   reads as a redundant second cursor during rapid redraws. */
 body.tether-hide-cursor .xterm-cursor {
   visibility: hidden !important;
 }

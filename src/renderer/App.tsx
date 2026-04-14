@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import type { ITheme } from '@xterm/xterm';
 import { SplitLayout } from './components/SplitLayout';
 import { RepoGroup } from './components/sidebar/RepoGroup';
 import { NewSessionDialog } from './components/sidebar/NewSessionDialog';
@@ -57,14 +58,24 @@ export function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null);
   const [repoGroupPrefs, setRepoGroupPrefs] = useState<RepoGroupPref[]>([]);
+  const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
   const [editingEnv, setEditingEnv] = useState<EnvironmentInfo | null>(null);
   const [envMenuOpenId, setEnvMenuOpenId] = useState<string | null>(null);
   const envMenuRef = useRef<HTMLDivElement>(null);
   const { themeName, setTheme, xtermTheme } = useTheme();
-  const termManager = useTerminalManager(xtermTheme);
+  const effectiveXtermTheme = useMemo(
+    () => hideTerminalCursor ? withHiddenXtermCursor(xtermTheme) : xtermTheme,
+    [hideTerminalCursor, xtermTheme],
+  );
+  const termManager = useTerminalManager(effectiveXtermTheme);
   const { layoutState, layoutDispatch } = useLayoutState();
   const { notifications, notify, dismiss } = useNotifications();
   const effectiveMaxPanes = enablePaneSplitting ? maxPanes : 1;
+
+  useEffect(() => {
+    document.body.classList.toggle('tether-hide-cursor', hideTerminalCursor);
+    return () => document.body.classList.remove('tether-hide-cursor');
+  }, [hideTerminalCursor]);
 
   // Derive activeSessionId from focused pane
   const focusedLeaf = layoutState.focusedPaneId && layoutState.root
@@ -98,7 +109,8 @@ export function App() {
       setEnableResumePicker(picker !== 'false');
       setEnablePaneSplitting(splitting === 'true');
       setMaxPanes(parseMaxPanes(maxPaneValue));
-      document.body.classList.toggle('tether-hide-cursor', hideCursor === 'true');
+      const shouldHideCursor = hideCursor !== 'false';
+      setHideTerminalCursor(shouldHideCursor);
     });
     return () => { cancelled = true; };
   }, [settingsOpen]);
@@ -968,6 +980,15 @@ function extractErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   const match = raw.match(/Error invoking remote method '[^']+':\s*(?:Error:\s*)?(.*)$/s);
   return match ? match[1].trim() : raw;
+}
+
+function withHiddenXtermCursor(theme: ITheme): ITheme {
+  const background = theme.background ?? '#000000';
+  return {
+    ...theme,
+    cursor: background,
+    cursorAccent: theme.foreground ?? background,
+  };
 }
 
 function parseMaxPanes(value: string | null | undefined): number {
