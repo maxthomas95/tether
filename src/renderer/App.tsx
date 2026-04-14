@@ -89,12 +89,14 @@ export function App() {
       window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
       window.electronAPI.config.get?.('enablePaneSplitting')?.catch(() => null),
       window.electronAPI.config.get?.('maxPanes')?.catch(() => null),
-    ]).then(([badge, picker, splitting, maxPaneValue]) => {
+      window.electronAPI.config.get?.('hideTerminalCursor')?.catch(() => null),
+    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor]) => {
       if (cancelled) return;
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
       setEnablePaneSplitting(splitting === 'true');
       setMaxPanes(parseMaxPanes(maxPaneValue));
+      document.body.classList.toggle('tether-hide-cursor', hideCursor === 'true');
     });
     return () => { cancelled = true; };
   }, [settingsOpen]);
