@@ -46,6 +46,15 @@ export interface LaunchProfileRow {
   updated_at: string;
 }
 
+export interface KnownHostEntry {
+  id: string;
+  hostKey: string;        // "host:port"
+  keyHash: string;        // sha256 hex digest (lowercase)
+  keyType: string;        // best-effort; 'unknown' from hostVerifier alone
+  trustedAt: string;      // ISO timestamp
+  firstSeen: string;      // ISO timestamp (same as trustedAt for TOFU)
+}
+
 export interface DbData {
   environments: EnvironmentRow[];
   sessions: SessionRow[];
@@ -58,6 +67,7 @@ export interface DbData {
   gitProviders: GitProviderRow[];
   repoGroupPrefs: RepoGroupPref[];
   usageSummaries: PersistedSessionUsage[];
+  knownHosts: KnownHostEntry[];
 }
 
 export interface PersistedSessionUsage {
@@ -209,12 +219,13 @@ export function getDb(): DbData {
           gitProviders: loaded.gitProviders || [],
           repoGroupPrefs: loaded.repoGroupPrefs || [],
           usageSummaries: loaded.usageSummaries || [],
+          knownHosts: loaded.knownHosts || [],
         };
       } catch {
-        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], usageSummaries: [] };
+        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], usageSummaries: [], knownHosts: [] };
       }
     } else {
-      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], usageSummaries: [] };
+      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], usageSummaries: [], knownHosts: [] };
     }
   }
   return data;

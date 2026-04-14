@@ -42,6 +42,9 @@ import {
   DEFAULT_VAULT_CONFIG,
 } from '../vault/vault-auth';
 import { isVaultRef, resolveRef, parseRef, buildRef } from '../vault/vault-resolver';
+import { setHostVerifyDispatcher, respondToHostVerify } from '../ssh/host-verifier';
+import * as knownHostsRepo from '../db/known-hosts-repo';
+import type { KnownHostInfo, HostVerifyRequest } from '../../shared/types';
 import { createLogger } from '../logger';
 
 const log = createLogger('ipc');
@@ -85,6 +88,17 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       mainWindow.webContents.send(channel, ...args);
     }
   };
+
+  // Wire the SSH host-verify prompt dispatcher to the renderer. The verifier
+  // module holds the pending callbacks; we just need it to know how to push
+  // the prompt out.
+  setHostVerifyDispatcher((req: HostVerifyRequest) => {
+    send(IPC.SSH_HOST_VERIFY_REQUEST, req);
+  });
+
+  ipcMain.on(IPC.SSH_HOST_VERIFY_RESPONSE, (_event, token: string, trust: boolean) => {
+    respondToHostVerify(token, trust);
+  });
 
   // === Session handlers ===
 
@@ -1008,5 +1022,23 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(IPC.USAGE_REFRESH, async (_event, claudeSessionId?: string): Promise<UsageInfo> => {
     return usageService.refresh(claudeSessionId);
+  });
+
+  // === SSH known hosts ===
+
+  ipcMain.handle(IPC.KNOWN_HOSTS_LIST, async (): Promise<KnownHostInfo[]> => {
+    return knownHostsRepo.listKnownHosts().map((h) => ({
+      id: h.id,
+      hostKey: h.hostKey,
+      keyHash: h.keyHash,
+      keyType: h.keyType,
+      trustedAt: h.trustedAt,
+      firstSeen: h.firstSeen,
+    }));
+  });
+
+  ipcMain.handle(IPC.KNOWN_HOSTS_DELETE, async (_event, id: string): Promise<void> => {
+    log.info('Revoking known host', { id });
+    knownHostsRepo.deleteKnownHost(id);
   });
 }

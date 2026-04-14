@@ -3,7 +3,7 @@ import { EnvVarEditor } from './EnvVarEditor';
 import { MigrateToVaultDialog } from './MigrateToVaultDialog';
 import { themeList } from '../styles/themes';
 import { suggestVaultPath } from '../utils/vault-path';
-import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId } from '../../shared/types';
+import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo } from '../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 
 /** CLI tools that have definable flags (exclude 'custom' which has no known flags). */
@@ -66,6 +66,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [profileFlagTool, setProfileFlagTool] = useState<CliToolId>('claude');
   const [showNewProfile, setShowNewProfile] = useState(false);
 
+  // SSH known hosts
+  const [knownHosts, setKnownHosts] = useState<KnownHostInfo[]>([]);
+
   // Git provider state
   const [gitProviders, setGitProviders] = useState<GitProviderInfo[]>([]);
   const [showAddProvider, setShowAddProvider] = useState(false);
@@ -122,6 +125,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
     window.electronAPI.gitProvider.list().then(setGitProviders).catch(() => {});
+    window.electronAPI.knownHosts.list().then(setKnownHosts).catch(() => {});
     window.electronAPI.vault.getConfig().then(setVaultConfig).catch(() => {});
     window.electronAPI.vault.status().then(setVaultStatus).catch(() => {});
   }, [isOpen]);
@@ -784,6 +788,55 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                     setNewProviderError(null);
                   }}>Cancel</button>
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* SSH Known Hosts */}
+          <div className="form-group" style={{ marginTop: 20 }}>
+            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              SSH Known Hosts
+            </label>
+            <p className="form-hint" style={{ marginBottom: 12 }}>
+              Trusted SSH host fingerprints. Revoke an entry to force a fresh trust prompt
+              on the next connection (or to recover after a "host key changed" error).
+            </p>
+
+            {knownHosts.length === 0 ? (
+              <p className="form-hint" style={{ fontStyle: 'italic' }}>
+                No trusted hosts yet. They appear here after you confirm a fingerprint
+                on first connect.
+              </p>
+            ) : (
+              <div className="provider-list">
+                {knownHosts.map(h => (
+                  <div key={h.id} className="provider-row" style={{ alignItems: 'center' }}>
+                    <span className="provider-name" style={{ fontFamily: 'var(--font-mono, monospace)' }}>
+                      {h.hostKey}
+                    </span>
+                    <span
+                      className="form-hint"
+                      title={`SHA256:${h.keyHash}`}
+                      style={{ display: 'inline', marginLeft: 4, fontFamily: 'var(--font-mono, monospace)', fontSize: 11 }}
+                    >
+                      SHA256:{h.keyHash.slice(0, 12)}…
+                    </span>
+                    <span className="form-hint" style={{ display: 'inline', marginLeft: 4, fontSize: 11 }}>
+                      trusted {new Date(h.trustedAt).toLocaleDateString()}
+                    </span>
+                    <button
+                      className="env-editor-btn env-editor-btn--remove"
+                      title="Revoke this trusted host"
+                      onClick={async () => {
+                        await window.electronAPI.knownHosts.delete(h.id);
+                        const fresh = await window.electronAPI.knownHosts.list().catch(() => [] as KnownHostInfo[]);
+                        setKnownHosts(fresh);
+                      }}
+                    >
+                      Revoke
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>

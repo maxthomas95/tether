@@ -15,6 +15,8 @@ import type {
   RepoGroupPref,
   SessionUsage,
   UsageInfo,
+  KnownHostInfo,
+  HostVerifyRequest,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -190,6 +192,20 @@ const api: TetherAPI = {
       ipcRenderer.on(IPC.USAGE_UPDATED, h);
       return () => ipcRenderer.removeListener(IPC.USAGE_UPDATED, h);
     },
+  },
+  ssh: {
+    respondToHostVerify: (token: string, trust: boolean): void => {
+      ipcRenderer.send(IPC.SSH_HOST_VERIFY_RESPONSE, token, trust);
+    },
+    onHostVerifyRequest(cb: (req: HostVerifyRequest) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, req: HostVerifyRequest) => cb(req);
+      ipcRenderer.on(IPC.SSH_HOST_VERIFY_REQUEST, h);
+      return () => ipcRenderer.removeListener(IPC.SSH_HOST_VERIFY_REQUEST, h);
+    },
+  },
+  knownHosts: {
+    list: (): Promise<KnownHostInfo[]> => ipcRenderer.invoke(IPC.KNOWN_HOSTS_LIST),
+    delete: (id: string): Promise<void> => ipcRenderer.invoke(IPC.KNOWN_HOSTS_DELETE, id),
   },
 };
 
