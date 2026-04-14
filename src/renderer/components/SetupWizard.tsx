@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import logoSrc from '../assets/logo.png';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import type { GitProviderType, VaultConfig } from '../../shared/types';
 
 interface SetupWizardProps {
@@ -134,13 +135,19 @@ export function SetupWizard({ isOpen, onClose }: SetupWizardProps) {
     setStep(4);
   }, []);
 
+  useEscapeKey(handleClose, isOpen);
   if (!isOpen) return null;
 
   const providerRequiredFilled = providerName.trim() && providerUrl.trim() && providerToken.trim();
 
   return (
-    <div className="dialog-overlay" onClick={handleClose}>
-      <div className="dialog dialog--wide" onClick={e => e.stopPropagation()}>
+    <div
+      className="dialog-overlay"
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
+      onKeyDown={(e) => { if (e.key === 'Escape') handleClose(); }}
+    >
+      <div className="dialog dialog--wide">
         {/* Step indicator */}
         <div className="dialog-header">
           <span>

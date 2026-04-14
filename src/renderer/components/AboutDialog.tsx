@@ -1,4 +1,5 @@
 import logoSrc from '../assets/logo.png';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 interface AboutDialogProps {
   isOpen: boolean;
@@ -6,11 +7,17 @@ interface AboutDialogProps {
 }
 
 export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
+  useEscapeKey(onClose, isOpen);
   if (!isOpen) return null;
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
+    <div
+      className="dialog-overlay"
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
+    >
+      <div className="dialog" style={{ width: 420 }}>
         <div className="dialog-header">
           <span>About Tether</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>

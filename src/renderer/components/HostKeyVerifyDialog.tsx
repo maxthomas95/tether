@@ -1,4 +1,5 @@
 import type { HostVerifyRequest } from '../../shared/types';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 interface HostKeyVerifyDialogProps {
   request: HostVerifyRequest | null;
@@ -16,6 +17,7 @@ function formatFingerprint(hex: string): string {
 }
 
 export function HostKeyVerifyDialog({ request, onTrust, onReject }: HostKeyVerifyDialogProps) {
+  useEscapeKey(onReject, request !== null);
   if (!request) return null;
 
   const target = request.username
@@ -23,8 +25,13 @@ export function HostKeyVerifyDialog({ request, onTrust, onReject }: HostKeyVerif
     : `${request.host}:${request.port}`;
 
   return (
-    <div className="dialog-overlay" onClick={onReject}>
-      <div className="dialog" style={{ width: 520 }} onClick={e => e.stopPropagation()}>
+    <div
+      className="dialog-overlay"
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onReject(); }}
+      onKeyDown={(e) => { if (e.key === 'Escape') onReject(); }}
+    >
+      <div className="dialog" style={{ width: 520 }}>
         <div className="dialog-header">
           <span>Verify SSH host key</span>
           <button className="dialog-close" onClick={onReject}>&times;</button>

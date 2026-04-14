@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import type { VaultPlaintextSecret } from '../../shared/types';
 
 interface MigrateToVaultDialogProps {
@@ -62,13 +63,19 @@ export function MigrateToVaultDialog({ isOpen, onClose }: MigrateToVaultDialogPr
     }
   };
 
+  useEscapeKey(onClose, isOpen);
   if (!isOpen) return null;
 
   const pendingCount = rows.filter(r => r.status !== 'done').length;
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog dialog--wide" onClick={e => e.stopPropagation()}>
+    <div
+      className="dialog-overlay"
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
+    >
+      <div className="dialog dialog--wide">
         <div className="dialog-header">
           <span>Migrate Secrets to Vault</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>

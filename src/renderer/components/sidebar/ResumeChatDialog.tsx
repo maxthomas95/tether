@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 import type { CliToolId, TranscriptInfo } from '../../../shared/types';
 
 interface ResumeChatDialogProps {
@@ -42,11 +43,17 @@ export function ResumeChatDialog({ isOpen, workingDir, cliTool, currentTranscrip
       .finally(() => setLoading(false));
   }, [isOpen, workingDir, cliTool]);
 
+  useEscapeKey(onClose, isOpen);
   if (!isOpen) return null;
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog dialog--wide" onClick={e => e.stopPropagation()}>
+    <div
+      className="dialog-overlay"
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
+    >
+      <div className="dialog dialog--wide">
         <div className="dialog-header">
           <span>Resume previous conversation</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>
@@ -65,11 +72,15 @@ export function ResumeChatDialog({ isOpen, workingDir, cliTool, currentTranscrip
 
           {transcripts.map(t => {
             const isCurrent = t.id === currentTranscriptId;
+            const pick = () => { if (!isCurrent) { onPick(t.id); onClose(); } };
             return (
               <div
                 key={t.id}
                 className="transcript-row"
-                onClick={() => { if (!isCurrent) { onPick(t.id); onClose(); } }}
+                role="button"
+                tabIndex={isCurrent ? -1 : 0}
+                onClick={pick}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}
                 style={{
                   padding: '10px 12px',
                   borderBottom: '1px solid var(--border-color)',
