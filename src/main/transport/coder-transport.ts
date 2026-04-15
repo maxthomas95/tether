@@ -6,6 +6,18 @@ import { createLogger } from '../logger';
 
 const log = createLogger('coder-pty');
 
+// POSIX single-quote shell escape: wrap in single quotes and replace any
+// embedded ' with '\''. Handles every metacharacter except `'` itself.
+const shq = (s: string): string => `'${s.replace(/'/g, "'\\''")}'`;
+
+// Preserve `~` / `~/` expansion by keeping the tilde literal (unquoted) and
+// single-quoting only the remainder of the path.
+const quotePath = (p: string): string => {
+  if (p === '~') return '~';
+  if (p.startsWith('~/')) return '~/' + shq(p.slice(2));
+  return shq(p);
+};
+
 let ptyModule: typeof import('node-pty') | null = null;
 
 function getPty(): typeof import('node-pty') {
@@ -105,7 +117,7 @@ export class CoderTransport implements SessionTransport {
     const binary = options.binaryName || 'claude';
     const envParts = Object.entries(options.env || {})
       .filter(([, v]) => v)
-      .map(([k, v]) => `${k}=${v.replace(/'/g, "'\\''")}`);
+      .map(([k, v]) => `${k}=${shq(v)}`);
 
     const cliArgs = options.cliArgs?.join(' ') || '';
     const cliCmd = cliArgs ? `${binary} ${cliArgs}` : binary;
@@ -114,17 +126,17 @@ export class CoderTransport implements SessionTransport {
       ? `env ${envParts.join(' ')} ${cliCmd}`
       : cliCmd;
 
-    // Shell-escape the subdir so paths with spaces work; let the remote shell
-    // expand ~. Only prepend cd when a subdir was supplied.
-    const escapedSubDir = subDir.replace(/"/g, '\\"');
-    const cdStep = subDir ? `cd "${escapedSubDir}"` : '';
+    // Shell-escape the subdir so paths with spaces and metacharacters are
+    // safe; quotePath keeps a leading ~ literal so remote shell expands it.
+    const quotedSubDir = subDir ? quotePath(subDir) : '';
+    const cdStep = subDir ? `cd ${quotedSubDir}` : '';
 
     // If cloneUrl is set, clone the repo — but skip if the directory already
     // exists (workspace restarts rerun startup scripts and the previous clone
     // survives).  Uses `[ -d ... ] || git clone ...` so the chain continues
     // either way: existing dir → no-op success, missing dir → clone.
     const cloneStep = options.cloneUrl && subDir
-      ? `{ [ -d "${escapedSubDir}" ] || git clone "${options.cloneUrl.replace(/"/g, '\\"')}" "${escapedSubDir}"; }`
+      ? `{ [ -d ${quotedSubDir} ] || git clone ${shq(options.cloneUrl)} ${quotedSubDir}; }`
       : '';
 
     const chain = [cloneStep, cdStep, baseCmd].filter(Boolean).join(' && ');
