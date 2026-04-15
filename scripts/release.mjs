@@ -145,7 +145,7 @@ function gh(args, opts = {}) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escapeRegex = (s) => String(s).replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 // ─── Version + prerelease resolution ─────────────────────────────────────────
 
@@ -169,7 +169,7 @@ async function nextPrereleaseNumber(channel) {
   const releases = await github('GET', `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases`, { query: { per_page: 100 } });
   let max = 0;
   for (const r of releases) {
-    const m = r.tag_name.match(new RegExp(`-${escapeRegex(channel)}\\.(\\d+)$`));
+    const m = r.tag_name.match(new RegExp(String.raw`-${escapeRegex(channel)}\.(\d+)$`));
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
   return max + 1;
@@ -448,7 +448,7 @@ async function phasePublishGithub(version, prereleaseTag, assets) {
   const isPrerelease = prereleaseTag.startsWith('alpha.');
 
   const changelog = readFileSync(join(REPO_ROOT, 'CHANGELOG.md'), 'utf8');
-  const sectionRe = new RegExp(`(## \\[${escapeRegex(version)}-${escapeRegex(prereleaseTag)}\\][\\s\\S]*?)(?=\\n## \\[|$)`);
+  const sectionRe = new RegExp(String.raw`(## \[${escapeRegex(version)}-${escapeRegex(prereleaseTag)}\][\s\S]*?)(?=\n## \[|$)`);
   const sectionMatch = changelog.match(sectionRe);
   let body = sectionMatch ? sectionMatch[1].trim() : `Release ${tag}`;
   body = body.replace(/^## \[.*?\][^\n]*\n+/, '');

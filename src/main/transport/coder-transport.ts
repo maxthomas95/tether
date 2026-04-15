@@ -8,7 +8,7 @@ const log = createLogger('coder-pty');
 
 // POSIX single-quote shell escape: wrap in single quotes and replace any
 // embedded ' with '\''. Handles every metacharacter except `'` itself.
-const shq = (s: string): string => `'${s.replace(/'/g, "'\\''")}'`;
+const shq = (s: string): string => `'${s.replaceAll("'", String.raw`'\''`)}'`;
 
 // Preserve `~` / `~/` expansion by keeping the tilde literal (unquoted) and
 // single-quoting only the remainder of the path.
