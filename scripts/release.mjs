@@ -18,6 +18,7 @@
 // Usage:
 //   node scripts/release.mjs alpha.N            # cut a new alpha (patch bump)
 //   node scripts/release.mjs beta.N             # cut a new beta  (patch bump)
+//   node scripts/release.mjs hotfix.N           # cut a hotfix on top of a beta
 //   node scripts/release.mjs beta.1 --minor     # minor bump (e.g. 0.2.3 → 0.3.0)
 //   node scripts/release.mjs alpha.N --resume   # skip phases that are already done
 //   node scripts/release.mjs alpha.N --dry-run  # print what would happen
@@ -441,7 +442,8 @@ function phaseAssets(version, { setupPath, zipPath }) {
 async function phasePublishGithub(version, prereleaseTag, assets) {
   log(`Phase 11/11: publish to GitHub`);
   const tag = `v${version}-${prereleaseTag}`;
-  const isPrerelease = prereleaseTag.startsWith('alpha.') || prereleaseTag.startsWith('beta.');
+  // Convention: alpha.* = prerelease; beta.* and hotfix.* = full release (won't be latest until no newer).
+  const isPrerelease = prereleaseTag.startsWith('alpha.');
 
   const changelog = readFileSync(join(REPO_ROOT, 'CHANGELOG.md'), 'utf8');
   const sectionRe = new RegExp(`(## \\[${version}-${prereleaseTag}\\][\\s\\S]*?)(?=\\n## \\[|$)`);
@@ -500,14 +502,14 @@ async function phasePublishGithub(version, prereleaseTag, assets) {
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
-  let prereleaseTag = args.find(a => /^(alpha|beta)\.\d+$/.test(a));
+  let prereleaseTag = args.find(a => /^(alpha|beta|hotfix)\.\d+$/.test(a));
   if (!prereleaseTag && NEXT) {
-    const channel = args.find(a => /^(alpha|beta)$/.test(a)) || 'alpha';
+    const channel = args.find(a => /^(alpha|beta|hotfix)$/.test(a)) || 'alpha';
     const n = await nextPrereleaseNumber(channel);
     prereleaseTag = `${channel}.${n}`;
     log(`auto-picked prerelease tag: ${prereleaseTag}`);
   }
-  if (!prereleaseTag) die('Usage: node scripts/release.mjs <alpha|beta>.N [--minor] [--resume] [--dry-run]   (or: --next)');
+  if (!prereleaseTag) die('Usage: node scripts/release.mjs <alpha|beta|hotfix>.N [--minor] [--resume] [--dry-run]   (or: --next)');
 
   // --resume reuses current pkg version; --minor bumps minor; default bumps patch.
   const cur = currentPackageVersion();
