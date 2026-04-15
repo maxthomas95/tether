@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import type { SessionInfo, SessionState } from '../../../shared/types';
 import { CliToolBadge } from '../CliToolBadge';
+import { onKeyActivate, stopPropagationOnKey } from '../../utils/a11y';
 
 interface SessionItemProps {
   session: SessionInfo;
@@ -64,6 +65,9 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
     <div
       className={`session-item ${isActive ? 'session-item--active' : ''} ${nested ? 'session-item--nested' : ''}`}
       onClick={onClick}
+      onKeyDown={onKeyActivate(onClick)}
+      role="button"
+      tabIndex={0}
       onContextMenu={handleContextMenu}
       draggable
       onDragStart={(e) => {
@@ -110,29 +114,65 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
       </div>
 
       {showMenu && (
-        <div ref={menuRef} className="context-menu" onClick={e => e.stopPropagation()}>
-          <div className="context-menu-item" onClick={() => { setShowMenu(false); setEditing(true); setEditValue(session.label); }}>
+        <div ref={menuRef} className="context-menu" onClick={e => e.stopPropagation()} onKeyDown={stopPropagationOnKey} role="menu" tabIndex={-1}>
+          <div
+            className="context-menu-item"
+            role="menuitem"
+            tabIndex={0}
+            onClick={() => { setShowMenu(false); setEditing(true); setEditValue(session.label); }}
+            onKeyDown={onKeyActivate(() => { setShowMenu(false); setEditing(true); setEditValue(session.label); })}
+          >
             Rename
           </div>
-          <div className="context-menu-item" onClick={() => { setShowMenu(false); onDuplicate(); }}>
+          <div
+            className="context-menu-item"
+            role="menuitem"
+            tabIndex={0}
+            onClick={() => { setShowMenu(false); onDuplicate(); }}
+            onKeyDown={onKeyActivate(() => { setShowMenu(false); onDuplicate(); })}
+          >
             Duplicate
           </div>
           {onResumePrevious && (
-            <div className="context-menu-item" onClick={() => { setShowMenu(false); onResumePrevious(); }}>
+            <div
+              className="context-menu-item"
+              role="menuitem"
+              tabIndex={0}
+              onClick={() => { setShowMenu(false); onResumePrevious(); }}
+              onKeyDown={onKeyActivate(() => { setShowMenu(false); onResumePrevious(); })}
+            >
               Resume previous conversation...
             </div>
           )}
           {isAlive && (
-            <div className="context-menu-item" onClick={() => { setShowMenu(false); onStop(); }}>
+            <div
+              className="context-menu-item"
+              role="menuitem"
+              tabIndex={0}
+              onClick={() => { setShowMenu(false); onStop(); }}
+              onKeyDown={onKeyActivate(() => { setShowMenu(false); onStop(); })}
+            >
               Stop
             </div>
           )}
           {isAlive && (
-            <div className="context-menu-item context-menu-item--danger" onClick={() => { setShowMenu(false); onKill(); }}>
+            <div
+              className="context-menu-item context-menu-item--danger"
+              role="menuitem"
+              tabIndex={0}
+              onClick={() => { setShowMenu(false); onKill(); }}
+              onKeyDown={onKeyActivate(() => { setShowMenu(false); onKill(); })}
+            >
               Kill
             </div>
           )}
-          <div className="context-menu-item context-menu-item--danger" onClick={() => { setShowMenu(false); onRemove(); }}>
+          <div
+            className="context-menu-item context-menu-item--danger"
+            role="menuitem"
+            tabIndex={0}
+            onClick={() => { setShowMenu(false); onRemove(); }}
+            onKeyDown={onKeyActivate(() => { setShowMenu(false); onRemove(); })}
+          >
             Remove
           </div>
         </div>

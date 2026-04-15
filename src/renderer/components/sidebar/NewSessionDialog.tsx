@@ -4,6 +4,7 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderWorkspace, CoderTemplate, CoderTemplateParam, CreateCoderWorkspaceOptions, CliToolId } from '../../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import type { CliToolDef } from '../../../shared/cli-tools';
+import { onKeyActivate } from '../../utils/a11y';
 
 type CliFlagsPerTool = Partial<Record<CliToolId, string[]>>;
 
@@ -1168,14 +1169,19 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                 )}
                 {providerRepos.length > 0 && (
                   <div className="repo-list">
-                    {providerRepos.map(repo => (
+                    {providerRepos.map(repo => {
+                      const selectRepo = () => {
+                        setSelectedRepo(repo);
+                        setCloneUrl(repo.cloneUrl);
+                      };
+                      return (
                       <div
                         key={repo.cloneUrl}
                         className={`repo-list-item ${selectedRepo?.cloneUrl === repo.cloneUrl ? 'repo-list-item--selected' : ''}`}
-                        onClick={() => {
-                          setSelectedRepo(repo);
-                          setCloneUrl(repo.cloneUrl);
-                        }}
+                        role="button"
+                        tabIndex={0}
+                        onClick={selectRepo}
+                        onKeyDown={onKeyActivate(selectRepo)}
                       >
                         <div>
                           <span className="repo-list-item-name">{repo.fullName}</span>
@@ -1185,7 +1191,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                           <span className="repo-list-item-desc">{repo.description}</span>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

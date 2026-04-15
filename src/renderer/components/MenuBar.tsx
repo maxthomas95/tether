@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import logoSrc from '../assets/logo.png';
+import { onKeyActivate } from '../utils/a11y';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -100,7 +101,10 @@ export function MenuBar({ menus }: MenuBarProps) {
                       item.disabled ? 'menubar-dropdown-item--disabled' : '',
                       item.danger ? 'menubar-dropdown-item--danger' : '',
                     ].join(' ')}
+                    role="menuitem"
+                    tabIndex={item.disabled ? -1 : 0}
                     onClick={() => handleItemClick(item)}
+                    onKeyDown={onKeyActivate(() => handleItemClick(item))}
                   >
                     <span className="menubar-dropdown-check">
                       {item.checked ? '\u2713' : ''}

@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { suggestVaultPath } from '../utils/vault-path';
+import { onKeyActivate } from '../utils/a11y';
 import type { CliToolId } from '../../shared/types';
 
 const CLAUDE_PRESETS = [
@@ -301,7 +302,10 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, cliTool, 
                 <div
                   key={preset.key}
                   className="env-editor-preset-item"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => addPreset(preset.key)}
+                  onKeyDown={onKeyActivate(() => addPreset(preset.key))}
                 >
                   <span className="env-editor-preset-key">{preset.key}</span>
                   <span className="env-editor-preset-label">{preset.label}</span>
