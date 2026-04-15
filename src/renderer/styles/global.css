@@ -862,6 +862,16 @@ html, body, #root {
   opacity: 0.9;
 }
 
+.form-btn--danger {
+  background: var(--status-dead);
+  border-color: var(--status-dead);
+  color: #fff;
+}
+
+.form-btn--danger:hover {
+  opacity: 0.9;
+}
+
 .form-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
