@@ -408,25 +408,21 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     // Use node-pty (same as CoderTransport) so coder gets a real PTY. On
     // Windows coder create requires a console handle even when all parameters
     // are supplied — child_process.spawn/execFile can't provide one.
-    // Pass the full command as a single string to cmd.exe /c so special
-    // characters in parameter values (=, :, /) aren't mangled by arg splitting.
+    // Spawn the coder binary directly with an argv array — no shell, so
+    // metacharacters in user-supplied parameter values can't inject commands.
     let ptyMod: typeof import('node-pty');
     try { ptyMod = require('node-pty'); } catch (e) {
       throw new Error('node-pty not available — cannot create Coder workspace');
     }
 
-    const q = (s: string) => `"${s.replace(/"/g, '\\"')}"`;
-    const cmdStr = [binaryPath, 'create', opts.workspaceName, '--template', opts.templateName, '--yes',
-      ...Object.entries(opts.parameters || {}).flatMap(([name, value]) => ['--parameter', q(`${name}=${value}`)]),
-    ].join(' ');
+    const args = ['create', opts.workspaceName, '--template', opts.templateName, '--yes',
+      ...Object.entries(opts.parameters || {}).flatMap(([name, value]) => ['--parameter', `${name}=${value}`]),
+    ];
 
-    const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
-    const spawnArgs = process.platform === 'win32' ? ['/c', cmdStr] : ['-c', cmdStr];
-
-    log.info('coder create via PTY', { cmd: cmdStr });
+    log.info('coder create via PTY', { bin: binaryPath, args });
 
     return new Promise<CoderWorkspace>((resolve, reject) => {
-      const proc = ptyMod.spawn(shell, spawnArgs, {
+      const proc = ptyMod.spawn(binaryPath, args, {
         name: 'xterm-256color',
         cols: 120,
         rows: 30,
