@@ -6,6 +6,7 @@
   "main": ".vite/build/index.js",
   "private": true,
   "scripts": {
+    "postinstall": "patch-package",
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
@@ -44,6 +45,7 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.0",
     "electron": "41.1.1",
+    "patch-package": "^8.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.7.0",
