@@ -59,10 +59,13 @@ const RESUME  = args.includes('--resume');
 const NEXT    = args.includes('--next');
 const MINOR   = args.includes('--minor');
 
-function log(msg)  { console.log(`\x1b[36m▸\x1b[0m ${msg}`); }
-function ok(msg)   { console.log(`\x1b[32m✓\x1b[0m ${msg}`); }
-function warn(msg) { console.log(`\x1b[33m!\x1b[0m ${msg}`); }
-function die(msg)  { console.error(`\x1b[31m✗\x1b[0m ${msg}`); exit(1); }
+// Strip control chars (including ANSI escapes and newlines) to prevent log
+// forging when messages contain data from external sources like HTTP responses.
+function sanitize(msg) { return String(msg).replace(/[\x00-\x1f\x7f]/g, '?'); }
+function log(msg)  { console.log(`\x1b[36m▸\x1b[0m ${sanitize(msg)}`); }
+function ok(msg)   { console.log(`\x1b[32m✓\x1b[0m ${sanitize(msg)}`); }
+function warn(msg) { console.log(`\x1b[33m!\x1b[0m ${sanitize(msg)}`); }
+function die(msg)  { console.error(`\x1b[31m✗\x1b[0m ${sanitize(msg)}`); exit(1); }
 
 function sh(cmd, opts = {}) {
   if (DRY_RUN && opts.mutating) {

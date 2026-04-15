@@ -1,5 +1,6 @@
 import React from 'react';
 import { useQuota } from '../../hooks/useQuota';
+import { onKeyActivate } from '../../utils/a11y';
 
 function formatResetTime(iso: string | null): string {
   if (!iso) return '';
@@ -61,7 +62,7 @@ export function QuotaFooter() {
   if (!showClaude && !showCodex) return null;
 
   return (
-    <div className="sidebar-footer" onClick={refresh} title="Click to refresh quota">
+    <div className="sidebar-footer" onClick={refresh} onKeyDown={onKeyActivate(refresh)} role="button" tabIndex={0} title="Click to refresh quota">
       {/* Claude quota */}
       {showClaude && (
         <div className="quota-section">

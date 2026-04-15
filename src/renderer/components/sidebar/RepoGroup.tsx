@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { SessionItem } from './SessionItem';
 import type { SessionInfo } from '../../../shared/types';
+import { onKeyActivate, stopPropagationOnKey } from '../../utils/a11y';
 
 interface RepoGroupProps {
   repoPath: string;
@@ -122,6 +123,9 @@ export function RepoGroup({
       <div
         className={headerClasses}
         onClick={() => setCollapsed(c => !c)}
+        onKeyDown={onKeyActivate(() => setCollapsed(c => !c))}
+        role="button"
+        tabIndex={0}
         onContextMenu={handleContextMenu}
         draggable
         onDragStart={handleDragStartGroup}
@@ -142,7 +146,16 @@ export function RepoGroup({
         <span
           className="repo-group-pin-btn"
           title={pinned ? 'Unpin' : 'Pin to top'}
+          role="button"
+          tabIndex={0}
           onClick={(e) => { e.stopPropagation(); onTogglePin(environmentId, repoPath); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              onTogglePin(environmentId, repoPath);
+            }
+          }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ display: 'block' }}>
             <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2z" />
@@ -150,11 +163,20 @@ export function RepoGroup({
         </span>
       </div>
       {showMenu && (
-        <div ref={menuRef} className="context-menu" onClick={e => e.stopPropagation()}>
-          <div className="context-menu-item" onClick={() => {
-            setShowMenu(false);
-            onTogglePin(environmentId, repoPath);
-          }}>
+        <div ref={menuRef} className="context-menu" onClick={e => e.stopPropagation()} onKeyDown={stopPropagationOnKey} role="menu" tabIndex={-1}>
+          <div
+            className="context-menu-item"
+            role="menuitem"
+            tabIndex={0}
+            onClick={() => {
+              setShowMenu(false);
+              onTogglePin(environmentId, repoPath);
+            }}
+            onKeyDown={onKeyActivate(() => {
+              setShowMenu(false);
+              onTogglePin(environmentId, repoPath);
+            })}
+          >
             {pinned ? 'Unpin' : 'Pin to top'}
           </div>
         </div>

@@ -1,3 +1,5 @@
+import { onKeyActivate, stopPropagationOnKey } from '../utils/a11y';
+
 interface KeyboardShortcutsDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -17,8 +19,8 @@ export function KeyboardShortcutsDialog({ isOpen, onClose }: KeyboardShortcutsDi
   if (!isOpen) return null;
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog" onClick={e => e.stopPropagation()}>
+    <div className="dialog-overlay" onClick={onClose} onKeyDown={onKeyActivate(onClose)} role="button" tabIndex={-1}>
+      <div className="dialog" onClick={e => e.stopPropagation()} onKeyDown={stopPropagationOnKey} role="dialog" tabIndex={-1}>
         <div className="dialog-header">
           <span>Keyboard Shortcuts</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>

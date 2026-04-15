@@ -32,6 +32,7 @@ import {
   normalizeToConstrained,
 } from './lib/layout-tree';
 import { toolSupportsHistory } from '../shared/cli-tools';
+import { onKeyActivate, stopPropagationOnKey } from './utils/a11y';
 import type { LayoutNode } from '../shared/layout-types';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, HostVerifyRequest } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
@@ -844,6 +845,9 @@ export function App() {
                 <div
                   className="env-group-header"
                   onClick={() => toggleGroup(env.id)}
+                  onKeyDown={onKeyActivate(() => toggleGroup(env.id))}
+                  role="button"
+                  tabIndex={0}
                   onContextMenu={e => { e.preventDefault(); setEnvMenuOpenId(prev => prev === env.id ? null : env.id); }}
                   style={{ cursor: 'pointer', position: 'relative' }}
                 >
@@ -855,11 +859,23 @@ export function App() {
                   </span>
                   <span className="env-group-count">({envSessions.length})</span>
                   {envMenuOpenId === env.id && (
-                    <div ref={envMenuRef} className="context-menu" onClick={e => e.stopPropagation()}>
-                      <div className="context-menu-item" onClick={() => { setEnvMenuOpenId(null); setEditingEnv(env); setEnvDialogOpen(true); }}>
+                    <div ref={envMenuRef} className="context-menu" onClick={e => e.stopPropagation()} onKeyDown={stopPropagationOnKey} role="menu" tabIndex={-1}>
+                      <div
+                        className="context-menu-item"
+                        role="menuitem"
+                        tabIndex={0}
+                        onClick={() => { setEnvMenuOpenId(null); setEditingEnv(env); setEnvDialogOpen(true); }}
+                        onKeyDown={onKeyActivate(() => { setEnvMenuOpenId(null); setEditingEnv(env); setEnvDialogOpen(true); })}
+                      >
                         Edit
                       </div>
-                      <div className="context-menu-item context-menu-item--danger" onClick={() => { setEnvMenuOpenId(null); handleDeleteEnvironment(env); }}>
+                      <div
+                        className="context-menu-item context-menu-item--danger"
+                        role="menuitem"
+                        tabIndex={0}
+                        onClick={() => { setEnvMenuOpenId(null); handleDeleteEnvironment(env); }}
+                        onKeyDown={onKeyActivate(() => { setEnvMenuOpenId(null); handleDeleteEnvironment(env); })}
+                      >
                         Delete
                       </div>
                     </div>
