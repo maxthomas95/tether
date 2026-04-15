@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.3.1-hotfix.1] — 2026-04-14
+
+Hotfix bundling three user-facing fixes on top of `0.3.0-beta.1`.
+
+### Bug Fixes
+- **SSH TUI corruption from split UTF-8 glyphs** — multi-byte characters straddling network-read boundaries no longer render as replacement glyphs in xterm.js (#15)
+- **Codex session resume accuracy** — session id is now captured at spawn so resume picks up the correct conversation (#16)
+- **Native `confirm()` replaced with Tether-styled `ConfirmDialog`** — modal dialogs now match the app theme and respect Escape-to-cancel (#17)
+
+---
+
 ## [0.3.0-beta.1] — 2026-04-14
 
 Minor bump to mark a process milestone — this is the first release cut through proper PR review with Sonar Quality Gate, CodeQL, and CI all gating the release commit.
