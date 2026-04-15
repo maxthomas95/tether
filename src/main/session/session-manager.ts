@@ -11,6 +11,7 @@ import { getProfile } from '../db/profile-repo';
 import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
 import { transcriptExists } from '../claude/transcripts';
 import { codexTranscriptExists } from '../codex/transcripts';
+import { detectNewCodexSession, releaseCodexSessionClaim } from '../codex/session-watcher';
 import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { createLogger } from '../logger';
@@ -52,6 +53,12 @@ export interface SessionCallbacks {
   onData(sessionId: string, data: string): void;
   onStateChange(sessionId: string, state: SessionState): void;
   onExit(sessionId: string, exitCode: number): void;
+  /**
+   * Fired when non-state session metadata changes (currently: the codex
+   * toolSessionId captured after spawn). Renderer uses this to keep its
+   * SessionInfo in sync so the next workspace save has the real id.
+   */
+  onUpdate?(sessionId: string, info: SessionInfo): void;
 }
 
 export class Session {
@@ -70,6 +77,8 @@ export class Session {
   claudeSessionId: string | null = null;
   /** True when this session was launched by resuming prior tool history. */
   resumed = false;
+  /** Active codex session-id watcher, so we can cancel on removal. */
+  codexDetectCancel: (() => void) | null = null;
 
   constructor(id: string, label: string, workingDir: string, environmentId?: string, cliTool?: CliToolId, customCliBinary?: string) {
     this.id = id;
@@ -283,6 +292,21 @@ class SessionManager {
       cloneUrl: opts.cloneUrl,
     });
 
+    // Codex doesn't accept a pre-assigned session id — it mints one and writes
+    // it to a new jsonl under ~/.codex/sessions. Watch for that file so we can
+    // resume *this* conversation on next launch instead of guessing "whatever
+    // was latest in the folder".
+    if (cliTool === 'codex' && transport instanceof LocalTransport && !resumeId) {
+      const handle = detectNewCodexSession({ workingDir: opts.workingDir });
+      session.codexDetectCancel = handle.cancel;
+      handle.promise.then((detectedId) => {
+        session.codexDetectCancel = null;
+        if (!detectedId || !this.sessions.has(session.id)) return;
+        session.toolSessionId = detectedId;
+        callbacks.onUpdate?.(session.id, session.toInfo());
+      });
+    }
+
     return session;
   }
 
@@ -306,6 +330,8 @@ class SessionManager {
     if (session) {
       log.info('Removing session', { id });
       statusDetector.unregister(id);
+      session.codexDetectCancel?.();
+      releaseCodexSessionClaim(session.toolSessionId);
       session.transport?.dispose();
       this.sessions.delete(id);
       this.callbacksMap.delete(id);
@@ -341,6 +367,7 @@ class SessionManager {
   dispose(): void {
     statusDetector.dispose();
     for (const session of this.sessions.values()) {
+      session.codexDetectCancel?.();
       session.transport?.dispose();
     }
     this.sessions.clear();
