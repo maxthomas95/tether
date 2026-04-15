@@ -1,0 +1,13 @@
+diff --git a/node_modules/cross-zip/index.js b/node_modules/cross-zip/index.js
+index 94b6142..55e4183 100644
+--- a/node_modules/cross-zip/index.js
++++ b/node_modules/cross-zip/index.js
+@@ -46,7 +46,7 @@ function zip (inPath, outPath, cb) {
+   // Windows zip command does not overwrite existing files. So do it manually first.
+   function doZip () {
+     if (process.platform === 'win32') {
+-      fs.rmdir(outPath, { recursive: true, maxRetries: 3 }, doZip2)
++      fs.rm(outPath, { recursive: true, force: true, maxRetries: 3 }, doZip2)
+     } else {
+       doZip2()
+     }
