@@ -15,6 +15,7 @@ import { AboutDialog } from './components/AboutDialog';
 import { HostKeyVerifyDialog } from './components/HostKeyVerifyDialog';
 import { SetupWizard } from './components/SetupWizard';
 import { Notifications, useNotifications } from './components/Notifications';
+import { ConfirmDialog, useConfirmDialog } from './components/ConfirmDialog';
 import { useTerminalManager } from './hooks/useTerminalManager';
 import { useLayoutState } from './hooks/useLayoutState';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -70,6 +71,7 @@ export function App() {
   const termManager = useTerminalManager(effectiveXtermTheme);
   const { layoutState, layoutDispatch } = useLayoutState();
   const { notifications, notify, dismiss } = useNotifications();
+  const { confirm: confirmDialog, dialogProps: confirmDialogProps } = useConfirmDialog();
   const effectiveMaxPanes = enablePaneSplitting ? maxPanes : 1;
 
   useEffect(() => {
@@ -347,13 +349,17 @@ export function App() {
   }, [notify]);
 
   const handleDeleteEnvironment = useCallback(async (env: EnvironmentInfo) => {
-    const envSessions = sessions.filter(s =>
-      env.type === 'local' ? (!s.environmentId || s.environmentId === env.id) : s.environmentId === env.id,
-    );
-    const msg = envSessions.length > 0
+    const envSessions = sessions.filter(s => s.environmentId === env.id);
+    const message = envSessions.length > 0
       ? `Delete "${env.name}"? ${envSessions.length} session(s) will be removed.`
       : `Delete "${env.name}"?`;
-    if (!confirm(msg)) return;
+    const ok = await confirmDialog({
+      title: 'Delete environment',
+      message,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
 
     try {
       // Remove associated sessions first
@@ -373,7 +379,7 @@ export function App() {
         message: extractErrorMessage(err),
       });
     }
-  }, [sessions, termManager, layoutDispatch, notify]);
+  }, [sessions, termManager, layoutDispatch, notify, confirmDialog]);
 
   // Close env context menu on outside click
   useEffect(() => {
@@ -975,6 +981,7 @@ export function App() {
         />
       )}
       <Notifications notifications={notifications} onDismiss={dismiss} />
+      <ConfirmDialog {...confirmDialogProps} />
     </div>
   );
 }
