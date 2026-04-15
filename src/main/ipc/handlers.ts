@@ -116,6 +116,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         send(IPC.SESSION_STATE_CHANGE, sessionId, state);
         sessionRepo.updateSessionState(sessionId, state);
       },
+      onUpdate(sessionId, info) {
+        send(IPC.SESSION_UPDATED, sessionId, info);
+      },
       onExit(sessionId, exitCode) {
         send(IPC.SESSION_EXITED, sessionId, exitCode);
         const s = sessionManager.getSession(sessionId);
@@ -606,18 +609,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(IPC.WORKSPACE_SAVE, async (_event, sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string }>, activeIndex: number) => {
     const { getDb, saveDb } = await import('../db/database');
-    const needsCodexLookup = sessions.some(session => session.cliTool === 'codex' && !session.toolSessionId);
-    const sessionsToSave = needsCodexLookup
-      ? await Promise.all(sessions.map(async (session) => {
-        if (session.cliTool !== 'codex' || session.toolSessionId) {
-          return session;
-        }
-        const { findLatestCodexTranscript } = await import('../codex/transcripts');
-        const latest = findLatestCodexTranscript(session.workingDir);
-        return latest ? { ...session, toolSessionId: latest.id } : session;
-      }))
-      : sessions;
-    getDb().savedWorkspace = { sessions: sessionsToSave, activeIndex };
+    // Codex toolSessionIds are captured at spawn time via the codex session
+    // watcher and pushed to the renderer, so whatever the renderer hands us
+    // here is already the real conversation id (or undefined if codex hadn't
+    // written its transcript yet — in which case we'd rather not resume than
+    // resume a stale/unrelated conversation).
+    getDb().savedWorkspace = { sessions, activeIndex };
     saveDb();
   });
 

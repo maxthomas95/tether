@@ -47,6 +47,11 @@ const api: TetherAPI = {
       ipcRenderer.on(IPC.SESSION_EXITED, h);
       return () => ipcRenderer.removeListener(IPC.SESSION_EXITED, h);
     },
+    onUpdated(cb: (id: string, info: SessionInfo) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, id: string, info: SessionInfo) => cb(id, info);
+      ipcRenderer.on(IPC.SESSION_UPDATED, h);
+      return () => ipcRenderer.removeListener(IPC.SESSION_UPDATED, h);
+    },
   },
 
   environment: {

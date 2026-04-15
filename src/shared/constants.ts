@@ -93,6 +93,7 @@ export const IPC = {
   SESSION_DATA: 'session:data',
   SESSION_STATE_CHANGE: 'session:state-change',
   SESSION_EXITED: 'session:exited',
+  SESSION_UPDATED: 'session:updated',
   GIT_CLONE_PROGRESS: 'git:clone-progress',
   VAULT_STATUS_CHANGED: 'vault:status-changed',
 } as const;
