@@ -313,6 +313,7 @@ export interface TetherAPI {
     onData(callback: (sessionId: string, data: string) => void): () => void;
     onStateChange(callback: (sessionId: string, state: SessionState) => void): () => void;
     onExited(callback: (sessionId: string, exitCode: number) => void): () => void;
+    onUpdated(callback: (sessionId: string, info: SessionInfo) => void): () => void;
   };
   environment: {
     list(): Promise<EnvironmentInfo[]>;
