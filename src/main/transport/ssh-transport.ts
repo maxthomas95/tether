@@ -1,3 +1,4 @@
+import { StringDecoder } from 'node:string_decoder';
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
 import { createLogger } from '../logger';
 import { verifyHost } from '../ssh/host-verifier';
@@ -124,9 +125,13 @@ export class SSHTransport implements SessionTransport {
               cmd = `cd ${options.workingDir} && ${cliCmd}\n`;
             }
 
-            // Wire up data flow
+            // Wire up data flow. Use StringDecoder so multi-byte UTF-8 glyphs
+            // (TUI box-drawing, spinners, emoji) that straddle SSH packet
+            // boundaries don't decode to U+FFFD and corrupt cursor math.
+            const decoder = new StringDecoder('utf8');
             stream.on('data', (data: Buffer) => {
-              const str = data.toString('utf-8');
+              const str = decoder.write(data);
+              if (!str) return;
               for (const cb of this.dataCallbacks) {
                 cb(str);
               }
