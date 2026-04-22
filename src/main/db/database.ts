@@ -73,6 +73,14 @@ export interface DbData {
 export interface PersistedSessionUsage {
   claudeSessionId: string;
   workingDir: string;
+  /**
+   * Full path to the JSONL transcript. Set when the session was discovered
+   * via directory scan (where `workingDir` is the encoded Claude project
+   * dir name, which is lossy to decode). When absent, the path is derived
+   * from `workingDir` via `transcriptPath()` — the older flow for sessions
+   * launched by Tether itself.
+   */
+  filePath?: string;
   inputTokens: number;
   outputTokens: number;
   cacheCreationTokens: number;

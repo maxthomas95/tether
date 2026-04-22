@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import { createLogger } from '../logger';
-import { transcriptPath } from '../claude/transcripts';
+import { transcriptPath, scanAllTranscripts } from '../claude/transcripts';
 import { parseJsonlFile, type ParsedMessage } from './jsonl-parser';
 import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
 import type { SessionUsage, UsageModelBreakdown, UsageInfo, DailyUsage } from '../../shared/types';
@@ -9,6 +9,7 @@ const log = createLogger('usage');
 
 const WATCH_DEBOUNCE_MS = 300;
 const WATCH_POLL_INTERVAL_MS = 2_000;
+const RESCAN_INTERVAL_MS = 5 * 60 * 1_000;
 
 interface TrackedSession {
   claudeSessionId: string;
@@ -94,6 +95,7 @@ function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOff
 class UsageService {
   private tracked = new Map<string, TrackedSession>();
   private callback: ((info: UsageInfo) => void) | null = null;
+  private rescanTimer: ReturnType<typeof setInterval> | null = null;
 
   onUpdate(cb: (info: UsageInfo) => void): void {
     this.callback = cb;
@@ -108,7 +110,7 @@ class UsageService {
         this.tracked.set(summary.claudeSessionId, {
           claudeSessionId: summary.claudeSessionId,
           workingDir: summary.workingDir,
-          filePath: transcriptPath(summary.workingDir, summary.claudeSessionId),
+          filePath: summary.filePath ?? transcriptPath(summary.workingDir, summary.claudeSessionId),
           watching: false,
           debounceTimer: null,
           usage: {
@@ -127,6 +129,65 @@ class UsageService {
         });
       }
     }
+
+    // Non-blocking backfill of any sessions we don't know about yet. The
+    // event loop keeps the UI responsive while we chew through historical
+    // JSONLs. Afterwards, a periodic rescan catches appends to historical
+    // files from out-of-band claude runs.
+    setImmediate(() => this.backfillFromDisk());
+    this.rescanTimer = setInterval(() => this.backfillFromDisk(), RESCAN_INTERVAL_MS);
+  }
+
+  /**
+   * Scan ~/.claude/projects/ for every JSONL transcript, and parse any new
+   * files or any appends to files we've already seen. Only token counts,
+   * model names, and timestamps are persisted — prompts and responses are
+   * parsed transiently then discarded. Safe to call repeatedly.
+   */
+  private backfillFromDisk(): void {
+    let discovered;
+    try {
+      discovered = scanAllTranscripts();
+    } catch (err) {
+      log.warn('Transcript scan failed', { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+
+    let newSessions = 0;
+    let updatedSessions = 0;
+
+    for (const d of discovered) {
+      const existing = this.tracked.get(d.sessionId);
+      if (!existing) {
+        // New-to-us session. Create an in-memory entry and parse in full.
+        const session: TrackedSession = {
+          claudeSessionId: d.sessionId,
+          workingDir: d.projectDirName,
+          filePath: d.filePath,
+          watching: false,
+          debounceTimer: null,
+          usage: emptySessionUsage(d.sessionId),
+        };
+        this.tracked.set(d.sessionId, session);
+        this.parseSession(session);
+        newSessions++;
+        continue;
+      }
+      // Already known. Only re-parse if the file grew since we last looked.
+      if (d.size > existing.usage.parsedByteOffset) {
+        this.parseSession(existing);
+        updatedSessions++;
+      }
+    }
+
+    if (newSessions > 0 || updatedSessions > 0) {
+      log.info('Transcript scan complete', {
+        total: discovered.length,
+        newSessions,
+        updatedSessions,
+      });
+      this.notifyUpdate();
+    }
   }
 
   trackSession(claudeSessionId: string, workingDir: string): void {
@@ -139,12 +200,16 @@ class UsageService {
       return;
     }
 
-    const filePath = transcriptPath(workingDir, claudeSessionId);
-    log.info('Tracking session', { claudeSessionId, filePath });
-
     // Check for persisted data
     const db = getDb();
     const persisted = db.usageSummaries.find(s => s.claudeSessionId === claudeSessionId);
+
+    // Prefer the authoritative filePath from a scan-discovered summary —
+    // its workingDir is the encoded project dir name, which is lossy to
+    // recover into a real path. transcriptPath() is correct for fresh
+    // Tether sessions where workingDir is the actual cwd.
+    const filePath = persisted?.filePath ?? transcriptPath(workingDir, claudeSessionId);
+    log.info('Tracking session', { claudeSessionId, filePath });
 
     const session: TrackedSession = {
       claudeSessionId,
@@ -245,6 +310,7 @@ class UsageService {
     const entry: PersistedSessionUsage = {
       claudeSessionId: session.claudeSessionId,
       workingDir: session.workingDir,
+      filePath: session.filePath,
       inputTokens: session.usage.inputTokens,
       outputTokens: session.usage.outputTokens,
       cacheCreationTokens: session.usage.cacheCreationTokens,
@@ -342,6 +408,10 @@ class UsageService {
   }
 
   stop(): void {
+    if (this.rescanTimer) {
+      clearInterval(this.rescanTimer);
+      this.rescanTimer = null;
+    }
     for (const session of this.tracked.values()) {
       this.closeWatcher(session);
     }
