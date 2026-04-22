@@ -813,6 +813,31 @@ html, body, #root {
   margin-bottom: 4px;
 }
 
+.settings-section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.settings-tag--experimental {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-color));
+  color: var(--accent);
+}
+
 .form-input {
   width: 100%;
   background: var(--bg-primary);

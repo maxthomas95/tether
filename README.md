@@ -48,18 +48,21 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 ## Features
 
 - **Multiple concurrent sessions** with instant switching
-- **Split panes** — view multiple sessions side-by-side with flexible layouts
+- **Split panes** (experimental) — view multiple sessions side-by-side with flexible layouts
 - **Local and SSH environments** — node-pty locally, ssh2 for remote
 - **Status indicators** — green (running), amber (waiting), gray (idle), red (dead)
 - **Session grouping** — auto-grouped by working directory, collapsible
 - **Environment management** — preconfigured environments with per-env settings
 - **Env var cascade** — app defaults &rarr; environment &rarr; session overrides, with presets for common Claude Code and Codex CLI vars
 - **CLI flag management** — app-wide, per-profile, and per-session flags scoped by CLI tool
+- **Usage tracking** (experimental) — optional quota and cost views in the sidebar and per-session panes
 - **Other CLI tools** — also supports Codex CLI, OpenCode, and custom binaries (see below)
 - **Workspace persistence** — sessions save on quit, restore on launch
 - **Resume previous chats** — pick up where Claude Code or Codex CLI left off
 - **Catppuccin themes** — Mocha, Macchiato, Frappe, Latte, plus Default Dark
 - **Keyboard shortcuts** — `Ctrl+N` new, `Ctrl+1-9` switch, `Ctrl+B` toggle sidebar, `Ctrl+W` stop
+
+> Features marked **experimental** are already useful, but may still have bugs, rough edges, or missing behavior. We label them clearly and keep iterating until they are stable.
 
 ### Other CLI tools
 
