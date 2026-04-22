@@ -78,6 +78,7 @@ export function setCachedToken(token: string, expiresAt?: string, identity?: str
   if (identity) cfg[CONFIG_KEYS.identity] = identity;
   else delete cfg[CONFIG_KEYS.identity];
   saveDb();
+  rescheduleExpiryWarning(expiresAt);
 }
 
 export function clearCachedToken(): void {
@@ -86,6 +87,43 @@ export function clearCachedToken(): void {
   delete cfg[CONFIG_KEYS.expiresAt];
   delete cfg[CONFIG_KEYS.identity];
   saveDb();
+  clearExpiryWarning();
+}
+
+// Fire one warning shortly before the token expires so the user can renew
+// proactively instead of discovering it at session-create time.
+const EXPIRY_WARNING_WINDOW_MS = 30 * 60 * 1000;
+let expiryWarningTimer: NodeJS.Timeout | null = null;
+let expiryWarningCallback: ((expiresAt: string) => void) | null = null;
+
+export function setExpiryWarningCallback(cb: (expiresAt: string) => void): void {
+  expiryWarningCallback = cb;
+  const cached = getCachedToken();
+  if (cached?.expiresAt) rescheduleExpiryWarning(cached.expiresAt);
+}
+
+function rescheduleExpiryWarning(expiresAt: string | undefined): void {
+  clearExpiryWarning();
+  if (!expiresAt || !expiryWarningCallback) return;
+  const exp = Date.parse(expiresAt);
+  if (!Number.isFinite(exp)) return;
+  const fireAt = exp - EXPIRY_WARNING_WINDOW_MS;
+  const delay = fireAt - Date.now();
+  // If we're already inside the warning window (or past expiry), fire immediately.
+  const clamped = Math.max(0, delay);
+  const expiryIso = expiresAt;
+  expiryWarningTimer = setTimeout(() => {
+    expiryWarningTimer = null;
+    if (Date.now() >= exp) return; // already expired — status-changed event handles that
+    expiryWarningCallback?.(expiryIso);
+  }, clamped);
+}
+
+function clearExpiryWarning(): void {
+  if (expiryWarningTimer) {
+    clearTimeout(expiryWarningTimer);
+    expiryWarningTimer = null;
+  }
 }
 
 /**

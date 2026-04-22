@@ -107,6 +107,50 @@ export class Session {
   }
 }
 
+/**
+ * Scans the merged env cascade and SSH password that a session would use and
+ * returns a short description of the first `vault://` reference found, or
+ * null if none. Mirrors the assembly done in `createSession` / `createTransport`
+ * but only inspects — no resolution, no side effects. Used by the preflight
+ * IPC so the renderer can prompt for Vault login before `session.create` runs.
+ */
+export async function findVaultRefInSession(opts: CreateSessionOptions): Promise<string | null> {
+  const { getDb } = await import('../db/database');
+  const appEnvVars = getDb().defaultEnvVars || {};
+  let envEnvVars: Record<string, string> = {};
+  let sshPassword: string | undefined;
+  if (opts.environmentId) {
+    const envRow = getEnvironment(opts.environmentId);
+    if (envRow?.env_vars) {
+      try { envEnvVars = JSON.parse(envRow.env_vars); } catch { /* ignore */ }
+    }
+    if (envRow?.type === 'ssh' && envRow.config) {
+      try {
+        const raw = JSON.parse(envRow.config) as Record<string, unknown>;
+        if (typeof raw.password === 'string') sshPassword = raw.password;
+      } catch { /* ignore */ }
+    }
+  }
+  let profileEnvVars: Record<string, string> = {};
+  if (opts.profileId) {
+    const profile = getProfile(opts.profileId);
+    if (profile?.env_vars) {
+      try { profileEnvVars = JSON.parse(profile.env_vars); } catch { /* ignore */ }
+    }
+  }
+  const merged: Record<string, string> = {
+    ...appEnvVars,
+    ...envEnvVars,
+    ...profileEnvVars,
+    ...(opts.env || {}),
+  };
+  for (const [key, value] of Object.entries(merged)) {
+    if (typeof value === 'string' && isVaultRef(value)) return `env var ${key}`;
+  }
+  if (sshPassword && isVaultRef(sshPassword)) return 'SSH password';
+  return null;
+}
+
 async function createTransport(environmentId?: string): Promise<SessionTransport> {
   if (!environmentId) return new LocalTransport();
 

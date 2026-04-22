@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 export interface Notification {
   id: string;
-  type: 'error' | 'info' | 'success';
+  type: 'error' | 'warning' | 'info' | 'success';
   title: string;
   message?: string;
   action?: { label: string; onClick: () => void };

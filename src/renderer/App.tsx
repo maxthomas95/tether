@@ -8,6 +8,8 @@ import { ResumeChatDialog } from './components/sidebar/ResumeChatDialog';
 import { SidebarResizeHandle } from './components/sidebar/SidebarResizeHandle';
 import { QuotaFooter } from './components/sidebar/QuotaFooter';
 import { GlobalUsageFooter } from './components/sidebar/GlobalUsageFooter';
+import { VaultStatusPill } from './components/sidebar/VaultStatusPill';
+import { VaultLoginPromptDialog } from './components/VaultLoginPromptDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { MenuBar } from './components/MenuBar';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
@@ -73,6 +75,7 @@ export function App() {
   const { layoutState, layoutDispatch } = useLayoutState();
   const { notifications, notify, dismiss } = useNotifications();
   const { confirm: confirmDialog, dialogProps: confirmDialogProps } = useConfirmDialog();
+  const [vaultPrompt, setVaultPrompt] = useState<{ reason?: string; onDone: (loggedIn: boolean) => void } | null>(null);
   const effectiveMaxPanes = enablePaneSplitting ? maxPanes : 1;
 
   useEffect(() => {
@@ -289,21 +292,39 @@ export function App() {
   }, [termManager]);
 
   const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[]) => {
+    const createOpts: CreateSessionOptions = {
+      workingDir,
+      label: label || undefined,
+      environmentId,
+      cliTool,
+      customCliBinary,
+      env,
+      cliArgs,
+      disabledInheritedFlags,
+      resumeToolSessionId,
+      resumeClaudeSessionId: !cliTool || cliTool === 'claude' ? resumeToolSessionId : undefined,
+      profileId,
+      cloneUrl,
+    };
     try {
-      const session = await window.electronAPI.session.create({
-        workingDir,
-        label: label || undefined,
-        environmentId,
-        cliTool,
-        customCliBinary,
-        env,
-        cliArgs,
-        disabledInheritedFlags,
-        resumeToolSessionId,
-        resumeClaudeSessionId: !cliTool || cliTool === 'claude' ? resumeToolSessionId : undefined,
-        profileId,
-        cloneUrl,
-      });
+      // If this session would resolve vault:// refs but the Vault token is
+      // missing/expired, prompt for login first so the user doesn't have to
+      // open Settings, click Log In, click Save, then retry.
+      try {
+        const preflight = await window.electronAPI.session.vaultPreflight(createOpts);
+        if (preflight.needsLogin) {
+          const loggedIn = await new Promise<boolean>(resolve => {
+            setVaultPrompt({ reason: preflight.reason, onDone: resolve });
+          });
+          setVaultPrompt(null);
+          if (!loggedIn) return; // user cancelled — silent abort
+        }
+      } catch (preflightErr) {
+        // Preflight failure shouldn't block session creation — fall through
+        // and let session.create produce its own error if one is warranted.
+        console.warn('Vault preflight failed:', preflightErr);
+      }
+      const session = await window.electronAPI.session.create(createOpts);
       termManager.getOrCreate(session.id);
       setSessions(prev => [...prev, session]);
 
@@ -729,6 +750,23 @@ export function App() {
     return cleanup;
   }, [notify]);
 
+  // Warn the user before their Vault token expires so they can renew proactively.
+  useEffect(() => {
+    const cleanup = window.electronAPI.vault.onExpiryWarning(({ expiresAt }) => {
+      const minutesLeft = Math.max(0, Math.round((Date.parse(expiresAt) - Date.now()) / 60_000));
+      notify({
+        type: 'info',
+        title: 'Vault token expiring soon',
+        message: `Expires in ~${minutesLeft} minutes. Click the Vault pill in the sidebar or renew now.`,
+        action: {
+          label: 'Renew',
+          onClick: () => { window.electronAPI.vault.login().catch(() => { /* status event will reflect outcome */ }); },
+        },
+      });
+    });
+    return cleanup;
+  }, [notify]);
+
   useEffect(() => {
     const cleanup = window.electronAPI.ssh.onHostVerifyRequest((req: HostVerifyRequest) => {
       // Only show one prompt at a time. If another request arrives while one is
@@ -929,6 +967,7 @@ export function App() {
         </div>
         <GlobalUsageFooter />
         <QuotaFooter />
+        <VaultStatusPill />
       </aside>
       {sidebarVisible && <SidebarResizeHandle onResize={setSidebarWidth} />}
       <main
@@ -1022,6 +1061,12 @@ export function App() {
           onPick={handlePickResume}
         />
       )}
+      <VaultLoginPromptDialog
+        isOpen={!!vaultPrompt}
+        reason={vaultPrompt?.reason}
+        onLoginSuccess={() => vaultPrompt?.onDone(true)}
+        onCancel={() => vaultPrompt?.onDone(false)}
+      />
       <Notifications notifications={notifications} onDismiss={dismiss} />
       <ConfirmDialog {...confirmDialogProps} />
     </div>

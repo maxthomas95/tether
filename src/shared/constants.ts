@@ -8,6 +8,7 @@ export const IPC = {
   SESSION_LIST: 'session:list',
   SESSION_RENAME: 'session:rename',
   SESSION_REMOVE: 'session:remove',
+  SESSION_VAULT_PREFLIGHT: 'session:vault-preflight',
   ENV_LIST: 'environment:list',
   ENV_CREATE: 'environment:create',
   ENV_UPDATE: 'environment:update',
@@ -96,4 +97,5 @@ export const IPC = {
   SESSION_UPDATED: 'session:updated',
   GIT_CLONE_PROGRESS: 'git:clone-progress',
   VAULT_STATUS_CHANGED: 'vault:status-changed',
+  VAULT_EXPIRY_WARNING: 'vault:expiry-warning',
 } as const;
