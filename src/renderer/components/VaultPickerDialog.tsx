@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { cleanIdentity, VAULT_REF_PREFIX } from '../utils/vault-path';
-import { onKeyActivate } from '../utils/a11y';
 
 interface VaultPickerDialogProps {
   isOpen: boolean;
@@ -10,10 +9,23 @@ interface VaultPickerDialogProps {
   onSelect: (ref: string) => void;
 }
 
-// Trim a path segment and strip any leading/trailing slashes.
+// Character-by-character trims — avoids the ReDoS surface area of
+// quantified regex patterns on untrusted path fragments.
+function trimLeadingSlash(s: string): string {
+  let i = 0;
+  while (i < s.length && s[i] === '/') i++;
+  return i === 0 ? s : s.slice(i);
+}
+
+function trimTrailingSlash(s: string): string {
+  let end = s.length;
+  while (end > 0 && s[end - 1] === '/') end--;
+  return end === s.length ? s : s.slice(0, end);
+}
+
 function joinPath(base: string, segment: string): string {
-  const cleanBase = base.replace(/\/+$/, '');
-  const cleanSeg = segment.replace(/^\/+|\/+$/g, '');
+  const cleanBase = trimTrailingSlash(base);
+  const cleanSeg = trimTrailingSlash(trimLeadingSlash(segment));
   if (!cleanBase) return cleanSeg;
   if (!cleanSeg) return cleanBase;
   return `${cleanBase}/${cleanSeg}`;
@@ -30,7 +42,7 @@ function isFolderKey(key: string): boolean {
  * the real access boundary. `listKeys` 404s are treated as "empty folder" so
  * permission-scoped users see a clean tree even if peers write siblings.
  */
-export function VaultPickerDialog({ isOpen, onClose, onSelect }: VaultPickerDialogProps) {
+export function VaultPickerDialog({ isOpen, onClose, onSelect }: Readonly<VaultPickerDialogProps>) {
   const [mount, setMount] = useState<string>('secret');
   const [identity, setIdentity] = useState<string>('');
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
@@ -125,7 +137,7 @@ export function VaultPickerDialog({ isOpen, onClose, onSelect }: VaultPickerDial
   const canGoUp = currentPath.length > rootPath.length;
   const goUp = () => {
     if (!canGoUp) return;
-    const trimmed = currentPath.replace(/\/+$/, '');
+    const trimmed = trimTrailingSlash(currentPath);
     const lastSlash = trimmed.lastIndexOf('/');
     const next = lastSlash >= 0 ? `${trimmed.slice(0, lastSlash)}/` : '';
     // Never go above the user's root folder.
@@ -142,7 +154,7 @@ export function VaultPickerDialog({ isOpen, onClose, onSelect }: VaultPickerDial
 
   return (
     <div className="dialog-overlay" role="presentation">
-      <div className="dialog" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+      <div className="dialog" aria-modal="true" aria-label="Browse Vault">
         <div className="dialog-header">
           <span>Browse Vault</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>
@@ -187,18 +199,15 @@ export function VaultPickerDialog({ isOpen, onClose, onSelect }: VaultPickerDial
               {folders.length > 0 && (
                 <div style={{ marginBottom: 8 }}>
                   {folders.map(key => (
-                    <div
+                    <button
                       key={key}
-                      role="button"
-                      tabIndex={0}
-                      className="env-editor-preset-item"
+                      type="button"
+                      className="env-editor-preset-item vault-picker-row"
                       onClick={() => enterFolder(key)}
-                      onKeyDown={onKeyActivate(() => enterFolder(key))}
-                      style={{ cursor: 'pointer' }}
                     >
-                      <span className="env-editor-preset-key">&#128193; {key.replace(/\/$/, '')}</span>
+                      <span className="env-editor-preset-key">&#128193; {trimTrailingSlash(key)}</span>
                       <span className="env-editor-preset-label">folder</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -210,20 +219,17 @@ export function VaultPickerDialog({ isOpen, onClose, onSelect }: VaultPickerDial
                     const isSelected = selectedSecretPath === secretPath;
                     return (
                       <div key={key}>
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          className="env-editor-preset-item"
+                        <button
+                          type="button"
+                          className="env-editor-preset-item vault-picker-row"
                           onClick={() => selectSecret(key)}
-                          onKeyDown={onKeyActivate(() => selectSecret(key))}
                           style={{
-                            cursor: 'pointer',
                             background: isSelected ? 'var(--bg-tertiary)' : undefined,
                           }}
                         >
                           <span className="env-editor-preset-key">&#128273; {key}</span>
                           <span className="env-editor-preset-label">secret</span>
-                        </div>
+                        </button>
 
                         {isSelected && (
                           <div style={{ marginLeft: 20, marginTop: 4, marginBottom: 8 }}>
@@ -234,18 +240,15 @@ export function VaultPickerDialog({ isOpen, onClose, onSelect }: VaultPickerDial
                               </p>
                             )}
                             {fields.map(f => (
-                              <div
+                              <button
                                 key={f}
-                                role="button"
-                                tabIndex={0}
-                                className="env-editor-preset-item"
+                                type="button"
+                                className="env-editor-preset-item vault-picker-row"
                                 onClick={() => pickField(f)}
-                                onKeyDown={onKeyActivate(() => pickField(f))}
-                                style={{ cursor: 'pointer' }}
                               >
                                 <span className="env-editor-preset-key">#{f}</span>
                                 <span className="env-editor-preset-label">use this field</span>
-                              </div>
+                              </button>
                             ))}
                           </div>
                         )}
