@@ -163,6 +163,7 @@ const api: TetherAPI = {
     status: (): Promise<VaultStatus> => ipcRenderer.invoke(IPC.VAULT_STATUS),
     testRef: (ref: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(IPC.VAULT_TEST_REF, ref),
     listKeys: (mount: string, path: string): Promise<string[]> => ipcRenderer.invoke(IPC.VAULT_LIST_KEYS, mount, path),
+    listFields: (mount: string, path: string): Promise<string[]> => ipcRenderer.invoke(IPC.VAULT_LIST_FIELDS, mount, path),
     listPlaintext: (): Promise<VaultPlaintextSecret[]> => ipcRenderer.invoke(IPC.VAULT_LIST_PLAINTEXT),
     migrateSecret: (opts: MigrateSecretOptions): Promise<void> => ipcRenderer.invoke(IPC.VAULT_MIGRATE_SECRET, opts),
     writeSecret: (ref: string, value: string): Promise<void> => ipcRenderer.invoke(IPC.VAULT_WRITE_SECRET, ref, value),

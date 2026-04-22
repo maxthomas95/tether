@@ -2,8 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { EnvVarEditor } from './EnvVarEditor';
 import { MigrateToVaultDialog } from './MigrateToVaultDialog';
+import { VaultPickerDialog } from './VaultPickerDialog';
 import { themeList } from '../styles/themes';
-import { suggestVaultPath } from '../utils/vault-path';
+import { suggestVaultPath, VAULT_REF_PREFIX } from '../utils/vault-path';
+
+const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
 import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo } from '../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 
@@ -91,6 +94,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [vaultLoginError, setVaultLoginError] = useState<string | null>(null);
   const [vaultLoggingIn, setVaultLoggingIn] = useState(false);
   const [showMigrateDialog, setShowMigrateDialog] = useState(false);
+  const [showProviderVaultPicker, setShowProviderVaultPicker] = useState(false);
 
   useEffect(() => {
     if (!isOpen) { setLoaded(false); return; }
@@ -222,7 +226,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     setNewProviderError(null);
     try {
       let tokenToStore = newProviderToken.trim();
-      if (newProviderStoreInVault) {
+      if (isVaultRef(tokenToStore)) {
+        // Already a vault:// ref — store verbatim, no upload.
+      } else if (newProviderStoreInVault) {
         const ref = (newProviderVaultPath || suggestedProviderVaultPath).trim();
         try {
           await window.electronAPI.vault.writeSecret(ref, tokenToStore);
@@ -732,15 +738,42 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                 )}
                 <div className="form-group">
                   <label className="form-label">Personal Access Token</label>
-                  <input
-                    type="password"
-                    className="form-input"
-                    value={newProviderToken}
-                    onChange={e => setNewProviderToken(e.target.value)}
-                    placeholder="ghp_... or PAT"
-                    spellCheck={false}
-                  />
-                  {vaultStatus.enabled && vaultStatus.loggedIn && (
+                  <div className="form-row">
+                    <input
+                      type={isVaultRef(newProviderToken) ? 'text' : 'password'}
+                      className="form-input"
+                      value={newProviderToken}
+                      onChange={e => setNewProviderToken(e.target.value)}
+                      placeholder="ghp_... or PAT"
+                      spellCheck={false}
+                    />
+                    {vaultStatus.enabled && vaultStatus.loggedIn && !isVaultRef(newProviderToken) && (
+                      <button
+                        type="button"
+                        className="form-btn"
+                        onClick={() => setShowProviderVaultPicker(true)}
+                        title="Pick an existing token from Vault"
+                      >
+                        Browse Vault
+                      </button>
+                    )}
+                    {isVaultRef(newProviderToken) && (
+                      <button
+                        type="button"
+                        className="form-btn"
+                        onClick={() => setNewProviderToken('')}
+                        title="Clear the Vault reference"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {isVaultRef(newProviderToken) && (
+                    <p className="form-hint" style={{ marginTop: 4, color: 'var(--status-running)' }}>
+                      Resolved from Vault on each request.
+                    </p>
+                  )}
+                  {vaultStatus.enabled && vaultStatus.loggedIn && !isVaultRef(newProviderToken) && (
                     <>
                       <label className="form-radio-label" style={{ marginTop: 6, marginBottom: 4 }}>
                         <input
@@ -1013,6 +1046,15 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
         </div>
       </div>
       <MigrateToVaultDialog isOpen={showMigrateDialog} onClose={() => setShowMigrateDialog(false)} />
+      <VaultPickerDialog
+        isOpen={showProviderVaultPicker}
+        onClose={() => setShowProviderVaultPicker(false)}
+        onSelect={ref => {
+          setNewProviderToken(ref);
+          setNewProviderStoreInVault(false);
+          setShowProviderVaultPicker(false);
+        }}
+      />
     </div>
   );
 }
