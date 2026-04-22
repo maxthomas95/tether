@@ -8,17 +8,14 @@ import type { SessionUsage, UsageModelBreakdown, UsageInfo, DailyUsage } from '.
 const log = createLogger('usage');
 
 const WATCH_DEBOUNCE_MS = 300;
-const WATCH_RETRY_INTERVAL_MS = 2_000;
-const WATCH_RETRY_MAX = 30;
+const WATCH_POLL_INTERVAL_MS = 2_000;
 
 interface TrackedSession {
   claudeSessionId: string;
   workingDir: string;
   filePath: string;
-  watcher: fs.FSWatcher | null;
+  watching: boolean;
   debounceTimer: ReturnType<typeof setTimeout> | null;
-  retryTimer: ReturnType<typeof setTimeout> | null;
-  retryCount: number;
   usage: SessionUsage;
 }
 
@@ -112,10 +109,8 @@ class UsageService {
           claudeSessionId: summary.claudeSessionId,
           workingDir: summary.workingDir,
           filePath: transcriptPath(summary.workingDir, summary.claudeSessionId),
-          watcher: null,
+          watching: false,
           debounceTimer: null,
-          retryTimer: null,
-          retryCount: 0,
           usage: {
             claudeSessionId: summary.claudeSessionId,
             inputTokens: summary.inputTokens,
@@ -135,7 +130,14 @@ class UsageService {
   }
 
   trackSession(claudeSessionId: string, workingDir: string): void {
-    if (this.tracked.has(claudeSessionId)) return;
+    const existing = this.tracked.get(claudeSessionId);
+    if (existing) {
+      // start() pre-loads DB summaries into `tracked` without a watcher,
+      // so a subsequent trackSession from session:create used to silently
+      // skip the watcher. Make sure one is attached.
+      if (!existing.watching) this.startWatching(existing);
+      return;
+    }
 
     const filePath = transcriptPath(workingDir, claudeSessionId);
     log.info('Tracking session', { claudeSessionId, filePath });
@@ -148,10 +150,8 @@ class UsageService {
       claudeSessionId,
       workingDir,
       filePath,
-      watcher: null,
+      watching: false,
       debounceTimer: null,
-      retryTimer: null,
-      retryCount: 0,
       usage: persisted ? {
         claudeSessionId,
         inputTokens: persisted.inputTokens,
@@ -267,24 +267,25 @@ class UsageService {
   }
 
   private startWatching(session: TrackedSession): void {
-    try {
-      session.watcher = fs.watch(session.filePath, () => {
-        this.debouncedParse(session);
-      });
-      session.watcher.on('error', () => {
-        // File may have been deleted — just close
-        this.closeWatcher(session);
-      });
-    } catch {
-      // File doesn't exist yet — retry
-      if (session.retryCount < WATCH_RETRY_MAX) {
-        session.retryCount++;
-        session.retryTimer = setTimeout(() => {
-          session.retryTimer = null;
-          this.startWatching(session);
-        }, WATCH_RETRY_INTERVAL_MS);
+    // fs.watchFile polls stat(), so it handles files that don't exist yet —
+    // the listener fires once the file appears and on every subsequent size
+    // change. This replaces the old fs.watch + ENOENT-retry loop which gave
+    // up after 60s and missed sessions where the user took longer than that
+    // to send their first prompt (claude doesn't create the JSONL until then).
+    if (session.watching) return;
+    session.watching = true;
+    fs.watchFile(session.filePath, { interval: WATCH_POLL_INTERVAL_MS, persistent: false }, (curr, prev) => {
+      // File vanished or never existed yet — nothing to parse.
+      if (curr.size === 0 && curr.mtimeMs === 0) return;
+      // Size or mtime change → schedule a parse. An inode change (atomic
+      // replace) means the file is effectively new; reset the offset so we
+      // re-parse from the top.
+      if (prev.ino !== 0 && curr.ino !== prev.ino) {
+        session.usage.parsedByteOffset = 0;
       }
-    }
+      if (curr.size === prev.size && curr.mtimeMs === prev.mtimeMs) return;
+      this.debouncedParse(session);
+    });
   }
 
   private debouncedParse(session: TrackedSession): void {
@@ -296,17 +297,13 @@ class UsageService {
   }
 
   private closeWatcher(session: TrackedSession): void {
-    if (session.watcher) {
-      session.watcher.close();
-      session.watcher = null;
+    if (session.watching) {
+      fs.unwatchFile(session.filePath);
+      session.watching = false;
     }
     if (session.debounceTimer) {
       clearTimeout(session.debounceTimer);
       session.debounceTimer = null;
-    }
-    if (session.retryTimer) {
-      clearTimeout(session.retryTimer);
-      session.retryTimer = null;
     }
   }
 
