@@ -1019,6 +1019,26 @@ html, body, #root {
   background: var(--bg-hover);
 }
 
+/* When preset-item is rendered as a <button> (vault picker rows), reset UA
+   styles so it behaves like the div version visually. */
+.vault-picker-row {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+
+.vault-picker-row:hover {
+  background: var(--bg-hover);
+}
+
+.vault-picker-row:focus-visible {
+  outline: 1px solid var(--accent, var(--text-primary));
+  outline-offset: -1px;
+}
+
 .env-editor-preset-key {
   font-family: var(--font-mono);
   color: var(--text-primary);
