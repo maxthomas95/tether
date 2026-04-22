@@ -7,7 +7,7 @@ import type {
   TetherAPI,
   CreateGitProviderOptions, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderTemplate, CoderTemplateParam, CreateCoderWorkspaceOptions,
   UpdateCheckResult,
-  VaultConfig, VaultStatus, VaultPlaintextSecret, MigrateSecretOptions,
+  VaultConfig, VaultStatus, VaultPlaintextSecret, MigrateSecretOptions, VaultPreflightResult, VaultExpiryWarning,
   TranscriptInfo,
   CoderWorkspace,
   CliToolId,
@@ -25,6 +25,7 @@ const api: TetherAPI = {
 
   session: {
     create: (opts: CreateSessionOptions): Promise<SessionInfo> => ipcRenderer.invoke(IPC.SESSION_CREATE, opts),
+    vaultPreflight: (opts: CreateSessionOptions): Promise<VaultPreflightResult> => ipcRenderer.invoke(IPC.SESSION_VAULT_PREFLIGHT, opts),
     list: (): Promise<SessionInfo[]> => ipcRenderer.invoke(IPC.SESSION_LIST),
     stop: (id: string): Promise<void> => ipcRenderer.invoke(IPC.SESSION_STOP, id),
     kill: (id: string): Promise<void> => ipcRenderer.invoke(IPC.SESSION_KILL, id),
@@ -169,6 +170,11 @@ const api: TetherAPI = {
       const h = (_e: Electron.IpcRendererEvent, status: VaultStatus) => cb(status);
       ipcRenderer.on(IPC.VAULT_STATUS_CHANGED, h);
       return () => ipcRenderer.removeListener(IPC.VAULT_STATUS_CHANGED, h);
+    },
+    onExpiryWarning(cb: (warning: VaultExpiryWarning) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, warning: VaultExpiryWarning) => cb(warning);
+      ipcRenderer.on(IPC.VAULT_EXPIRY_WARNING, h);
+      return () => ipcRenderer.removeListener(IPC.VAULT_EXPIRY_WARNING, h);
     },
   },
   quota: {

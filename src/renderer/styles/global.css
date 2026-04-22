@@ -1375,6 +1375,10 @@ input[type="password"].form-input {
   border-left-color: var(--accent);
 }
 
+.notification--warning {
+  border-left-color: var(--status-waiting);
+}
+
 .notification-body {
   flex: 1;
   min-width: 0;

@@ -20,6 +20,17 @@ export interface VaultStatus {
   expiresAt?: string;
 }
 
+export interface VaultPreflightResult {
+  /** True when at least one resolved value references Vault AND Vault is configured but not logged in. */
+  needsLogin: boolean;
+  /** Short human-readable explanation of why login is needed. Present only when needsLogin is true. */
+  reason?: string;
+}
+
+export interface VaultExpiryWarning {
+  expiresAt: string;
+}
+
 export interface VaultPlaintextSecret {
   source: 'sshPassword' | 'gitProvider' | 'envVar' | 'envEnvVar';
   // For sshPassword/envEnvVar: the environment id
@@ -303,6 +314,7 @@ export interface TetherAPI {
   homeDir: string;
   session: {
     create(opts: CreateSessionOptions): Promise<SessionInfo>;
+    vaultPreflight(opts: CreateSessionOptions): Promise<VaultPreflightResult>;
     list(): Promise<SessionInfo[]>;
     stop(sessionId: string): Promise<void>;
     kill(sessionId: string): Promise<void>;
@@ -395,6 +407,7 @@ export interface TetherAPI {
     migrateSecret(opts: MigrateSecretOptions): Promise<void>;
     writeSecret(ref: string, value: string): Promise<void>;
     onStatusChange(cb: (status: VaultStatus) => void): () => void;
+    onExpiryWarning(cb: (warning: VaultExpiryWarning) => void): () => void;
   };
   quota: {
     get(): Promise<QuotaInfo>;

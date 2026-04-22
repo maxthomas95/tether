@@ -11,6 +11,7 @@ import type {
   CreateGitProviderOptions,
   VaultConfig,
   VaultStatus,
+  VaultPreflightResult,
   VaultPlaintextSecret,
   MigrateSecretOptions,
   CoderWorkspace,
@@ -22,7 +23,7 @@ import type {
   SessionUsage,
   CliToolId,
 } from '../../shared/types';
-import { sessionManager } from '../session/session-manager';
+import { sessionManager, findVaultRefInSession } from '../session/session-manager';
 import { quotaService } from '../quota/quota-service';
 import { usageService } from '../usage/usage-service';
 import * as envRepo from '../db/environment-repo';
@@ -40,6 +41,7 @@ import {
   getStatus as getVaultStatus,
   buildClient as buildVaultClient,
   DEFAULT_VAULT_CONFIG,
+  setExpiryWarningCallback,
 } from '../vault/vault-auth';
 import { isVaultRef, resolveRef, parseRef, buildRef } from '../vault/vault-resolver';
 import { setHostVerifyDispatcher, respondToHostVerify } from '../ssh/host-verifier';
@@ -145,6 +147,15 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
 
     return session.toInfo();
+  });
+
+  ipcMain.handle(IPC.SESSION_VAULT_PREFLIGHT, async (_event, opts: CreateSessionOptions): Promise<VaultPreflightResult> => {
+    const status = getVaultStatus();
+    // If Vault isn't enabled or we're already logged in, skip the scan — nothing to prompt about.
+    if (!status.enabled || status.loggedIn) return { needsLogin: false };
+    const refSource = await findVaultRefInSession(opts);
+    if (!refSource) return { needsLogin: false };
+    return { needsLogin: true, reason: refSource };
   });
 
   ipcMain.handle(IPC.SESSION_LIST, async () => {
@@ -746,6 +757,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   function emitVaultStatus(status: VaultStatus): void {
     send(IPC.VAULT_STATUS_CHANGED, status);
   }
+
+  setExpiryWarningCallback((expiresAt) => {
+    send(IPC.VAULT_EXPIRY_WARNING, { expiresAt });
+  });
 
   ipcMain.handle(IPC.VAULT_GET_CONFIG, async (): Promise<VaultConfig> => {
     const cfg = getVaultConfig();
