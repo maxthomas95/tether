@@ -71,6 +71,63 @@ function extractFirstUserPrompt(filePath: string): string {
   }
 }
 
+export interface DiscoveredTranscript {
+  /** Full path to the JSONL file. */
+  filePath: string;
+  /** Encoded project directory name (e.g. "C--repo-tether"). */
+  projectDirName: string;
+  /** The Claude session UUID (jsonl stem). */
+  sessionId: string;
+  /** File size in bytes at scan time. */
+  size: number;
+  /** File mtime in milliseconds at scan time. */
+  mtimeMs: number;
+}
+
+/**
+ * Enumerate every Claude Code transcript under ~/.claude/projects/.
+ * Skips files whose stem isn't a UUID (defensively — Claude occasionally
+ * drops stray files). Does not read or parse any file contents.
+ */
+export function scanAllTranscripts(): DiscoveredTranscript[] {
+  const root = getClaudeProjectsRoot();
+  const results: DiscoveredTranscript[] = [];
+  let projectDirs: fs.Dirent[];
+  try {
+    projectDirs = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return results;
+  }
+  for (const projectDir of projectDirs) {
+    if (!projectDir.isDirectory()) continue;
+    const projectDirName = projectDir.name;
+    const fullDir = path.join(root, projectDirName);
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(fullDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+      const sessionId = entry.name.slice(0, -'.jsonl'.length);
+      if (!/^[0-9a-f-]{36}$/i.test(sessionId)) continue;
+      const filePath = path.join(fullDir, entry.name);
+      let size = 0;
+      let mtimeMs = 0;
+      try {
+        const st = fs.statSync(filePath);
+        size = st.size;
+        mtimeMs = st.mtimeMs;
+      } catch {
+        continue;
+      }
+      results.push({ filePath, projectDirName, sessionId, size, mtimeMs });
+    }
+  }
+  return results;
+}
+
 /**
  * List all transcripts for a working directory, newest first. Returns at most
  * `limit` results.
