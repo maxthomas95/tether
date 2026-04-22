@@ -319,7 +319,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                 checked={enablePaneSplitting}
                 onChange={e => setEnablePaneSplitting(e.target.checked)}
               />
-              Enable pane splitting (experimental)
+              <span>Enable pane splitting</span>
+              <span className="settings-tag settings-tag--experimental">Experimental</span>
             </label>
             <p className="form-hint">
               Drag session headers to split the terminal area into multiple panes.
@@ -860,8 +861,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
 
           {/* Quota display */}
           <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
-              Usage Quota
+            <label className="form-label settings-section-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              <span>Usage Quota</span>
+              <span className="settings-tag settings-tag--experimental">Experimental</span>
             </label>
             <label className="form-radio-label">
               <input
