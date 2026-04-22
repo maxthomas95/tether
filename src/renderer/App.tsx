@@ -206,53 +206,23 @@ export function App() {
     return () => { mounted = false; };
   }, []);
 
-  // Persist workspace on every change (debounced) so data.json stays current
-  // even if the `beforeunload` save below doesn't reach main before teardown.
+  // Persist workspace on every change. Sync (no debounce) so a close/remove
+  // is on disk before the user can quit — `beforeunload` IPC races renderer
+  // teardown and can't be relied on as a backup.
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      const activeIndex = sessions.findIndex(s => s.id === activeSessionId);
-      // When sessions.length === 0 we still save (empty array) so a prior
-      // stale workspace doesn't get restored on next launch. The restore
-      // logic bails on `!workspace.sessions.length`, so this is safe.
-      window.electronAPI.workspace?.save?.(
-        sessions.map(s => ({
-          workingDir: s.workingDir,
-          label: s.label,
-          environmentId: s.environmentId || undefined,
-          cliTool: s.cliTool,
-          customCliBinary: s.customCliBinary,
-          toolSessionId: s.toolSessionId || s.claudeSessionId,
-          claudeSessionId: s.claudeSessionId,
-        })),
-        Math.max(0, activeIndex),
-      );
-    }, 500);
-    return () => clearTimeout(timeout);
-  }, [sessions, activeSessionId]);
-
-  // Save workspace on close (belt-and-suspenders backup; the debounced
-  // save above is the real mechanism because `beforeunload` IPC often
-  // doesn't reach main before renderer teardown).
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (sessions.length > 0) {
-        const activeIndex = sessions.findIndex(s => s.id === activeSessionId);
-        window.electronAPI.workspace?.save?.(
-          sessions.map(s => ({
-            workingDir: s.workingDir,
-            label: s.label,
-            environmentId: s.environmentId || undefined,
-            cliTool: s.cliTool,
-            customCliBinary: s.customCliBinary,
-            toolSessionId: s.toolSessionId || s.claudeSessionId,
-            claudeSessionId: s.claudeSessionId,
-          })),
-          Math.max(0, activeIndex),
-        );
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    const activeIndex = sessions.findIndex(s => s.id === activeSessionId);
+    window.electronAPI.workspace?.save?.(
+      sessions.map(s => ({
+        workingDir: s.workingDir,
+        label: s.label,
+        environmentId: s.environmentId || undefined,
+        cliTool: s.cliTool,
+        customCliBinary: s.customCliBinary,
+        toolSessionId: s.toolSessionId || s.claudeSessionId,
+        claudeSessionId: s.claudeSessionId,
+      })),
+      Math.max(0, activeIndex),
+    );
   }, [sessions, activeSessionId]);
 
   // Enforce the constrained 1/2/4 layout invariant after setting changes,
