@@ -18,8 +18,9 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     historyProvider: 'claude',
     commonFlags: [
       { flag: '--dangerously-skip-permissions', label: 'Skip permission prompts' },
+      { flag: '--permission-mode plan', label: 'Plan mode (no edits)' },
+      { flag: '--bare', label: 'Minimal mode (skip hooks/plugins)' },
       { flag: '--verbose', label: 'Verbose output' },
-      { flag: '--no-telemetry', label: 'Disable telemetry' },
     ],
   },
   codex: {
@@ -43,7 +44,11 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     displayName: 'OpenCode',
     binaryName: 'opencode',
     supportsSessionResume: false,
-    commonFlags: [],
+    commonFlags: [
+      { flag: '--continue', label: 'Continue last session' },
+      { flag: '--pure', label: 'Run without external plugins' },
+      { flag: '--print-logs', label: 'Print logs to stderr' },
+    ],
   },
   custom: {
     id: 'custom',

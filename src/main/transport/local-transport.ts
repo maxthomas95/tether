@@ -45,11 +45,16 @@ export class LocalTransport implements SessionTransport {
       toolSessionId,
     });
 
+    // Tokenize each entry on whitespace so multi-token flags stored as one string
+    // (e.g. "--permission-mode plan") become separate process args. The SSH transport
+    // gets this for free via shell-join; we replicate it here for parity.
+    const tokenizedArgs = cliArgs.flatMap(a => a.split(/\s+/).filter(Boolean));
+
     // Spawn the CLI binary directly on Unix instead of `sh -c "${binary} ${cliArgs.join(' ')}"`,
     // which would interpret shell metachars in cliArgs. Windows keeps the cmd.exe wrapper
     // because node-pty's Windows host expects it for proper PTY semantics.
     const spawnFile = process.platform === 'win32' ? 'cmd.exe' : binary;
-    const spawnArgs = process.platform === 'win32' ? ['/c', binary, ...cliArgs] : cliArgs;
+    const spawnArgs = process.platform === 'win32' ? ['/c', binary, ...tokenizedArgs] : tokenizedArgs;
 
     log.info('Spawning local PTY', { spawnFile, cwd: options.workingDir, args: spawnArgs });
     this.ptyProcess = pty.spawn(spawnFile, spawnArgs, {
