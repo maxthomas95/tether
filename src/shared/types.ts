@@ -378,6 +378,8 @@ export interface TetherAPI {
   git: {
     clone(url: string, destination: string): Promise<string>;
     init(directory: string): Promise<string>;
+    isRepo(directory: string): Promise<boolean>;
+    worktreeAdd(opts: { sourceRepo: string; worktreePath: string; branch: string }): Promise<string>;
     onCloneProgress(cb: (info: CloneProgressInfo) => void): () => void;
   };
   docs: {

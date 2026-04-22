@@ -118,6 +118,8 @@ const api: TetherAPI = {
   git: {
     clone: (url: string, destination: string): Promise<string> => ipcRenderer.invoke(IPC.GIT_CLONE, url, destination),
     init: (directory: string): Promise<string> => ipcRenderer.invoke(IPC.GIT_INIT, directory),
+    isRepo: (directory: string): Promise<boolean> => ipcRenderer.invoke(IPC.GIT_IS_REPO, directory),
+    worktreeAdd: (opts: { sourceRepo: string; worktreePath: string; branch: string }): Promise<string> => ipcRenderer.invoke(IPC.GIT_WORKTREE_ADD, opts),
     onCloneProgress(cb: (info: CloneProgressInfo) => void): () => void {
       const h = (_e: Electron.IpcRendererEvent, info: CloneProgressInfo) => cb(info);
       ipcRenderer.on(IPC.GIT_CLONE_PROGRESS, h);

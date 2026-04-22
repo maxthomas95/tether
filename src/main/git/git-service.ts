@@ -86,3 +86,46 @@ export function gitInit(directory: string): Promise<string> {
     proc.on('error', reject);
   });
 }
+
+export function isGitRepo(directory: string): boolean {
+  try {
+    const gitPath = `${directory}/.git`;
+    return fs.existsSync(gitPath);
+  } catch {
+    return false;
+  }
+}
+
+export interface WorktreeAddOptions {
+  sourceRepo: string;
+  worktreePath: string;
+  branch: string;
+}
+
+export function gitWorktreeAdd(opts: WorktreeAddOptions): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!isGitRepo(opts.sourceRepo)) {
+      return reject(new Error(`Not a git repository: ${opts.sourceRepo}`));
+    }
+    if (fs.existsSync(opts.worktreePath)) {
+      return reject(new Error(`Worktree path already exists: ${opts.worktreePath}`));
+    }
+    if (!opts.branch.trim()) {
+      return reject(new Error('Branch name must not be empty'));
+    }
+
+    const proc = spawn('git', ['-C', opts.sourceRepo, 'worktree', 'add', '-b', opts.branch, opts.worktreePath], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stderr = '';
+    proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+    proc.on('close', (code) => {
+      if (code === 0) resolve(opts.worktreePath);
+      else reject(new Error(stderr.trim() || `git worktree add exited with code ${code}`));
+    });
+
+    proc.on('error', reject);
+  });
+}
