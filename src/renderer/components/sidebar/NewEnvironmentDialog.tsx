@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
+import { VaultPickerDialog } from '../VaultPickerDialog';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import type { EnvironmentType } from '../../../shared/types';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../../utils/vault-path';
+
+const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
 
 interface NewEnvironmentDialogProps {
   isOpen: boolean;
@@ -33,6 +36,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
   const [vaultIdentity, setVaultIdentity] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [showVaultPicker, setShowVaultPicker] = useState(false);
 
   // Pre-fill form when editing
   useEffect(() => {
@@ -105,7 +109,11 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
       } else if (authMethod === 'key' && keyPath.trim()) {
         config.privateKeyPath = keyPath.trim();
       } else if (authMethod === 'password' && password) {
-        if (storeInVault) {
+        if (isVaultRef(password)) {
+          // Password field already holds a vault:// reference (picked via Browse).
+          // Store verbatim — no upload, no encryption.
+          config.password = password;
+        } else if (storeInVault) {
           const ref = (vaultPath || suggestedVaultPath).trim();
           try {
             await window.electronAPI.vault.writeSecret(ref, password);
@@ -254,14 +262,42 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
                 )}
                 {authMethod === 'password' && (
                   <div style={{ marginTop: 6 }}>
-                    <input
-                      className="form-input"
-                      type="password"
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      placeholder={editing ? 'Leave empty to keep current' : 'Enter password'}
-                    />
-                    {vaultConnected && (
+                    <div className="form-row">
+                      <input
+                        className="form-input"
+                        type={isVaultRef(password) ? 'text' : 'password'}
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        placeholder={editing ? 'Leave empty to keep current' : 'Enter password'}
+                        spellCheck={false}
+                      />
+                      {vaultConnected && !isVaultRef(password) && (
+                        <button
+                          type="button"
+                          className="form-btn"
+                          onClick={() => setShowVaultPicker(true)}
+                          title="Pick an existing secret from Vault"
+                        >
+                          Browse Vault
+                        </button>
+                      )}
+                      {isVaultRef(password) && (
+                        <button
+                          type="button"
+                          className="form-btn"
+                          onClick={() => setPassword('')}
+                          title="Clear the Vault reference"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    {isVaultRef(password) && (
+                      <p className="form-hint" style={{ marginTop: 4, color: 'var(--status-running)' }}>
+                        Resolved from Vault at connect time.
+                      </p>
+                    )}
+                    {vaultConnected && !isVaultRef(password) && (
                       <>
                         <label className="form-radio-label" style={{ marginTop: 6, marginBottom: 4 }}>
                           <input
@@ -366,6 +402,16 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
           </button>
         </div>
       </div>
+
+      <VaultPickerDialog
+        isOpen={showVaultPicker}
+        onClose={() => setShowVaultPicker(false)}
+        onSelect={ref => {
+          setPassword(ref);
+          setStoreInVault(false);
+          setShowVaultPicker(false);
+        }}
+      />
     </div>
   );
 }

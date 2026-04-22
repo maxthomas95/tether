@@ -59,6 +59,7 @@ export const IPC = {
   VAULT_STATUS: 'vault:status',
   VAULT_TEST_REF: 'vault:test-ref',
   VAULT_LIST_KEYS: 'vault:list-keys',
+  VAULT_LIST_FIELDS: 'vault:list-fields',
   VAULT_MIGRATE_SECRET: 'vault:migrate-secret',
   VAULT_LIST_PLAINTEXT: 'vault:list-plaintext',
   VAULT_WRITE_SECRET: 'vault:write-secret',

@@ -403,6 +403,7 @@ export interface TetherAPI {
     status(): Promise<VaultStatus>;
     testRef(ref: string): Promise<{ ok: boolean; error?: string }>;
     listKeys(mount: string, path: string): Promise<string[]>;
+    listFields(mount: string, path: string): Promise<string[]>;
     listPlaintext(): Promise<VaultPlaintextSecret[]>;
     migrateSecret(opts: MigrateSecretOptions): Promise<void>;
     writeSecret(ref: string, value: string): Promise<void>;

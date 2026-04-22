@@ -808,6 +808,17 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return client.kvList(mount, path);
   });
 
+  // Reads a secret and returns only its field names — never the values.
+  // Used by the Vault picker so the user can choose which #field to reference
+  // without the renderer ever seeing the plaintext.
+  ipcMain.handle(IPC.VAULT_LIST_FIELDS, async (_event, mount: string, path: string): Promise<string[]> => {
+    const client = buildVaultClient();
+    if (!client) throw new Error('Vault integration is not enabled');
+    if (!client.hasToken()) throw new Error('Not logged in to Vault');
+    const result = await client.kvRead(mount, path);
+    return Object.keys(result.data || {});
+  });
+
   ipcMain.handle(IPC.VAULT_WRITE_SECRET, async (_event, ref: string, value: string): Promise<void> => {
     const client = buildVaultClient();
     if (!client) throw new Error('Vault integration is not enabled');

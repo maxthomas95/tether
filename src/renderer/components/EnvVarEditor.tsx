@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { suggestVaultPath } from '../utils/vault-path';
 import { onKeyActivate } from '../utils/a11y';
+import { VaultPickerDialog } from './VaultPickerDialog';
 import type { CliToolId } from '../../shared/types';
 
 const CLAUDE_PRESETS = [
@@ -67,6 +68,7 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, cliTool, 
   const [vaultMount, setVaultMount] = useState('secret');
   const [vaultIdentity, setVaultIdentity] = useState<string | undefined>(undefined);
   const [vaultLoggedIn, setVaultLoggedIn] = useState(false);
+  const [browsingRowId, setBrowsingRowId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!vaultEnabled) return;
@@ -189,6 +191,7 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, cliTool, 
         const sensitive = isSensitive(row.key);
         const vaultMode = isVaultRef(row.value);
         const canStoreInVault = vaultEnabled && vaultLoggedIn && sensitive && !!row.value && !vaultMode;
+        const canBrowseVault = vaultEnabled && vaultLoggedIn && sensitive && !vaultMode && !row.value;
         const testResult = vaultTestResult[row.id];
         const writeResult = vaultWriteResult[row.id];
         return (
@@ -226,6 +229,15 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, cliTool, 
                   title="Store this value in Vault"
                 >
                   Vault
+                </button>
+              )}
+              {canBrowseVault && (
+                <button
+                  className="env-editor-btn"
+                  onClick={() => setBrowsingRowId(row.id)}
+                  title="Pick an existing secret from Vault"
+                >
+                  Browse
                 </button>
               )}
               {vaultEnabled && sensitive && vaultMode && (
@@ -325,6 +337,16 @@ export function EnvVarEditor({ vars, onChange, inheritedVars, compact, cliTool, 
           )}
         </div>
       </div>
+
+      <VaultPickerDialog
+        isOpen={browsingRowId !== null}
+        onClose={() => setBrowsingRowId(null)}
+        onSelect={ref => {
+          if (browsingRowId === null) return;
+          update(rows.map(r => r.id === browsingRowId ? { ...r, value: ref } : r));
+          setBrowsingRowId(null);
+        }}
+      />
     </div>
   );
 }
