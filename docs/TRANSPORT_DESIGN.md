@@ -113,13 +113,19 @@ class LocalTransport implements SessionTransport {
     // Lazy-load node-pty to avoid ABI mismatch crashes at import time
     const nodePty = require('node-pty');
 
-    // Platform-specific: cmd.exe on Windows, bash on Unix
-    const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
-    const args = process.platform === 'win32'
-      ? ['/c', 'claude', ...cliArgs]
-      : ['-c', `claude ${cliArgs.join(' ')}`];
+    // Tokenize each cliArgs entry on whitespace so multi-token presets like
+    // "--permission-mode plan" become separate process args.
+    const tokenized = cliArgs.flatMap(a => a.split(/\s+/).filter(Boolean));
 
-    this.pty = nodePty.spawn(shell, args, {
+    // On Unix: spawn the binary directly (no shell — avoids metachar interpretation).
+    // On Windows: keep the cmd.exe wrapper for proper PTY semantics with node-pty.
+    const binary = options.binaryName || 'claude';
+    const spawnFile = process.platform === 'win32' ? 'cmd.exe' : binary;
+    const spawnArgs = process.platform === 'win32'
+      ? ['/c', binary, ...tokenized]
+      : tokenized;
+
+    this.pty = nodePty.spawn(spawnFile, spawnArgs, {
       name: 'xterm-256color',
       cols: options.cols,
       rows: options.rows,
@@ -236,17 +242,21 @@ Tether does NOT install Claude Code on remote hosts. This is a manual prerequisi
 - API keys sent as env var exports are visible in the remote shell history. Mitigation: use `env` command instead of `export` to avoid shell history, or inject via a temp file. This is a known tradeoff to be addressed post-MVP.
 - SSH agent forwarding is supported but disabled by default.
 
-## Container Adapter (Future — Phase 7)
+## Coder Adapter
 
-The `coder` environment type exists in the schema but currently falls back to `LocalTransport`. The planned approach is SSH-via-Coder-CLI rather than direct API integration:
+Implemented in `src/main/transport/coder-transport.ts`. Connects to a Coder workspace via the Coder REST API plus an SSH-style PTY exec into the workspace's `coder ssh` channel.
 
-```typescript
-// Future: Coder workspace sessions will likely use SSH tunneling
-// through the Coder CLI, allowing reuse of the existing SSHTransport
-// rather than building a new WebSocket-based transport.
-```
+Two flows from the New Session dialog:
 
-No Docker adapter is planned. Coder is the target container runtime for managed dev environments.
+1. **Connect to an existing workspace** — pick from a list of workspaces fetched via the Coder API, then open a PTY into it.
+2. **Create a new workspace from a template** — pick a template, fill out its parameter form, watch live workspace-build progress stream into the dialog, then session opens once the workspace is `running`.
+
+Other notes:
+- Self-signed Coder deployments are supported (cert validation can be relaxed per-environment)
+- Workspace start is idempotent — restarting a stopped workspace doesn't re-trigger init steps that would fail
+- Repos can be auto-cloned into the workspace as part of session creation (handled with platform-aware path/shell quoting)
+
+No Docker adapter is planned. Coder is the target container runtime.
 
 ## Performance Considerations
 
