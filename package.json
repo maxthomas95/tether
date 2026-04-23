@@ -29,7 +29,7 @@
     "marked": "^18.0.0",
     "node-pty": "^1.1.0",
     "ssh2": "^1.17.0",
-    "uuid": "^13.0.0"
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.11.1",
