@@ -27,6 +27,7 @@ Tether is an Electron desktop application with a React frontend. The Electron ma
 │  │  └─────────────┘  │ ┌────────┐ │  └─────────────────┘ │ │
 │  │                    │ │ Local  │ │                      │ │
 │  │                    │ │ SSH    │ │                      │ │
+│  │                    │ │ Coder  │ │                      │ │
 │  │                    │ └────────┘ │                      │ │
 │  │                    └────────────┘                      │ │
 │  └────────────────────────────────────────────────────────┘ │
@@ -145,23 +146,27 @@ interface SessionRow {
 
 All adapters implement a common interface (detailed in [Transport Design](TRANSPORT_DESIGN.md)).
 
-**Local Adapter**
-- Spawns Claude Code via `node-pty` with configured env vars
+**Local Adapter** (`local-transport.ts`)
+- Spawns the configured CLI binary (`claude`, `codex`, `opencode`, or custom) via `node-pty` with configured env vars
+- On Unix the binary is spawned directly; on Windows it goes through `cmd.exe /c` for proper PTY semantics
+- CLI flag entries are tokenized on whitespace before spawn so multi-token presets like `--permission-mode plan` work
 - PTY process is a direct child of the Electron main process
 - Resize events propagated via `pty.resize(cols, rows)`
 - Survives Electron renderer crashes (PTY lives in main process)
 
-**SSH Adapter**
-- Connects via `ssh2` library
+**SSH Adapter** (`ssh-transport.ts`)
+- Connects via `ssh2` library with TOFU host key verification (`src/main/ssh/host-verifier.ts`) backed by `known-hosts-repo.ts`
+- First-connect host keys surface a `HostKeyVerifyDialog`; subsequent connects fail closed if the key changes
+- Optional sudo elevation on connect (configured per environment)
 - Opens a PTY channel (`session.shell()` with pty option)
-- Spawns Claude Code as the shell command on the remote host
-- Handles reconnection on network interruption (with configurable retry)
-- Requires Claude Code to be pre-installed on the remote host
+- Spawns the CLI as the shell command on the remote host
+- UTF-8 chunk reassembly across network reads so split multi-byte glyphs don't render as replacement characters
+- Requires the chosen CLI binary to be pre-installed on the remote host
 
-**Container Adapter (Future)**
-- The `coder` environment type exists in the schema but currently falls back to `LocalTransport`
-- Planned approach: SSH-via-Coder-CLI (Phase 7)
-- No Docker adapter is planned — Coder is the target container runtime
+**Coder Adapter** (`coder-transport.ts`)
+- Connects to a Coder workspace via the Coder REST API + SSH-style PTY exec
+- Two flows: connect to an existing workspace, or create a new workspace from a template (with parameter forms, live progress, and self-signed cert support)
+- Workspace start is idempotent so workspace restarts don't fail re-clones
 
 ### Status Detector
 
@@ -185,25 +190,35 @@ All adapters implement a common interface (detailed in [Transport Design](TRANSP
 
 ### IPC Design
 
-**Renderer -> Main (invoke/handle):**
-- `session:create` — create a new session
-- `session:list` — list all sessions
-- `session:stop` — graceful stop (sends Ctrl+C)
-- `session:kill` — force kill session
-- `session:rename` — rename a session
-- `session:remove` — remove session from list
-- `environment:list` — list all environments
-- `environment:create` — create a new environment
-- `environment:update` — update environment config
-- `environment:delete` — delete an environment
-- `workspace:save` — save current workspace state
-- `workspace:load` — load saved workspace
-- `dialog:open-directory` — open OS directory picker
-- `scan:repos-dir` — scan a directory for subdirectories (repo quick-pick)
-- `config:get` / `config:set` — key-value config (theme, reposRoot, restoreOnLaunch)
-- `config:get-default-env-vars` / `config:set-default-env-vars` — app-wide env vars
-- `config:get-default-cli-flags` / `config:set-default-cli-flags` — app-wide CLI flags
-- `titlebar:update` — update titlebar overlay color for theme sync
+The IPC surface has grown to ~67 channels across these families (see `src/main/ipc/handlers.ts` for the full registry):
+
+**Sessions:** `session:create`, `session:list`, `session:stop`, `session:kill`, `session:rename`, `session:remove`, plus per-session usage queries
+
+**Environments:** `environment:list|create|update|delete`
+
+**Workspace:** `workspace:save`, `workspace:load`
+
+**Config:** `config:get|set` (key-value), per-tool default env vars / CLI flags, default settings
+
+**Launch profiles:** `profile:list|create|update|delete` — named bundles of env vars + per-tool CLI flags
+
+**Vault:** auth (token + OIDC), status/expiry, KV browse for the picker, `vault://` resolution
+
+**Coder:** workspace list, template list, parameter introspection, create-workspace with progress streaming
+
+**Git providers:** Azure DevOps and Gitea repo browse for the New Session dialog quick-pick
+
+**Transcripts:** list and read Claude / Codex transcripts for the Resume Chat dialog
+
+**SSH known hosts:** list / remove
+
+**Updates:** `update:check`, `update:download`, `update:install`
+
+**Dialogs and OS:** directory picker, repo dir scan, titlebar color sync
+
+**Renderer -> Main (send/on — fire-and-forget):**
+- `session:input` — send keystroke data to session PTY
+- `session:resize` — resize PTY dimensions
 
 **Renderer -> Main (send/on — fire-and-forget):**
 - `session:input` — send keystroke data to session PTY
@@ -223,13 +238,41 @@ All adapters implement a common interface (detailed in [Transport Design](TRANSP
 This file contains:
 - Environment definitions (Local, SSH, Coder)
 - Session records (metadata, not terminal output)
-- App config (theme, reposRoot, restoreOnLaunch)
-- Default environment variables and CLI flags
-- Saved workspace state (for session restore on launch)
+- App config (theme, reposRoot, restoreOnLaunch, etc.)
+- Default environment variables (per-tool) and CLI flags (per-tool)
+- Launch profiles (named bundles of env vars + per-tool CLI flags)
+- Git provider credentials (ADO, Gitea)
+- SSH known-hosts entries
+- Vault config (URL, namespace, auth mode)
+- Saved workspace state (for session restore on launch) — written synchronously on every change so installs/restarts don't restore stale state
 
 **SSH keys:** Tether does not store or manage SSH keys. It references the user's existing SSH key paths (e.g., `~/.ssh/id_ed25519`). SSH agent forwarding is supported — on Windows, uses `\\.\pipe\openssh-ssh-agent`.
 
-**Secrets handling:** API keys injected via environment variables are stored as plain text in the env var config. Encrypted storage via `safeStorage` is a placeholder in the schema (`api_key_enc` field) but not yet implemented.
+**SSH host keys:** First-connect host keys are pinned via TOFU and stored in the registry (managed from Settings).
+
+**Secrets handling:** Env var values can be literal strings or `vault://` references. Vault refs are resolved at session start by `vault-resolver.ts` so the secret is never persisted to `data.json`. Vault auth tokens live in OS keychain via Electron's `safeStorage`; OIDC flows open a browser and complete via local callback. The legacy plaintext-API-key path still exists for non-Vault users; encrypted at-rest storage for those values is still a placeholder.
+
+### Vault Integration
+
+`src/main/vault/` implements a HashiCorp Vault KV v2 client with token and OIDC auth. The renderer surfaces:
+- A Vault status pill in the sidebar showing auth state and token TTL
+- A `VaultPickerDialog` to browse Vault paths and pick a secret when authoring an env var
+- A pre-session preflight that warns if any required `vault://` ref will fail to resolve
+- A `MigrateToVaultDialog` to lift a plaintext value into Vault
+
+### Usage and Quota Tracking
+
+`src/main/usage/` and `src/main/quota/` are passive readers of the CLI tools' own session transcripts (Claude Code JSONL, Codex transcripts):
+- `jsonl-parser.ts` extracts token usage events from transcripts
+- `model-pricing.ts` maps tokens → cost per model
+- `usage-service.ts` aggregates per-session and global usage
+- `quota-service.ts` tracks subscription quota windows (Claude weekly resets, Codex daily resets)
+
+Surfaced in the UI as a sidebar global usage footer (today's cost + 7-day sparkline), a per-session cost strip below each terminal pane, and an optional quota footer.
+
+### Auto-Update
+
+`src/main/update/update-checker.ts` polls GitHub Releases for newer versions and surfaces a notification in the renderer. The user opts in to download/install; the install is delegated to the OS installer.
 
 ## Key Design Decisions
 

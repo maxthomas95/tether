@@ -1,6 +1,6 @@
 # MVP Scope — Tether
 
-> **Note:** This document was the original MVP plan. As of v0.1.2-alpha.3, all MVP milestones (M1-M5) are complete. Several post-MVP features (SSH adapter, environment management, session grouping, workspace persistence) have also been implemented. Items below are annotated with their current status.
+> **Note:** This document was the original MVP plan. As of v0.3.x, all MVP milestones (M1-M5) are complete and most post-MVP items have shipped: SSH adapter (with TOFU/known-hosts verification), Coder workspace adapter, environment management, session grouping, workspace persistence, Claude/Codex session resume, multi-CLI support (Claude/Codex/OpenCode/Custom), Vault-backed env vars, usage/cost tracking, pane splitting, and auto-update. Items below are annotated with their current status.
 
 ## MVP Definition
 
@@ -51,8 +51,8 @@ The MVP is the smallest build that is **genuinely useful for daily work.** After
 ### ~~SSH Adapter~~ — DONE (alpha.1)
 Implemented in `ssh-transport.ts`. Supports host/port/username, private key or SSH agent auth, keepalive, env var injection.
 
-### Container/Coder Adapter
-The `coder` environment type exists in the schema but falls back to LocalTransport. Full implementation planned as Phase 7.
+### ~~Container/Coder Adapter~~ — DONE (0.2.x)
+Full Coder workspace integration in `coder-transport.ts` — connect to existing workspaces or create new ones from templates with parameter forms, live progress, and self-signed cert support.
 
 ### ~~Environment Management UI~~ — DONE (alpha.1)
 Full environment registry with `NewEnvironmentDialog.tsx`. Supports Local and SSH types with per-environment env vars.
@@ -60,8 +60,8 @@ Full environment registry with `NewEnvironmentDialog.tsx`. Supports Local and SS
 ### ~~Session Grouping in Sidebar~~ — DONE (alpha.1)
 Sessions auto-grouped by working directory in `RepoGroup.tsx`. Collapsible groups with session count.
 
-### Session Resume/Reconnect
-If a PTY dies, the session is marked dead. No automatic reconnect. No Claude Code `--resume` integration. Future feature.
+### ~~Session Resume/Reconnect~~ — PARTIAL (0.2.x)
+Claude Code and Codex transcript resume is implemented via the Resume Chat dialog (uses `--resume`/`--session-id` for Claude, `codex resume <id>` for Codex). PTYs still do not survive an Electron app restart — sessions are spawned fresh on relaunch and can pick up the prior conversation by id.
 
 ### Desktop Notifications
 No notifications for background session state changes yet.
@@ -114,9 +114,9 @@ Sessions are ordered by creation time. Manual reorder is post-MVP polish.
 
 1. ~~**SSH Adapter**~~ — DONE (alpha.1)
 2. ~~**Environment Management**~~ — DONE (alpha.1)
-3. **Session Resume** — reconnect to still-alive PTYs on app restart, Claude `--resume` integration
+3. ~~**Session Resume**~~ — DONE for Claude/Codex transcript resume (0.2.x); live PTY reconnect across app restart still future
 4. **Desktop Notifications** — alert when background session transitions to "waiting"
-5. **Container Adapter** — Coder workspace integration (Phase 7)
+5. ~~**Container Adapter**~~ — DONE (Coder workspaces, 0.2.x)
 6. **Drag-and-Drop** — reorder sessions and environment groups
 7. **Transcript Export** — save session output to file
 8. **Multi-Model Switch** — in-place model change with session resume

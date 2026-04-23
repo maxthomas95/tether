@@ -1,6 +1,6 @@
 # Product Spec — Tether
 
-> **Note:** This document was the original product spec written before implementation. As of v0.1.2-alpha.3, most core user stories are implemented. Stories are annotated with their status below.
+> **Note:** This document was the original product spec written before implementation. As of v0.3.x, all SF-01 through SF-23 stories are implemented, plus several originally-future items (SF-30 Coder, SF-31 workspace persistence, SF-33 transcript browsing for resume). Tether also now supports Codex CLI as a first-class peer, OpenCode and custom binaries as raw PTY sessions, Vault-backed env vars, and per-session usage/cost tracking. Stories are annotated with their status below.
 
 ## Vision
 
@@ -30,8 +30,8 @@ As a developer, I want to create a Claude Code session on a remote VM so I can w
 **SF-03: Stop a session** — DONE
 As a developer, I want to stop a running session cleanly. Claude Code receives the appropriate signal, the PTY closes, and the session moves to a "stopped" state in the sidebar. I can see the last output before it stopped.
 
-**SF-04: Resume a session**
-As a developer, I want to reconnect to a Claude Code session that I previously detached from (or that survived a laptop sleep). The PTY stream resumes and I see the current state of the session. For SSH sessions, this means reconnecting the SSH channel. For local sessions, the PTY is still alive in the background.
+**SF-04: Resume a session** — PARTIAL (transcript resume done; live PTY reconnect not)
+As a developer, I want to reconnect to a Claude Code session that I previously detached from (or that survived a laptop sleep). The Resume Chat dialog lets me pick from prior Claude/Codex transcripts and re-launch with the conversation restored (`--resume` for Claude, `codex resume` for Codex). True live PTY reconnect across app restart is not yet implemented — sessions are spawned fresh.
 
 **SF-05: Kill a stuck session** — DONE
 As a developer, I want to force-kill a session that's not responding. SIGKILL the PTY process, clean up resources, mark as dead in the registry.
@@ -79,8 +79,8 @@ As a developer, I want to override the model or API key for a specific session w
 
 ### Future (Post-MVP)
 
-**SF-30: Container/Coder adapter**
-Spin up ephemeral Coder workspaces or Docker containers as environments with Claude Code pre-installed.
+**SF-30: Container/Coder adapter** — DONE (0.2.x)
+Coder workspace integration with two flows: connect to an existing workspace, or create a new one from a template (with parameter forms and live progress). Self-signed certs supported.
 
 **SF-31: Session persistence across app restarts** — DONE (workspace save/restore)
 When I quit and reopen Tether, my session list is restored. Toggle in Settings. PTYs don't survive app restart — sessions are recreated as new processes. True PTY reconnection is not yet implemented.
@@ -89,7 +89,7 @@ When I quit and reopen Tether, my session list is restored. Toggle in Settings. 
 Desktop notification when a background session transitions from "active" to "waiting for input" — so I know when Claude needs me.
 
 **SF-33: Session log/transcript export**
-Export a session's terminal output (raw or cleaned) to a file for documentation or sharing.
+Export a session's terminal output (raw or cleaned) to a file for documentation or sharing. Browsing prior Claude/Codex transcripts (for resume) is implemented; explicit export-to-file is not.
 
 **SF-34: Multi-model quick switch**
 A dropdown or hotkey to re-launch the current session with a different model (e.g., switch from Sonnet to Opus mid-task by spawning a new Claude Code process with `--resume` and a different `ANTHROPIC_MODEL`).
@@ -100,7 +100,7 @@ A dropdown or hotkey to re-launch the current session with a different model (e.
 - **Built-in task management.** Claude Code has native tasks (`Ctrl+T`). We don't duplicate this.
 - **Agent orchestration.** No multi-agent coordination, no task queues, no swarm logic. Tether manages sessions, not agents.
 - **Web-based access.** MVP is a desktop app. A web version (for accessing sessions from a phone/tablet) is a future possibility but out of scope.
-- **Broad model-agnostic agent support.** Claude Code and Codex CLI are first-class targets. Other agents (Aider, Gemini CLI, etc.) are a nice-to-have extension, not a design driver.
+- **Broad model-agnostic agent support.** Claude Code and Codex CLI are first-class targets (with session resume + transcript browsing). OpenCode and arbitrary "Custom" binaries run as raw PTY sessions without tool-specific integration. Other agents (Aider, Gemini CLI, etc.) are a nice-to-have extension, not a design driver.
 
 ## Success Metrics
 
