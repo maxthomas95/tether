@@ -164,6 +164,7 @@ export function App() {
             resumeClaudeSessionId: resumeChats && (!saved.cliTool || saved.cliTool === 'claude')
               ? saved.claudeSessionId || saved.toolSessionId
               : undefined,
+            worktreeOf: saved.worktreeOf,
           });
           if (!mounted) return;
           termManager.getOrCreate(session.id);
@@ -220,6 +221,7 @@ export function App() {
         customCliBinary: s.customCliBinary,
         toolSessionId: s.toolSessionId || s.claudeSessionId,
         claudeSessionId: s.claudeSessionId,
+        worktreeOf: s.worktreeOf,
       })),
       Math.max(0, activeIndex),
     );
@@ -261,7 +263,7 @@ export function App() {
     return () => { removeData(); removeState(); removeExit(); removeUpdated(); };
   }, [termManager]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[]) => {
+  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string) => {
     const createOpts: CreateSessionOptions = {
       workingDir,
       label: label || undefined,
@@ -275,6 +277,7 @@ export function App() {
       resumeClaudeSessionId: !cliTool || cliTool === 'claude' ? resumeToolSessionId : undefined,
       profileId,
       cloneUrl,
+      worktreeOf,
     };
     try {
       // If this session would resolve vault:// refs but the Vault token is
@@ -371,13 +374,13 @@ export function App() {
     const message = envSessions.length > 0
       ? `Delete "${env.name}"? ${envSessions.length} session(s) will be removed.`
       : `Delete "${env.name}"?`;
-    const ok = await confirmDialog({
+    const result = await confirmDialog({
       title: 'Delete environment',
       message,
       confirmLabel: 'Delete',
       danger: true,
     });
-    if (!ok) return;
+    if (!result.confirmed) return;
 
     try {
       // Remove associated sessions first
@@ -425,16 +428,66 @@ export function App() {
   }, []);
 
   const handleRemove = useCallback(async (id: string) => {
+    const session = sessions.find(s => s.id === id);
+    let removeWorktree = false;
+
+    if (session?.worktreeOf) {
+      const result = await confirmDialog({
+        title: 'Remove session?',
+        message: `Remove session "${session.label}"?`,
+        confirmLabel: 'Remove',
+        danger: true,
+        checkbox: {
+          label: `Also remove worktree at ${session.workingDir}`,
+          hint: 'Worktree must have no uncommitted changes.',
+          defaultChecked: false,
+        },
+      });
+      if (!result.confirmed) return;
+      removeWorktree = result.checkboxValue;
+    }
+
     await window.electronAPI.session.remove(id);
     termManager.remove(id);
     layoutDispatch({ type: 'REMOVE_SESSION', sessionId: id });
     setSessions(prev => prev.filter(s => s.id !== id));
-  }, [termManager, layoutDispatch]);
+
+    if (removeWorktree && session?.worktreeOf) {
+      try {
+        await window.electronAPI.git.worktreeRemove({
+          sourceRepo: session.worktreeOf,
+          worktreePath: session.workingDir,
+        });
+        notify({ type: 'info', title: 'Worktree removed', message: session.workingDir });
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const forceResult = await confirmDialog({
+          title: 'Worktree removal failed',
+          message: `Could not remove worktree:\n\n${errMsg}\n\nForce remove? This discards any uncommitted changes in the worktree.`,
+          confirmLabel: 'Force remove',
+          cancelLabel: 'Keep worktree',
+          danger: true,
+        });
+        if (forceResult.confirmed) {
+          try {
+            await window.electronAPI.git.worktreeRemove({
+              sourceRepo: session.worktreeOf,
+              worktreePath: session.workingDir,
+              force: true,
+            });
+            notify({ type: 'info', title: 'Worktree force-removed', message: session.workingDir });
+          } catch (forceErr) {
+            notify({ type: 'error', title: 'Force remove failed', message: forceErr instanceof Error ? forceErr.message : String(forceErr) });
+          }
+        }
+      }
+    }
+  }, [sessions, termManager, layoutDispatch, confirmDialog, notify]);
 
   const handleDuplicate = useCallback(async (id: string) => {
     const source = sessions.find(s => s.id === id);
     if (!source) return;
-    handleCreateSession(source.workingDir, '', source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary);
+    handleCreateSession(source.workingDir, '', source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined);
   }, [sessions, handleCreateSession]);
 
   const canResumePrevious = useCallback((session: SessionInfo) => {

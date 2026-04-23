@@ -148,6 +148,8 @@ export interface SessionInfo {
   claudeSessionId?: string;
   /** True if this session was started by resuming a prior tool transcript. */
   resumed?: boolean;
+  /** Source repo path when this session was created as a Tether-managed worktree. */
+  worktreeOf?: string;
 }
 
 export interface CreateSessionOptions {
@@ -173,6 +175,8 @@ export interface CreateSessionOptions {
    * interactive PTY handle clone output, errors, and auth prompts inline.
    */
   cloneUrl?: string;
+  /** When set, marks this session as a Tether-managed worktree of the given source repo. */
+  worktreeOf?: string;
 }
 
 export interface LaunchProfileInfo {
@@ -361,8 +365,8 @@ export interface TetherAPI {
     writeText(text: string): void;
   };
   workspace: {
-    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string }>, activeIndex: number): Promise<void>;
-    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string }>; activeIndex: number } | null>;
+    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string }>, activeIndex: number): Promise<void>;
+    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string }>; activeIndex: number } | null>;
   };
   transcripts: {
     list(workingDir: string, cliTool?: CliToolId): Promise<TranscriptInfo[]>;
@@ -378,6 +382,9 @@ export interface TetherAPI {
   git: {
     clone(url: string, destination: string): Promise<string>;
     init(directory: string): Promise<string>;
+    isRepo(directory: string): Promise<boolean>;
+    worktreeAdd(opts: { sourceRepo: string; worktreePath: string; branch: string }): Promise<string>;
+    worktreeRemove(opts: { sourceRepo: string; worktreePath: string; force?: boolean }): Promise<void>;
     onCloneProgress(cb: (info: CloneProgressInfo) => void): () => void;
   };
   docs: {

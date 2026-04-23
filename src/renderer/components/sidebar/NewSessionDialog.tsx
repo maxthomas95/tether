@@ -224,7 +224,7 @@ interface NewSessionDialogProps {
   environments: EnvironmentInfo[];
   profiles: LaunchProfileInfo[];
   onClose: () => void;
-  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[]) => void;
+  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string) => void;
 }
 
 export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate }: NewSessionDialogProps) {
@@ -245,6 +245,15 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [cliTool, setCliTool] = useState<CliToolId>('claude');
   const [customBinary, setCustomBinary] = useState('');
   const [vaultEnabled, setVaultEnabled] = useState(false);
+
+  // Worktree state (local tab only)
+  const [dirIsRepo, setDirIsRepo] = useState(false);
+  const [createWorktree, setCreateWorktree] = useState(false);
+  const [worktreeBranch, setWorktreeBranch] = useState('');
+  const [worktreePath, setWorktreePath] = useState('');
+  const [worktreePathEdited, setWorktreePathEdited] = useState(false);
+  const [creatingWorktree, setCreatingWorktree] = useState(false);
+  const [worktreeError, setWorktreeError] = useState('');
 
   // Tab state
   const [activeTab, setActiveTab] = useState<SourceTab>('local');
@@ -329,6 +338,38 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     }
   }, [isOpen, profiles]);
 
+  const selectedEnv = environments.find(e => e.id === envId);
+  const isSSH = selectedEnv?.type === 'ssh';
+  const isCoder = selectedEnv?.type === 'coder';
+
+  // Detect whether the chosen local directory is a git repo
+  useEffect(() => {
+    const trimmed = directory.trim();
+    if (activeTab !== 'local' || isSSH || isCoder || !trimmed) {
+      setDirIsRepo(false);
+      setCreateWorktree(false);
+      return;
+    }
+    window.electronAPI.git.isRepo(trimmed)
+      .then(result => setDirIsRepo(result))
+      .catch(() => setDirIsRepo(false));
+    setCreateWorktree(false);
+  }, [directory, activeTab, isSSH, isCoder]);
+
+  // Auto-fill worktree path from branch name when user hasn't manually edited it
+  useEffect(() => {
+    if (!createWorktree || !worktreeBranch || worktreePathEdited) return;
+    const sep = directory.includes('/') ? '/' : '\\';
+    let end = directory.length;
+    while (end > 0 && (directory[end - 1] === '/' || directory[end - 1] === '\\')) end--;
+    const base = directory.slice(0, end);
+    const lastSep = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
+    const repoName = lastSep >= 0 ? base.slice(lastSep + 1) : base;
+    const parent = lastSep > 0 ? base.slice(0, lastSep) : base;
+    const safeBranch = worktreeBranch.replace(/\//g, '-');
+    setWorktreePath(`${parent}${sep}${repoName}-${safeBranch}`);
+  }, [createWorktree, worktreeBranch, worktreePathEdited, directory]);
+
   // Set default provider when tab changes to a provider tab
   useEffect(() => {
     if (activeTab === 'gitea' || activeTab === 'ado') {
@@ -384,9 +425,6 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     setShowRepoConfig(false);
   }, [reposRootInput]);
 
-  const selectedEnv = environments.find(e => e.id === envId);
-  const isSSH = selectedEnv?.type === 'ssh';
-  const isCoder = selectedEnv?.type === 'coder';
   const selectedProfile = profiles.find(p => p.id === profileId);
 
   // Effective default flags for the selected CLI tool
@@ -544,12 +582,41 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     if (dir) setDirectory(dir);
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!directory.trim()) return;
+
+    let effectiveDir = directory.trim();
+    let worktreeSourceRepo: string | undefined;
+
+    if (createWorktree && dirIsRepo) {
+      const branch = worktreeBranch.trim();
+      const path = worktreePath.trim();
+      if (!branch || !path) {
+        setWorktreeError('Branch name and path are required.');
+        return;
+      }
+      setCreatingWorktree(true);
+      setWorktreeError('');
+      try {
+        // capture before effectiveDir is reassigned
+        worktreeSourceRepo = directory.trim();
+        effectiveDir = await window.electronAPI.git.worktreeAdd({
+          sourceRepo: worktreeSourceRepo,
+          worktreePath: path,
+          branch,
+        });
+      } catch (err: unknown) {
+        setWorktreeError(err instanceof Error ? err.message : String(err));
+        setCreatingWorktree(false);
+        return;
+      }
+      setCreatingWorktree(false);
+    }
+
     const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
     const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
     const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
-    onCreate(directory.trim(), label.trim(), envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled);
+    onCreate(effectiveDir, label.trim(), envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, worktreeSourceRepo);
     resetAndClose();
   };
 
@@ -608,6 +675,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     setDirectory('');
     setLabel('');
     setEnvId('');
+    setDirIsRepo(false);
+    setCreateWorktree(false);
+    setWorktreeBranch('');
+    setWorktreePath('');
+    setWorktreePathEdited(false);
+    setCreatingWorktree(false);
+    setWorktreeError('');
     setSessionEnvVars({});
     setSessionCliFlags([]);
     setCustomFlag('');
@@ -641,7 +715,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && activeTab === 'local' && directory.trim()) handleCreate();
+    if (e.key === 'Enter' && activeTab === 'local' && directory.trim()) void handleCreate();
     // Esc handled by useEscapeKey at document level (works regardless of focus)
   };
 
@@ -869,6 +943,48 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                     <span className="form-hint">
                       on {String(selectedEnv.config.username || 'root')}@{String(selectedEnv.config.host)}
                     </span>
+                  )}
+                </div>
+              )}
+
+              {!isSSH && !isCoder && dirIsRepo && (
+                <div className="form-group">
+                  <label className="form-radio-label" style={{ cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={createWorktree}
+                      onChange={e => setCreateWorktree(e.target.checked)}
+                    />
+                    <span>Create as new git worktree</span>
+                  </label>
+                  <span className="form-hint">
+                    Recommended when running multiple sessions on the same repo — each gets its own branch checkout.
+                  </span>
+                  {createWorktree && (
+                    <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: '2px solid var(--accent)' }}>
+                      <label className="form-label">New branch name</label>
+                      <input
+                        className="form-input"
+                        value={worktreeBranch}
+                        onChange={e => setWorktreeBranch(e.target.value)}
+                        placeholder="feat/my-change"
+                        disabled={creatingWorktree}
+                        autoFocus
+                      />
+                      <label className="form-label" style={{ marginTop: 8 }}>Worktree path</label>
+                      <input
+                        className="form-input"
+                        value={worktreePath}
+                        onChange={e => { setWorktreePath(e.target.value); setWorktreePathEdited(true); }}
+                        placeholder="C:\repo\myrepo-feat-my-change"
+                        disabled={creatingWorktree}
+                      />
+                      {worktreeError && (
+                        <span className="form-hint" style={{ color: 'var(--status-dead)', marginTop: 4, display: 'block' }}>
+                          {worktreeError}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -1285,10 +1401,10 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
           {activeTab === 'local' ? (
             <button
               className="form-btn form-btn--primary"
-              onClick={handleCreate}
-              disabled={!directory.trim()}
+              onClick={() => { void handleCreate(); }}
+              disabled={!directory.trim() || creatingWorktree}
             >
-              Create Session
+              {creatingWorktree ? 'Creating worktree...' : 'Create Session'}
             </button>
           ) : (
             <button
