@@ -38,13 +38,15 @@ export interface HelmRpcResponse {
 }
 
 /**
- * Handler registry for v0. Each entry takes validated params and returns a
- * plain JSON result (or throws to produce an error frame). The bridge does no
- * schema checks — handlers are expected to cast/validate their own params.
+ * Handler registry. Each entry takes validated params and returns a plain JSON
+ * result (or throws to produce an error frame). The bridge does no schema
+ * checks — handlers are expected to cast/validate their own params.
+ *
+ * Keyed by method name so adding a new tool is just one new entry on the
+ * session-manager side and a `setRequestHandler` entry in the MCP server.
  */
-export interface HelmBridgeHandlers {
-  spawn_session(params: Record<string, unknown>): Promise<unknown>;
-}
+export type HelmBridgeHandler = (params: Record<string, unknown>) => Promise<unknown>;
+export type HelmBridgeHandlers = Record<string, HelmBridgeHandler>;
 
 export interface HelmBridgeHandle {
   /** Platform-specific transport address the MCP server should dial. */
@@ -148,16 +150,14 @@ export async function createHelmBridge(
         return;
       }
 
+      const handler = handlers[req.method];
+      if (!handler) {
+        writeFrame({ id: req.id, error: { code: -32601, message: `Unknown method: ${req.method}` } });
+        return;
+      }
       try {
-        switch (req.method) {
-          case 'spawn_session': {
-            const result = await handlers.spawn_session(req.params || {});
-            writeFrame({ id: req.id, result });
-            break;
-          }
-          default:
-            writeFrame({ id: req.id, error: { code: -32601, message: `Unknown method: ${req.method}` } });
-        }
+        const result = await handler(req.params || {});
+        writeFrame({ id: req.id, result });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         log.warn('Helm bridge handler threw', { sessionId, method: req.method, error: message });

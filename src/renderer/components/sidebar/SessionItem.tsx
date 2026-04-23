@@ -116,6 +116,14 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
                   ⚓
                 </span>
               )}
+              {session.parentSessionId && (
+                <span
+                  title="Dispatched by another session via Helm"
+                  style={{ marginLeft: 6, opacity: 0.75, fontSize: 11 }}
+                >
+                  🪝
+                </span>
+              )}
             </span>
             <span className="session-path">
               <CliToolBadge session={session} />

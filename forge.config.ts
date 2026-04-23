@@ -7,6 +7,7 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import path from 'node:path';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -14,7 +15,12 @@ const config: ForgeConfig = {
     asar: {
       unpack: '**/node_modules/{node-pty,ssh2}/**',
     },
-    extraResource: [],
+    // The tether-helm MCP server ships outside the asar so Claude Code can
+    // spawn it as a subprocess via `node <path>/dist/index.js`. Kept as a
+    // plain directory (not pkg'd into a single .exe) for now — assumes the
+    // user has `node` on PATH. If/when we need a fully-standalone build,
+    // switch to @yao-pkg/pkg and replace this with the compiled binary.
+    extraResource: ['mcp-servers/tether-helm'],
   },
   rebuildConfig: {
     // Skip native module rebuild during dev — prebuilt N-API binaries work.
@@ -22,6 +28,46 @@ const config: ForgeConfig = {
     onlyModules: [],
   },
   hooks: {
+    // Ensure the tether-helm MCP server is built (and its node_modules are
+    // installed) BEFORE packagerConfig.extraResource tries to copy them into
+    // the packaged app. Forge's own build pipeline doesn't know about this
+    // subpackage, so we drive it here.
+    //
+    // We resolve `npm-cli.js` from the running Node's install tree and drive
+    // it via `spawnSync(process.execPath, [npmCli, ...])` rather than shelling
+    // out through `$PATH`. Sidesteps the "PATH entry could replace npm"
+    // hardening rule and guarantees the npm that matches the Node we're
+    // already running.
+    prePackage: async () => {
+      const helmDir = path.resolve(__dirname, 'mcp-servers', 'tether-helm');
+
+      const nodeDir = path.dirname(process.execPath);
+      const npmCandidates = [
+        // Windows installer + some Unix layouts: npm sits next to node.exe.
+        path.join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+        // Standard Unix: /usr/bin/node -> /usr/lib/node_modules/npm/...
+        path.join(nodeDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      ];
+      const npmCli = npmCandidates.find(p => fs.existsSync(p));
+      if (!npmCli) {
+        throw new Error(`Could not locate npm-cli.js relative to ${process.execPath}`);
+      }
+
+      const runNpm = (args: string[]): void => {
+        const result = spawnSync(process.execPath, [npmCli, ...args], {
+          cwd: helmDir,
+          stdio: 'inherit',
+        });
+        if (result.status !== 0) {
+          throw new Error(`npm ${args.join(' ')} failed with exit code ${result.status}`);
+        }
+      };
+
+      if (!fs.existsSync(path.join(helmDir, 'node_modules'))) {
+        runNpm(['install', '--no-audit', '--no-fund']);
+      }
+      runNpm(['run', 'build']);
+    },
     // Copy externalized node_modules (and their full transitive dep graphs)
     // into the packaged app before ASAR creation. Vite externalizes node-pty
     // and ssh2 (see vite.main.config.ts) so they aren't bundled — without
