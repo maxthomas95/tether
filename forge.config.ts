@@ -7,7 +7,7 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import path from 'node:path';
 import fs from 'node:fs';
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -32,12 +32,41 @@ const config: ForgeConfig = {
     // installed) BEFORE packagerConfig.extraResource tries to copy them into
     // the packaged app. Forge's own build pipeline doesn't know about this
     // subpackage, so we drive it here.
+    //
+    // We resolve `npm-cli.js` from the running Node's install tree and drive
+    // it via `spawnSync(process.execPath, [npmCli, ...])` rather than shelling
+    // out through `$PATH`. Sidesteps the "PATH entry could replace npm"
+    // hardening rule and guarantees the npm that matches the Node we're
+    // already running.
     prePackage: async () => {
       const helmDir = path.resolve(__dirname, 'mcp-servers', 'tether-helm');
-      if (!fs.existsSync(path.join(helmDir, 'node_modules'))) {
-        execSync('npm install --no-audit --no-fund', { cwd: helmDir, stdio: 'inherit' });
+
+      const nodeDir = path.dirname(process.execPath);
+      const npmCandidates = [
+        // Windows installer + some Unix layouts: npm sits next to node.exe.
+        path.join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+        // Standard Unix: /usr/bin/node -> /usr/lib/node_modules/npm/...
+        path.join(nodeDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      ];
+      const npmCli = npmCandidates.find(p => fs.existsSync(p));
+      if (!npmCli) {
+        throw new Error(`Could not locate npm-cli.js relative to ${process.execPath}`);
       }
-      execSync('npm run build', { cwd: helmDir, stdio: 'inherit' });
+
+      const runNpm = (args: string[]): void => {
+        const result = spawnSync(process.execPath, [npmCli, ...args], {
+          cwd: helmDir,
+          stdio: 'inherit',
+        });
+        if (result.status !== 0) {
+          throw new Error(`npm ${args.join(' ')} failed with exit code ${result.status}`);
+        }
+      };
+
+      if (!fs.existsSync(path.join(helmDir, 'node_modules'))) {
+        runNpm(['install', '--no-audit', '--no-fund']);
+      }
+      runNpm(['run', 'build']);
     },
     // Copy externalized node_modules (and their full transitive dep graphs)
     // into the packaged app before ASAR creation. Vite externalizes node-pty

@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { getEnvironment } from '../db/environment-repo';
 import { createLogger } from '../logger';
-import type { CoderWorkspace, CreateCoderWorkspaceOptions } from '../../shared/types';
+import type { CoderWorkspace, CoderTemplate, CreateCoderWorkspaceOptions } from '../../shared/types';
 
 const log = createLogger('coder-workspace');
 
@@ -24,46 +24,81 @@ export function resolveCoderBinary(environmentId: string): string {
 }
 
 /**
+ * Shared wrapper for `coder <verb> --output json` invocations. Handles the
+ * execFile + buffering + JSON.parse + non-array guard so each call-site only
+ * has to provide an entry-level mapper. Filtering out null mapper results
+ * lets callers skip malformed entries without a separate pass.
+ */
+async function runCoderCliJson<T>(
+  binaryPath: string,
+  args: string[],
+  errLabel: string,
+  mapEntry: (entry: Record<string, unknown>) => T | null,
+): Promise<T[]> {
+  return new Promise<T[]>((resolve, reject) => {
+    execFile(
+      binaryPath,
+      args,
+      { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) {
+          log.error(`${errLabel} failed`, { error: err.message, stderr: String(stderr).slice(0, 500) });
+          reject(new Error(stderr ? String(stderr).trim() : err.message));
+          return;
+        }
+        try {
+          const raw = JSON.parse(String(stdout || '[]')) as unknown;
+          if (!Array.isArray(raw)) { resolve([]); return; }
+          const out = raw
+            .map((entry) => mapEntry(entry as Record<string, unknown>))
+            .filter((v): v is T => v !== null);
+          resolve(out);
+        } catch (parseErr) {
+          log.error(`Failed to parse ${errLabel} output`, { error: parseErr instanceof Error ? parseErr.message : String(parseErr) });
+          reject(new Error('Failed to parse coder CLI output as JSON'));
+        }
+      },
+    );
+  });
+}
+
+/**
  * Runs `coder list --output json` for the given environment and returns the
  * parsed workspace summaries. Used by name-collision checks before calling
  * `createCoderWorkspace`.
  */
 export async function listCoderWorkspaces(environmentId: string): Promise<CoderWorkspace[]> {
   const binaryPath = resolveCoderBinary(environmentId);
-  return new Promise<CoderWorkspace[]>((resolve, reject) => {
-    execFile(
-      binaryPath,
-      ['list', '--output', 'json'],
-      { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        if (err) {
-          log.error('coder list failed', { error: err.message, stderr: String(stderr).slice(0, 500) });
-          reject(new Error(stderr ? String(stderr).trim() : err.message));
-          return;
-        }
-        try {
-          const raw = JSON.parse(String(stdout || '[]')) as unknown;
-          if (!Array.isArray(raw)) {
-            resolve([]);
-            return;
-          }
-          const workspaces: CoderWorkspace[] = raw.map((w: Record<string, unknown>) => {
-            const latestBuild = (w.latest_build as Record<string, unknown> | undefined) || {};
-            // Use typeof guards so non-string fields degrade to '' / 'unknown'
-            // instead of being String()'d into '[object Object]'.
-            const name = typeof w.name === 'string' ? w.name : '';
-            const ownerSource = w.owner_name ?? w.owner;
-            const owner = typeof ownerSource === 'string' ? ownerSource : '';
-            const statusSource = latestBuild.status ?? w.status;
-            const status = typeof statusSource === 'string' ? statusSource : 'unknown';
-            return { name, owner, status };
-          });
-          resolve(workspaces);
-        } catch (parseErr) {
-          reject(new Error('Failed to parse coder list output: ' + (parseErr instanceof Error ? parseErr.message : String(parseErr))));
-        }
-      },
-    );
+  return runCoderCliJson<CoderWorkspace>(binaryPath, ['list', '--output', 'json'], 'coder list', (w) => {
+    const latestBuild = (w.latest_build as Record<string, unknown> | undefined) || {};
+    // typeof guards so non-string fields degrade to '' / 'unknown' instead
+    // of being String()'d into '[object Object]'.
+    const name = typeof w.name === 'string' ? w.name : '';
+    if (!name) return null;
+    const ownerSource = w.owner_name ?? w.owner;
+    const owner = typeof ownerSource === 'string' ? ownerSource : '';
+    const statusSource = latestBuild.status ?? w.status;
+    const status = typeof statusSource === 'string' ? statusSource : 'unknown';
+    return { name, owner, status };
+  });
+}
+
+/**
+ * Runs `coder templates list --output json` and returns the parsed templates.
+ * The coder CLI wraps each entry in a `Template` key, which this mapper
+ * transparently unwraps.
+ */
+export async function listCoderTemplates(environmentId: string): Promise<CoderTemplate[]> {
+  const binaryPath = resolveCoderBinary(environmentId);
+  return runCoderCliJson<CoderTemplate>(binaryPath, ['templates', 'list', '--output', 'json'], 'coder templates list', (entry) => {
+    const t = (entry.Template || entry) as Record<string, unknown>;
+    const name = typeof t.name === 'string' ? t.name : '';
+    if (!name) return null;
+    const displayNameSource = t.display_name || t.name;
+    const displayName = typeof displayNameSource === 'string' ? displayNameSource : '';
+    const description = typeof t.description === 'string' ? t.description : '';
+    const activeVersionId = typeof t.active_version_id === 'string' ? t.active_version_id : '';
+    return { name, displayName, description, activeVersionId };
   });
 }
 

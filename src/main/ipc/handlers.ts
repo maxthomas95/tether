@@ -31,7 +31,7 @@ import * as sessionRepo from '../db/session-repo';
 import * as profileRepo from '../db/profile-repo';
 import * as gitProviderRepo from '../db/git-provider-repo';
 import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo } from '../git/git-service';
-import { createCoderWorkspace, listCoderWorkspaces, resolveCoderBinary as resolveCoderBinaryFromService } from '../coder/workspace-service';
+import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, resolveCoderBinary as resolveCoderBinaryFromService } from '../coder/workspace-service';
 import { GiteaClient } from '../git/providers/gitea-client';
 import { AdoClient } from '../git/providers/ado-client';
 import {
@@ -261,43 +261,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.CODER_LIST_TEMPLATES, async (_event, environmentId: string): Promise<CoderTemplate[]> => {
-    const binaryPath = resolveCoderBinary(environmentId);
-
-    return new Promise<CoderTemplate[]>((resolve, reject) => {
-      execFile(
-        binaryPath,
-        ['templates', 'list', '--output', 'json'],
-        { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 },
-        (err, stdout, stderr) => {
-          if (err) {
-            log.error('coder templates list failed', { error: err.message, stderr: String(stderr).slice(0, 500) });
-            reject(new Error(stderr ? String(stderr).trim() : err.message));
-            return;
-          }
-          try {
-            const raw = JSON.parse(String(stdout || '[]')) as unknown;
-            if (!Array.isArray(raw)) {
-              resolve([]);
-              return;
-            }
-            const templates: CoderTemplate[] = raw.map((entry: Record<string, unknown>) => {
-              // coder CLI wraps each template in a `Template` key
-              const t = (entry.Template || entry) as Record<string, unknown>;
-              return {
-                name: String(t.name ?? ''),
-                displayName: String(t.display_name || t.name || ''),
-                description: String(t.description ?? ''),
-                activeVersionId: String(t.active_version_id ?? ''),
-              };
-            }).filter(t => t.name);
-            resolve(templates);
-          } catch (parseErr) {
-            log.error('Failed to parse coder templates output', { error: parseErr instanceof Error ? parseErr.message : String(parseErr) });
-            reject(new Error('Failed to parse coder CLI output as JSON'));
-          }
-        },
-      );
-    });
+    return listCoderTemplates(environmentId);
   });
 
   // Fetch the Coder deployment URL and a short-lived session token so we can
