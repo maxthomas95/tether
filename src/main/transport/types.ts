@@ -29,6 +29,11 @@ export interface TransportStartOptions {
    * inside the workspace before cd'ing into the subdir and launching the selected CLI.
    */
   cloneUrl?: string;
+  /**
+   * Passed as the CLI's final positional arg (e.g. `claude ... "<prompt>"`).
+   * Appended after tokenization/shell-joining so multi-word prompts stay intact.
+   */
+  initialPrompt?: string;
 }
 
 export interface TransportExitInfo {

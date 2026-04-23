@@ -56,6 +56,7 @@ export function App() {
   const [hostVerifyRequest, setHostVerifyRequest] = useState<HostVerifyRequest | null>(null);
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
+  const [allowHelm, setAllowHelm] = useState(false);
   const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
   const [maxPanes, setMaxPanes] = useState(4);
   const [resumePickerFor, setResumePickerFor] = useState<{ sessionId: string; workingDir: string; cliTool: CreateSessionOptions['cliTool']; currentTranscriptId?: string } | null>(null);
@@ -109,7 +110,8 @@ export function App() {
       window.electronAPI.config.get?.('enablePaneSplitting')?.catch(() => null),
       window.electronAPI.config.get?.('maxPanes')?.catch(() => null),
       window.electronAPI.config.get?.('hideTerminalCursor')?.catch(() => null),
-    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor]) => {
+      window.electronAPI.config.get?.('allowHelm')?.catch(() => null),
+    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor, helm]) => {
       if (cancelled) return;
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
@@ -117,6 +119,7 @@ export function App() {
       setMaxPanes(parseMaxPanes(maxPaneValue));
       const shouldHideCursor = hideCursor !== 'false';
       setHideTerminalCursor(shouldHideCursor);
+      setAllowHelm(helm === 'true');
     });
     return () => { cancelled = true; };
   }, [settingsOpen]);
@@ -165,6 +168,7 @@ export function App() {
               ? saved.claudeSessionId || saved.toolSessionId
               : undefined,
             worktreeOf: saved.worktreeOf,
+            helmEnabled: saved.helmEnabled,
           });
           if (!mounted) return;
           termManager.getOrCreate(session.id);
@@ -222,6 +226,7 @@ export function App() {
         toolSessionId: s.toolSessionId || s.claudeSessionId,
         claudeSessionId: s.claudeSessionId,
         worktreeOf: s.worktreeOf,
+        helmEnabled: s.helmEnabled,
       })),
       Math.max(0, activeIndex),
     );
@@ -260,10 +265,17 @@ export function App() {
     const removeUpdated = window.electronAPI.session.onUpdated((sid, info) => {
       setSessions(prev => prev.map(s => s.id === sid ? { ...s, ...info } : s));
     });
-    return () => { removeData(); removeState(); removeExit(); removeUpdated(); };
+    // Helm-dispatched children are created in the main process without going
+    // through our session.create IPC; this event tells us about them so they
+    // appear in the sidebar + get a live xterm instance bound to their PTY.
+    const removeCreated = window.electronAPI.session.onCreated((sid, info) => {
+      termManager.getOrCreate(sid);
+      setSessions(prev => prev.some(s => s.id === sid) ? prev : [...prev, info]);
+    });
+    return () => { removeData(); removeState(); removeExit(); removeUpdated(); removeCreated(); };
   }, [termManager]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string) => {
+  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean) => {
     const createOpts: CreateSessionOptions = {
       workingDir,
       label: label || undefined,
@@ -278,6 +290,7 @@ export function App() {
       profileId,
       cloneUrl,
       worktreeOf,
+      helmEnabled,
     };
     try {
       // If this session would resolve vault:// refs but the Vault token is
@@ -484,10 +497,15 @@ export function App() {
     }
   }, [sessions, termManager, layoutDispatch, confirmDialog, notify]);
 
+  const handleToggleHelm = useCallback(async (id: string, enabled: boolean) => {
+    await window.electronAPI.session.setHelmEnabled(id, enabled);
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, helmEnabled: enabled } : s));
+  }, []);
+
   const handleDuplicate = useCallback(async (id: string) => {
     const source = sessions.find(s => s.id === id);
     if (!source) return;
-    handleCreateSession(source.workingDir, '', source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined);
+    handleCreateSession(source.workingDir, '', source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined, source.helmEnabled);
   }, [sessions, handleCreateSession]);
 
   const canResumePrevious = useCallback((session: SessionInfo) => {
@@ -970,6 +988,8 @@ export function App() {
                         onResumePrevious={handleOpenResumePicker}
                         canResumePrevious={canResumePrevious}
                         showResumeBadge={showResumeBadge}
+                        allowHelm={allowHelm}
+                        onToggleHelm={handleToggleHelm}
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
                       />

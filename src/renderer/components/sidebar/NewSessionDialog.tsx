@@ -224,7 +224,7 @@ interface NewSessionDialogProps {
   environments: EnvironmentInfo[];
   profiles: LaunchProfileInfo[];
   onClose: () => void;
-  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string) => void;
+  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean) => void;
 }
 
 export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate }: NewSessionDialogProps) {
@@ -245,6 +245,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [cliTool, setCliTool] = useState<CliToolId>('claude');
   const [customBinary, setCustomBinary] = useState('');
   const [vaultEnabled, setVaultEnabled] = useState(false);
+  const [allowHelm, setAllowHelm] = useState(false);
+  const [helmEnabled, setHelmEnabled] = useState(false);
 
   // Worktree state (local tab only)
   const [dirIsRepo, setDirIsRepo] = useState(false);
@@ -312,6 +314,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     });
     window.electronAPI.gitProvider.list().then(setGitProviders).catch(() => {});
     window.electronAPI.vault.status().then(s => setVaultEnabled(s.loggedIn)).catch(() => {});
+    window.electronAPI.config.get?.('allowHelm')?.then(v => setAllowHelm(v === 'true')).catch(() => {});
   }, [isOpen]);
 
   // Auto-fill default directory when environment changes
@@ -616,7 +619,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
     const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
     const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
-    onCreate(effectiveDir, label.trim(), envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, worktreeSourceRepo);
+    onCreate(effectiveDir, label.trim(), envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, worktreeSourceRepo, helmEnabled || undefined);
     resetAndClose();
   };
 
@@ -647,7 +650,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
         // `git clone <url> <subdir> && cd <subdir> && <cli>` inside the
         // workspace PTY. All clone output streams to the terminal.
         const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
-        onCreate(`${coderCloneWorkspace}::${destInside}`, label.trim() || repoName, envId, env, args, undefined, profileId || undefined, url, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled);
+        onCreate(`${coderCloneWorkspace}::${destInside}`, label.trim() || repoName, envId, env, args, undefined, profileId || undefined, url, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, undefined, helmEnabled || undefined);
         resetAndClose();
         return;
       }
@@ -663,7 +666,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
       const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
       const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
-      onCreate(clonedPath, label.trim() || repoName, envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled);
+      onCreate(clonedPath, label.trim() || repoName, envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, undefined, helmEnabled || undefined);
       resetAndClose();
     } catch (err: unknown) {
       setCloneError(err instanceof Error ? err.message : String(err));
@@ -711,6 +714,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     setCreateProgress('');
     setCliTool('claude');
     setCustomBinary('');
+    setHelmEnabled(false);
     onClose();
   };
 
@@ -803,6 +807,24 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               />
               <span className="form-hint">
                 Name or path of the CLI binary to run.
+              </span>
+            </div>
+          )}
+
+          {allowHelm && cliTool === 'claude' && (
+            <div className="form-group">
+              <label className="form-radio-label">
+                <input
+                  type="checkbox"
+                  checked={helmEnabled}
+                  onChange={e => setHelmEnabled(e.target.checked)}
+                />
+                <span>Enable Helm</span>
+                <span className="settings-tag settings-tag--experimental">Experimental</span>
+              </label>
+              <span className="form-hint">
+                Wires the <code>tether-helm</code> MCP into this session so Claude can
+                dispatch child sessions. Only affects sessions at spawn time.
               </span>
             </div>
           )}

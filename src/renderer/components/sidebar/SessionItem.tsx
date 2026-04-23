@@ -16,12 +16,16 @@ interface SessionItemProps {
   onResumePrevious?: () => void;
   /** When true, render a small ↻ marker for sessions launched via resume. */
   showResumeBadge?: boolean;
+  /** When true, render the "Enable/Disable Helm" context menu item (global Allow Helm is on). */
+  allowHelm?: boolean;
+  /** Called when the user toggles Helm on this session. */
+  onToggleHelm?: (enabled: boolean) => void;
   nested?: boolean;
   onDragStart?: (sessionId: string) => void;
   onDragEnd?: () => void;
 }
 
-export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, nested, onDragStart, onDragEnd }: SessionItemProps) {
+export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, nested, onDragStart, onDragEnd }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
@@ -104,6 +108,14 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
                   ↻
                 </span>
               )}
+              {session.helmEnabled && allowHelm && (
+                <span
+                  title="Helm enabled — can dispatch child sessions"
+                  style={{ marginLeft: 6, opacity: 0.75, fontSize: 11 }}
+                >
+                  ⚓
+                </span>
+              )}
             </span>
             <span className="session-path">
               <CliToolBadge session={session} />
@@ -142,6 +154,18 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
               onKeyDown={onKeyActivate(() => { setShowMenu(false); onResumePrevious(); })}
             >
               Resume previous conversation...
+            </div>
+          )}
+          {allowHelm && onToggleHelm && (
+            <div
+              className="context-menu-item"
+              role="menuitem"
+              tabIndex={0}
+              onClick={() => { setShowMenu(false); onToggleHelm(!session.helmEnabled); }}
+              onKeyDown={onKeyActivate(() => { setShowMenu(false); onToggleHelm(!session.helmEnabled); })}
+              title={session.helmEnabled ? 'Restart session to unwire the Helm MCP' : 'Restart session to wire the Helm MCP'}
+            >
+              {session.helmEnabled ? 'Disable Helm' : 'Enable Helm'}
             </div>
           )}
           {isAlive && (

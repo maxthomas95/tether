@@ -16,6 +16,8 @@ export interface SavedSession {
   toolSessionId?: string;
   /** Legacy UUID of the Claude conversation to resume on next launch. */
   claudeSessionId?: string;
+  /** When true, re-wire the Helm MCP on next launch of this session. */
+  helmEnabled?: boolean;
 }
 
 export interface SavedWorkspace {

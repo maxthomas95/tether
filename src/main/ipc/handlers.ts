@@ -23,7 +23,7 @@ import type {
   SessionUsage,
   CliToolId,
 } from '../../shared/types';
-import { sessionManager, findVaultRefInSession } from '../session/session-manager';
+import { sessionManager, findVaultRefInSession, setHelmChildCallbacks } from '../session/session-manager';
 import { quotaService } from '../quota/quota-service';
 import { usageService } from '../usage/usage-service';
 import * as envRepo from '../db/environment-repo';
@@ -104,31 +104,39 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // === Session handlers ===
 
+  // Single callback bundle, shared between direct IPC session creation and
+  // Helm-dispatched children. See `setHelmChildCallbacks` for the rationale.
+  const sessionCallbacks = {
+    onData(sessionId: string, data: string) {
+      send(IPC.SESSION_DATA, sessionId, data);
+    },
+    onStateChange(sessionId: string, state: import('../../shared/types').SessionState) {
+      send(IPC.SESSION_STATE_CHANGE, sessionId, state);
+      sessionRepo.updateSessionState(sessionId, state);
+    },
+    onUpdate(sessionId: string, info: import('../../shared/types').SessionInfo) {
+      send(IPC.SESSION_UPDATED, sessionId, info);
+    },
+    onCreated(sessionId: string, info: import('../../shared/types').SessionInfo) {
+      send(IPC.SESSION_CREATED, sessionId, info);
+    },
+    onExit(sessionId: string, exitCode: number) {
+      send(IPC.SESSION_EXITED, sessionId, exitCode);
+      const s = sessionManager.getSession(sessionId);
+      if (s?.claudeSessionId) {
+        usageService.untrackSession(s.claudeSessionId);
+      }
+    },
+  };
+  setHelmChildCallbacks(sessionCallbacks);
+
   ipcMain.handle(IPC.SESSION_CREATE, async (_event, opts: CreateSessionOptions) => {
     log.info('IPC session:create', { workingDir: opts.workingDir, environmentId: opts.environmentId });
     // Callbacks receive sessionId as their first arg — do NOT close over the
     // `session` const below. SSH transports can emit data events between
     // `transport.start()` resolving and the `await` unblocking, which would
     // hit the temporal dead zone on the const binding (v0.1.3 SSH crash).
-    const session = await sessionManager.createSession(opts, {
-      onData(sessionId, data) {
-        send(IPC.SESSION_DATA, sessionId, data);
-      },
-      onStateChange(sessionId, state) {
-        send(IPC.SESSION_STATE_CHANGE, sessionId, state);
-        sessionRepo.updateSessionState(sessionId, state);
-      },
-      onUpdate(sessionId, info) {
-        send(IPC.SESSION_UPDATED, sessionId, info);
-      },
-      onExit(sessionId, exitCode) {
-        send(IPC.SESSION_EXITED, sessionId, exitCode);
-        const s = sessionManager.getSession(sessionId);
-        if (s?.claudeSessionId) {
-          usageService.untrackSession(s.claudeSessionId);
-        }
-      },
-    });
+    const session = await sessionManager.createSession(opts, sessionCallbacks);
 
     // Persist to DB
     sessionRepo.createSessionRow({
@@ -173,6 +181,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.SESSION_RENAME, async (_event, sessionId: string, label: string) => {
     sessionManager.renameSession(sessionId, label);
     sessionRepo.updateSessionLabel(sessionId, label);
+  });
+
+  ipcMain.handle(IPC.SESSION_SET_HELM_ENABLED, async (_event, sessionId: string, enabled: boolean) => {
+    sessionManager.setHelmEnabled(sessionId, enabled);
   });
 
   ipcMain.handle(IPC.SESSION_REMOVE, async (_event, sessionId: string) => {
