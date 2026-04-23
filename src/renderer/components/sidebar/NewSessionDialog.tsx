@@ -360,10 +360,12 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   useEffect(() => {
     if (!createWorktree || !worktreeBranch || worktreePathEdited) return;
     const sep = directory.includes('/') ? '/' : '\\';
-    const base = directory.replace(/[\\/]+$/, '');
-    const parts = base.split(/[\\/]/);
-    const repoName = parts[parts.length - 1] || base;
-    const parent = parts.length > 1 ? parts.slice(0, -1).join(sep) : base;
+    let end = directory.length;
+    while (end > 0 && (directory[end - 1] === '/' || directory[end - 1] === '\\')) end--;
+    const base = directory.slice(0, end);
+    const lastSep = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
+    const repoName = lastSep >= 0 ? base.slice(lastSep + 1) : base;
+    const parent = lastSep > 0 ? base.slice(0, lastSep) : base;
     const safeBranch = worktreeBranch.replace(/\//g, '-');
     setWorktreePath(`${parent}${sep}${repoName}-${safeBranch}`);
   }, [createWorktree, worktreeBranch, worktreePathEdited, directory]);
