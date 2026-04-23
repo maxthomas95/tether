@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.4.0-beta.1] — 2026-04-23
+
+Minor bump marking Helm — an opt-in capability that lets a designated Claude session dispatch pre-briefed child sessions through an MCP server — alongside Tether-managed worktrees, deeper Vault UX, and a round of reliability/security fixes.
+
+### New Features
+- **Helm (v0 + v0.5)** — opt-in MCP server that lets a designated "helm" session dispatch child sessions. Two-level gate (global "Allow Helm" setting + per-session "Enable Helm" checkbox). Dispatched children surface in the sidebar with a 🪝 badge and skill-labeled names (e.g. "ADO PBI-1234"). MCP tools: `spawn_session`, `create_coder_workspace`, `list_coder_workspaces`, `get_session_status`, `kill_session`. Now supported in packaged builds via bundled MCP subpackage; requires `node` on PATH (#33, #34)
+- **Tether-managed worktrees** — create a worktree at session start, with optional cleanup on session removal (#32)
+- **Vault browse picker** — pick existing Vault secrets from a tree view instead of typing `vault://` refs by hand (#26)
+- **Sidebar Vault pill + pre-session preflight** — auth state, expiry warnings, and preflight that surfaces failures before a session launches (#24)
+- **Historical usage scan** — scan all of `~/.claude/projects/` to surface past session usage, not just sessions started inside Tether (#30)
+
+### Bug Fixes
+- Cost tracker no longer silently drops sessions whose first prompt is delayed (#29)
+- Stale session tabs on restart — workspace is now saved synchronously (#28)
+- Workspace persists on every change, so installs don't restore stale tabs (#22)
+- Patched `cross-zip` for Node 22+ compatibility (#21)
+
+### Security
+- Fixed CodeQL regex-injection and shell-injection alerts (#20)
+- PATH hardening on the forge `prePackage` hook — npm is now invoked via `process.execPath` instead of going through `$PATH`
+- Cleared SonarCloud findings on VaultPickerDialog and across the Helm v0.5 changes (#23, #27)
+
+### Improvements
+- Docs and CLI flag presets refreshed to current state (#31)
+- Clarified experimental settings copy in README and settings (#25)
+
+### Dependencies
+- `uuid` → 14.0.0 (#35)
+- `@xmldom/xmldom` → 0.8.13 (#36)
+
+---
+
 ## [0.3.1-hotfix.1] — 2026-04-14
 
 Hotfix bundling three user-facing fixes on top of `0.3.0-beta.1`.
