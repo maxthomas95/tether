@@ -169,6 +169,7 @@ export function App() {
               : undefined,
             worktreeOf: saved.worktreeOf,
             helmEnabled: saved.helmEnabled,
+            parentSessionId: saved.parentSessionId,
           });
           if (!mounted) return;
           termManager.getOrCreate(session.id);
@@ -227,6 +228,7 @@ export function App() {
         claudeSessionId: s.claudeSessionId,
         worktreeOf: s.worktreeOf,
         helmEnabled: s.helmEnabled,
+        parentSessionId: s.parentSessionId,
       })),
       Math.max(0, activeIndex),
     );

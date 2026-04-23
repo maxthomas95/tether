@@ -18,6 +18,8 @@ export interface SavedSession {
   claudeSessionId?: string;
   /** When true, re-wire the Helm MCP on next launch of this session. */
   helmEnabled?: boolean;
+  /** Parent Helm session id for dispatched children — drives the 🪝 badge. */
+  parentSessionId?: string;
 }
 
 export interface SavedWorkspace {

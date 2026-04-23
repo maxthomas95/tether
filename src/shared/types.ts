@@ -156,6 +156,12 @@ export interface SessionInfo {
    * Takes effect at session spawn — toggling mid-session requires a restart.
    */
   helmEnabled?: boolean;
+  /**
+   * Id of the Helm session that dispatched this one. Set only on children
+   * created via the `spawn_session` bridge call. Used to render the 🪝 badge
+   * so users can see at a glance which sessions were spawned vs. user-created.
+   */
+  parentSessionId?: string;
 }
 
 export interface CreateSessionOptions {
@@ -195,6 +201,8 @@ export interface CreateSessionOptions {
    * the global `allowHelm` setting to also be true; otherwise silently ignored.
    */
   helmEnabled?: boolean;
+  /** Parent Helm session id when this session is a Helm-dispatched child. */
+  parentSessionId?: string;
 }
 
 export interface LaunchProfileInfo {
@@ -391,8 +399,8 @@ export interface TetherAPI {
     writeText(text: string): void;
   };
   workspace: {
-    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean }>, activeIndex: number): Promise<void>;
-    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean }>; activeIndex: number } | null>;
+    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>, activeIndex: number): Promise<void>;
+    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>; activeIndex: number } | null>;
   };
   transcripts: {
     list(workingDir: string, cliTool?: CliToolId): Promise<TranscriptInfo[]>;
