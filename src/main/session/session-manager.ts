@@ -6,8 +6,8 @@ import { CoderTransport } from '../transport/coder-transport';
 import type { SessionTransport } from '../transport/types';
 import type { SSHConfig } from '../transport/ssh-transport';
 import { statusDetector } from '../status/status-detector';
-import { getEnvironment } from '../db/environment-repo';
-import { getProfile } from '../db/profile-repo';
+import { getEnvironment, listEnvironments } from '../db/environment-repo';
+import { getProfile, listProfiles } from '../db/profile-repo';
 import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
 import { transcriptExists } from '../claude/transcripts';
 import { codexTranscriptExists } from '../codex/transcripts';
@@ -15,7 +15,7 @@ import { detectNewCodexSession, releaseCodexSessionClaim } from '../codex/sessio
 import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
-import { createCoderWorkspace, listCoderWorkspaces } from '../coder/workspace-service';
+import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { createLogger } from '../logger';
 
 const log = createLogger('session');
@@ -349,6 +349,21 @@ class SessionManager {
       try {
         session.helmIntegration = await setupHelmForSession(id, {
           spawn_session: async (params) => {
+            // Profile resolution mirrors the New Session dialog: an explicit
+            // id/name wins, otherwise fall back to the user's default profile
+            // (so API keys and env vars defined once are automatically applied
+            // to spawned children). `noProfile: true` opts out of the default.
+            let profileId: string | undefined;
+            if (typeof params.profileId === 'string' && params.profileId) {
+              profileId = params.profileId;
+            } else if (typeof params.profileName === 'string' && params.profileName) {
+              const match = listProfiles().find(p => p.name === params.profileName);
+              if (!match) throw new Error(`Launch profile not found: ${params.profileName}. Call list_profiles to discover available profiles.`);
+              profileId = match.id;
+            } else if (params.noProfile !== true) {
+              const defaultProfile = listProfiles().find(p => p.is_default);
+              if (defaultProfile) profileId = defaultProfile.id;
+            }
             const childOpts: CreateSessionOptions = {
               workingDir: typeof params.workingDir === 'string' && params.workingDir
                 ? params.workingDir
@@ -357,6 +372,7 @@ class SessionManager {
               environmentId: typeof params.environmentId === 'string' ? params.environmentId : undefined,
               cliTool: 'claude',
               initialPrompt: typeof params.initialPrompt === 'string' ? params.initialPrompt : undefined,
+              profileId,
               cliArgs: [
                 ...(Array.isArray(params.cliFlags) ? params.cliFlags.filter((f): f is string => typeof f === 'string') : []),
                 ...(params.autoMode === true ? ['--dangerously-skip-permissions'] : []),
@@ -401,6 +417,36 @@ class SessionManager {
             const environmentId = typeof params.environmentId === 'string' ? params.environmentId : '';
             if (!environmentId) throw new Error('list_coder_workspaces requires environmentId');
             return listCoderWorkspaces(environmentId);
+          },
+          list_coder_templates: async (params) => {
+            const environmentId = typeof params.environmentId === 'string' ? params.environmentId : '';
+            if (!environmentId) throw new Error('list_coder_templates requires environmentId');
+            return listCoderTemplates(environmentId);
+          },
+          get_coder_template_params: async (params) => {
+            const environmentId = typeof params.environmentId === 'string' ? params.environmentId : '';
+            const templateVersionId = typeof params.templateVersionId === 'string' ? params.templateVersionId : '';
+            if (!environmentId || !templateVersionId) {
+              throw new Error('get_coder_template_params requires environmentId and templateVersionId');
+            }
+            return getCoderTemplateParams(environmentId, templateVersionId);
+          },
+          list_environments: async () => {
+            // Project to a minimal, safe shape — deliberately omit config,
+            // env_vars, and auth_mode so the bridge doesn't leak binary paths
+            // or env-var values (which may include secrets) to the MCP child.
+            return listEnvironments().map(e => ({ id: e.id, name: e.name, type: e.type }));
+          },
+          list_profiles: async () => {
+            // Return id, name, isDefault, and the KEYS of env vars the profile
+            // would apply — never the values, which may be API keys or vault
+            // references. Keys are enough for a leader to reason about whether
+            // a profile is the right one without ever seeing secrets.
+            return listProfiles().map(p => {
+              let envVarKeys: string[] = [];
+              try { envVarKeys = Object.keys(JSON.parse(p.env_vars) as Record<string, string>); } catch { /* leave empty */ }
+              return { id: p.id, name: p.name, isDefault: p.is_default, envVarKeys };
+            });
           },
           get_session_status: async (params) => {
             const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';

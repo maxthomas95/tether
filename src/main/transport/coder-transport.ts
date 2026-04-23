@@ -120,7 +120,12 @@ export class CoderTransport implements SessionTransport {
       .map(([k, v]) => `${k}=${shq(v)}`);
 
     const cliArgs = options.cliArgs?.join(' ') || '';
-    const cliCmd = cliArgs ? `${binary} ${cliArgs}` : binary;
+    // Pass the initialPrompt as a single positional argument to the CLI (same
+    // contract SSHTransport uses). Without this, a Helm-dispatched child in a
+    // Coder workspace launches `claude` bare and has no idea what the parent
+    // asked it to do — the prompt was silently dropped.
+    const promptArg = options.initialPrompt ? ` ${shq(options.initialPrompt)}` : '';
+    const cliCmd = cliArgs ? `${binary} ${cliArgs}${promptArg}` : `${binary}${promptArg}`;
 
     const baseCmd = envParts.length > 0
       ? `env ${envParts.join(' ')} ${cliCmd}`

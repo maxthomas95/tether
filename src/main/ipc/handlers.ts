@@ -1,5 +1,4 @@
 import { ipcMain, BrowserWindow, dialog, safeStorage, shell } from 'electron';
-import { execFile } from 'node:child_process';
 import { IPC } from '../../shared/constants';
 import type {
   CreateSessionOptions,
@@ -31,7 +30,7 @@ import * as sessionRepo from '../db/session-repo';
 import * as profileRepo from '../db/profile-repo';
 import * as gitProviderRepo from '../db/git-provider-repo';
 import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo } from '../git/git-service';
-import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, resolveCoderBinary as resolveCoderBinaryFromService } from '../coder/workspace-service';
+import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { GiteaClient } from '../git/providers/gitea-client';
 import { AdoClient } from '../git/providers/ado-client';
 import {
@@ -253,9 +252,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // === Coder handlers ===
 
-  // Local alias so existing handlers below don't need rewriting.
-  const resolveCoderBinary = resolveCoderBinaryFromService;
-
   ipcMain.handle(IPC.CODER_LIST_WORKSPACES, async (_event, environmentId: string): Promise<CoderWorkspace[]> => {
     return listCoderWorkspaces(environmentId);
   });
@@ -264,84 +260,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return listCoderTemplates(environmentId);
   });
 
-  // Fetch the Coder deployment URL and a short-lived session token so we can
-  // call REST endpoints that have no CLI equivalent (e.g. rich-parameters).
-  function getCoderAuth(binaryPath: string): Promise<{ url: string; token: string }> {
-    return new Promise((resolve, reject) => {
-      execFile(binaryPath, ['whoami', '--output', 'json'], { timeout: 10_000 }, (err, stdout) => {
-        if (err) { reject(new Error('Failed to get Coder URL: ' + err.message)); return; }
-        let url: string;
-        try {
-          const raw = JSON.parse(String(stdout));
-          const entry = Array.isArray(raw) ? raw[0] : raw;
-          url = String(entry.url || '').replace(/\/+$/, '');
-        } catch { reject(new Error('Failed to parse coder whoami output')); return; }
-        if (!url) { reject(new Error('Coder URL not found in whoami output')); return; }
-
-        execFile(binaryPath, ['tokens', 'create', '--lifetime', '5m'], { timeout: 10_000 }, (err2, stdout2) => {
-          if (err2) { reject(new Error('Failed to create Coder API token: ' + err2.message)); return; }
-          const token = String(stdout2).trim();
-          if (!token) { reject(new Error('Empty token from coder tokens create')); return; }
-          resolve({ url, token });
-        });
-      });
-    });
-  }
-
   ipcMain.handle(IPC.CODER_GET_TEMPLATE_PARAMS, async (_event, environmentId: string, templateVersionId: string): Promise<CoderTemplateParam[]> => {
-    const binaryPath = resolveCoderBinary(environmentId);
-    const { url, token } = await getCoderAuth(binaryPath);
-
-    const https = await import('node:https');
-    const http = await import('node:http');
-    const { URL } = await import('node:url');
-
-    return new Promise<CoderTemplateParam[]>((resolve, reject) => {
-      const endpoint = new URL(`/api/v2/templateversions/${templateVersionId}/rich-parameters`, url);
-      const mod = endpoint.protocol === 'https:' ? https : http;
-
-      const req = mod.get(endpoint.href, {
-        headers: { 'Coder-Session-Token': token },
-        timeout: 10_000,
-        // Internal Coder deployments often use certs signed by a private CA
-        // that Node doesn't trust. The coder CLI handles this via the system
-        // store; we mirror that trust here for this authenticated request.
-        rejectUnauthorized: false,
-      }, (res) => {
-        let body = '';
-        res.on('data', (chunk: Buffer) => { body += chunk; });
-        res.on('end', () => {
-          if (res.statusCode !== 200) {
-            log.error('Coder rich-parameters API error', { status: res.statusCode, body: body.slice(0, 500) });
-            reject(new Error(`Coder API returned ${res.statusCode}`));
-            return;
-          }
-          try {
-            const raw = JSON.parse(body) as unknown;
-            if (!Array.isArray(raw)) { resolve([]); return; }
-            const params: CoderTemplateParam[] = raw
-              .filter((p: Record<string, unknown>) => !p.ephemeral)
-              .map((p: Record<string, unknown>) => ({
-                name: String(p.name ?? ''),
-                displayName: String(p.display_name || p.name || ''),
-                description: String(p.description ?? ''),
-                type: String(p.type ?? 'string'),
-                defaultValue: String(p.default_value ?? ''),
-                required: Boolean(p.required),
-                options: Array.isArray(p.options) ? p.options.map((o: Record<string, unknown>) => ({
-                  name: String(o.name ?? ''),
-                  value: String(o.value ?? ''),
-                })) : [],
-              }));
-            resolve(params);
-          } catch (parseErr) {
-            log.error('Failed to parse rich-parameters response', { error: parseErr instanceof Error ? parseErr.message : String(parseErr) });
-            reject(new Error('Failed to parse template parameters'));
-          }
-        });
-      });
-      req.on('error', (err: Error) => reject(new Error('Coder API request failed: ' + err.message)));
-    });
+    return getCoderTemplateParams(environmentId, templateVersionId);
   });
 
   ipcMain.handle(IPC.CODER_CREATE_WORKSPACE, async (_event, opts: CreateCoderWorkspaceOptions): Promise<CoderWorkspace> => {
