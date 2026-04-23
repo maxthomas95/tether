@@ -106,17 +106,24 @@ export class Session {
   codexDetectCancel: (() => void) | null = null;
   readonly worktreeOf: string | null;
 
-  constructor(id: string, label: string, workingDir: string, environmentId?: string, cliTool?: CliToolId, customCliBinary?: string, worktreeOf?: string | null, helmEnabled?: boolean, parentSessionId?: string | null) {
+  constructor(id: string, label: string, workingDir: string, options: {
+    environmentId?: string;
+    cliTool?: CliToolId;
+    customCliBinary?: string;
+    worktreeOf?: string | null;
+    helmEnabled?: boolean;
+    parentSessionId?: string | null;
+  } = {}) {
     this.id = id;
     this.label = label;
     this.workingDir = workingDir;
-    this.environmentId = environmentId || null;
-    this.cliTool = cliTool || 'claude';
-    this.customCliBinary = customCliBinary;
-    this.helmEnabled = !!helmEnabled;
+    this.environmentId = options.environmentId || null;
+    this.cliTool = options.cliTool || 'claude';
+    this.customCliBinary = options.customCliBinary;
+    this.helmEnabled = !!options.helmEnabled;
     this.createdAt = new Date().toISOString();
-    this.worktreeOf = worktreeOf || null;
-    this.parentSessionId = parentSessionId || null;
+    this.worktreeOf = options.worktreeOf || null;
+    this.parentSessionId = options.parentSessionId || null;
   }
 
   toInfo(): SessionInfo {
@@ -243,7 +250,14 @@ class SessionManager {
     const label = opts.label || opts.workingDir.split(/[\\/]/).pop() || 'Untitled';
     const cliTool: CliToolId = opts.cliTool || 'claude';
     log.info('Creating session', { id, label, workingDir: opts.workingDir, environmentId: opts.environmentId, cliTool });
-    const session = new Session(id, label, opts.workingDir, opts.environmentId, cliTool, opts.customCliBinary, opts.worktreeOf, opts.helmEnabled, opts.parentSessionId);
+    const session = new Session(id, label, opts.workingDir, {
+      environmentId: opts.environmentId,
+      cliTool,
+      customCliBinary: opts.customCliBinary,
+      worktreeOf: opts.worktreeOf,
+      helmEnabled: opts.helmEnabled,
+      parentSessionId: opts.parentSessionId,
+    });
     this.sessions.set(id, session);
     this.callbacksMap.set(id, callbacks);
 

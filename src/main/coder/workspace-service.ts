@@ -11,7 +11,7 @@ const log = createLogger('coder-workspace');
  */
 export function resolveCoderBinary(environmentId: string): string {
   const env = getEnvironment(environmentId);
-  if (!env || env.type !== 'coder') {
+  if (env?.type !== 'coder') {
     throw new Error('Environment not found or not a Coder environment');
   }
   try {
@@ -49,11 +49,14 @@ export async function listCoderWorkspaces(environmentId: string): Promise<CoderW
           }
           const workspaces: CoderWorkspace[] = raw.map((w: Record<string, unknown>) => {
             const latestBuild = (w.latest_build as Record<string, unknown> | undefined) || {};
-            return {
-              name: String(w.name ?? ''),
-              owner: String(w.owner_name ?? w.owner ?? ''),
-              status: String(latestBuild.status ?? w.status ?? 'unknown'),
-            };
+            // Use typeof guards so non-string fields degrade to '' / 'unknown'
+            // instead of being String()'d into '[object Object]'.
+            const name = typeof w.name === 'string' ? w.name : '';
+            const ownerSource = w.owner_name ?? w.owner;
+            const owner = typeof ownerSource === 'string' ? ownerSource : '';
+            const statusSource = latestBuild.status ?? w.status;
+            const status = typeof statusSource === 'string' ? statusSource : 'unknown';
+            return { name, owner, status };
           });
           resolve(workspaces);
         } catch (parseErr) {
@@ -107,7 +110,7 @@ export async function createCoderWorkspace(
       output += data;
       if (!onProgress) return;
       for (const line of data.split(/[\r\n]+/)) {
-        const clean = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+        const clean = line.replaceAll(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
         if (clean && progressRe.test(clean)) {
           onProgress(clean);
         }
@@ -122,8 +125,8 @@ export async function createCoderWorkspace(
     proc.onExit(({ exitCode }) => {
       clearTimeout(timeout);
       if (exitCode !== 0) {
-        const lines = output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').split(/[\r\n]+/).filter(l => l.trim());
-        const errLine = lines.reverse().find(l => /error:|failed/i.test(l)) || lines[0] || `exit code ${exitCode}`;
+        const lines = output.replaceAll(/\x1b\[[0-9;]*[a-zA-Z]/g, '').split(/[\r\n]+/).filter(l => l.trim());
+        const errLine = lines.findLast(l => /error:|failed/i.test(l)) || lines[0] || `exit code ${exitCode}`;
         log.error('coder create failed', { exitCode, error: errLine });
         reject(new Error(errLine));
         return;
