@@ -54,6 +54,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
   const [maxPanes, setMaxPanes] = useState(4);
+  const [allowHelm, setAllowHelm] = useState(false);
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true);
   const [quotaEnabled, setQuotaEnabled] = useState(true);
   const [usageStripEnabled, setUsageStripEnabled] = useState(true);
@@ -112,7 +113,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       window.electronAPI.config.get?.('usageStripEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('globalUsageEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('hideTerminalCursor')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, hideCursor]) => {
+      window.electronAPI.config.get?.('allowHelm')?.catch(() => null),
+    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, hideCursor, helm]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -126,6 +128,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setUsageStripEnabled(usageStrip !== 'false');
       setGlobalUsageEnabled(globalUsage !== 'false');
       setHideTerminalCursor(hideCursor !== 'false');
+      setAllowHelm(helm === 'true');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -155,13 +158,14 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     await window.electronAPI.config.set?.('usageStripEnabled', usageStripEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('globalUsageEnabled', globalUsageEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('hideTerminalCursor', hideTerminalCursor ? 'true' : 'false');
+    await window.electronAPI.config.set?.('allowHelm', allowHelm ? 'true' : 'false');
     window.dispatchEvent(new CustomEvent('tether:settings-changed'));
     for (const toolId of FLAG_TOOLS) {
       await window.electronAPI.config.setDefaultCliFlagsForTool?.(toolId, cliFlagsPerTool[toolId] || []);
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, hideTerminalCursor, cliFlagsPerTool, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, hideTerminalCursor, allowHelm, cliFlagsPerTool, vaultConfig, onClose]);
 
   const handleVaultLogin = async () => {
     setVaultLoginError(null);
@@ -315,6 +319,23 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
               their own input indicator, so the xterm cursor often reads as a redundant
               second cursor that bounces around during thinking animations.
               Turn this off if you use plain shells, vim, or htop in Tether.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={allowHelm}
+                onChange={e => setAllowHelm(e.target.checked)}
+              />
+              <span>Allow Helm</span>
+              <span className="settings-tag settings-tag--experimental">Experimental</span>
+            </label>
+            <p className="form-hint">
+              Unlocks the per-session &ldquo;Enable Helm&rdquo; toggle, which lets a designated
+              Claude session dispatch pre-briefed child sessions via the <code>tether-helm</code> MCP.
+              Leave off unless you&rsquo;re specifically using this — it changes Tether&rsquo;s surface area.
             </p>
           </div>
 

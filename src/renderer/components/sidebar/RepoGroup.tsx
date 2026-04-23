@@ -20,6 +20,8 @@ interface RepoGroupProps {
   onResumePrevious?: (id: string) => void;
   canResumePrevious?: (session: SessionInfo) => boolean;
   showResumeBadge?: boolean;
+  allowHelm?: boolean;
+  onToggleHelm?: (id: string, enabled: boolean) => void;
   onDragStart?: (sessionId: string) => void;
   onDragEnd?: () => void;
 }
@@ -41,6 +43,8 @@ export function RepoGroup({
   onResumePrevious,
   canResumePrevious,
   showResumeBadge,
+  allowHelm,
+  onToggleHelm,
   onDragStart,
   onDragEnd,
 }: RepoGroupProps) {
@@ -194,6 +198,8 @@ export function RepoGroup({
           onDuplicate={() => onDuplicate(session.id)}
           onResumePrevious={onResumePrevious && canResumePrevious?.(session) ? () => onResumePrevious(session.id) : undefined}
           showResumeBadge={showResumeBadge}
+          allowHelm={allowHelm}
+          onToggleHelm={onToggleHelm ? (enabled) => onToggleHelm(session.id, enabled) : undefined}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
           nested

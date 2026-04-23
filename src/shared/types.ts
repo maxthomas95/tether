@@ -150,6 +150,12 @@ export interface SessionInfo {
   resumed?: boolean;
   /** Source repo path when this session was created as a Tether-managed worktree. */
   worktreeOf?: string;
+  /**
+   * When true, Tether wires the `tether-helm` MCP into this session's launch
+   * so the user's skill can call `spawn_session` to dispatch child sessions.
+   * Takes effect at session spawn — toggling mid-session requires a restart.
+   */
+  helmEnabled?: boolean;
 }
 
 export interface CreateSessionOptions {
@@ -177,6 +183,18 @@ export interface CreateSessionOptions {
   cloneUrl?: string;
   /** When set, marks this session as a Tether-managed worktree of the given source repo. */
   worktreeOf?: string;
+  /**
+   * Initial prompt passed as the CLI tool's final positional arg. For Claude,
+   * `claude [flags] "<prompt>"` starts the interactive session with this as the
+   * first user message. Used by Helm-dispatched child sessions to receive their
+   * brief without the caller having to inject keystrokes post-boot.
+   */
+  initialPrompt?: string;
+  /**
+   * When true, wire the `tether-helm` MCP into this session at spawn. Requires
+   * the global `allowHelm` setting to also be true; otherwise silently ignored.
+   */
+  helmEnabled?: boolean;
 }
 
 export interface LaunchProfileInfo {
@@ -324,12 +342,20 @@ export interface TetherAPI {
     kill(sessionId: string): Promise<void>;
     rename(sessionId: string, label: string): Promise<void>;
     remove(sessionId: string): Promise<void>;
+    setHelmEnabled(sessionId: string, enabled: boolean): Promise<void>;
     sendInput(sessionId: string, data: string): void;
     resize(sessionId: string, cols: number, rows: number): void;
     onData(callback: (sessionId: string, data: string) => void): () => void;
     onStateChange(callback: (sessionId: string, state: SessionState) => void): () => void;
     onExited(callback: (sessionId: string, exitCode: number) => void): () => void;
     onUpdated(callback: (sessionId: string, info: SessionInfo) => void): () => void;
+    /**
+     * Fires when a session is created in the main process without the renderer
+     * initiating it — currently only Helm-dispatched children. User-initiated
+     * creates arrive as the return value of `session.create` so they don't
+     * fire this event (avoids double-appending to the sidebar).
+     */
+    onCreated(callback: (sessionId: string, info: SessionInfo) => void): () => void;
   };
   environment: {
     list(): Promise<EnvironmentInfo[]>;
@@ -365,8 +391,8 @@ export interface TetherAPI {
     writeText(text: string): void;
   };
   workspace: {
-    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string }>, activeIndex: number): Promise<void>;
-    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string }>; activeIndex: number } | null>;
+    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean }>, activeIndex: number): Promise<void>;
+    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean }>; activeIndex: number } | null>;
   };
   transcripts: {
     list(workingDir: string, cliTool?: CliToolId): Promise<TranscriptInfo[]>;

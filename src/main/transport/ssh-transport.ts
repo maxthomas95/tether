@@ -116,7 +116,12 @@ export class SSHTransport implements SessionTransport {
               .map(([k, v]) => `${k}=${v.replace(/'/g, "'\\''")}`);
 
             const cliArgs = options.cliArgs?.join(' ') || '';
-            const cliCmd = cliArgs ? `${binary} ${cliArgs}` : binary;
+            // Single-quote wrap + escape embedded quotes so multi-word prompts
+            // and shell metachars reach the CLI as one positional arg.
+            const promptArg = options.initialPrompt
+              ? ` '${options.initialPrompt.replace(/'/g, "'\\''")}'`
+              : '';
+            const cliCmd = (cliArgs ? `${binary} ${cliArgs}` : binary) + promptArg;
 
             let cmd: string;
             if (envParts.length > 0) {

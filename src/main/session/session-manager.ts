@@ -14,6 +14,7 @@ import { codexTranscriptExists } from '../codex/transcripts';
 import { detectNewCodexSession, releaseCodexSessionClaim } from '../codex/session-watcher';
 import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
+import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
 import { createLogger } from '../logger';
 
 const log = createLogger('session');
@@ -59,6 +60,23 @@ export interface SessionCallbacks {
    * SessionInfo in sync so the next workspace save has the real id.
    */
   onUpdate?(sessionId: string, info: SessionInfo): void;
+  /**
+   * Fired only when the session was created outside the renderer's session.create
+   * IPC call (Helm-dispatched children). Regular sessions arrive via the IPC
+   * return value, so this event is not used for them.
+   */
+  onCreated?(sessionId: string, info: SessionInfo): void;
+}
+
+/**
+ * Helm-dispatched children need IPC-wired callbacks so they show up in the
+ * sidebar just like user-initiated sessions. The IPC layer registers its
+ * shared callback bundle here during boot — the helm bridge handler reuses it
+ * when spawning children so we don't duplicate send() plumbing.
+ */
+let helmChildCallbacks: SessionCallbacks | null = null;
+export function setHelmChildCallbacks(callbacks: SessionCallbacks): void {
+  helmChildCallbacks = callbacks;
 }
 
 export class Session {
@@ -77,17 +95,22 @@ export class Session {
   claudeSessionId: string | null = null;
   /** True when this session was launched by resuming prior tool history. */
   resumed = false;
+  /** When true, Helm MCP was wired at spawn — or will be on next restart. */
+  helmEnabled = false;
+  /** Live Helm integration (bridge + MCP config file). Null when Helm is off. */
+  helmIntegration: HelmIntegration | null = null;
   /** Active codex session-id watcher, so we can cancel on removal. */
   codexDetectCancel: (() => void) | null = null;
   readonly worktreeOf: string | null;
 
-  constructor(id: string, label: string, workingDir: string, environmentId?: string, cliTool?: CliToolId, customCliBinary?: string, worktreeOf?: string | null) {
+  constructor(id: string, label: string, workingDir: string, environmentId?: string, cliTool?: CliToolId, customCliBinary?: string, worktreeOf?: string | null, helmEnabled?: boolean) {
     this.id = id;
     this.label = label;
     this.workingDir = workingDir;
     this.environmentId = environmentId || null;
     this.cliTool = cliTool || 'claude';
     this.customCliBinary = customCliBinary;
+    this.helmEnabled = !!helmEnabled;
     this.createdAt = new Date().toISOString();
     this.worktreeOf = worktreeOf || null;
   }
@@ -106,6 +129,7 @@ export class Session {
       claudeSessionId: this.claudeSessionId || undefined,
       resumed: this.resumed || undefined,
       worktreeOf: this.worktreeOf || undefined,
+      helmEnabled: this.helmEnabled || undefined,
     };
   }
 }
@@ -214,7 +238,7 @@ class SessionManager {
     const label = opts.label || opts.workingDir.split(/[\\/]/).pop() || 'Untitled';
     const cliTool: CliToolId = opts.cliTool || 'claude';
     log.info('Creating session', { id, label, workingDir: opts.workingDir, environmentId: opts.environmentId, cliTool });
-    const session = new Session(id, label, opts.workingDir, opts.environmentId, cliTool, opts.customCliBinary, opts.worktreeOf);
+    const session = new Session(id, label, opts.workingDir, opts.environmentId, cliTool, opts.customCliBinary, opts.worktreeOf, opts.helmEnabled);
     this.sessions.set(id, session);
     this.callbacksMap.set(id, callbacks);
 
@@ -242,6 +266,8 @@ class SessionManager {
       log.info('Session exited', { id, exitCode });
       statusDetector.markExited(id, exitCode);
       session.transport = null;
+      session.helmIntegration?.cleanup();
+      session.helmIntegration = null;
       callbacks.onExit(id, exitCode);
     });
 
@@ -296,6 +322,55 @@ class SessionManager {
       resolvedCliArgs = resolvedCliArgs.filter(f => !disabled.has(f));
     }
 
+    // Wire the Helm MCP for this session if both the global Allow Helm setting
+    // AND the per-session flag are on. Only Claude Code understands --mcp-config
+    // today; silently skip for other CLIs so the session still launches.
+    const allowHelm = getDb().config?.allowHelm === 'true';
+    if (session.helmEnabled && allowHelm && cliTool === 'claude') {
+      try {
+        session.helmIntegration = await setupHelmForSession(id, {
+          spawn_session: async (params) => {
+            const childOpts: CreateSessionOptions = {
+              workingDir: typeof params.workingDir === 'string' && params.workingDir
+                ? params.workingDir
+                : opts.workingDir,
+              label: typeof params.label === 'string' ? params.label : undefined,
+              environmentId: typeof params.environmentId === 'string' ? params.environmentId : undefined,
+              cliTool: 'claude',
+              initialPrompt: typeof params.initialPrompt === 'string' ? params.initialPrompt : undefined,
+              cliArgs: [
+                ...(Array.isArray(params.cliFlags) ? params.cliFlags.filter((f): f is string => typeof f === 'string') : []),
+                ...(params.autoMode === true ? ['--dangerously-skip-permissions'] : []),
+              ],
+              env: params.envVars && typeof params.envVars === 'object'
+                ? Object.fromEntries(
+                    Object.entries(params.envVars as Record<string, unknown>)
+                      .filter(([, v]) => typeof v === 'string')
+                      .map(([k, v]) => [k, v as string]),
+                  )
+                : undefined,
+            };
+            if (!helmChildCallbacks) {
+              throw new Error('Helm child callbacks not registered');
+            }
+            const child = await this.createSession(childOpts, helmChildCallbacks);
+            // User-initiated sessions arrive at the renderer as the return value
+            // of the session.create IPC. Helm children bypass that path, so push
+            // a creation event so the sidebar/termManager learns about them.
+            helmChildCallbacks.onCreated?.(child.id, child.toInfo());
+            return { sessionId: child.id, label: child.label };
+          },
+        });
+        // Use =-form so the local transport's whitespace tokenizer can't split
+        // the path if it contains spaces (e.g. a Windows profile with a space).
+        resolvedCliArgs.push(`--mcp-config=${session.helmIntegration.mcpConfigPath}`);
+        log.info('Helm MCP wired for session', { id });
+      } catch (err) {
+        log.warn('Helm setup failed, launching without Helm', { id, error: err instanceof Error ? err.message : String(err) });
+        session.helmIntegration = null;
+      }
+    }
+
     // Resolve which CLI tool binary to launch. For 'custom', the binary
     // name comes from the session creation options.
     const binaryName = getCliBinary(cliTool, { cliBinary: opts.customCliBinary });
@@ -337,6 +412,7 @@ class SessionManager {
       claudeSessionId: cliTool === 'claude' ? toolSessionId : undefined,
       resumeClaudeSessionId: cliTool === 'claude' ? resumeId : undefined,
       cloneUrl: opts.cloneUrl,
+      initialPrompt: opts.initialPrompt,
     });
 
     // Codex doesn't accept a pre-assigned session id — it mints one and writes
@@ -372,6 +448,19 @@ class SessionManager {
     }
   }
 
+  /**
+   * Flip the Helm flag on a live session. Takes effect on next session spawn
+   * (the MCP config is only wired when the CLI binary is launched), so the
+   * caller is expected to surface a "restart session to apply" hint.
+   */
+  setHelmEnabled(id: string, enabled: boolean): void {
+    const session = this.sessions.get(id);
+    if (!session) return;
+    if (session.helmEnabled === enabled) return;
+    session.helmEnabled = enabled;
+    this.callbacksMap.get(id)?.onUpdate?.(id, session.toInfo());
+  }
+
   removeSession(id: string): void {
     const session = this.sessions.get(id);
     if (session) {
@@ -379,6 +468,8 @@ class SessionManager {
       statusDetector.unregister(id);
       session.codexDetectCancel?.();
       releaseCodexSessionClaim(session.toolSessionId);
+      session.helmIntegration?.cleanup();
+      session.helmIntegration = null;
       session.transport?.dispose();
       this.sessions.delete(id);
       this.callbacksMap.delete(id);
@@ -415,6 +506,7 @@ class SessionManager {
     statusDetector.dispose();
     for (const session of this.sessions.values()) {
       session.codexDetectCancel?.();
+      session.helmIntegration?.cleanup();
       session.transport?.dispose();
     }
     this.sessions.clear();

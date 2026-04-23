@@ -50,6 +50,12 @@ export class LocalTransport implements SessionTransport {
     // gets this for free via shell-join; we replicate it here for parity.
     const tokenizedArgs = cliArgs.flatMap(a => a.split(/\s+/).filter(Boolean));
 
+    // Append the initial prompt (if any) as a single un-tokenized positional arg
+    // so multi-word briefs reach the CLI as one argv entry rather than N.
+    if (options.initialPrompt) {
+      tokenizedArgs.push(options.initialPrompt);
+    }
+
     // Spawn the CLI binary directly on Unix instead of `sh -c "${binary} ${cliArgs.join(' ')}"`,
     // which would interpret shell metachars in cliArgs. Windows keeps the cmd.exe wrapper
     // because node-pty's Windows host expects it for proper PTY semantics.

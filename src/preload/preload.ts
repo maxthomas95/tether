@@ -31,6 +31,7 @@ const api: TetherAPI = {
     kill: (id: string): Promise<void> => ipcRenderer.invoke(IPC.SESSION_KILL, id),
     rename: (id: string, label: string): Promise<void> => ipcRenderer.invoke(IPC.SESSION_RENAME, id, label),
     remove: (id: string): Promise<void> => ipcRenderer.invoke(IPC.SESSION_REMOVE, id),
+    setHelmEnabled: (id: string, enabled: boolean): Promise<void> => ipcRenderer.invoke(IPC.SESSION_SET_HELM_ENABLED, id, enabled),
     sendInput: (id: string, data: string): void => { ipcRenderer.send(IPC.SESSION_INPUT, id, data); },
     resize: (id: string, cols: number, rows: number): void => { ipcRenderer.send(IPC.SESSION_RESIZE, id, cols, rows); },
     onData(cb: (id: string, data: string) => void): () => void {
@@ -52,6 +53,11 @@ const api: TetherAPI = {
       const h = (_e: Electron.IpcRendererEvent, id: string, info: SessionInfo) => cb(id, info);
       ipcRenderer.on(IPC.SESSION_UPDATED, h);
       return () => ipcRenderer.removeListener(IPC.SESSION_UPDATED, h);
+    },
+    onCreated(cb: (id: string, info: SessionInfo) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, id: string, info: SessionInfo) => cb(id, info);
+      ipcRenderer.on(IPC.SESSION_CREATED, h);
+      return () => ipcRenderer.removeListener(IPC.SESSION_CREATED, h);
     },
   },
 
@@ -96,9 +102,9 @@ const api: TetherAPI = {
   },
 
   workspace: {
-    save: (sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string }>, activeIndex: number): Promise<void> =>
+    save: (sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean }>, activeIndex: number): Promise<void> =>
       ipcRenderer.invoke(IPC.WORKSPACE_SAVE, sessions, activeIndex),
-    load: (): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string }>; activeIndex: number } | null> =>
+    load: (): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean }>; activeIndex: number } | null> =>
       ipcRenderer.invoke(IPC.WORKSPACE_LOAD),
   },
 
