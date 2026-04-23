@@ -102,6 +102,41 @@ export interface WorktreeAddOptions {
   branch: string;
 }
 
+export interface WorktreeRemoveOptions {
+  sourceRepo: string;
+  worktreePath: string;
+  force?: boolean;
+}
+
+export function gitWorktreeRemove(opts: WorktreeRemoveOptions): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!isGitRepo(opts.sourceRepo)) {
+      return reject(new Error(`Not a git repository: ${opts.sourceRepo}`));
+    }
+    if (!fs.existsSync(opts.worktreePath)) {
+      return resolve();
+    }
+
+    const args = ['-C', opts.sourceRepo, 'worktree', 'remove'];
+    if (opts.force) args.push('--force');
+    args.push(opts.worktreePath);
+
+    const proc = spawn('git', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stderr = '';
+    proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+    proc.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || `git worktree remove exited with code ${code}`));
+    });
+
+    proc.on('error', reject);
+  });
+}
+
 export function gitWorktreeAdd(opts: WorktreeAddOptions): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!isGitRepo(opts.sourceRepo)) {

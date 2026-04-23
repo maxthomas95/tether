@@ -51,6 +51,7 @@ export const IPC = {
   GIT_CLONE: 'git:clone',
   GIT_INIT: 'git:init',
   GIT_WORKTREE_ADD: 'git:worktree-add',
+  GIT_WORKTREE_REMOVE: 'git:worktree-remove',
   GIT_IS_REPO: 'git:is-repo',
 
   // Vault

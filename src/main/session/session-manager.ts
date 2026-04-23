@@ -79,8 +79,9 @@ export class Session {
   resumed = false;
   /** Active codex session-id watcher, so we can cancel on removal. */
   codexDetectCancel: (() => void) | null = null;
+  readonly worktreeOf: string | null;
 
-  constructor(id: string, label: string, workingDir: string, environmentId?: string, cliTool?: CliToolId, customCliBinary?: string) {
+  constructor(id: string, label: string, workingDir: string, environmentId?: string, cliTool?: CliToolId, customCliBinary?: string, worktreeOf?: string | null) {
     this.id = id;
     this.label = label;
     this.workingDir = workingDir;
@@ -88,6 +89,7 @@ export class Session {
     this.cliTool = cliTool || 'claude';
     this.customCliBinary = customCliBinary;
     this.createdAt = new Date().toISOString();
+    this.worktreeOf = worktreeOf || null;
   }
 
   toInfo(): SessionInfo {
@@ -103,6 +105,7 @@ export class Session {
       toolSessionId: this.toolSessionId || undefined,
       claudeSessionId: this.claudeSessionId || undefined,
       resumed: this.resumed || undefined,
+      worktreeOf: this.worktreeOf || undefined,
     };
   }
 }
@@ -211,7 +214,7 @@ class SessionManager {
     const label = opts.label || opts.workingDir.split(/[\\/]/).pop() || 'Untitled';
     const cliTool: CliToolId = opts.cliTool || 'claude';
     log.info('Creating session', { id, label, workingDir: opts.workingDir, environmentId: opts.environmentId, cliTool });
-    const session = new Session(id, label, opts.workingDir, opts.environmentId, cliTool, opts.customCliBinary);
+    const session = new Session(id, label, opts.workingDir, opts.environmentId, cliTool, opts.customCliBinary, opts.worktreeOf);
     this.sessions.set(id, session);
     this.callbacksMap.set(id, callbacks);
 

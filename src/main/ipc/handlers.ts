@@ -30,7 +30,7 @@ import * as envRepo from '../db/environment-repo';
 import * as sessionRepo from '../db/session-repo';
 import * as profileRepo from '../db/profile-repo';
 import * as gitProviderRepo from '../db/git-provider-repo';
-import { gitClone, gitInit, gitWorktreeAdd, isGitRepo } from '../git/git-service';
+import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo } from '../git/git-service';
 import { GiteaClient } from '../git/providers/gitea-client';
 import { AdoClient } from '../git/providers/ado-client';
 import {
@@ -757,6 +757,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.GIT_WORKTREE_ADD, async (_event, opts: { sourceRepo: string; worktreePath: string; branch: string }) => {
     log.info('Git worktree add', opts);
     return gitWorktreeAdd(opts);
+  });
+
+  ipcMain.handle(IPC.GIT_WORKTREE_REMOVE, async (_event, opts: { sourceRepo: string; worktreePath: string; force?: boolean }) => {
+    log.info('Git worktree remove', opts);
+    return gitWorktreeRemove(opts);
   });
 
   // === Vault handlers ===

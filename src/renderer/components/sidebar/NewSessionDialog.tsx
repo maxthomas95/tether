@@ -224,7 +224,7 @@ interface NewSessionDialogProps {
   environments: EnvironmentInfo[];
   profiles: LaunchProfileInfo[];
   onClose: () => void;
-  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[]) => void;
+  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string) => void;
 }
 
 export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate }: NewSessionDialogProps) {
@@ -584,6 +584,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     if (!directory.trim()) return;
 
     let effectiveDir = directory.trim();
+    let worktreeSourceRepo: string | undefined;
 
     if (createWorktree && dirIsRepo) {
       const branch = worktreeBranch.trim();
@@ -595,8 +596,10 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       setCreatingWorktree(true);
       setWorktreeError('');
       try {
+        // capture before effectiveDir is reassigned
+        worktreeSourceRepo = directory.trim();
         effectiveDir = await window.electronAPI.git.worktreeAdd({
-          sourceRepo: directory.trim(),
+          sourceRepo: worktreeSourceRepo,
           worktreePath: path,
           branch,
         });
@@ -611,7 +614,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
     const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
     const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
-    onCreate(effectiveDir, label.trim(), envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled);
+    onCreate(effectiveDir, label.trim(), envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, worktreeSourceRepo);
     resetAndClose();
   };
 
