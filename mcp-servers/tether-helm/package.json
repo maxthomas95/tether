@@ -1,6 +1,6 @@
 {
   "name": "tether-helm-mcp",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "MCP server wired into Helm-enabled Tether sessions. Bridges Claude Code tool calls (spawn_session, etc.) to Tether's main process via a per-session named pipe.",
   "main": "dist/index.js",

@@ -27,14 +27,18 @@ export interface HelmIntegration {
  * a bundled `.exe` once we ship that (not wired yet — see Helm design v0 notes).
  */
 function resolveHelmMcpCommand(): { command: string; args: string[] } {
+  // Packaged builds: forge copies `mcp-servers/tether-helm` into the app's
+  // resources directory via packagerConfig.extraResource. The subprocess runs
+  // via the user's `node` on PATH — if missing, Claude Code surfaces the
+  // spawn error and Helm simply won't appear in its MCP list.
   if (app.isPackaged) {
-    // Placeholder: we'll flip to the bundled .exe when Option (c) lands.
-    // Until then, packaged builds have no Helm support.
-    throw new Error(
-      'Helm is not yet available in packaged builds. Run Tether via `npm run start` to use Helm.',
-    );
+    const jsPath = path.join(process.resourcesPath, 'tether-helm', 'dist', 'index.js');
+    if (!fs.existsSync(jsPath)) {
+      throw new Error(`Bundled tether-helm MCP not found at ${jsPath}`);
+    }
+    return { command: 'node', args: [jsPath] };
   }
-  // __dirname during dev is `.vite/build/`. Climb to repo root.
+  // Dev: __dirname during dev is `.vite/build/`. Climb to repo root.
   const root = path.resolve(__dirname, '..', '..');
   const jsPath = path.join(root, 'mcp-servers', 'tether-helm', 'dist', 'index.js');
   if (!fs.existsSync(jsPath)) {

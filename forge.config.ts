@@ -7,6 +7,7 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import path from 'node:path';
 import fs from 'node:fs';
+import { execSync } from 'node:child_process';
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -14,7 +15,12 @@ const config: ForgeConfig = {
     asar: {
       unpack: '**/node_modules/{node-pty,ssh2}/**',
     },
-    extraResource: [],
+    // The tether-helm MCP server ships outside the asar so Claude Code can
+    // spawn it as a subprocess via `node <path>/dist/index.js`. Kept as a
+    // plain directory (not pkg'd into a single .exe) for now — assumes the
+    // user has `node` on PATH. If/when we need a fully-standalone build,
+    // switch to @yao-pkg/pkg and replace this with the compiled binary.
+    extraResource: ['mcp-servers/tether-helm'],
   },
   rebuildConfig: {
     // Skip native module rebuild during dev — prebuilt N-API binaries work.
@@ -22,6 +28,17 @@ const config: ForgeConfig = {
     onlyModules: [],
   },
   hooks: {
+    // Ensure the tether-helm MCP server is built (and its node_modules are
+    // installed) BEFORE packagerConfig.extraResource tries to copy them into
+    // the packaged app. Forge's own build pipeline doesn't know about this
+    // subpackage, so we drive it here.
+    prePackage: async () => {
+      const helmDir = path.resolve(__dirname, 'mcp-servers', 'tether-helm');
+      if (!fs.existsSync(path.join(helmDir, 'node_modules'))) {
+        execSync('npm install --no-audit --no-fund', { cwd: helmDir, stdio: 'inherit' });
+      }
+      execSync('npm run build', { cwd: helmDir, stdio: 'inherit' });
+    },
     // Copy externalized node_modules (and their full transitive dep graphs)
     // into the packaged app before ASAR creation. Vite externalizes node-pty
     // and ssh2 (see vite.main.config.ts) so they aren't bundled — without

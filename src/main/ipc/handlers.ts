@@ -31,6 +31,7 @@ import * as sessionRepo from '../db/session-repo';
 import * as profileRepo from '../db/profile-repo';
 import * as gitProviderRepo from '../db/git-provider-repo';
 import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo } from '../git/git-service';
+import { createCoderWorkspace, listCoderWorkspaces, resolveCoderBinary as resolveCoderBinaryFromService } from '../coder/workspace-service';
 import { GiteaClient } from '../git/providers/gitea-client';
 import { AdoClient } from '../git/providers/ado-client';
 import {
@@ -252,56 +253,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // === Coder handlers ===
 
-  function resolveCoderBinary(environmentId: string): string {
-    const env = envRepo.getEnvironment(environmentId);
-    if (!env || env.type !== 'coder') {
-      throw new Error('Environment not found or not a Coder environment');
-    }
-    try {
-      const cfg = JSON.parse(env.config) as Record<string, unknown>;
-      if (typeof cfg.binaryPath === 'string' && cfg.binaryPath.trim()) {
-        return cfg.binaryPath.trim();
-      }
-    } catch { /* use default */ }
-    return 'coder';
-  }
+  // Local alias so existing handlers below don't need rewriting.
+  const resolveCoderBinary = resolveCoderBinaryFromService;
 
   ipcMain.handle(IPC.CODER_LIST_WORKSPACES, async (_event, environmentId: string): Promise<CoderWorkspace[]> => {
-    const binaryPath = resolveCoderBinary(environmentId);
-
-    return new Promise<CoderWorkspace[]>((resolve, reject) => {
-      execFile(
-        binaryPath,
-        ['list', '--output', 'json'],
-        { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 },
-        (err, stdout, stderr) => {
-          if (err) {
-            log.error('coder list failed', { error: err.message, stderr: String(stderr).slice(0, 500) });
-            reject(new Error(stderr ? String(stderr).trim() : err.message));
-            return;
-          }
-          try {
-            const raw = JSON.parse(String(stdout || '[]')) as unknown;
-            if (!Array.isArray(raw)) {
-              resolve([]);
-              return;
-            }
-            const workspaces: CoderWorkspace[] = raw.map((w: Record<string, unknown>) => {
-              const latestBuild = (w.latest_build as Record<string, unknown> | undefined) || {};
-              return {
-                name: String(w.name ?? ''),
-                owner: String(w.owner_name ?? w.owner ?? ''),
-                status: String(latestBuild.status ?? w.status ?? 'unknown'),
-              };
-            }).filter(w => w.name);
-            resolve(workspaces);
-          } catch (parseErr) {
-            log.error('Failed to parse coder list output', { error: parseErr instanceof Error ? parseErr.message : String(parseErr) });
-            reject(new Error('Failed to parse coder CLI output as JSON'));
-          }
-        },
-      );
-    });
+    return listCoderWorkspaces(environmentId);
   });
 
   ipcMain.handle(IPC.CODER_LIST_TEMPLATES, async (_event, environmentId: string): Promise<CoderTemplate[]> => {
@@ -425,70 +381,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.CODER_CREATE_WORKSPACE, async (_event, opts: CreateCoderWorkspaceOptions): Promise<CoderWorkspace> => {
-    const binaryPath = resolveCoderBinary(opts.environmentId);
-    log.info('Creating Coder workspace', { template: opts.templateName, name: opts.workspaceName });
-
-    // Use node-pty (same as CoderTransport) so coder gets a real PTY. On
-    // Windows coder create requires a console handle even when all parameters
-    // are supplied — child_process.spawn/execFile can't provide one.
-    // Spawn the coder binary directly with an argv array — no shell, so
-    // metacharacters in user-supplied parameter values can't inject commands.
-    let ptyMod: typeof import('node-pty');
-    try { ptyMod = require('node-pty'); } catch (e) {
-      throw new Error('node-pty not available — cannot create Coder workspace');
-    }
-
-    const args = ['create', opts.workspaceName, '--template', opts.templateName, '--yes',
-      ...Object.entries(opts.parameters || {}).flatMap(([name, value]) => ['--parameter', `${name}=${value}`]),
-    ];
-
-    log.info('coder create via PTY', { bin: binaryPath, args });
-
-    return new Promise<CoderWorkspace>((resolve, reject) => {
-      const proc = ptyMod.spawn(binaryPath, args, {
-        name: 'xterm-256color',
-        cols: 120,
-        rows: 30,
-        cwd: process.cwd(),
-        env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string>,
-      });
-
-      let output = '';
-      const progressRe = /==>|===|Planning|Initializing|Starting|Queued|Running|Setting up|Cleaning/;
-
-      proc.onData((data: string) => {
-        output += data;
-        for (const line of data.split(/[\r\n]+/)) {
-          const clean = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
-          if (clean && progressRe.test(clean)) {
-            send(IPC.CODER_CREATE_PROGRESS, clean);
-          }
-        }
-      });
-
-      const timeout = setTimeout(() => {
-        proc.kill();
-        reject(new Error('Workspace creation timed out after 5 minutes'));
-      }, 300_000);
-
-      proc.onExit(({ exitCode }) => {
-        clearTimeout(timeout);
-        if (exitCode !== 0) {
-          // Extract the last meaningful error from the output
-          const lines = output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').split(/[\r\n]+/).filter(l => l.trim());
-          const errLine = lines.reverse().find(l => /error:|failed/i.test(l)) || lines[0] || `exit code ${exitCode}`;
-          log.error('coder create failed', { exitCode, error: errLine });
-          reject(new Error(errLine));
-          return;
-        }
-        log.info('Coder workspace created', { name: opts.workspaceName });
-        resolve({
-          name: opts.workspaceName,
-          owner: 'me',
-          status: 'starting',
-        });
-      });
-    });
+    return createCoderWorkspace(opts, (line) => send(IPC.CODER_CREATE_PROGRESS, line));
   });
 
   // === Profile handlers ===

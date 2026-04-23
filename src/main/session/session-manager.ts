@@ -15,6 +15,7 @@ import { detectNewCodexSession, releaseCodexSessionClaim } from '../codex/sessio
 import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
+import { createCoderWorkspace, listCoderWorkspaces } from '../coder/workspace-service';
 import { createLogger } from '../logger';
 
 const log = createLogger('session');
@@ -99,11 +100,13 @@ export class Session {
   helmEnabled = false;
   /** Live Helm integration (bridge + MCP config file). Null when Helm is off. */
   helmIntegration: HelmIntegration | null = null;
+  /** Parent session id when this session was dispatched via Helm's spawn_session. */
+  readonly parentSessionId: string | null;
   /** Active codex session-id watcher, so we can cancel on removal. */
   codexDetectCancel: (() => void) | null = null;
   readonly worktreeOf: string | null;
 
-  constructor(id: string, label: string, workingDir: string, environmentId?: string, cliTool?: CliToolId, customCliBinary?: string, worktreeOf?: string | null, helmEnabled?: boolean) {
+  constructor(id: string, label: string, workingDir: string, environmentId?: string, cliTool?: CliToolId, customCliBinary?: string, worktreeOf?: string | null, helmEnabled?: boolean, parentSessionId?: string | null) {
     this.id = id;
     this.label = label;
     this.workingDir = workingDir;
@@ -113,6 +116,7 @@ export class Session {
     this.helmEnabled = !!helmEnabled;
     this.createdAt = new Date().toISOString();
     this.worktreeOf = worktreeOf || null;
+    this.parentSessionId = parentSessionId || null;
   }
 
   toInfo(): SessionInfo {
@@ -130,6 +134,7 @@ export class Session {
       resumed: this.resumed || undefined,
       worktreeOf: this.worktreeOf || undefined,
       helmEnabled: this.helmEnabled || undefined,
+      parentSessionId: this.parentSessionId || undefined,
     };
   }
 }
@@ -238,7 +243,7 @@ class SessionManager {
     const label = opts.label || opts.workingDir.split(/[\\/]/).pop() || 'Untitled';
     const cliTool: CliToolId = opts.cliTool || 'claude';
     log.info('Creating session', { id, label, workingDir: opts.workingDir, environmentId: opts.environmentId, cliTool });
-    const session = new Session(id, label, opts.workingDir, opts.environmentId, cliTool, opts.customCliBinary, opts.worktreeOf, opts.helmEnabled);
+    const session = new Session(id, label, opts.workingDir, opts.environmentId, cliTool, opts.customCliBinary, opts.worktreeOf, opts.helmEnabled, opts.parentSessionId);
     this.sessions.set(id, session);
     this.callbacksMap.set(id, callbacks);
 
@@ -349,6 +354,7 @@ class SessionManager {
                       .map(([k, v]) => [k, v as string]),
                   )
                 : undefined,
+              parentSessionId: id,
             };
             if (!helmChildCallbacks) {
               throw new Error('Helm child callbacks not registered');
@@ -359,6 +365,45 @@ class SessionManager {
             // a creation event so the sidebar/termManager learns about them.
             helmChildCallbacks.onCreated?.(child.id, child.toInfo());
             return { sessionId: child.id, label: child.label };
+          },
+          create_coder_workspace: async (params) => {
+            const environmentId = typeof params.environmentId === 'string' ? params.environmentId : '';
+            const templateName = typeof params.templateName === 'string' ? params.templateName : '';
+            const workspaceName = typeof params.workspaceName === 'string' ? params.workspaceName : '';
+            if (!environmentId || !templateName || !workspaceName) {
+              throw new Error('create_coder_workspace requires environmentId, templateName, and workspaceName');
+            }
+            const parameters = params.parameters && typeof params.parameters === 'object' && !Array.isArray(params.parameters)
+              ? Object.fromEntries(
+                  Object.entries(params.parameters as Record<string, unknown>)
+                    .filter(([, v]) => typeof v === 'string')
+                    .map(([k, v]) => [k, v as string]),
+                )
+              : undefined;
+            const ws = await createCoderWorkspace({ environmentId, templateName, workspaceName, parameters });
+            return { workspaceName: ws.name, owner: ws.owner, status: ws.status };
+          },
+          list_coder_workspaces: async (params) => {
+            const environmentId = typeof params.environmentId === 'string' ? params.environmentId : '';
+            if (!environmentId) throw new Error('list_coder_workspaces requires environmentId');
+            return listCoderWorkspaces(environmentId);
+          },
+          get_session_status: async (params) => {
+            const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
+            if (!sessionId) throw new Error('get_session_status requires sessionId');
+            const s = this.getSession(sessionId);
+            if (!s) throw new Error(`Session not found: ${sessionId}`);
+            return s.toInfo();
+          },
+          kill_session: async (params) => {
+            const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
+            if (!sessionId) throw new Error('kill_session requires sessionId');
+            if (params.graceful === false) {
+              this.killSession(sessionId);
+            } else {
+              await this.stopSession(sessionId);
+            }
+            return { sessionId, terminated: true };
           },
         });
         // Use =-form so the local transport's whitespace tokenizer can't split
