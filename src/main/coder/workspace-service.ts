@@ -7,6 +7,14 @@ import type { CoderWorkspace, CoderTemplate, CoderTemplateParam, CreateCoderWork
 
 const log = createLogger('coder-workspace');
 
+// Build the ANSI strip patterns from String.fromCharCode-sourced ESC/BEL so
+// the regex literals never contain raw control characters (Sonar S6324).
+const ESC = String.fromCharCode(0x1b);
+const BEL = String.fromCharCode(0x07);
+const ANSI_OSC_RE = new RegExp(`${ESC}\\][\\s\\S]*?(?:${BEL}|${ESC}\\\\)`, 'g');
+const ANSI_CSI_RE = new RegExp(`${ESC}\\[[0-9;?]*[a-zA-Z]`, 'g');
+const ANSI_CHARSET_RE = new RegExp(`${ESC}[()][A-Za-z0-9]`, 'g');
+
 /**
  * Strip terminal escape sequences from captured PTY output so the text is
  * loggable and regex-matchable. Covers CSI (`ESC [ ... letter`), OSC
@@ -17,9 +25,9 @@ const log = createLogger('coder-workspace');
  */
 function stripAnsi(s: string): string {
   return s
-    .replaceAll(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '')
-    .replaceAll(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
-    .replaceAll(/\x1b[()][A-Za-z0-9]/g, '');
+    .replaceAll(ANSI_OSC_RE, '')
+    .replaceAll(ANSI_CSI_RE, '')
+    .replaceAll(ANSI_CHARSET_RE, '');
 }
 
 /**
@@ -141,7 +149,8 @@ function getCoderAuth(binaryPath: string): Promise<{ url: string; token: string 
       try {
         const raw = JSON.parse(String(stdout));
         const entry = Array.isArray(raw) ? raw[0] : raw;
-        url = String(entry.url || '').replace(/\/+$/, '');
+        url = String(entry.url || '');
+        while (url.endsWith('/')) url = url.slice(0, -1);
       } catch { reject(new Error('Failed to parse coder whoami output')); return; }
       if (!url) { reject(new Error('Coder URL not found in whoami output')); return; }
 
@@ -153,6 +162,42 @@ function getCoderAuth(binaryPath: string): Promise<{ url: string; token: string 
       });
     });
   });
+}
+
+function toCoderParamOption(entry: unknown): { name: string; value: string } {
+  if (!entry || typeof entry !== 'object') return { name: '', value: '' };
+  const o = entry as Record<string, unknown>;
+  return {
+    name: typeof o.name === 'string' ? o.name : '',
+    value: typeof o.value === 'string' ? o.value : '',
+  };
+}
+
+function toCoderTemplateParam(entry: unknown): CoderTemplateParam | null {
+  if (!entry || typeof entry !== 'object') return null;
+  const p = entry as Record<string, unknown>;
+  if (p.ephemeral) return null;
+  const name = typeof p.name === 'string' ? p.name : '';
+  const displayName = typeof p.display_name === 'string' && p.display_name
+    ? p.display_name
+    : name;
+  return {
+    name,
+    displayName,
+    description: typeof p.description === 'string' ? p.description : '',
+    type: typeof p.type === 'string' ? p.type : 'string',
+    defaultValue: typeof p.default_value === 'string' ? p.default_value : '',
+    required: Boolean(p.required),
+    options: Array.isArray(p.options) ? p.options.map(toCoderParamOption) : [],
+  };
+}
+
+function parseCoderTemplateParamsBody(body: string): CoderTemplateParam[] {
+  const raw = JSON.parse(body) as unknown;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(toCoderTemplateParam)
+    .filter((p): p is CoderTemplateParam => p !== null);
 }
 
 /**
@@ -176,14 +221,7 @@ export async function getCoderTemplateParams(
     const endpoint = new URL(`/api/v2/templateversions/${templateVersionId}/rich-parameters`, url);
     const mod = endpoint.protocol === 'https:' ? https : http;
 
-    const req = mod.get(endpoint.href, {
-      headers: { 'Coder-Session-Token': token },
-      timeout: 10_000,
-      // Internal Coder deployments often use certs signed by a private CA
-      // that Node doesn't trust. The coder CLI handles this via the system
-      // store; we mirror that trust here for this authenticated request.
-      rejectUnauthorized: false,
-    }, (res) => {
+    const handleResponse = (res: import('node:http').IncomingMessage) => {
       let body = '';
       res.on('data', (chunk: Buffer) => { body += chunk; });
       res.on('end', () => {
@@ -193,29 +231,22 @@ export async function getCoderTemplateParams(
           return;
         }
         try {
-          const raw = JSON.parse(body) as unknown;
-          if (!Array.isArray(raw)) { resolve([]); return; }
-          const params: CoderTemplateParam[] = raw
-            .filter((p: Record<string, unknown>) => !p.ephemeral)
-            .map((p: Record<string, unknown>) => ({
-              name: String(p.name ?? ''),
-              displayName: String(p.display_name || p.name || ''),
-              description: String(p.description ?? ''),
-              type: String(p.type ?? 'string'),
-              defaultValue: String(p.default_value ?? ''),
-              required: Boolean(p.required),
-              options: Array.isArray(p.options) ? p.options.map((o: Record<string, unknown>) => ({
-                name: String(o.name ?? ''),
-                value: String(o.value ?? ''),
-              })) : [],
-            }));
-          resolve(params);
+          resolve(parseCoderTemplateParamsBody(body));
         } catch (parseErr) {
           log.error('Failed to parse rich-parameters response', { error: parseErr instanceof Error ? parseErr.message : String(parseErr) });
           reject(new Error('Failed to parse template parameters'));
         }
       });
-    });
+    };
+
+    const req = mod.get(endpoint.href, {
+      headers: { 'Coder-Session-Token': token },
+      timeout: 10_000,
+      // Internal Coder deployments often use certs signed by a private CA
+      // that Node doesn't trust. The coder CLI handles this via the system
+      // store; we mirror that trust here for this authenticated request.
+      rejectUnauthorized: false,
+    }, handleResponse);
     req.on('error', (err: Error) => reject(new Error('Coder API request failed: ' + err.message)));
   });
 }
@@ -247,7 +278,7 @@ export async function createCoderWorkspace(
   // avoids this by always sending the full set (every parameter the template
   // defines, pre-filled with defaults); we mirror that behavior here so the
   // MCP caller only has to name the values it actually wants to override.
-  const mergedParameters: Record<string, string> = { ...(opts.parameters || {}) };
+  const mergedParameters: Record<string, string> = opts.parameters ? { ...opts.parameters } : {};
   try {
     const templates = await listCoderTemplates(opts.environmentId);
     const tmpl = templates.find(t => t.name === opts.templateName);
@@ -332,7 +363,9 @@ export async function createCoderWorkspace(
     // CLI prints one of these and then blocks on stdin forever — without
     // detection we'd hang until the 5-minute timeout fires. Match these and
     // bail out with a pointer at get_coder_template_params instead.
-    const promptRe = /Enter a value|Select one of|\? .*:\s*$/;
+    // Grouped per alternative so the trailing `$` anchor is unambiguously
+    // scoped to the `\? ... :` branch only (Sonar S5850).
+    const promptRe = /(?:Enter a value)|(?:Select one of)|(?:\? .*:\s*$)/;
     const paramNameRe = /^var\s+([a-zA-Z_][a-zA-Z0-9_-]*)/;
     const promptedParams = new Set<string>();
 
@@ -342,6 +375,26 @@ export async function createCoderWorkspace(
       reject(new Error('Workspace creation timed out after 5 minutes'));
     }, 300_000);
 
+    const buildPromptError = (clean: string): Error => {
+      const suppliedNames = Object.keys(opts.parameters || {});
+      const missing = [...promptedParams].filter(n => !suppliedNames.includes(n));
+      const missingHint = missing.length
+        ? `Detected unsupplied parameters: ${missing.join(', ')}.`
+        : `Could not identify the specific parameter from the prompt text.`;
+      log.error('coder create blocked on interactive prompt', {
+        command: cmd,
+        promptLine: clean,
+        detectedParams: [...promptedParams],
+        suppliedParams: suppliedNames,
+      });
+      return new Error(
+        `coder create is waiting on an interactive parameter prompt ("${clean}"). ` +
+        `${missingHint} Call get_coder_template_params with the template's activeVersionId ` +
+        `to list required parameters, then pass them via the "parameters" map on ` +
+        `create_coder_workspace. | cmd: ${cmd}`,
+      );
+    };
+
     proc.onData((data: string) => {
       output += data;
       const cleanedChunk = stripAnsi(data);
@@ -349,29 +402,13 @@ export async function createCoderWorkspace(
         const clean = line.trim();
         if (!clean) continue;
         if (onProgress && progressRe.test(clean)) onProgress(clean);
-        const paramMatch = clean.match(paramNameRe);
+        const paramMatch = paramNameRe.exec(clean);
         if (paramMatch) promptedParams.add(paramMatch[1]);
         if (!aborted && promptRe.test(clean)) {
           aborted = true;
           clearTimeout(timeout);
           try { proc.kill(); } catch { /* already dead */ }
-          const suppliedNames = Object.keys(opts.parameters || {});
-          const missing = [...promptedParams].filter(n => !suppliedNames.includes(n));
-          const missingHint = missing.length
-            ? `Detected unsupplied parameters: ${missing.join(', ')}.`
-            : `Could not identify the specific parameter from the prompt text.`;
-          log.error('coder create blocked on interactive prompt', {
-            command: cmd,
-            promptLine: clean,
-            detectedParams: [...promptedParams],
-            suppliedParams: suppliedNames,
-          });
-          reject(new Error(
-            `coder create is waiting on an interactive parameter prompt ("${clean}"). ` +
-            `${missingHint} Call get_coder_template_params with the template's activeVersionId ` +
-            `to list required parameters, then pass them via the "parameters" map on ` +
-            `create_coder_workspace. | cmd: ${cmd}`,
-          ));
+          reject(buildPromptError(clean));
           return;
         }
       }
@@ -391,7 +428,7 @@ export async function createCoderWorkspace(
         // escape sequences the old regex didn't strip.
         const cleaned = stripAnsi(output);
         const lines = cleaned.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
-        const errLine = lines.findLast(l => /error:|failed/i.test(l)) || lines[lines.length - 1] || '';
+        const errLine = lines.findLast(l => /error:|failed/i.test(l)) || lines.at(-1) || '';
         const tail = lines.slice(-8).join(' | ');
         const parts = [`coder create failed (exit ${exitCode})`];
         if (errLine) parts.push(`: ${errLine}`);

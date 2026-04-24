@@ -51,6 +51,53 @@ function parseCliFlagsPerTool(value: string | undefined): Partial<Record<CliTool
   }
 }
 
+/**
+ * Resolve the launch profile id for a Helm-dispatched child. An explicit
+ * `profileId` or `profileName` wins; otherwise we fall back to the user's
+ * default launch profile so API keys and env vars defined once are applied
+ * automatically. `noProfile: true` opts out of the default entirely.
+ */
+function resolveHelmChildProfileId(params: Record<string, unknown>): string | undefined {
+  if (typeof params.profileId === 'string' && params.profileId) {
+    return params.profileId;
+  }
+  if (typeof params.profileName === 'string' && params.profileName) {
+    const match = listProfiles().find(p => p.name === params.profileName);
+    if (!match) {
+      throw new Error(
+        `Launch profile not found: ${params.profileName}. Call list_profiles to discover available profiles.`,
+      );
+    }
+    return match.id;
+  }
+  if (params.noProfile === true) return undefined;
+  return listProfiles().find(p => p.is_default)?.id;
+}
+
+/**
+ * Project the Helm child's `envVars` param into the string/string record
+ * CreateSessionOptions expects, silently dropping non-string values.
+ */
+function projectHelmChildEnvVars(params: Record<string, unknown>): Record<string, string> | undefined {
+  if (!params.envVars || typeof params.envVars !== 'object') return undefined;
+  return Object.fromEntries(
+    Object.entries(params.envVars as Record<string, unknown>)
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  );
+}
+
+/**
+ * Build the CLI args list for a Helm child: caller-supplied flags plus the
+ * `--dangerously-skip-permissions` shorthand when `autoMode` is set.
+ */
+function buildHelmChildCliArgs(params: Record<string, unknown>): string[] {
+  const flags = Array.isArray(params.cliFlags)
+    ? params.cliFlags.filter((f): f is string => typeof f === 'string')
+    : [];
+  if (params.autoMode === true) flags.push('--dangerously-skip-permissions');
+  return flags;
+}
+
 export interface SessionCallbacks {
   onData(sessionId: string, data: string): void;
   onStateChange(sessionId: string, state: SessionState): void;
@@ -349,20 +396,8 @@ class SessionManager {
       try {
         session.helmIntegration = await setupHelmForSession(id, {
           spawn_session: async (params) => {
-            // Profile resolution mirrors the New Session dialog: an explicit
-            // id/name wins, otherwise fall back to the user's default profile
-            // (so API keys and env vars defined once are automatically applied
-            // to spawned children). `noProfile: true` opts out of the default.
-            let profileId: string | undefined;
-            if (typeof params.profileId === 'string' && params.profileId) {
-              profileId = params.profileId;
-            } else if (typeof params.profileName === 'string' && params.profileName) {
-              const match = listProfiles().find(p => p.name === params.profileName);
-              if (!match) throw new Error(`Launch profile not found: ${params.profileName}. Call list_profiles to discover available profiles.`);
-              profileId = match.id;
-            } else if (params.noProfile !== true) {
-              const defaultProfile = listProfiles().find(p => p.is_default);
-              if (defaultProfile) profileId = defaultProfile.id;
+            if (!helmChildCallbacks) {
+              throw new Error('Helm child callbacks not registered');
             }
             const childOpts: CreateSessionOptions = {
               workingDir: typeof params.workingDir === 'string' && params.workingDir
@@ -372,23 +407,11 @@ class SessionManager {
               environmentId: typeof params.environmentId === 'string' ? params.environmentId : undefined,
               cliTool: 'claude',
               initialPrompt: typeof params.initialPrompt === 'string' ? params.initialPrompt : undefined,
-              profileId,
-              cliArgs: [
-                ...(Array.isArray(params.cliFlags) ? params.cliFlags.filter((f): f is string => typeof f === 'string') : []),
-                ...(params.autoMode === true ? ['--dangerously-skip-permissions'] : []),
-              ],
-              env: params.envVars && typeof params.envVars === 'object'
-                ? Object.fromEntries(
-                    Object.entries(params.envVars as Record<string, unknown>)
-                      .filter(([, v]) => typeof v === 'string')
-                      .map(([k, v]) => [k, v as string]),
-                  )
-                : undefined,
+              profileId: resolveHelmChildProfileId(params),
+              cliArgs: buildHelmChildCliArgs(params),
+              env: projectHelmChildEnvVars(params),
               parentSessionId: id,
             };
-            if (!helmChildCallbacks) {
-              throw new Error('Helm child callbacks not registered');
-            }
             const child = await this.createSession(childOpts, helmChildCallbacks);
             // User-initiated sessions arrive at the renderer as the return value
             // of the session.create IPC. Helm children bypass that path, so push
