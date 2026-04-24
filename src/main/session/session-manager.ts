@@ -6,8 +6,8 @@ import { CoderTransport } from '../transport/coder-transport';
 import type { SessionTransport } from '../transport/types';
 import type { SSHConfig } from '../transport/ssh-transport';
 import { statusDetector } from '../status/status-detector';
-import { getEnvironment } from '../db/environment-repo';
-import { getProfile } from '../db/profile-repo';
+import { getEnvironment, listEnvironments } from '../db/environment-repo';
+import { getProfile, listProfiles } from '../db/profile-repo';
 import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
 import { transcriptExists } from '../claude/transcripts';
 import { codexTranscriptExists } from '../codex/transcripts';
@@ -15,7 +15,7 @@ import { detectNewCodexSession, releaseCodexSessionClaim } from '../codex/sessio
 import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
-import { createCoderWorkspace, listCoderWorkspaces } from '../coder/workspace-service';
+import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { createLogger } from '../logger';
 
 const log = createLogger('session');
@@ -49,6 +49,53 @@ function parseCliFlagsPerTool(value: string | undefined): Partial<Record<CliTool
   } catch {
     return {};
   }
+}
+
+/**
+ * Resolve the launch profile id for a Helm-dispatched child. An explicit
+ * `profileId` or `profileName` wins; otherwise we fall back to the user's
+ * default launch profile so API keys and env vars defined once are applied
+ * automatically. `noProfile: true` opts out of the default entirely.
+ */
+function resolveHelmChildProfileId(params: Record<string, unknown>): string | undefined {
+  if (typeof params.profileId === 'string' && params.profileId) {
+    return params.profileId;
+  }
+  if (typeof params.profileName === 'string' && params.profileName) {
+    const match = listProfiles().find(p => p.name === params.profileName);
+    if (!match) {
+      throw new Error(
+        `Launch profile not found: ${params.profileName}. Call list_profiles to discover available profiles.`,
+      );
+    }
+    return match.id;
+  }
+  if (params.noProfile === true) return undefined;
+  return listProfiles().find(p => p.is_default)?.id;
+}
+
+/**
+ * Project the Helm child's `envVars` param into the string/string record
+ * CreateSessionOptions expects, silently dropping non-string values.
+ */
+function projectHelmChildEnvVars(params: Record<string, unknown>): Record<string, string> | undefined {
+  if (!params.envVars || typeof params.envVars !== 'object') return undefined;
+  return Object.fromEntries(
+    Object.entries(params.envVars as Record<string, unknown>)
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  );
+}
+
+/**
+ * Build the CLI args list for a Helm child: caller-supplied flags plus the
+ * `--dangerously-skip-permissions` shorthand when `autoMode` is set.
+ */
+function buildHelmChildCliArgs(params: Record<string, unknown>): string[] {
+  const flags = Array.isArray(params.cliFlags)
+    ? params.cliFlags.filter((f): f is string => typeof f === 'string')
+    : [];
+  if (params.autoMode === true) flags.push('--dangerously-skip-permissions');
+  return flags;
 }
 
 export interface SessionCallbacks {
@@ -349,6 +396,9 @@ class SessionManager {
       try {
         session.helmIntegration = await setupHelmForSession(id, {
           spawn_session: async (params) => {
+            if (!helmChildCallbacks) {
+              throw new Error('Helm child callbacks not registered');
+            }
             const childOpts: CreateSessionOptions = {
               workingDir: typeof params.workingDir === 'string' && params.workingDir
                 ? params.workingDir
@@ -357,22 +407,11 @@ class SessionManager {
               environmentId: typeof params.environmentId === 'string' ? params.environmentId : undefined,
               cliTool: 'claude',
               initialPrompt: typeof params.initialPrompt === 'string' ? params.initialPrompt : undefined,
-              cliArgs: [
-                ...(Array.isArray(params.cliFlags) ? params.cliFlags.filter((f): f is string => typeof f === 'string') : []),
-                ...(params.autoMode === true ? ['--dangerously-skip-permissions'] : []),
-              ],
-              env: params.envVars && typeof params.envVars === 'object'
-                ? Object.fromEntries(
-                    Object.entries(params.envVars as Record<string, unknown>)
-                      .filter(([, v]) => typeof v === 'string')
-                      .map(([k, v]) => [k, v as string]),
-                  )
-                : undefined,
+              profileId: resolveHelmChildProfileId(params),
+              cliArgs: buildHelmChildCliArgs(params),
+              env: projectHelmChildEnvVars(params),
               parentSessionId: id,
             };
-            if (!helmChildCallbacks) {
-              throw new Error('Helm child callbacks not registered');
-            }
             const child = await this.createSession(childOpts, helmChildCallbacks);
             // User-initiated sessions arrive at the renderer as the return value
             // of the session.create IPC. Helm children bypass that path, so push
@@ -401,6 +440,36 @@ class SessionManager {
             const environmentId = typeof params.environmentId === 'string' ? params.environmentId : '';
             if (!environmentId) throw new Error('list_coder_workspaces requires environmentId');
             return listCoderWorkspaces(environmentId);
+          },
+          list_coder_templates: async (params) => {
+            const environmentId = typeof params.environmentId === 'string' ? params.environmentId : '';
+            if (!environmentId) throw new Error('list_coder_templates requires environmentId');
+            return listCoderTemplates(environmentId);
+          },
+          get_coder_template_params: async (params) => {
+            const environmentId = typeof params.environmentId === 'string' ? params.environmentId : '';
+            const templateVersionId = typeof params.templateVersionId === 'string' ? params.templateVersionId : '';
+            if (!environmentId || !templateVersionId) {
+              throw new Error('get_coder_template_params requires environmentId and templateVersionId');
+            }
+            return getCoderTemplateParams(environmentId, templateVersionId);
+          },
+          list_environments: async () => {
+            // Project to a minimal, safe shape — deliberately omit config,
+            // env_vars, and auth_mode so the bridge doesn't leak binary paths
+            // or env-var values (which may include secrets) to the MCP child.
+            return listEnvironments().map(e => ({ id: e.id, name: e.name, type: e.type }));
+          },
+          list_profiles: async () => {
+            // Return id, name, isDefault, and the KEYS of env vars the profile
+            // would apply — never the values, which may be API keys or vault
+            // references. Keys are enough for a leader to reason about whether
+            // a profile is the right one without ever seeing secrets.
+            return listProfiles().map(p => {
+              let envVarKeys: string[] = [];
+              try { envVarKeys = Object.keys(JSON.parse(p.env_vars) as Record<string, string>); } catch { /* leave empty */ }
+              return { id: p.id, name: p.name, isDefault: p.is_default, envVarKeys };
+            });
           },
           get_session_status: async (params) => {
             const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';

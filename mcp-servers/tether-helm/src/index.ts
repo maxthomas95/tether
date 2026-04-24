@@ -27,8 +27,14 @@ const SPAWN_SESSION_TOOL = {
     'session appears in Tether\'s sidebar under the target environment and can be',
     'taken over at any time. Typical use: a dispatcher skill reads a work item',
     '(e.g. an ADO PBI or GitHub issue), composes a structured brief, and spawns',
-    'a child to do the work. For Coder environments, ensure the target workspace',
-    'exists first — use list_coder_workspaces and create_coder_workspace if needed.',
+    'a child to do the work. If environmentId is not known, call list_environments',
+    'first. For Coder environments, ensure the target workspace exists first —',
+    'use list_coder_workspaces and create_coder_workspace if needed.',
+    'Launch profiles: if neither profileId nor profileName is set and the user has a',
+    'default launch profile configured, it is applied automatically (same behavior',
+    'as the GUI) — this is how API keys and model env vars travel into the child.',
+    'Call list_profiles to see what\'s available or to find a non-default to pick;',
+    'pass noProfile=true to opt out entirely.',
   ].join(' '),
   inputSchema: {
     type: 'object',
@@ -40,7 +46,7 @@ const SPAWN_SESSION_TOOL = {
       },
       workingDir: {
         type: 'string',
-        description: 'Optional working directory inside the environment. If omitted, Tether uses the parent session\'s working dir.',
+        description: 'Where the session lands. Semantics depend on environment type: (a) Local/SSH — a filesystem path (absolute, or `~/...`). (b) Coder — the WORKSPACE NAME (e.g. "pbi-93960"), NOT a filesystem path. Optionally append `::<subdir>` to cd into a path inside the Coder workspace after connecting (e.g. "pbi-93960::repo"). If omitted, Tether uses the parent session\'s workingDir — for Coder parents this is the workspace name, which is usually what you want when spawning siblings into the same workspace.',
       },
       label: {
         type: 'string',
@@ -62,7 +68,19 @@ const SPAWN_SESSION_TOOL = {
       envVars: {
         type: 'object',
         additionalProperties: { type: 'string' },
-        description: 'Environment variables to set on the child process.',
+        description: 'Environment variables to set on the child process. Merged ON TOP of any profile-provided env vars, so these are one-off overrides — prefer a launch profile for anything the user sets repeatedly.',
+      },
+      profileId: {
+        type: 'string',
+        description: 'Optional launch profile id (from list_profiles). Applies the profile\'s env vars (including API keys) and CLI flags to the child. Takes precedence over profileName.',
+      },
+      profileName: {
+        type: 'string',
+        description: 'Optional launch profile name. Resolved to an id via list_profiles. Fails if the name does not match any profile.',
+      },
+      noProfile: {
+        type: 'boolean',
+        description: 'Set true to skip the user\'s default launch profile. Default false — when neither profileId nor profileName is given, the default profile is applied automatically.',
       },
     },
   },
@@ -71,11 +89,15 @@ const SPAWN_SESSION_TOOL = {
 const CREATE_CODER_WORKSPACE_TOOL = {
   name: 'create_coder_workspace',
   description: [
-    'Create a fresh Coder workspace from a template. Call list_coder_workspaces first',
-    'if you want dedupe — if a workspace with the same name already exists, this tool',
-    'errors. Typical flow for a PBI: list → check for existing "pbi-1234" workspace →',
-    'create only if missing → spawn_session into it. Blocks until the workspace',
-    'finishes provisioning (up to 5 min).',
+    'Create a fresh Coder workspace from a template. Any rich parameters you do not',
+    'supply are auto-filled with the template\'s defaults (mirroring the Tether GUI)',
+    'so a minimal call just needs environmentId, templateName, and workspaceName.',
+    'Use get_coder_template_params if you need to override specific values — pass',
+    'them in `parameters` and the rest will still be defaulted for you. If a',
+    'template has a required parameter with no default, supply it explicitly or',
+    '`coder create` will fail when the workspace plan validates. Typical flow for a',
+    'PBI: list_coder_workspaces (dedupe) → create_coder_workspace → spawn_session',
+    'into it.',
   ].join(' '),
   inputSchema: {
     type: 'object',
@@ -83,11 +105,11 @@ const CREATE_CODER_WORKSPACE_TOOL = {
     properties: {
       environmentId: {
         type: 'string',
-        description: 'Tether environment id for the Coder deployment.',
+        description: 'Tether environment id for the Coder deployment. Must be a UUID — use list_environments to discover.',
       },
       templateName: {
         type: 'string',
-        description: 'Coder template name to use (e.g. "backend-dev", "frontend-dev"). Skill picks based on PBI metadata.',
+        description: 'Coder template name (the `name` field from list_coder_templates, not `displayName`). Skill picks based on PBI metadata.',
       },
       workspaceName: {
         type: 'string',
@@ -96,7 +118,7 @@ const CREATE_CODER_WORKSPACE_TOOL = {
       parameters: {
         type: 'object',
         additionalProperties: { type: 'string' },
-        description: 'Template-specific parameters (rich parameters the template defines). Values are passed as --parameter k=v to coder CLI.',
+        description: 'Overrides for the template\'s rich parameters. Only list the ones you want to set differently from the template default — unspecified parameters are auto-filled with the template defaults before launching `coder create`. Use get_coder_template_params first if you need to see what\'s available.',
       },
     },
   },
@@ -107,14 +129,86 @@ const LIST_CODER_WORKSPACES_TOOL = {
   description: [
     'List all Coder workspaces in a Coder environment. Use before create_coder_workspace',
     'to avoid duplicate-workspace errors when the skill re-runs for a PBI that already',
-    'has an active workspace. Returns name, owner, and current status.',
+    'has an active workspace. Returns name, owner, and current status. If environmentId',
+    'is not known, call list_environments first — the argument must be a UUID, not a',
+    'display name.',
   ].join(' '),
   inputSchema: {
     type: 'object',
     required: ['environmentId'],
     properties: {
-      environmentId: { type: 'string', description: 'Tether environment id for the Coder deployment.' },
+      environmentId: { type: 'string', description: 'Tether environment id for the Coder deployment. Must be a UUID — use list_environments to discover.' },
     },
+  },
+} as const;
+
+const LIST_CODER_TEMPLATES_TOOL = {
+  name: 'list_coder_templates',
+  description: [
+    'List the Coder templates available in a Coder environment. Call this before',
+    'create_coder_workspace when the template slug is not known — the returned `name`',
+    'field is what create_coder_workspace expects as templateName (not `displayName`,',
+    'which is only for humans). The `activeVersionId` field feeds',
+    'get_coder_template_params so you can discover required rich parameters before',
+    'creating. If environmentId is not known, call list_environments first.',
+  ].join(' '),
+  inputSchema: {
+    type: 'object',
+    required: ['environmentId'],
+    properties: {
+      environmentId: { type: 'string', description: 'Tether environment id for the Coder deployment. Must be a UUID — use list_environments to discover.' },
+    },
+  },
+} as const;
+
+const GET_CODER_TEMPLATE_PARAMS_TOOL = {
+  name: 'get_coder_template_params',
+  description: [
+    'List the rich parameters a Coder template version exposes. create_coder_workspace',
+    'auto-fills defaults for every parameter, so you only need this tool when you want',
+    'to override specific values or confirm what a required-with-no-default parameter',
+    'expects. Returns name, displayName, description, type, defaultValue, required, and',
+    '`options` (for enum-style parameters; use one of the `value` fields when overriding).',
+  ].join(' '),
+  inputSchema: {
+    type: 'object',
+    required: ['environmentId', 'templateVersionId'],
+    properties: {
+      environmentId: { type: 'string', description: 'Tether environment id for the Coder deployment. Must be a UUID — use list_environments to discover.' },
+      templateVersionId: { type: 'string', description: 'The template\'s `activeVersionId` as returned by list_coder_templates.' },
+    },
+  },
+} as const;
+
+const LIST_ENVIRONMENTS_TOOL = {
+  name: 'list_environments',
+  description: [
+    'List all environments configured in Tether. Use this first when the caller does',
+    'not know the environmentId for spawn_session or any of the Coder tools. Returns',
+    'id, name, and type ("local" | "ssh" | "coder") for each — no auth, no secrets.',
+    'The `id` field is the UUID required by every other tool here.',
+  ].join(' '),
+  inputSchema: {
+    type: 'object',
+    properties: {},
+  },
+} as const;
+
+const LIST_PROFILES_TOOL = {
+  name: 'list_profiles',
+  description: [
+    'List the user\'s launch profiles. A launch profile is a reusable bundle of env',
+    'vars (including API keys, often as `vault://` references) and CLI flags that',
+    'gets applied to a session at launch. If a profile is marked isDefault=true it is',
+    'applied automatically by spawn_session unless the caller passes noProfile=true.',
+    'Returns id, name, isDefault, and `envVarKeys` — the KEYS of env vars that would',
+    'be applied (values are never exposed over the bridge). Use this when you need to',
+    'pick a non-default profile (profileId/profileName on spawn_session) or confirm',
+    'that the default will supply expected credentials.',
+  ].join(' '),
+  inputSchema: {
+    type: 'object',
+    properties: {},
   },
 } as const;
 
@@ -155,6 +249,10 @@ const TOOLS = [
   SPAWN_SESSION_TOOL,
   CREATE_CODER_WORKSPACE_TOOL,
   LIST_CODER_WORKSPACES_TOOL,
+  LIST_CODER_TEMPLATES_TOOL,
+  GET_CODER_TEMPLATE_PARAMS_TOOL,
+  LIST_ENVIRONMENTS_TOOL,
+  LIST_PROFILES_TOOL,
   GET_SESSION_STATUS_TOOL,
   KILL_SESSION_TOOL,
 ];
