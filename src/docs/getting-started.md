@@ -11,7 +11,7 @@ When you first open Tether, you'll see the sidebar on the left and an empty term
 1. Click **+ New session** in the sidebar, or press **Ctrl+N**
 2. Select an environment (Local is the default)
 3. Choose a working directory -- this is where the selected CLI will start
-4. Pick Claude Code, Codex CLI, OpenCode, or a custom binary
+4. Pick Claude Code, Codex CLI, GitHub Copilot, OpenCode, or a custom binary
 5. Optionally set a label, environment variables, or CLI flags
 6. Click **Create**
 

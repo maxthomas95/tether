@@ -7,7 +7,7 @@ A session in Tether is a running instance of a CLI tool in a specific directory 
 Click **+ New session** or press **Ctrl+N** to open the session creation dialog. You can configure:
 
 - **Environment** -- which machine to run on (Local, SSH, or Coder)
-- **CLI tool** -- Claude Code, Codex CLI, OpenCode, or a custom binary
+- **CLI tool** -- Claude Code, Codex CLI, GitHub Copilot, OpenCode, or a custom binary
 - **Working directory** -- where the selected CLI starts. Browse with the folder picker or type a path
 - **Label** -- optional display name (defaults to the directory name)
 - **Environment variables** -- key-value pairs passed to the CLI process

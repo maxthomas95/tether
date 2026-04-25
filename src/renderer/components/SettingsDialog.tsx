@@ -11,7 +11,7 @@ import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchP
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 
 /** CLI tools that have definable flags (exclude 'custom' which has no known flags). */
-const FLAG_TOOLS = (['claude', 'codex', 'opencode'] as const) satisfies readonly CliToolId[];
+const FLAG_TOOLS = (['claude', 'codex', 'copilot', 'opencode'] as const) satisfies readonly CliToolId[];
 
 function compactFlagsPerTool(flags: Partial<Record<CliToolId, string[]>>): Partial<Record<CliToolId, string[]>> {
   const result: Partial<Record<CliToolId, string[]>> = {};

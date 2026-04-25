@@ -22,7 +22,7 @@ Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provid
 - **State:** JSON file persistence (`{userData}/data.json`) — SQLite planned but deferred due to native module ABI issues
 - **IPC:** Electron IPC (commands + event channels for PTY data streaming)
 - **Themes:** Catppuccin (Mocha, Macchiato, Frappe, Latte) + Default Dark
-- **CLI tools registry:** Claude Code, Codex CLI, OpenCode, Custom — selected per session via `src/shared/cli-tools.ts`
+- **CLI tools registry:** Claude Code, Codex CLI, GitHub Copilot, OpenCode, Custom — selected per session via `src/shared/cli-tools.ts`
 
 ## Architecture
 
@@ -72,6 +72,7 @@ Each environment has preconfigured settings (host, auth, default directory, env 
 Tether is a dumb-pipe PTY multiplexer; it does not depend on any one CLI. Tools are registered in `src/shared/cli-tools.ts`:
 - **Claude Code** — full support including session resume (`--resume`, `--session-id`) and transcript browsing
 - **Codex CLI** — full support including session resume (`codex resume <id>`) and transcript browsing
+- **GitHub Copilot** — flag-based resume (`--resume <id>`, `--continue`); no Tether-side transcript picker (Copilot's own picker handles selection)
 - **OpenCode** — raw PTY only, no resume integration
 - **Custom** — any binary the user specifies
 
