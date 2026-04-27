@@ -18,6 +18,7 @@ const PROMPT_HINTS: Record<CliToolId, string[]> = {
     '> ',
     '\u203a ',
   ],
+  copilot: ['> ', '❯ '],
   opencode: ['> '],
   custom: ['> '],
 };
