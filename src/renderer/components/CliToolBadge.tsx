@@ -4,6 +4,7 @@ import type { SessionInfo } from '../../shared/types';
 const BADGE_LABELS: Record<CliToolId, string> = {
   claude: 'Claude',
   codex: 'Codex',
+  copilot: 'Copilot',
   opencode: 'OpenCode',
   custom: 'Custom',
 };

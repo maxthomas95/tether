@@ -136,7 +136,7 @@ export interface SessionRow {
 
 let data: DbData | null = null;
 let dbPath: string | null = null;
-const CLI_TOOL_IDS: CliToolId[] = ['claude', 'codex', 'opencode', 'custom'];
+const CLI_TOOL_IDS: CliToolId[] = ['claude', 'codex', 'copilot', 'opencode', 'custom'];
 
 function getDbPath(): string {
   if (!dbPath) {

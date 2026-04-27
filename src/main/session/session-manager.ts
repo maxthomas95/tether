@@ -19,7 +19,7 @@ import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoder
 import { createLogger } from '../logger';
 
 const log = createLogger('session');
-const CLI_TOOL_IDS: CliToolId[] = ['claude', 'codex', 'opencode', 'custom'];
+const CLI_TOOL_IDS: CliToolId[] = ['claude', 'codex', 'copilot', 'opencode', 'custom'];
 
 function parseStringArray(value: string | undefined): string[] {
   if (!value) return [];
