@@ -24,6 +24,139 @@ export interface SSHConfig {
   useSudo?: boolean;
 }
 
+const SETUP_TIMEOUT_MS = 15_000;
+const PROMPT_RE = /[$#>❯%]\s*$/;
+const PASSWORD_RE = /[Pp]assword.*:\s*$/;
+const FAILURE_RE = /Sorry|incorrect password|Authentication failure|not in the sudoers/i;
+const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+const lastNonEmptyLine = (text: string): string =>
+  text.split('\n').filter(l => l.trim()).pop()?.trim() || '';
+
+type SetupState = 'waitShell' | 'waitPassword' | 'waitElevated' | 'waitEchoOff';
+
+interface SshSessionSetupOptions {
+  stream: NodeJS.ReadWriteStream;
+  cmd: string;
+  useSudo: boolean;
+  password?: string;
+  host: string;
+  resolve: () => void;
+  reject: (err: Error) => void;
+}
+
+/**
+ * Drives the post-connect handshake on an SSH PTY: optional `sudo -i`
+ * elevation, then `stty -echo` so the kernel line discipline doesn't echo
+ * our bootstrap line (which carries env values and the binary command),
+ * then writes the launch command.
+ */
+class SshSessionSetup {
+  private state: SetupState = 'waitShell';
+  private buffer = '';
+  private passwordSent = false;
+  private settled = false;
+  private readonly timer: NodeJS.Timeout;
+
+  constructor(private readonly opts: SshSessionSetupOptions) {
+    this.timer = setTimeout(() => this.onTimeout(), SETUP_TIMEOUT_MS);
+  }
+
+  handleData(data: Buffer): void {
+    if (this.settled) return;
+    this.buffer += stripAnsi(data.toString('utf-8'));
+    const last = lastNonEmptyLine(this.buffer);
+
+    switch (this.state) {
+      case 'waitShell': this.onShellPrompt(last); break;
+      case 'waitPassword': this.onPasswordPhase(last); break;
+      case 'waitElevated': this.onElevatedPhase(last); break;
+      case 'waitEchoOff': this.onEchoOffPhase(last); break;
+    }
+  }
+
+  private onShellPrompt(last: string): void {
+    if (!PROMPT_RE.test(last)) return;
+    if (this.opts.useSudo) {
+      log.info('Shell prompt detected, sending sudo -i');
+      this.state = 'waitPassword';
+      this.buffer = '';
+      this.opts.stream.write('sudo -i\n');
+    } else {
+      log.info('Shell prompt detected, disabling echo before launch');
+      this.startEchoOff();
+    }
+  }
+
+  private onPasswordPhase(last: string): void {
+    if (FAILURE_RE.test(this.buffer)) {
+      this.fail('Sudo authentication failed');
+      return;
+    }
+    if (PASSWORD_RE.test(last)) {
+      log.info('Password prompt detected, sending password');
+      this.passwordSent = true;
+      this.state = 'waitElevated';
+      this.buffer = '';
+      this.opts.stream.write((this.opts.password || '') + '\n');
+    } else if (PROMPT_RE.test(last) && this.buffer.length > 5) {
+      // NOPASSWD: root shell appeared without password prompt
+      log.info('NOPASSWD sudo detected, disabling echo before launch');
+      this.startEchoOff();
+    }
+  }
+
+  private onElevatedPhase(last: string): void {
+    if (FAILURE_RE.test(this.buffer)) {
+      this.fail('Sudo authentication failed');
+      return;
+    }
+    if (PASSWORD_RE.test(last) && this.passwordSent) {
+      // Second password prompt means first password was wrong
+      this.fail('Sudo authentication failed — incorrect password');
+      return;
+    }
+    if (PROMPT_RE.test(last)) {
+      log.info('Root shell prompt detected, disabling echo before launch');
+      this.startEchoOff();
+    }
+  }
+
+  private onEchoOffPhase(last: string): void {
+    if (!PROMPT_RE.test(last)) return;
+    log.info('Echo disabled, sending launch command');
+    this.complete();
+  }
+
+  private startEchoOff(): void {
+    this.state = 'waitEchoOff';
+    this.buffer = '';
+    this.opts.stream.write('stty -echo\n');
+  }
+
+  private complete(): void {
+    this.settled = true;
+    clearTimeout(this.timer);
+    this.opts.stream.write(this.opts.cmd);
+    this.opts.resolve();
+  }
+
+  private fail(message: string): void {
+    this.settled = true;
+    clearTimeout(this.timer);
+    this.opts.reject(new Error(message));
+  }
+
+  private onTimeout(): void {
+    if (this.settled) return;
+    this.settled = true;
+    log.error('Session setup timed out', { host: this.opts.host, state: this.state });
+    const message = this.state === 'waitPassword' || this.state === 'waitElevated'
+      ? 'Sudo elevation timed out after 15s'
+      : 'Session setup timed out after 15s — shell prompt not detected';
+    this.opts.reject(new Error(message));
+  }
+}
+
 export class SSHTransport implements SessionTransport {
   private client: InstanceType<typeof import('ssh2').Client> | null = null;
   private stream: NodeJS.ReadWriteStream | null = null;
@@ -151,95 +284,16 @@ export class SSHTransport implements SessionTransport {
               }
             });
 
-            // Send the command to start the CLI tool — either immediately
-            // or after sudo elevation if useSudo is enabled.
-            if (this.sshConfig.useSudo) {
-              const SUDO_TIMEOUT = 15_000;
-              const PROMPT_RE = /[$#>❯]\s*$/;
-              const PASSWORD_RE = /[Pp]assword.*:\s*$/;
-              const FAILURE_RE = /Sorry|incorrect password|Authentication failure|not in the sudoers/i;
-              const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-
-              let state: 'waitShell' | 'waitPassword' | 'waitElevated' = 'waitShell';
-              let buffer = '';
-              let passwordSent = false;
-              let settled = false;
-
-              const timer = setTimeout(() => {
-                if (!settled) {
-                  settled = true;
-                  log.error('Sudo elevation timed out', { host: this.sshConfig.host });
-                  reject(new Error('Sudo elevation timed out after 15s'));
-                }
-              }, SUDO_TIMEOUT);
-
-              const lastNonEmptyLine = (text: string): string =>
-                text.split('\n').filter(l => l.trim()).pop()?.trim() || '';
-
-              const onElevationData = (data: Buffer) => {
-                if (settled) return;
-                const stripped = stripAnsi(data.toString('utf-8'));
-                buffer += stripped;
-                const last = lastNonEmptyLine(buffer);
-
-                if (state === 'waitShell') {
-                  if (PROMPT_RE.test(last)) {
-                    log.info('Shell prompt detected, sending sudo -i');
-                    state = 'waitPassword';
-                    buffer = '';
-                    stream.write('sudo -i\n');
-                  }
-                } else if (state === 'waitPassword') {
-                  if (FAILURE_RE.test(buffer)) {
-                    settled = true;
-                    clearTimeout(timer);
-                    reject(new Error('Sudo authentication failed'));
-                    return;
-                  }
-                  if (PASSWORD_RE.test(last)) {
-                    log.info('Password prompt detected, sending password');
-                    passwordSent = true;
-                    state = 'waitElevated';
-                    buffer = '';
-                    stream.write((this.sshConfig.password || '') + '\n');
-                  } else if (PROMPT_RE.test(last) && buffer.length > 5) {
-                    // NOPASSWD: root shell appeared without password prompt
-                    log.info('NOPASSWD sudo detected, elevated without password');
-                    settled = true;
-                    clearTimeout(timer);
-                    stream.write(cmd);
-                    resolve();
-                  }
-                } else if (state === 'waitElevated') {
-                  if (FAILURE_RE.test(buffer)) {
-                    settled = true;
-                    clearTimeout(timer);
-                    reject(new Error('Sudo authentication failed'));
-                    return;
-                  }
-                  if (PASSWORD_RE.test(last) && passwordSent) {
-                    // Second password prompt means first password was wrong
-                    settled = true;
-                    clearTimeout(timer);
-                    reject(new Error('Sudo authentication failed — incorrect password'));
-                    return;
-                  }
-                  if (PROMPT_RE.test(last)) {
-                    log.info('Root shell prompt detected, sending launch command');
-                    settled = true;
-                    clearTimeout(timer);
-                    stream.write(cmd);
-                    resolve();
-                  }
-                }
-              };
-
-              stream.on('data', onElevationData);
-            } else {
-              // No sudo — send command immediately
-              stream.write(cmd);
-              resolve();
-            }
+            const setup = new SshSessionSetup({
+              stream,
+              cmd,
+              useSudo: this.sshConfig.useSudo === true,
+              password: this.sshConfig.password,
+              host: this.sshConfig.host,
+              resolve,
+              reject,
+            });
+            stream.on('data', (data: Buffer) => setup.handleData(data));
           },
         );
       });
