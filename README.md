@@ -5,8 +5,8 @@
 <h1 align="center">Tether</h1>
 
 <p align="center">
-  A desktop session multiplexer for <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> and Codex CLI.<br/>
-  Manage multiple sessions across local, SSH, and container environments — with the full native terminal experience.
+  A desktop session multiplexer for <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a>, Codex CLI, and other agent CLIs.<br/>
+  Manage multiple sessions across local, SSH, and Coder workspace environments — with the full native terminal experience.
 </p>
 
 <p align="center">
@@ -48,17 +48,24 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 ## Features
 
 - **Multiple concurrent sessions** with instant switching
-- **Split panes** (experimental) — view multiple sessions side-by-side with flexible layouts
-- **Local and SSH environments** — node-pty locally, ssh2 for remote
+- **Split panes** (experimental) — view multiple sessions side-by-side; drag panes between drop zones to rearrange layouts
+- **Local, SSH, and Coder environments** — node-pty locally, ssh2 for remote, Coder REST API for workspaces
+- **First-run Setup Wizard** — guided configuration for your first environment and CLI tool
+- **SSH host key verification** — TOFU pinning on first connect, managed known-hosts in settings
 - **Status indicators** — green (running), amber (waiting), gray (idle), red (dead)
 - **Session grouping** — auto-grouped by working directory, collapsible
 - **Environment management** — preconfigured environments with per-env settings
 - **Env var cascade** — app defaults &rarr; environment &rarr; session overrides, with presets for common Claude Code and Codex CLI vars
+- **Vault integration** — store env vars as `vault://` references; KV v2 with token or OIDC auth, sidebar status pill, and a tree-view picker for browsing existing secrets
+- **Tether-managed worktrees** — create a git worktree at session start, with optional cleanup on session removal
+- **Repo browse + clone-on-session-start** — browse Azure DevOps and Gitea repos and clone them as part of session creation
+- **Helm** (experimental, opt-in) — designate a session as "helm" so it can dispatch pre-briefed child sessions through an MCP server, including spawning Coder workspaces
 - **CLI flag management** — app-wide, per-profile, and per-session flags scoped by CLI tool
 - **Usage tracking** (experimental) — optional quota and cost views in the sidebar and per-session panes
-- **Other CLI tools** — also supports Codex CLI, OpenCode, and custom binaries (see below)
+- **Other CLI tools** — also supports Codex CLI, GitHub Copilot CLI, OpenCode, and custom binaries (see below)
 - **Workspace persistence** — sessions save on quit, restore on launch
 - **Resume previous chats** — pick up where Claude Code or Codex CLI left off
+- **Auto-update** — checks GitHub Releases and notifies on new versions
 - **Catppuccin themes** — Mocha, Macchiato, Frappe, Latte, plus Default Dark
 - **Keyboard shortcuts** — `Ctrl+N` new, `Ctrl+1-9` switch, `Ctrl+B` toggle sidebar, `Ctrl+W` stop
 
@@ -70,6 +77,7 @@ Tether is a dumb-pipe PTY multiplexer for interactive coding CLIs. You can selec
 
 - **Claude Code** (`claude`) — full support including session resume and transcript browsing
 - **Codex CLI** (`codex`) — OpenAI's coding agent, with session resume and transcript browsing for local sessions
+- **GitHub Copilot CLI** (`copilot`) — session resume via `--resume`
 - **OpenCode** (`opencode`)
 - **Custom** — any binary you specify
 
@@ -97,6 +105,8 @@ npm run start     # launch in dev mode (Electron Forge + Vite)
 | Terminal | xterm.js 6.0 | Full VT emulation — same engine as VS Code |
 | Local PTY | node-pty | Real pseudo-terminal, same lib as VS Code |
 | SSH | ssh2 | Pure JS SSH client with PTY channel support |
+| Coder | Coder REST API + SSH PTY | Connect to or create Coder workspaces from templates |
+| Secrets | HashiCorp Vault (KV v2) | Reference secrets via `vault://` instead of plaintext config |
 | State | JSON file persistence | Embedded, zero-config |
 | Build | Electron Forge + Vite | Fast dev server, optimized production builds |
 
@@ -108,7 +118,8 @@ npm run start     # launch in dev mode (Electron Forge + Vite)
 | [Transport Design](docs/TRANSPORT_DESIGN.md) | Transport interface, Local/SSH adapter specs, data flow |
 | [UI Design](docs/UI_DESIGN.md) | Layout, sidebar, terminal panel, interaction model |
 | [Product Spec](docs/PRODUCT_SPEC.md) | Vision, user stories, feature requirements |
-| [MVP Scope](docs/MVP_SCOPE.md) | Milestones and post-MVP roadmap |
+| [MVP Scope](docs/MVP_SCOPE.md) | Original MVP definition and milestones |
+| [Roadmap](ROADMAP.md) | Pre-1.0 polish plan and post-1.0 plans |
 | [Changelog](CHANGELOG.md) | Release history |
 
 ## Contributing
