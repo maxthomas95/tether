@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.4.1-beta.2] — 2026-05-01
+
+Patch on top of `0.4.0-beta.1` rolling up new CLI tool support, resume-picker coverage, and a security fix for SSH session output.
+
+### New Features
+- **GitHub Copilot CLI** added to the CLI tools registry as a supported tool (#39)
+- **Resume picker for OpenCode and GitHub Copilot CLI** — both tools now appear in the resume chat dialog with transcript browsing, mirroring the existing Claude/Codex experience (#46)
+
+### Bug Fixes
+- **Status indicator stuck on green/grey** — passive status detection no longer latches in stale states (#45)
+- **Vault login dialog stuck on "Opening browser…"** — re-opening the dialog now resets state correctly (#44)
+- **Helm MCP Coder workspace flow hardened** against edge cases when spawning workspace-backed children (#38)
+
+### Security
+- **SSH env values and launch command no longer leak into session output** — secrets passed via env vars are masked from the visible PTY stream on connect (#40)
+
+### Improvements
+- README refreshed and a new ROADMAP doc added (#42)
+
+### Dependencies
+- `postcss` → 8.5.12 (#43)
+- `marked` → 18.0.2 (#41)
+
+---
+
 ## [0.4.0-beta.1] — 2026-04-23
 
 Minor bump marking Helm — an opt-in capability that lets a designated Claude session dispatch pre-briefed child sessions through an MCP server — alongside Tether-managed worktrees, deeper Vault UX, and a round of reliability/security fixes.
