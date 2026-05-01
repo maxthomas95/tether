@@ -38,26 +38,24 @@ describe('StatusDetector', () => {
     expect(stateChanges).toContainEqual({ sessionId: 's1', state: 'running' });
   });
 
-  it('transitions to waiting when prompt is detected after silence', () => {
+  it('transitions to waiting after silence (fallback)', () => {
     detector.register('s1');
-    detector.feedData('s1', 'Some output\n❯ ');
+    detector.feedData('s1', 'some streaming output');
 
     // 500ms debounce for running
     vi.advanceTimersByTime(500);
     expect(detector.getState('s1')).toBe('running');
 
-    // 3000ms silence triggers prompt check
-    vi.advanceTimersByTime(3000);
-    // Plus 500ms debounce for waiting
-    vi.advanceTimersByTime(500);
+    // 3000ms silence → waiting fires; +500ms debounce
+    vi.advanceTimersByTime(3000 + 500);
     expect(detector.getState('s1')).toBe('waiting');
   });
 
   it('transitions to idle after extended silence', () => {
     detector.register('s1');
-    detector.feedData('s1', 'Some output\n> ');
+    detector.feedData('s1', 'some output');
 
-    // running debounce + prompt timeout + waiting debounce
+    // running debounce + waiting timeout + waiting debounce
     vi.advanceTimersByTime(500 + 3000 + 500);
     expect(detector.getState('s1')).toBe('waiting');
 
@@ -68,11 +66,11 @@ describe('StatusDetector', () => {
 
   it('resets timer when new data arrives', () => {
     detector.register('s1');
-    detector.feedData('s1', 'chunk 1\n> ');
+    detector.feedData('s1', 'chunk 1');
     vi.advanceTimersByTime(2000);
 
     // New data resets the timer
-    detector.feedData('s1', 'chunk 2\n> ');
+    detector.feedData('s1', 'chunk 2');
     vi.advanceTimersByTime(2000);
 
     // Only 2s since last data, not 3s — should still be running
@@ -98,59 +96,72 @@ describe('StatusDetector', () => {
 
   it('cleans up timers on unregister', () => {
     detector.register('s1');
-    detector.feedData('s1', 'output\n> ');
+    detector.feedData('s1', 'output');
     vi.advanceTimersByTime(500); // running
 
     detector.unregister('s1');
-    // After unregister, the inactivity timer should not fire waiting/idle
+    // After unregister, timers should not fire transitions
     vi.advanceTimersByTime(60000);
     // State is gone — falls back to 'starting'
     expect(detector.getState('s1')).toBe('starting');
   });
 
-  describe('prompt detection', () => {
-    const promptPatterns = [
-      'some output\n> ',
-      'some output\n❯ ',
-      'some output\n\u276f ',
-    ];
-
-    for (const pattern of promptPatterns) {
-      it(`detects prompt pattern: ${JSON.stringify(pattern.slice(-4))}`, () => {
-        detector.register('s1');
-        detector.feedData('s1', pattern);
-
-        // running debounce + prompt timeout + waiting debounce
-        vi.advanceTimersByTime(500 + 3000 + 500);
-        expect(detector.getState('s1')).toBe('waiting');
-      });
-    }
-
-    it('does not detect prompt in regular output', () => {
+  describe('OSC 9 notification tap (Layer 1)', () => {
+    it('transitions immediately to waiting on OSC 9 with BEL terminator', () => {
       detector.register('s1');
-      detector.feedData('s1', 'just regular text with no prompt');
+      detector.feedData('s1', 'streaming...\x1b]9;Claude is ready\x07');
 
-      // running debounce + prompt timeout + debounce
-      vi.advanceTimersByTime(500 + 3000 + 500);
-      // Should stay running since no prompt was detected
+      // Just the debounce — no need to wait for the silence timeout
+      vi.advanceTimersByTime(500);
+      expect(detector.getState('s1')).toBe('waiting');
+    });
+
+    it('transitions immediately to waiting on OSC 9 with ST terminator', () => {
+      detector.register('s1');
+      detector.feedData('s1', 'streaming...\x1b]9;Done\x1b\\');
+
+      vi.advanceTimersByTime(500);
+      expect(detector.getState('s1')).toBe('waiting');
+    });
+
+    it('matches OSC 9 split across two chunks', () => {
+      detector.register('s1');
+      // First chunk has start of OSC sequence but no terminator
+      detector.feedData('s1', 'output\x1b]9;Claude is');
+      vi.advanceTimersByTime(500);
+      expect(detector.getState('s1')).toBe('running');
+
+      // Second chunk completes it
+      detector.feedData('s1', ' ready\x07more output');
+      vi.advanceTimersByTime(500);
+      expect(detector.getState('s1')).toBe('waiting');
+    });
+
+    it('returns to running when more output arrives after a turn-end', () => {
+      detector.register('s1');
+      detector.feedData('s1', 'turn 1 done\x1b]9;done\x07');
+      vi.advanceTimersByTime(500);
+      expect(detector.getState('s1')).toBe('waiting');
+
+      // New agent activity (no OSC) should flip back to running
+      detector.feedData('s1', 'starting next turn');
+      vi.advanceTimersByTime(500);
       expect(detector.getState('s1')).toBe('running');
     });
-  });
 
-  it('strips ANSI escapes when detecting prompts', () => {
-    detector.register('s1');
-    // Prompt with ANSI color codes around it
-    detector.feedData('s1', '\x1b[32m❯\x1b[0m ');
-
-    vi.advanceTimersByTime(500 + 3000 + 500);
-    expect(detector.getState('s1')).toBe('waiting');
+    it('does not match malformed OSC 9 with no terminator', () => {
+      detector.register('s1');
+      detector.feedData('s1', 'output\x1b]9;no terminator here');
+      vi.advanceTimersByTime(500);
+      expect(detector.getState('s1')).toBe('running');
+    });
   });
 
   it('handles multiple sessions independently', () => {
     detector.register('s1');
     detector.register('s2');
 
-    detector.feedData('s1', 'output\n> ');
+    detector.feedData('s1', 'output');
     vi.advanceTimersByTime(500);
     expect(detector.getState('s1')).toBe('running');
     expect(detector.getState('s2')).toBe('starting');
