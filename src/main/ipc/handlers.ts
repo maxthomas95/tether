@@ -425,6 +425,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const { listCodexTranscripts } = await import('../codex/transcripts');
       return listCodexTranscripts(workingDir);
     }
+    if (cliTool === 'copilot') {
+      const { listCopilotTranscripts } = await import('../copilot/transcripts');
+      return listCopilotTranscripts(workingDir);
+    }
+    if (cliTool === 'opencode') {
+      const { listOpencodeTranscripts } = await import('../opencode/transcripts');
+      return listOpencodeTranscripts(workingDir);
+    }
     const { listTranscripts } = await import('../claude/transcripts');
     return listTranscripts(workingDir);
   });
