@@ -169,6 +169,7 @@ const api: TetherAPI = {
     getConfig: (): Promise<VaultConfig> => ipcRenderer.invoke(IPC.VAULT_GET_CONFIG),
     setConfig: (config: VaultConfig): Promise<void> => ipcRenderer.invoke(IPC.VAULT_SET_CONFIG, config),
     login: (): Promise<VaultStatus> => ipcRenderer.invoke(IPC.VAULT_LOGIN),
+    cancelLogin: (): Promise<void> => ipcRenderer.invoke(IPC.VAULT_CANCEL_LOGIN),
     logout: (): Promise<void> => ipcRenderer.invoke(IPC.VAULT_LOGOUT),
     status: (): Promise<VaultStatus> => ipcRenderer.invoke(IPC.VAULT_STATUS),
     testRef: (ref: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(IPC.VAULT_TEST_REF, ref),

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 
 interface VaultLoginPromptDialogProps {
@@ -13,7 +13,28 @@ export function VaultLoginPromptDialog({ isOpen, reason, onLoginSuccess, onCance
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEscapeKey(() => { if (!busy) onCancel(); }, isOpen);
+  // Reset transient state whenever the dialog closes so a future re-open starts
+  // fresh — without this, `busy` from a prior successful login leaks across
+  // open cycles (the component stays mounted and only `isOpen` toggles), which
+  // would make the next prompt render with the Log In button stuck on
+  // "Opening browser…" and Cancel/X disabled.
+  useEffect(() => {
+    if (!isOpen) {
+      setBusy(false);
+      setError(null);
+    }
+  }, [isOpen]);
+
+  const handleCancel = () => {
+    if (busy) {
+      // Abort the in-flight OIDC flow so the callback server is freed and the
+      // pending vault.login() promise rejects.
+      window.electronAPI.vault.cancelLogin?.().catch(() => { /* ignore */ });
+    }
+    onCancel();
+  };
+
+  useEscapeKey(handleCancel, isOpen);
   if (!isOpen) return null;
 
   const handleLogin = async () => {
@@ -26,6 +47,7 @@ export function VaultLoginPromptDialog({ isOpen, reason, onLoginSuccess, onCance
         setBusy(false);
         return;
       }
+      setBusy(false);
       onLoginSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -37,12 +59,12 @@ export function VaultLoginPromptDialog({ isOpen, reason, onLoginSuccess, onCance
     <div
       className="dialog-overlay"
       role="presentation"
-      onClick={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}
+      onClick={(e) => { if (e.target === e.currentTarget) handleCancel(); }}
     >
       <div className="dialog">
         <div className="dialog-header">
           <span>Vault login required</span>
-          <button className="dialog-close" onClick={onCancel} disabled={busy}>&times;</button>
+          <button className="dialog-close" onClick={handleCancel}>&times;</button>
         </div>
         <div className="dialog-body">
           <p className="form-hint" style={{ marginBottom: 8 }}>
@@ -56,7 +78,7 @@ export function VaultLoginPromptDialog({ isOpen, reason, onLoginSuccess, onCance
           )}
         </div>
         <div className="dialog-footer">
-          <button className="form-btn" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button className="form-btn" onClick={handleCancel}>Cancel</button>
           <button className="form-btn form-btn--primary" onClick={handleLogin} disabled={busy}>
             {busy ? 'Opening browser…' : 'Log In'}
           </button>

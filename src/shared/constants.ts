@@ -59,6 +59,7 @@ export const IPC = {
   VAULT_GET_CONFIG: 'vault:get-config',
   VAULT_SET_CONFIG: 'vault:set-config',
   VAULT_LOGIN: 'vault:login',
+  VAULT_CANCEL_LOGIN: 'vault:cancel-login',
   VAULT_LOGOUT: 'vault:logout',
   VAULT_STATUS: 'vault:status',
   VAULT_TEST_REF: 'vault:test-ref',

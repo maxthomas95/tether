@@ -180,6 +180,7 @@ function startCallbackServer(): Promise<{
   redirectUri: string;
   waitForCallback: Promise<CallbackResult>;
   shutdown: () => void;
+  cancel: () => void;
 }> {
   return new Promise((resolveOuter, rejectOuter) => {
     let resolveInner: (v: CallbackResult) => void;
@@ -235,9 +236,22 @@ function startCallbackServer(): Promise<{
           clearTimeout(timeout);
           server.close();
         },
+        cancel: () => {
+          clearTimeout(timeout);
+          server.close();
+          rejectInner(new VaultError('Vault login cancelled'));
+        },
       });
     });
   });
+}
+
+let activeLoginCancel: (() => void) | null = null;
+
+export function cancelLoginOidc(): void {
+  const cancel = activeLoginCancel;
+  activeLoginCancel = null;
+  if (cancel) cancel();
 }
 
 /**
@@ -252,7 +266,8 @@ export async function loginOidc(): Promise<VaultStatus> {
   if (!config.role) throw new VaultError('Vault OIDC role is not configured');
 
   const client = new VaultClient({ addr: config.addr, namespace: config.namespace || undefined });
-  const { redirectUri, waitForCallback, shutdown } = await startCallbackServer();
+  const { redirectUri, waitForCallback, shutdown, cancel } = await startCallbackServer();
+  activeLoginCancel = cancel;
 
   try {
     const { auth_url } = await client.oidcAuthUrl(config.role, redirectUri);
@@ -282,6 +297,8 @@ export async function loginOidc(): Promise<VaultStatus> {
   } catch (err) {
     shutdown();
     throw err;
+  } finally {
+    activeLoginCancel = null;
   }
 }
 
