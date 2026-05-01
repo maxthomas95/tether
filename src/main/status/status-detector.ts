@@ -36,15 +36,20 @@ const BUFFER_MAX = 4096;        // Per-session rolling byte buffer for OSC match
 // OSC sequences that AI CLIs (notably Claude Code) emit at end-of-turn.
 //   ESC ] 9 ; <text> BEL          — desktop notification
 //   ESC ] 9 ; <text> ESC \        — same, ST terminator
-const OSC_NOTIFICATION_RE = /\x1b\]9;[^\x07\x1b]*(?:\x07|\x1b\\)/;
+// Built from char codes so the source contains no literal control characters.
+const ESC = String.fromCharCode(0x1b);
+const BEL = String.fromCharCode(0x07);
+const OSC_NOTIFICATION_RE = new RegExp(
+  `${ESC}\\]9;[^${BEL}${ESC}]*(?:${BEL}|${ESC}\\\\)`,
+);
 
 export class StatusDetector {
-  private states = new Map<string, SessionState>();
-  private buffers = new Map<string, string>();
-  private cliTools = new Map<string, CliToolId>();
-  private waitingTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly states = new Map<string, SessionState>();
+  private readonly buffers = new Map<string, string>();
+  private readonly cliTools = new Map<string, CliToolId>();
+  private readonly waitingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private callback: ((sessionId: string, state: SessionState) => void) | null = null;
 
   onStateChange(callback: (sessionId: string, state: SessionState) => void): void {
@@ -153,12 +158,10 @@ export class StatusDetector {
   }
 
   dispose(): void {
-    for (const timer of this.waitingTimers.values()) clearTimeout(timer);
-    for (const timer of this.idleTimers.values()) clearTimeout(timer);
-    for (const timer of this.debounceTimers.values()) clearTimeout(timer);
-    this.waitingTimers.clear();
-    this.idleTimers.clear();
-    this.debounceTimers.clear();
+    for (const map of [this.waitingTimers, this.idleTimers, this.debounceTimers]) {
+      for (const timer of map.values()) clearTimeout(timer);
+      map.clear();
+    }
     this.states.clear();
     this.buffers.clear();
     this.cliTools.clear();
