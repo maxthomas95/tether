@@ -37,6 +37,7 @@ import {
   getVaultConfig,
   setVaultConfig,
   loginOidc,
+  cancelLoginOidc,
   logoutVault,
   getStatus as getVaultStatus,
   buildClient as buildVaultClient,
@@ -581,6 +582,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     log.info('Vault login result', { loggedIn: status.loggedIn, identity: status.identity });
     emitVaultStatus(status);
     return status;
+  });
+
+  ipcMain.handle(IPC.VAULT_CANCEL_LOGIN, async (): Promise<void> => {
+    log.info('Vault OIDC login cancel requested');
+    cancelLoginOidc();
   });
 
   ipcMain.handle(IPC.VAULT_LOGOUT, async () => {

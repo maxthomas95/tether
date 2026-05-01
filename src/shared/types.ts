@@ -440,6 +440,7 @@ export interface TetherAPI {
     getConfig(): Promise<VaultConfig>;
     setConfig(config: VaultConfig): Promise<void>;
     login(): Promise<VaultStatus>;
+    cancelLogin(): Promise<void>;
     logout(): Promise<void>;
     status(): Promise<VaultStatus>;
     testRef(ref: string): Promise<{ ok: boolean; error?: string }>;
