@@ -1,9 +1,27 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { StatusDetector } from './status-detector';
 
+const ESC = '\x1b';
+const BEL = '\x07';
+
 describe('StatusDetector', () => {
   let detector: StatusDetector;
   let stateChanges: Array<{ sessionId: string; state: string }>;
+
+  // Tick past the 500ms transition debounce.
+  const settle = () => vi.advanceTimersByTime(500);
+
+  // Feed a chunk and tick past the debounce in one step.
+  const feed = (id: string, data: string) => {
+    detector.feedData(id, data);
+    settle();
+  };
+
+  // Register a session, feed initial data, and tick past the debounce.
+  const start = (id: string, data = 'output') => {
+    detector.register(id);
+    feed(id, data);
+  };
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -29,129 +47,100 @@ describe('StatusDetector', () => {
   });
 
   it('transitions to running when data arrives', () => {
-    detector.register('s1');
-    detector.feedData('s1', 'hello world');
-
-    // Debounce fires at 500ms
-    vi.advanceTimersByTime(500);
+    start('s1', 'hello world');
     expect(detector.getState('s1')).toBe('running');
     expect(stateChanges).toContainEqual({ sessionId: 's1', state: 'running' });
   });
 
-  it('transitions to waiting when prompt is detected after silence', () => {
-    detector.register('s1');
-    detector.feedData('s1', 'Some output\n❯ ');
-
-    // 500ms debounce for running
-    vi.advanceTimersByTime(500);
+  it('transitions to waiting after silence (fallback)', () => {
+    start('s1', 'some streaming output');
     expect(detector.getState('s1')).toBe('running');
 
-    // 3000ms silence triggers prompt check
-    vi.advanceTimersByTime(3000);
-    // Plus 500ms debounce for waiting
-    vi.advanceTimersByTime(500);
+    // 3000ms silence → waiting fires; +500ms debounce
+    vi.advanceTimersByTime(3000 + 500);
     expect(detector.getState('s1')).toBe('waiting');
   });
 
   it('transitions to idle after extended silence', () => {
-    detector.register('s1');
-    detector.feedData('s1', 'Some output\n> ');
-
-    // running debounce + prompt timeout + waiting debounce
-    vi.advanceTimersByTime(500 + 3000 + 500);
+    start('s1', 'some output');
+    vi.advanceTimersByTime(3000 + 500);
     expect(detector.getState('s1')).toBe('waiting');
 
-    // idle timeout (30s total from last data, minus 3s already elapsed = 27s) + debounce
+    // idle timeout (30s total - 3s already elapsed) + debounce
     vi.advanceTimersByTime(27000 + 500);
     expect(detector.getState('s1')).toBe('idle');
   });
 
   it('resets timer when new data arrives', () => {
     detector.register('s1');
-    detector.feedData('s1', 'chunk 1\n> ');
+    detector.feedData('s1', 'chunk 1');
     vi.advanceTimersByTime(2000);
-
-    // New data resets the timer
-    detector.feedData('s1', 'chunk 2\n> ');
+    detector.feedData('s1', 'chunk 2');
     vi.advanceTimersByTime(2000);
-
-    // Only 2s since last data, not 3s — should still be running
+    // 2s since last data, not 3s — should still be running
     expect(detector.getState('s1')).toBe('running');
   });
 
-  it('marks exited with code 0 as stopped', () => {
-    detector.register('s1');
-    detector.feedData('s1', 'output');
-    vi.advanceTimersByTime(500);
-
-    detector.markExited('s1', 0);
-    expect(detector.getState('s1')).toBe('stopped');
-    expect(stateChanges).toContainEqual({ sessionId: 's1', state: 'stopped' });
-  });
-
-  it('marks exited with non-zero code as dead', () => {
-    detector.register('s1');
-    detector.markExited('s1', 1);
-    expect(detector.getState('s1')).toBe('dead');
-    expect(stateChanges).toContainEqual({ sessionId: 's1', state: 'dead' });
+  describe('exit handling', () => {
+    it.each([
+      { exitCode: 0, expected: 'stopped' as const },
+      { exitCode: 1, expected: 'dead' as const },
+    ])('exit code $exitCode → $expected', ({ exitCode, expected }) => {
+      detector.register('s1');
+      detector.markExited('s1', exitCode);
+      expect(detector.getState('s1')).toBe(expected);
+      expect(stateChanges).toContainEqual({ sessionId: 's1', state: expected });
+    });
   });
 
   it('cleans up timers on unregister', () => {
-    detector.register('s1');
-    detector.feedData('s1', 'output\n> ');
-    vi.advanceTimersByTime(500); // running
-
+    start('s1');
     detector.unregister('s1');
-    // After unregister, the inactivity timer should not fire waiting/idle
     vi.advanceTimersByTime(60000);
     // State is gone — falls back to 'starting'
     expect(detector.getState('s1')).toBe('starting');
   });
 
-  describe('prompt detection', () => {
-    const promptPatterns = [
-      'some output\n> ',
-      'some output\n❯ ',
-      'some output\n\u276f ',
-    ];
+  describe('OSC 9 notification tap (Layer 1)', () => {
+    it.each([
+      { name: 'BEL terminator', data: `streaming...${ESC}]9;ready${BEL}` },
+      { name: 'ST terminator', data: `streaming...${ESC}]9;done${ESC}\\` },
+    ])('immediately flips waiting on OSC 9 with $name', ({ data }) => {
+      start('s1', data);
+      // Just the debounce — no need to wait for the silence timeout
+      expect(detector.getState('s1')).toBe('waiting');
+    });
 
-    for (const pattern of promptPatterns) {
-      it(`detects prompt pattern: ${JSON.stringify(pattern.slice(-4))}`, () => {
-        detector.register('s1');
-        detector.feedData('s1', pattern);
-
-        // running debounce + prompt timeout + waiting debounce
-        vi.advanceTimersByTime(500 + 3000 + 500);
-        expect(detector.getState('s1')).toBe('waiting');
-      });
-    }
-
-    it('does not detect prompt in regular output', () => {
+    it('matches OSC 9 split across two chunks', () => {
       detector.register('s1');
-      detector.feedData('s1', 'just regular text with no prompt');
+      // First chunk has start of OSC sequence but no terminator
+      feed('s1', `output${ESC}]9;Claude is`);
+      expect(detector.getState('s1')).toBe('running');
 
-      // running debounce + prompt timeout + debounce
-      vi.advanceTimersByTime(500 + 3000 + 500);
-      // Should stay running since no prompt was detected
+      // Second chunk completes it
+      feed('s1', ` ready${BEL}more output`);
+      expect(detector.getState('s1')).toBe('waiting');
+    });
+
+    it('returns to running when more output arrives after a turn-end', () => {
+      start('s1', `turn 1 done${ESC}]9;done${BEL}`);
+      expect(detector.getState('s1')).toBe('waiting');
+
+      // New agent activity (no OSC) should flip back to running
+      feed('s1', 'starting next turn');
       expect(detector.getState('s1')).toBe('running');
     });
-  });
 
-  it('strips ANSI escapes when detecting prompts', () => {
-    detector.register('s1');
-    // Prompt with ANSI color codes around it
-    detector.feedData('s1', '\x1b[32m❯\x1b[0m ');
-
-    vi.advanceTimersByTime(500 + 3000 + 500);
-    expect(detector.getState('s1')).toBe('waiting');
+    it('does not match malformed OSC 9 with no terminator', () => {
+      start('s1', `output${ESC}]9;no terminator here`);
+      expect(detector.getState('s1')).toBe('running');
+    });
   });
 
   it('handles multiple sessions independently', () => {
     detector.register('s1');
     detector.register('s2');
-
-    detector.feedData('s1', 'output\n> ');
-    vi.advanceTimersByTime(500);
+    feed('s1', 'output');
     expect(detector.getState('s1')).toBe('running');
     expect(detector.getState('s2')).toBe('starting');
 
@@ -161,15 +150,11 @@ describe('StatusDetector', () => {
   });
 
   it('cleans up all state on dispose', () => {
-    detector.register('s1');
-    detector.register('s2');
-    detector.feedData('s1', 'data');
-    detector.feedData('s2', 'data');
-
+    start('s1', 'data');
+    start('s2', 'data');
     detector.dispose();
-
-    // After dispose, states should be cleared
-    expect(detector.getState('s1')).toBe('starting'); // default fallback
+    // After dispose, states should be cleared — getState falls back to 'starting'
+    expect(detector.getState('s1')).toBe('starting');
     expect(detector.getState('s2')).toBe('starting');
   });
 });

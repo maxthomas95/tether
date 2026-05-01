@@ -31,7 +31,8 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 
 ### 2. Bug: status indicator stuck on green/grey
 
-- [planned] **P1 investigation** — amber and red statuses never seem to fire in real use. Detector lives at `src/main/status/status-detector.ts`. Need to capture live PTY logs from Claude / Codex / Copilot sessions and tune the cadence heuristics so "waiting on user / tool approval" reliably hits amber and PTY exit hits red.
+- [in progress] **P1 investigation** — amber and red statuses never seem to fire in real use. Detector lives at `src/main/status/status-detector.ts`. Need to capture live PTY logs from Claude / Codex / Copilot sessions and tune the cadence heuristics so "waiting on user / tool approval" reliably hits amber and PTY exit hits red.
+- [planned] **Smarter waiting signals via CLI hooks** — once the byte-level fix lands, layer in Claude's `Notification`/`Stop` hooks and Codex's `notify` program for higher-fidelity state (distinguish `permission_prompt` from `idle_prompt` → distinct UI sub-state, e.g. amber-with-bang). Needs a design pass on safe config injection: pointing the CLI at a fresh `CLAUDE_CONFIG_DIR` / `CODEX_HOME` loses transcripts and projects, so the path is either (a) merging into the user's existing settings file with conflict-free overlay logic, or (b) overlaying our settings on top of a symlinked/copied config dir per session. Pick after weighing cross-platform symlink constraints (Windows dev-mode requirement).
 
 ### 3. Notifications & error surfacing
 
