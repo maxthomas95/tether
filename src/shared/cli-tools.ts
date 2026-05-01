@@ -5,7 +5,7 @@ export interface CliToolDef {
   displayName: string;
   binaryName: string;
   supportsSessionResume: boolean;
-  historyProvider?: 'claude' | 'codex';
+  historyProvider?: 'claude' | 'codex' | 'copilot' | 'opencode';
   commonFlags: Array<{ flag: string; label: string }>;
 }
 
@@ -44,6 +44,7 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     displayName: 'GitHub Copilot CLI',
     binaryName: 'copilot',
     supportsSessionResume: true,
+    historyProvider: 'copilot',
     commonFlags: [
       { flag: '--yolo', label: 'Allow all tools, paths, and URLs' },
       { flag: '--plan', label: 'Plan mode (no execution)' },
@@ -56,7 +57,8 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     id: 'opencode',
     displayName: 'OpenCode',
     binaryName: 'opencode',
-    supportsSessionResume: false,
+    supportsSessionResume: true,
+    historyProvider: 'opencode',
     commonFlags: [
       { flag: '--continue', label: 'Continue last session' },
       { flag: '--pure', label: 'Run without external plugins' },
@@ -115,6 +117,12 @@ export function buildCliArgsForTool(
 
   if (cliTool === 'copilot' && options.resumeToolSessionId) {
     return ['--resume', options.resumeToolSessionId, ...cliArgs];
+  }
+
+  // OpenCode uses --session <id> (not --resume) to attach the TUI to an
+  // existing conversation. See `opencode --help`.
+  if (cliTool === 'opencode' && options.resumeToolSessionId) {
+    return ['--session', options.resumeToolSessionId, ...cliArgs];
   }
 
   return [...cliArgs];

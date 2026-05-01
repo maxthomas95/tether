@@ -12,6 +12,10 @@ import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
 import { transcriptExists } from '../claude/transcripts';
 import { codexTranscriptExists } from '../codex/transcripts';
 import { detectNewCodexSession, releaseCodexSessionClaim } from '../codex/session-watcher';
+import { copilotTranscriptExists } from '../copilot/transcripts';
+import { detectNewCopilotSession, releaseCopilotSessionClaim } from '../copilot/session-watcher';
+import { opencodeTranscriptExists } from '../opencode/transcripts';
+import { detectNewOpencodeSession, releaseOpencodeSessionClaim } from '../opencode/session-watcher';
 import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
@@ -151,6 +155,10 @@ export class Session {
   readonly parentSessionId: string | null;
   /** Active codex session-id watcher, so we can cancel on removal. */
   codexDetectCancel: (() => void) | null = null;
+  /** Active copilot session-id watcher, so we can cancel on removal. */
+  copilotDetectCancel: (() => void) | null = null;
+  /** Active opencode session-id watcher, so we can cancel on removal. */
+  opencodeDetectCancel: (() => void) | null = null;
   readonly worktreeOf: string | null;
 
   constructor(id: string, label: string, workingDir: string, options: {
@@ -524,6 +532,20 @@ class SessionManager {
         toolSessionId = requestedResumeId;
         session.resumed = true;
       }
+      if (cliTool === 'copilot' && requestedResumeId && copilotTranscriptExists(opts.workingDir, requestedResumeId)) {
+        resumeId = requestedResumeId;
+        toolSessionId = requestedResumeId;
+        session.resumed = true;
+      }
+      // OpenCode's existence check shells out to `opencode session list`, so
+      // it's noticeably more expensive than reading a local file. Still worth
+      // the check — passing an unknown id to `opencode --session` would create
+      // an unrelated conversation rather than fail loudly.
+      if (cliTool === 'opencode' && requestedResumeId && await opencodeTranscriptExists(opts.workingDir, requestedResumeId)) {
+        resumeId = requestedResumeId;
+        toolSessionId = requestedResumeId;
+        session.resumed = true;
+      }
       session.toolSessionId = toolSessionId || null;
     }
 
@@ -552,6 +574,33 @@ class SessionManager {
       session.codexDetectCancel = handle.cancel;
       handle.promise.then((detectedId) => {
         session.codexDetectCancel = null;
+        if (!detectedId || !this.sessions.has(session.id)) return;
+        session.toolSessionId = detectedId;
+        callbacks.onUpdate?.(session.id, session.toInfo());
+      });
+    }
+
+    // Copilot mints its session UUID at spawn (the dirname under
+    // ~/.copilot/session-state/). Watch for the new dir so we can resume this
+    // exact conversation later instead of opening copilot's own picker.
+    if (cliTool === 'copilot' && transport instanceof LocalTransport && !resumeId) {
+      const handle = detectNewCopilotSession({ workingDir: opts.workingDir });
+      session.copilotDetectCancel = handle.cancel;
+      handle.promise.then((detectedId) => {
+        session.copilotDetectCancel = null;
+        if (!detectedId || !this.sessions.has(session.id)) return;
+        session.toolSessionId = detectedId;
+        callbacks.onUpdate?.(session.id, session.toInfo());
+      });
+    }
+
+    // OpenCode also assigns its `ses_…` id at first turn. Poll its CLI to
+    // capture the new id so we can attach to it next launch.
+    if (cliTool === 'opencode' && transport instanceof LocalTransport && !resumeId) {
+      const handle = detectNewOpencodeSession({ workingDir: opts.workingDir });
+      session.opencodeDetectCancel = handle.cancel;
+      handle.promise.then((detectedId) => {
+        session.opencodeDetectCancel = null;
         if (!detectedId || !this.sessions.has(session.id)) return;
         session.toolSessionId = detectedId;
         callbacks.onUpdate?.(session.id, session.toInfo());
@@ -595,7 +644,11 @@ class SessionManager {
       log.info('Removing session', { id });
       statusDetector.unregister(id);
       session.codexDetectCancel?.();
-      releaseCodexSessionClaim(session.toolSessionId);
+      session.copilotDetectCancel?.();
+      session.opencodeDetectCancel?.();
+      if (session.cliTool === 'codex') releaseCodexSessionClaim(session.toolSessionId);
+      if (session.cliTool === 'copilot') releaseCopilotSessionClaim(session.toolSessionId);
+      if (session.cliTool === 'opencode') releaseOpencodeSessionClaim(session.toolSessionId);
       session.helmIntegration?.cleanup();
       session.helmIntegration = null;
       session.transport?.dispose();
