@@ -1,7 +1,7 @@
 {
   "name": "tether",
   "productName": "Tether",
-  "version": "0.4.1-beta.2",
+  "version": "0.4.1",
   "description": "A unified control plane for managing agent CLI sessions across local, remote, and containerized environments.",
   "main": ".vite/build/index.js",
   "private": true,
