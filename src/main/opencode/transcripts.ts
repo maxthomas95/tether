@@ -44,7 +44,10 @@ async function runSessionList(timeoutMs = 5000): Promise<OpencodeSessionRow[] | 
 
     let proc: ReturnType<typeof spawn>;
     try {
-      proc = spawn('opencode', ['session', 'list', '--format', 'json'], {
+      // Spawning by binary name (PATH lookup) is the entire product purpose:
+      // Tether shells out to whichever `opencode`/`codex`/`claude` is on the
+      // user's PATH. Same pattern as src/main/git/git-service.ts.
+      proc = spawn('opencode', ['session', 'list', '--format', 'json'], { // NOSONAR(typescript:S4036)
         windowsHide: true,
         // Detach from any tty so we don't accidentally feed signals to the user's shell.
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -132,14 +135,4 @@ export async function opencodeTranscriptExists(cwd: string, sessionId: string): 
   if (!rows) return false;
   const target = normalizeCwd(cwd);
   return rows.some(r => r.id === sessionId && r.directory && normalizeCwd(r.directory) === target);
-}
-
-/** Plain id list — used by the spawn-time watcher to diff before/after. */
-export async function listOpencodeSessionIdsForCwd(cwd: string): Promise<string[]> {
-  const rows = await runSessionList();
-  if (!rows) return [];
-  const target = normalizeCwd(cwd);
-  return rows
-    .filter(r => r.directory && normalizeCwd(r.directory) === target)
-    .map(r => r.id);
 }

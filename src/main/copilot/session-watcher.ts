@@ -1,5 +1,6 @@
 import { listCopilotTranscripts, listCopilotSessionDirs } from './transcripts';
 import { createLogger } from '../logger';
+import { detectNewSession, makeReleaseClaim, type DetectHandle } from '../session/detect-new-session';
 
 const log = createLogger('copilot-watcher');
 
@@ -7,14 +8,11 @@ const log = createLogger('copilot-watcher');
 // detections in the same cwd don't both latch onto the same new session.
 const claimedIds = new Set<string>();
 
-export interface CopilotDetectHandle {
-  promise: Promise<string | null>;
-  cancel(): void;
-}
+export type CopilotDetectHandle = DetectHandle;
 
 export interface CopilotDetectOptions {
   workingDir: string;
-  /** Poll cadence in ms. Default 500. Cheap directory scan. */
+  /** Poll cadence in ms. Default 500. */
   pollIntervalMs?: number;
   /** Give up after this many ms of no new session dir. Default 60_000. */
   timeoutMs?: number;
@@ -29,56 +27,23 @@ export interface CopilotDetectOptions {
  * The dirname IS the session id; we pass that to `copilot --resume <id>`.
  */
 export function detectNewCopilotSession(opts: CopilotDetectOptions): CopilotDetectHandle {
-  const { workingDir, pollIntervalMs = 500, timeoutMs = 60_000 } = opts;
-
-  const preexisting = new Set(listCopilotSessionDirs().map(s => s.id));
-
-  let cancelled = false;
-  let timer: NodeJS.Timeout | null = null;
-
-  const promise = new Promise<string | null>((resolve) => {
-    const start = Date.now();
-    const poll = () => {
-      if (cancelled) {
-        resolve(null);
-        return;
-      }
-      // Only consider session dirs whose workspace.yaml cwd matches ours,
-      // and that didn't exist when we started watching.
-      const candidates = listCopilotTranscripts(workingDir, Number.MAX_SAFE_INTEGER)
-        .filter(t => !preexisting.has(t.id) && !claimedIds.has(t.id));
-
-      if (candidates.length > 0) {
-        // Earliest-by-mtime = the first session that appeared after we
-        // started, which is the one this transport spawned.
-        candidates.sort((a, b) => a.mtime.localeCompare(b.mtime));
-        const found = candidates[0].id;
-        claimedIds.add(found);
-        log.info('Captured copilot session id', { workingDir, id: found });
-        resolve(found);
-        return;
-      }
-
-      if (Date.now() - start > timeoutMs) {
-        log.warn('Copilot session id detection timed out', { workingDir });
-        resolve(null);
-        return;
-      }
-      timer = setTimeout(poll, pollIntervalMs);
-    };
-    poll();
+  const { workingDir, pollIntervalMs, timeoutMs } = opts;
+  // Snapshot ALL existing session dirs (across every cwd) — copilot's
+  // workspace.yaml is written slightly after the dir is created, so a row
+  // that's "ours by cwd" hasn't always been classifiable yet at snapshot
+  // time. Diffing against the full id set is more reliable.
+  const preexisting = listCopilotSessionDirs().map(s => s.id);
+  return detectNewSession({
+    list: () => listCopilotTranscripts(workingDir, Number.MAX_SAFE_INTEGER),
+    claimedIds,
+    preexistingIds: preexisting,
+    pollIntervalMs,
+    timeoutMs,
+    logger: log,
+    logLabel: 'copilot',
+    logContext: { workingDir },
   });
-
-  return {
-    promise,
-    cancel: () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    },
-  };
 }
 
 /** Release a claimed copilot session id (e.g. after the owning session is removed). */
-export function releaseCopilotSessionClaim(id: string | null | undefined): void {
-  if (id) claimedIds.delete(id);
-}
+export const releaseCopilotSessionClaim = makeReleaseClaim(claimedIds);
