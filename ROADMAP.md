@@ -18,8 +18,8 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 
 #### Usage tracking
 - [planned] Copilot CLI pricing/coverage audit (newly added tool, may not be priced)
-- [planned] OpenCode / Crush cost tracking — query `crush.db` SQLite for `prompt_tokens`, `completion_tokens`, `cost` per session; wire into `usageService` so non-Claude sessions report usage
-- [planned] Cost accuracy audit — `model-pricing.ts` has hardcoded Anthropic prices; non-Anthropic models (Gemini, OpenAI via OpenCode) report $0; pricing table may be stale for Claude models too
+- [done] OpenCode / Crush cost tracking — `usage-service.ts` is now CLI-agnostic; OpenCode sessions read pre-computed cost from `crush.db` (`src/main/opencode/usage-reader.ts`)
+- [done] Cost accuracy audit — pricing now sourced from a vendored copy of LiteLLM's `model_prices_and_context_window.json` (`src/main/usage/litellm-prices.json`); covers Anthropic / OpenAI / Google / Bedrock / Vertex etc., with explicit cache-create / cache-read rates when published. Refresh by replacing the JSON. Existing prefix fallback retained for unknown future Anthropic models.
 - [planned] CSV / JSON export of usage history
 - [planned] Per-environment cost attribution in the global footer
 - [planned] Daily / weekly / monthly rollups, not just today + 7-day sparkline
@@ -64,8 +64,17 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 
 Today `NewSessionDialog` assumes the working directory already exists — clone an existing repo, browse the filesystem, or pick a known one. Starting a fresh project means dropping to a shell first.
 
-- [planned] **New folder for a new repo** — add a configurable "default projects directory" to settings. In `NewSessionDialog`, a third path alongside "Clone" / "Browse": name a folder, it's created under the default location, optionally `git init`, and selected as the session cwd. Plumbing is mostly in place — `gitInit` already exists in `src/main/git/git-service.ts` and is wired through IPC; this is primarily a UI flow.
-- [planned] **Create the remote repo too (GitHub/Gitea/ADO)** — extend the above to optionally provision the remote and `git remote add` on first push. Depends on per-provider auth + repo-create scope: GitHub has no client yet (see §4's "GitHub repo browse" — same auth foundation), and the existing Gitea / ADO clients only do browse, not create. Likely too big for 1.0; revisit post-1.0 once the GitHub client lands. The folder-only piece above is independent and ships first.
+- [done] **New folder for a new repo** — `NewSessionDialog` has a "New folder" tab (local envs only) that creates a folder under `reposRoot`, optionally `git init`s it, and uses it as the session cwd.
+- [done] **Create the remote repo too (GitHub/Gitea/ADO)** — "New folder" mode can optionally provision an empty repo on GitHub, Gitea, or ADO and wires `git remote add origin` locally. Remote-first ordering on failure, first push left to the user. ADO supports a per-provider `defaultProject` selectable from the loaded project list.
+
+### 7. Documentation & discoverability
+
+A lot has shipped recently (Helm, Vault, GitHub provider, OpenCode / Copilot CLI, New-folder + remote-create, terminal zoom, session reorder, bulk group actions, ctrl-clickable URLs, LiteLLM-backed pricing) and the user-facing surfaces — README, in-app docs, dialog copy — haven't kept up. Discoverability is the other half of "polished": features that exist but nobody finds aren't done.
+
+- [planned] **README sweep** — refresh feature list, screenshots, and "what's new" framing for the 1.0 push. Re-evaluate whether `docs/MVP_SCOPE.md` is still load-bearing or should be archived (it predates Helm and multi-CLI). Trim anything that's now contradicted by `CHANGELOG.md`.
+- [planned] **In-app docs refresh** (`src/docs/*.md`) — bring `getting-started.md`, `sessions.md`, `environments.md`, `settings.md`, and `keyboard-shortcuts.md` current. Add pages for Helm, Vault, Git providers + new-folder / remote-create flow, usage & quota, and the recent UX additions (per-pane font size, window zoom, bulk group actions, drag-reorder, clickable URLs). The docs window is already wired up — this is content work, not plumbing.
+- [planned] **In-context `(i)` tooltips** — replace the mini-description prose in dialogs (Settings, NewSession, NewEnvironment) with hoverable info-icon tooltips so layout breathes and copy is shorter. Single shared `<InfoTooltip>` component to keep visuals consistent across dialogs.
+- [planned] **Per-section `(?)` deep-links into docs** — small help icon at the top of each major dialog section / sidebar block that opens the docs window scrolled to the matching anchor (e.g. SettingsDialog → Vault row → `settings.md#vault`). Needs anchor IDs in the markdown plus an `openDocs(anchor)` IPC. Pairs naturally with the docs refresh above — do them in the same pass so anchors land alongside the content.
 
 
 ---
