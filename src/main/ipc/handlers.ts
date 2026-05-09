@@ -30,7 +30,7 @@ import * as envRepo from '../db/environment-repo';
 import * as sessionRepo from '../db/session-repo';
 import * as profileRepo from '../db/profile-repo';
 import * as gitProviderRepo from '../db/git-provider-repo';
-import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo } from '../git/git-service';
+import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo, createFolder } from '../git/git-service';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { GiteaClient } from '../git/providers/gitea-client';
 import { AdoClient } from '../git/providers/ado-client';
@@ -573,6 +573,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(IPC.GIT_INIT, async (_event, directory: string) => {
     return gitInit(directory);
+  });
+
+  ipcMain.handle(IPC.GIT_CREATE_FOLDER, async (_event, path: string, initGit: boolean) => {
+    log.info('Git create folder', { path, initGit });
+    return createFolder({ path, initGit });
   });
 
   ipcMain.handle(IPC.GIT_IS_REPO, async (_event, directory: string) => isGitRepo(directory));
