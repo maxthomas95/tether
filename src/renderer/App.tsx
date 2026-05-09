@@ -91,6 +91,12 @@ export function App() {
   const [vaultPrompt, setVaultPrompt] = useState<{ reason?: string; onDone: (loggedIn: boolean) => void } | null>(null);
   const expectedSessionExitIds = useRef<Set<string>>(new Set());
   const sessionsRef = useRef<SessionInfo[]>([]);
+  // Gate the persist effect until the restore effect has finished reading the
+  // saved workspace. Otherwise the initial-mount persist (with sessions=[])
+  // races ahead of the multi-IPC restore chain and clobbers the saved
+  // workspace before workspace.load() can read it. Ref (not state) so the
+  // flag flip doesn't itself trigger a persist with empty sessions.
+  const restorationCompleteRef = useRef(false);
   const effectiveMaxPanes = enablePaneSplitting ? maxPanes : 1;
 
   const markExpectedSessionExit = useCallback((sessionId: string) => {
@@ -178,94 +184,102 @@ export function App() {
   useEffect(() => {
     let mounted = true;
     window.electronAPI.environment.list().then(async (envs) => {
-      if (!mounted) return;
-      setEnvironments(envs);
+      try {
+        if (!mounted) return;
+        setEnvironments(envs);
 
-      const restoreSetting = await window.electronAPI.config.get?.('restoreOnLaunch');
-      if (restoreSetting === 'false') return;
+        const restoreSetting = await window.electronAPI.config.get?.('restoreOnLaunch');
+        if (restoreSetting === 'false') return;
 
-      const resumeSetting = await window.electronAPI.config.get?.('resumePreviousChats');
-      const resumeChats = resumeSetting !== 'false';
-      const splittingSetting = await window.electronAPI.config.get?.('enablePaneSplitting');
-      const maxPaneSetting = await window.electronAPI.config.get?.('maxPanes');
-      const restoreMaxPanes = splittingSetting === 'true' ? parseMaxPanes(maxPaneSetting) : 1;
+        const resumeSetting = await window.electronAPI.config.get?.('resumePreviousChats');
+        const resumeChats = resumeSetting !== 'false';
+        const splittingSetting = await window.electronAPI.config.get?.('enablePaneSplitting');
+        const maxPaneSetting = await window.electronAPI.config.get?.('maxPanes');
+        const restoreMaxPanes = splittingSetting === 'true' ? parseMaxPanes(maxPaneSetting) : 1;
 
-      const workspace = await window.electronAPI.workspace?.load?.();
-      if (!workspace || !workspace.sessions.length) return;
+        const workspace = await window.electronAPI.workspace?.load?.();
+        if (!workspace || !workspace.sessions.length) return;
 
-      // Build layout tree from restored sessions
-      let root: LayoutNode | null = null;
-      let focusPaneId: string | null = null;
-      const restoreFailures: Array<{ label: string; error: string }> = [];
+        // Build layout tree from restored sessions
+        let root: LayoutNode | null = null;
+        let focusPaneId: string | null = null;
+        const restoreFailures: Array<{ label: string; error: string }> = [];
 
-      for (let i = 0; i < workspace.sessions.length; i++) {
-        const saved = workspace.sessions[i];
-        try {
-          const session = await window.electronAPI.session.create({
-            workingDir: saved.workingDir,
-            label: saved.label || undefined,
-            environmentId: saved.environmentId,
-            cliTool: saved.cliTool as CreateSessionOptions['cliTool'],
-            customCliBinary: saved.customCliBinary,
-            resumeToolSessionId: resumeChats ? saved.toolSessionId || saved.claudeSessionId : undefined,
-            resumeClaudeSessionId: resumeChats && (!saved.cliTool || saved.cliTool === 'claude')
-              ? saved.claudeSessionId || saved.toolSessionId
-              : undefined,
-            worktreeOf: saved.worktreeOf,
-            helmEnabled: saved.helmEnabled,
-            parentSessionId: saved.parentSessionId,
-          });
-          if (!mounted) return;
-          termManager.getOrCreate(session.id);
-          setSessions(prev => [...prev, session]);
+        for (let i = 0; i < workspace.sessions.length; i++) {
+          const saved = workspace.sessions[i];
+          try {
+            const session = await window.electronAPI.session.create({
+              workingDir: saved.workingDir,
+              label: saved.label || undefined,
+              environmentId: saved.environmentId,
+              cliTool: saved.cliTool as CreateSessionOptions['cliTool'],
+              customCliBinary: saved.customCliBinary,
+              resumeToolSessionId: resumeChats ? saved.toolSessionId || saved.claudeSessionId : undefined,
+              resumeClaudeSessionId: resumeChats && (!saved.cliTool || saved.cliTool === 'claude')
+                ? saved.claudeSessionId || saved.toolSessionId
+                : undefined,
+              worktreeOf: saved.worktreeOf,
+              helmEnabled: saved.helmEnabled,
+              parentSessionId: saved.parentSessionId,
+            });
+            if (!mounted) return;
+            termManager.getOrCreate(session.id);
+            setSessions(prev => [...prev, session]);
 
-          const paneId = generatePaneId();
-          if (!root) {
-            root = { type: 'leaf', id: paneId, sessionId: session.id };
-            focusPaneId = paneId;
-          } else {
-            // Stack subsequent sessions to the right of the first leaf
-            const leaves = getLeaves(root);
-            if (leaves.length > 0) {
-              root = addPane(root, leaves[leaves.length - 1].id, session.id, 'right');
+            const paneId = generatePaneId();
+            if (!root) {
+              root = { type: 'leaf', id: paneId, sessionId: session.id };
+              focusPaneId = paneId;
+            } else {
+              // Stack subsequent sessions to the right of the first leaf
+              const leaves = getLeaves(root);
+              if (leaves.length > 0) {
+                root = addPane(root, leaves[leaves.length - 1].id, session.id, 'right');
+              }
             }
-          }
 
-          if (i === workspace.activeIndex) {
-            const leaves = getLeaves(root!);
-            const leaf = leaves.find(l => l.sessionId === session.id);
-            if (leaf) focusPaneId = leaf.id;
+            if (i === workspace.activeIndex) {
+              const leaves = getLeaves(root!);
+              const leaf = leaves.find(l => l.sessionId === session.id);
+              if (leaf) focusPaneId = leaf.id;
+            }
+          } catch (err) {
+            // Skip sessions that fail to restore
+            restoreFailures.push({
+              label: saved.label || saved.workingDir,
+              error: extractErrorMessage(err),
+            });
           }
-        } catch (err) {
-          // Skip sessions that fail to restore
-          restoreFailures.push({
-            label: saved.label || saved.workingDir,
-            error: extractErrorMessage(err),
+        }
+
+        if (mounted && restoreFailures.length > 0) {
+          const first = restoreFailures[0];
+          notify({
+            type: 'error',
+            title: restoreFailures.length === 1
+              ? `Failed to restore ${first.label}`
+              : `Failed to restore ${restoreFailures.length} sessions`,
+            message: first.error,
           });
         }
-      }
 
-      if (mounted && restoreFailures.length > 0) {
-        const first = restoreFailures[0];
-        notify({
-          type: 'error',
-          title: restoreFailures.length === 1
-            ? `Failed to restore ${first.label}`
-            : `Failed to restore ${restoreFailures.length} sessions`,
-          message: first.error,
-        });
-      }
-
-      if (root) {
-        const normalizedRoot = normalizeToConstrained(root, restoreMaxPanes, focusPaneId);
-        const focusedSessionId = focusPaneId ? findLeaf(root, focusPaneId)?.sessionId : null;
-        const normalizedFocusPaneId = normalizedRoot
-          ? getLeaves(normalizedRoot).find(l => l.sessionId === focusedSessionId)?.id
-            ?? getLeaves(normalizedRoot).find(l => l.sessionId !== null)?.id
-            ?? getLeaves(normalizedRoot)[0]?.id
-          : null;
-        layoutDispatch({ type: 'SET_ROOT', root: normalizedRoot });
-        if (normalizedFocusPaneId) layoutDispatch({ type: 'SET_FOCUS', paneId: normalizedFocusPaneId });
+        if (root) {
+          const normalizedRoot = normalizeToConstrained(root, restoreMaxPanes, focusPaneId);
+          const focusedSessionId = focusPaneId ? findLeaf(root, focusPaneId)?.sessionId : null;
+          const normalizedFocusPaneId = normalizedRoot
+            ? getLeaves(normalizedRoot).find(l => l.sessionId === focusedSessionId)?.id
+              ?? getLeaves(normalizedRoot).find(l => l.sessionId !== null)?.id
+              ?? getLeaves(normalizedRoot)[0]?.id
+            : null;
+          layoutDispatch({ type: 'SET_ROOT', root: normalizedRoot });
+          if (normalizedFocusPaneId) layoutDispatch({ type: 'SET_FOCUS', paneId: normalizedFocusPaneId });
+        }
+      } finally {
+        // Open the persist gate. Done in finally so every exit path (early
+        // return for `restoreOnLaunch=false`, empty workspace, partial loop
+        // failure, or full restore) flips the flag — otherwise persist would
+        // be permanently silent and subsequent user actions wouldn't save.
+        if (mounted) restorationCompleteRef.current = true;
       }
     });
     return () => { mounted = false; };
@@ -274,7 +288,12 @@ export function App() {
   // Persist workspace on every change. Sync (no debounce) so a close/remove
   // is on disk before the user can quit — `beforeunload` IPC races renderer
   // teardown and can't be relied on as a backup.
+  //
+  // Gated on restorationCompleteRef so the initial-mount fire (sessions=[])
+  // doesn't clobber the saved workspace before the restore effect's chain of
+  // IPCs (env.list → 4× config.get → workspace.load) has a chance to read it.
   useEffect(() => {
+    if (!restorationCompleteRef.current) return;
     const activeIndex = sessions.findIndex(s => s.id === activeSessionId);
     window.electronAPI.workspace?.save?.(
       sessions.map(s => ({
