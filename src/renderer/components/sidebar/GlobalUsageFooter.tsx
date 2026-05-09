@@ -51,7 +51,11 @@ function sumWindow(days: DailyUsage[]): { cost: number; tokens: number; sessions
   return { cost, tokens, sessions };
 }
 
-export function GlobalUsageFooter() {
+interface GlobalUsageFooterProps {
+  onOpenHistory?: () => void;
+}
+
+export function GlobalUsageFooter({ onOpenHistory }: GlobalUsageFooterProps = {}) {
   const { usage, enabled } = useUsage();
 
   if (!enabled || !usage) return null;
@@ -84,8 +88,16 @@ export function GlobalUsageFooter() {
     '(API-equivalent cost — your subscription covers this usage)',
   ].join('\n');
 
+  const tooltipWithHint = onOpenHistory ? `${tooltip}\n\nClick for full history.` : tooltip;
+
   return (
-    <div className="global-usage-footer" title={tooltip}>
+    <button
+      type="button"
+      className="global-usage-footer"
+      title={tooltipWithHint}
+      onClick={onOpenHistory}
+      disabled={!onOpenHistory}
+    >
       <div className="global-usage-row">
         <span className="global-usage-label">Today</span>
         <span className="global-usage-value">{formatCost(todayData.totalCost)}</span>
@@ -107,6 +119,6 @@ export function GlobalUsageFooter() {
         </div>
         <span className="global-usage-value">{formatCost(week.cost)}</span>
       </div>
-    </div>
+    </button>
   );
 }
