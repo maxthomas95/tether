@@ -5,6 +5,8 @@ import { registerIpcHandlers } from './ipc/handlers';
 import { sessionManager } from './session/session-manager';
 import { quotaService } from './quota/quota-service';
 import { usageService } from './usage/usage-service';
+import { loadPrices } from './usage/model-pricing';
+import { refreshPricesInBackground } from './usage/pricing-fetcher';
 import { getDb, closeDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
 import { markAllRunningAsStopped } from './db/session-repo';
@@ -203,6 +205,12 @@ if (!gotTheLock) {
 
   app.on('ready', () => {
     log.info('App ready, creating window');
+    // Pick up the latest cached pricing JSON (or fall back to bundled)
+    // before the renderer can request any cost calculations.
+    loadPrices(app.getPath('userData'));
+    // Background refresh — never awaited, never blocks startup. Failures
+    // are logged inside the fetcher and leave the cache untouched.
+    refreshPricesInBackground();
     createWindow();
   });
 

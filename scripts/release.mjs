@@ -3,17 +3,18 @@
 //
 // Phases (each is a no-op if its work is already done, so the script is
 // safe to re-run after a partial failure):
-//   1. preflight      — branch is main, tree clean, up to date with github
-//   2. release-branch — create/checkout release/v{version}-{prerelease}
-//   3. version        — bump package.json on the release branch
-//   4. changelog      — ensure a CHANGELOG.md section exists for the new version
-//   5. commit-push    — commit bump+changelog, push release branch to github
-//   6. pr             — open PR (or reuse existing), enable auto-merge (squash)
-//   7. wait-merge     — poll until the PR is merged into main
-//   8. tag            — fast-forward local main, tag the merged commit, push tag
-//   9. build          — npm run make
-//   10. assets        — locate Setup.exe and portable zip, rename to convention
-//   11. publish       — create GitHub release + upload assets
+//   1. preflight        — branch is main, tree clean, up to date with github
+//   2. release-branch   — create/checkout release/v{version}-{prerelease}
+//   3. version          — bump package.json on the release branch
+//   4. pricing-refresh  — fetch latest LiteLLM pricing JSON (best-effort)
+//   5. changelog        — ensure a CHANGELOG.md section exists for the new version
+//   6. commit-push      — commit bump+pricing+changelog, push release branch to github
+//   7. pr               — open PR (or reuse existing), enable auto-merge (squash)
+//   8. wait-merge       — poll until the PR is merged into main
+//   9. tag              — fast-forward local main, tag the merged commit, push tag
+//   10. build           — npm run make
+//   11. assets          — locate Setup.exe and portable zip, rename to convention
+//   12. publish         — create GitHub release + upload assets
 //
 // Usage:
 //   node scripts/release.mjs alpha.N            # cut a new alpha (patch bump)
@@ -30,6 +31,7 @@
 
 import { execSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs';
+import https from 'node:https';
 import { resolve, join, basename } from 'node:path';
 import { argv, exit, platform } from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -185,7 +187,7 @@ function releaseBranchName(version, prereleaseTag) {
 // ─── Phases ──────────────────────────────────────────────────────────────────
 
 function phasePreflight() {
-  log('Phase 1/11: preflight');
+  log('Phase 1/12: preflight');
   const branch = sh('git rev-parse --abbrev-ref HEAD');
   if (!RESUME && branch !== 'main') die(`Not on main (currently on ${branch})`);
 
@@ -206,7 +208,7 @@ function phasePreflight() {
 }
 
 function phaseReleaseBranch(version, prereleaseTag) {
-  log(`Phase 2/11: release branch`);
+  log(`Phase 2/12: release branch`);
   const branch = releaseBranchName(version, prereleaseTag);
   const currentBranch = sh('git rev-parse --abbrev-ref HEAD');
   const branchExists = sh(`git rev-parse --verify --quiet ${branch} || true`);
@@ -226,7 +228,7 @@ function phaseReleaseBranch(version, prereleaseTag) {
 }
 
 function phaseVersion(targetVersion) {
-  log(`Phase 3/11: version → ${targetVersion}`);
+  log(`Phase 3/12: version → ${targetVersion}`);
   const pkgPath = join(REPO_ROOT, 'package.json');
   const pkg = readJSON(pkgPath);
   if (pkg.version === targetVersion) {
@@ -238,8 +240,100 @@ function phaseVersion(targetVersion) {
   ok(`bumped package.json to ${targetVersion}`);
 }
 
+// LiteLLM publishes pricing for hundreds of models in a single JSON file
+// on the main branch of their repo. We vendor a snapshot at
+// src/main/usage/litellm-prices.json so installs work offline; this phase
+// keeps the snapshot fresh on every release. Best-effort: a network or
+// parse failure logs a warning and the release proceeds with whatever is
+// committed.
+const LITELLM_PRICING_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
+const LITELLM_PRICING_PATH = join(REPO_ROOT, 'src', 'main', 'usage', 'litellm-prices.json');
+const LITELLM_SENTINEL_KEYS = ['claude-sonnet-4-5', 'claude-3-5-sonnet-20241022', 'claude-opus-4-5', 'gpt-4o'];
+const LITELLM_FETCH_TIMEOUT_MS = 30_000;
+const LITELLM_MAX_BYTES = 5 * 1024 * 1024;
+
+function fetchLitellmPricing() {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const req = https.get(LITELLM_PRICING_URL, {
+      headers: { 'User-Agent': 'tether-release-script', Accept: 'application/json' },
+      timeout: LITELLM_FETCH_TIMEOUT_MS,
+    }, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        rejectPromise(new Error(`unexpected status ${res.statusCode}`));
+        return;
+      }
+      const chunks = [];
+      let received = 0;
+      let aborted = false;
+      res.on('data', (chunk) => {
+        if (aborted) return;
+        received += chunk.length;
+        if (received > LITELLM_MAX_BYTES) {
+          aborted = true;
+          req.destroy(new Error(`response exceeded ${LITELLM_MAX_BYTES} bytes`));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      res.on('end', () => { if (!aborted) resolvePromise(Buffer.concat(chunks)); });
+      res.on('error', rejectPromise);
+    });
+    req.on('timeout', () => req.destroy(new Error('request timed out')));
+    req.on('error', rejectPromise);
+  });
+}
+
+async function phasePricingRefresh() {
+  log('Phase 4/12: refresh LiteLLM pricing snapshot');
+  if (DRY_RUN) {
+    log('[dry-run] would fetch latest LiteLLM pricing JSON');
+    return;
+  }
+
+  let body;
+  try {
+    body = await fetchLitellmPricing();
+  } catch (e) {
+    warn(`pricing refresh skipped: ${e.message}. Releasing with committed snapshot.`);
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(body.toString('utf8'));
+  } catch (e) {
+    warn(`pricing refresh skipped: response is not valid JSON (${e.message}). Releasing with committed snapshot.`);
+    return;
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    warn('pricing refresh skipped: response is not a JSON object. Releasing with committed snapshot.');
+    return;
+  }
+  const hasSentinel = LITELLM_SENTINEL_KEYS.some((k) => Object.prototype.hasOwnProperty.call(parsed, k));
+  if (!hasSentinel) {
+    warn('pricing refresh skipped: response missing sentinel keys. Releasing with committed snapshot.');
+    return;
+  }
+
+  // Compare byte-for-byte with the committed file. The phaseCommitPush
+  // step already runs `git diff` and only commits when something changed,
+  // but bailing here keeps the log clean and avoids touching mtime.
+  if (existsSync(LITELLM_PRICING_PATH)) {
+    const current = readFileSync(LITELLM_PRICING_PATH);
+    if (current.equals(body)) {
+      ok('pricing JSON unchanged, skipping');
+      return;
+    }
+  }
+
+  writeFileSync(LITELLM_PRICING_PATH, body);
+  ok(`refreshed pricing snapshot (${body.length} bytes)`);
+}
+
 function phaseChangelog(version, prereleaseTag) {
-  log(`Phase 4/11: changelog`);
+  log(`Phase 5/12: changelog`);
   const path = join(REPO_ROOT, 'CHANGELOG.md');
   const content = readFileSync(path, 'utf8');
   const heading = `## [${version}-${prereleaseTag}]`;
@@ -277,11 +371,11 @@ function phaseChangelog(version, prereleaseTag) {
 }
 
 function phaseCommitPush(version, prereleaseTag, branch) {
-  log(`Phase 5/11: commit + push release branch`);
+  log(`Phase 6/12: commit + push release branch`);
 
-  const releaseFileDiff = sh('git diff --name-only HEAD -- package.json CHANGELOG.md');
+  const releaseFileDiff = sh('git diff --name-only HEAD -- package.json CHANGELOG.md src/main/usage/litellm-prices.json');
   if (releaseFileDiff) {
-    sh('git add package.json CHANGELOG.md', { mutating: true });
+    sh('git add package.json CHANGELOG.md src/main/usage/litellm-prices.json', { mutating: true });
     const msg = `Release v${version}-${prereleaseTag}`;
     sh(`git commit -m "${msg}"`, { mutating: true });
     ok(`committed bump to ${branch}`);
@@ -305,7 +399,7 @@ function phaseCommitPush(version, prereleaseTag, branch) {
 }
 
 async function phasePR(version, prereleaseTag, branch) {
-  log(`Phase 6/11: pull request`);
+  log(`Phase 7/12: pull request`);
   const title = `Release v${version}-${prereleaseTag}`;
 
   const existing = JSON.parse(gh(['pr', 'list', '--head', branch, '--state', 'all', '--json', 'number,state,url,mergedAt']) || '[]');
@@ -348,7 +442,7 @@ async function phasePR(version, prereleaseTag, branch) {
 }
 
 async function phaseWaitMerge(pr) {
-  log(`Phase 7/11: wait for merge`);
+  log(`Phase 8/12: wait for merge`);
   if (DRY_RUN) { ok('skip wait (dry-run)'); return; }
   if (pr.state === 'MERGED' || pr.mergedAt) { ok(`PR #${pr.number} already merged`); return; }
 
@@ -364,7 +458,7 @@ async function phaseWaitMerge(pr) {
 }
 
 function phaseTag(version, prereleaseTag) {
-  log(`Phase 8/11: tag main`);
+  log(`Phase 9/12: tag main`);
   const tag = `v${version}-${prereleaseTag}`;
 
   sh(`git fetch ${GITHUB_REMOTE} main`);
@@ -407,7 +501,7 @@ function locateArtifacts(version) {
 }
 
 function phaseBuild(version) {
-  log(`Phase 9/11: build (npm run make)`);
+  log(`Phase 10/12: build (npm run make)`);
   let { setupPath, zipPath } = locateArtifacts(version);
   if (setupPath && zipPath) {
     ok(`build artifacts already present for ${version}, skipping`);
@@ -428,7 +522,7 @@ function phaseBuild(version) {
 }
 
 function phaseAssets(version, { setupPath, zipPath }) {
-  log(`Phase 10/11: assets`);
+  log(`Phase 11/12: assets`);
   const setupName = `Tether-${version}-Setup.exe`;
   const zipName   = `Tether-${version}-portable.zip`;
   if (DRY_RUN && setupPath === '<dry-run>') {
@@ -445,7 +539,7 @@ function phaseAssets(version, { setupPath, zipPath }) {
 }
 
 async function phasePublishGithub(version, prereleaseTag, assets) {
-  log(`Phase 11/11: publish to GitHub`);
+  log(`Phase 12/12: publish to GitHub`);
   const tag = `v${version}-${prereleaseTag}`;
   // Convention: alpha.* = prerelease; beta.* and hotfix.* = full release (won't be latest until no newer).
   const isPrerelease = prereleaseTag.startsWith('alpha.');
@@ -538,6 +632,7 @@ async function main() {
   phasePreflight();
   const branch = phaseReleaseBranch(targetVersion, prereleaseTag);
   phaseVersion(targetVersion);
+  await phasePricingRefresh();
   phaseChangelog(targetVersion, prereleaseTag);
   phaseCommitPush(targetVersion, prereleaseTag, branch);
   const pr = await phasePR(targetVersion, prereleaseTag, branch);

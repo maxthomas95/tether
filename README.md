@@ -110,6 +110,20 @@ npm run start     # launch in dev mode (Electron Forge + Vite)
 | State | JSON file persistence | Embedded, zero-config |
 | Build | Electron Forge + Vite | Fast dev server, optimized production builds |
 
+## Network endpoints
+
+Tether runs as a desktop client; outbound network traffic is intentionally minimal. If you're on a corporate network with egress filtering, the destinations below are what you'll need to allow.
+
+| Destination | Purpose | Source |
+|---|---|---|
+| `api.github.com`, `github.com` | Auto-update check (latest GitHub Release polling) and downloading installers from the Releases page. | `src/main/update/update-checker.ts` |
+| `raw.githubusercontent.com` | Daily refresh of LiteLLM model pricing JSON. Falls back to the bundled snapshot if blocked. | `src/main/usage/pricing-fetcher.ts` |
+| Your Vault server | Resolving `vault://` env-var references at session start. Only contacted when Vault integration is configured. | `src/main/vault/` |
+| Your SSH host(s) | SSH-transport sessions and managed git worktree clones. Only contacted for environments you create. | `src/main/transport/ssh-transport.ts` |
+| Your Coder server | Coder workspace listing, creation, and PTY exec. Only contacted when Coder integration is configured. | `src/main/transport/coder-transport.ts` |
+
+The auto-update check and pricing refresh are the only "always-on" outbound calls; both fail silently and never block the app from launching. Disable the update check from **Settings → Updates** if you'd prefer no GitHub egress at all.
+
 ## Documentation
 
 | | |

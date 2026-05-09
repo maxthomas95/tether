@@ -93,21 +93,24 @@ Asset names use the **package.json version** (e.g. `0.3.0`), not the tag suffix.
 
 ## What the script does
 
-Eleven idempotent phases. Each phase is a no-op if its work is already done, so the script is safe to re-run after a partial failure.
+Twelve idempotent phases. Each phase is a no-op if its work is already done, so the script is safe to re-run after a partial failure.
 
 | # | Phase | Action | Skip condition |
 |---|---|---|---|
 | 1 | preflight | on `main`, tree clean, in sync with `github/main` | `--resume` relaxes branch/cleanliness checks |
 | 2 | release-branch | create/checkout `release/v{version}-{prerelease}` | branch already checked out |
 | 3 | version | bump `package.json` to target version | already at target |
-| 4 | changelog | draft CHANGELOG section if missing | section exists |
-| 5 | commit-push | commit bump+changelog, push release branch to GitHub | remote branch up to date |
-| 6 | pr | open PR via `gh`, enable squash auto-merge (fall back to direct squash) | PR already merged |
-| 7 | wait-merge | poll until PR is merged (30 min timeout) | PR already merged |
-| 8 | tag | fast-forward `main`, tag merged commit, push tag | tag exists locally + remotely |
-| 9 | build | `npm run make` | both expected artifacts exist |
-| 10 | assets | resolve upload names (`Tether-{version}-...`) | always runs |
-| 11 | publish | create GitHub release + upload assets | release exists / asset exists |
+| 4 | pricing-refresh | fetch latest LiteLLM pricing JSON; overwrite `src/main/usage/litellm-prices.json` if changed | unchanged, network/parse failure (warning only) |
+| 5 | changelog | draft CHANGELOG section if missing | section exists |
+| 6 | commit-push | commit bump+pricing+changelog, push release branch to GitHub | remote branch up to date |
+| 7 | pr | open PR via `gh`, enable squash auto-merge (fall back to direct squash) | PR already merged |
+| 8 | wait-merge | poll until PR is merged (30 min timeout) | PR already merged |
+| 9 | tag | fast-forward `main`, tag merged commit, push tag | tag exists locally + remotely |
+| 10 | build | `npm run make` | both expected artifacts exist |
+| 11 | assets | resolve upload names (`Tether-{version}-...`) | always runs |
+| 12 | publish | create GitHub release + upload assets | release exists / asset exists |
+
+The pricing-refresh phase is best-effort: a network or parse failure logs a warning and the release proceeds with whatever snapshot is committed. The bundled snapshot is also the offline fallback at runtime — see `src/main/usage/pricing-fetcher.ts` for the in-app refresh that runs on every launch.
 
 If `wait-merge` times out (e.g. a required check is failing and needs attention), fix the PR, wait for it to merge, then re-run with `--resume`.
 

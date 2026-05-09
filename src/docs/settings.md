@@ -62,3 +62,5 @@ Tether stores its configuration and session data in a JSON file at:
 ```
 
 Where `{userData}` is your OS user data directory (e.g., `%APPDATA%/Tether` on Windows). This file contains environments, session history, saved workspaces, and settings. It does not contain secrets -- those are either in Vault or set as environment variables at runtime.
+
+Usage tracking calculates per-model costs from a vendored copy of LiteLLM's pricing JSON (`{userData}/litellm-prices.json`), refreshed at most once a day from `raw.githubusercontent.com`. If you're on a locked-down network, see the **Network endpoints** section in the project README for the full list of outbound destinations and how to allowlist them.
