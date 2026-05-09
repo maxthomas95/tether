@@ -7,7 +7,7 @@ import { themeList } from '../styles/themes';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../utils/vault-path';
 
 const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
-import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo } from '../../shared/types';
+import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo, UsageExportFormat } from '../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 
 /** CLI tools that have definable flags (exclude 'custom' which has no known flags). */
@@ -70,6 +70,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [quotaEnabled, setQuotaEnabled] = useState(true);
   const [usageStripEnabled, setUsageStripEnabled] = useState(true);
   const [globalUsageEnabled, setGlobalUsageEnabled] = useState(true);
+  const [exportBusy, setExportBusy] = useState<UsageExportFormat | null>(null);
+  const [exportStatus, setExportStatus] = useState<{ kind: 'ok' | 'error'; message: string } | null>(null);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
   const [terminalFontSize, setTerminalFontSize] = useState(14);
   const [loaded, setLoaded] = useState(false);
@@ -186,6 +188,32 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
   }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, hideTerminalCursor, allowHelm, terminalFontSize, cliFlagsPerTool, vaultConfig, onClose]);
+
+  const handleExportUsage = async (format: UsageExportFormat) => {
+    setExportBusy(format);
+    setExportStatus(null);
+    try {
+      const result = await window.electronAPI.usage.export(format);
+      if (!result.ok) {
+        // No filePath means the user cancelled the save dialog — leave status alone.
+        if (result.error) {
+          setExportStatus({ kind: 'error', message: `Export failed: ${result.error}` });
+        }
+        return;
+      }
+      const count = result.sessionCount ?? 0;
+      const noun = count === 1 ? 'session' : 'sessions';
+      setExportStatus({
+        kind: 'ok',
+        message: `Exported ${count} ${noun} to ${result.filePath}`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setExportStatus({ kind: 'error', message: `Export failed: ${message}` });
+    } finally {
+      setExportBusy(null);
+    }
+  };
 
   const handleVaultLogin = async () => {
     setVaultLoginError(null);
@@ -1193,6 +1221,44 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             <p className="form-hint">
               Display today's total cost and a 7-day sparkline above the quota footer. Hover for a full breakdown including monthly and all-time totals.
             </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label settings-section-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              <span>Export usage history</span>
+            </label>
+            <p className="form-hint" style={{ marginTop: 0 }}>
+              Save every tracked session's tokens and API-equivalent cost to a file. CSV is one row per session for spreadsheets; JSON includes the full per-model breakdown and daily rollups.
+            </p>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button
+                type="button"
+                className="form-btn"
+                disabled={exportBusy !== null}
+                onClick={() => handleExportUsage('csv')}
+              >
+                {exportBusy === 'csv' ? 'Exporting…' : 'Export as CSV…'}
+              </button>
+              <button
+                type="button"
+                className="form-btn"
+                disabled={exportBusy !== null}
+                onClick={() => handleExportUsage('json')}
+              >
+                {exportBusy === 'json' ? 'Exporting…' : 'Export as JSON…'}
+              </button>
+            </div>
+            {exportStatus && (
+              <p
+                className="form-hint"
+                style={{
+                  marginTop: 8,
+                  color: exportStatus.kind === 'error' ? 'var(--status-dead)' : 'var(--status-running)',
+                }}
+              >
+                {exportStatus.message}
+              </p>
+            )}
           </div>
             </>
           )}

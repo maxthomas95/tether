@@ -410,6 +410,19 @@ class UsageService {
     };
   }
 
+  /**
+   * Per-session usage rows enriched with `workingDir`. Used by the export
+   * IPC; not persisted because callers of `getAll()` already have the
+   * `workingDir` available via the session list when they need it for UI.
+   */
+  getEnrichedSessions(): Array<SessionUsage & { workingDir: string }> {
+    const out: Array<SessionUsage & { workingDir: string }> = [];
+    for (const tracked of this.tracked.values()) {
+      out.push({ ...tracked.usage, workingDir: tracked.workingDir });
+    }
+    return out;
+  }
+
   async refresh(sessionId?: string): Promise<UsageInfo> {
     const refreshOne = (session: TrackedSession): void => {
       if (session.cliTool === 'claude' || session.cliTool === 'codex') {
