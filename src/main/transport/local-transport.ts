@@ -1,19 +1,11 @@
-// node-pty is imported lazily to avoid crashing the main process at startup
-// if the native binary has an ABI mismatch
+// node-pty is imported lazily (via pty-loader) to avoid crashing the main
+// process at startup if the native binary has an ABI mismatch.
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
 import { createLogger } from '../logger';
 import { buildCliArgsForTool } from '../../shared/cli-tools';
+import { loadPty } from './pty-loader';
 
 const log = createLogger('local-pty');
-
-let ptyModule: typeof import('node-pty') | null = null;
-
-function getPty(): typeof import('node-pty') {
-  if (!ptyModule) {
-    ptyModule = require('node-pty');
-  }
-  return ptyModule!;
-}
 
 interface IPty {
   pid: number;
@@ -35,7 +27,7 @@ export class LocalTransport implements SessionTransport {
   }
 
   async start(options: TransportStartOptions): Promise<void> {
-    const pty = getPty();
+    const pty = loadPty();
     const binary = options.binaryName || 'claude';
 
     const resumeToolSessionId = options.resumeToolSessionId || options.resumeClaudeSessionId;

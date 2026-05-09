@@ -3,6 +3,7 @@
 // stdin). The workspace name is passed through `options.workingDir`.
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
 import { createLogger } from '../logger';
+import { loadPty } from './pty-loader';
 
 const log = createLogger('coder-pty');
 
@@ -17,15 +18,6 @@ const quotePath = (p: string): string => {
   if (p.startsWith('~/')) return '~/' + shq(p.slice(2));
   return shq(p);
 };
-
-let ptyModule: typeof import('node-pty') | null = null;
-
-function getPty(): typeof import('node-pty') {
-  if (!ptyModule) {
-    ptyModule = require('node-pty');
-  }
-  return ptyModule!;
-}
 
 interface IPty {
   pid: number;
@@ -56,7 +48,7 @@ export class CoderTransport implements SessionTransport {
   }
 
   async start(options: TransportStartOptions): Promise<void> {
-    const pty = getPty();
+    const pty = loadPty();
 
     // workingDir holds the workspace name, optionally with a subdirectory
     // inside the workspace separated by `::`. The subdir is cd'd into before
