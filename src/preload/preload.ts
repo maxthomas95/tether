@@ -216,12 +216,12 @@ const api: TetherAPI = {
       ipcRenderer.invoke(IPC.SESSIONORDER_SET_PREF, environmentId, workingDir, orderedIds),
   },
   usage: {
-    getSession: (claudeSessionId: string): Promise<SessionUsage | null> =>
-      ipcRenderer.invoke(IPC.USAGE_GET_SESSION, claudeSessionId),
+    getSession: (sessionId: string): Promise<SessionUsage | null> =>
+      ipcRenderer.invoke(IPC.USAGE_GET_SESSION, sessionId),
     getAll: (): Promise<UsageInfo> =>
       ipcRenderer.invoke(IPC.USAGE_GET_ALL),
-    refresh: (claudeSessionId?: string): Promise<UsageInfo> =>
-      ipcRenderer.invoke(IPC.USAGE_REFRESH, claudeSessionId),
+    refresh: (sessionId?: string): Promise<UsageInfo> =>
+      ipcRenderer.invoke(IPC.USAGE_REFRESH, sessionId),
     onUpdate(cb: (info: UsageInfo) => void): () => void {
       const h = (_e: Electron.IpcRendererEvent, info: UsageInfo) => cb(info);
       ipcRenderer.on(IPC.USAGE_UPDATED, h);
