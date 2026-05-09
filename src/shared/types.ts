@@ -389,6 +389,18 @@ export interface HostVerifyRequest {
   keyHash: string;
 }
 
+export interface DiagnosticsExportResult {
+  ok: boolean;
+  /** Absolute path to the written zip when ok is true. */
+  path?: string;
+  /** Total bytes written. */
+  bytes?: number;
+  /** File names included in the zip. */
+  files?: string[];
+  /** Reason for failure when ok is false. `'cancelled'` means the user dismissed the save dialog. */
+  error?: string;
+}
+
 export interface CreateEnvironmentOptions {
   name: string;
   type: EnvironmentType;
@@ -548,6 +560,10 @@ export interface TetherAPI {
   knownHosts: {
     list(): Promise<KnownHostInfo[]>;
     delete(id: string): Promise<void>;
+  };
+  diagnostics: {
+    /** Open a save dialog and write a scrubbed bundle of data.json + logs to the chosen path. */
+    export(): Promise<DiagnosticsExportResult>;
   };
 }
 

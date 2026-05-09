@@ -21,6 +21,7 @@ import type {
   KnownHostInfo,
   HostVerifyRequest,
   SessionExitInfo,
+  DiagnosticsExportResult,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -253,6 +254,9 @@ const api: TetherAPI = {
   knownHosts: {
     list: (): Promise<KnownHostInfo[]> => ipcRenderer.invoke(IPC.KNOWN_HOSTS_LIST),
     delete: (id: string): Promise<void> => ipcRenderer.invoke(IPC.KNOWN_HOSTS_DELETE, id),
+  },
+  diagnostics: {
+    export: (): Promise<DiagnosticsExportResult> => ipcRenderer.invoke(IPC.DIAGNOSTICS_EXPORT),
   },
 };
 

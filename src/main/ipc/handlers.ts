@@ -999,4 +999,17 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     log.info('Revoking known host', { id });
     knownHostsRepo.deleteKnownHost(id);
   });
+
+  // === Diagnostics export ===
+
+  ipcMain.handle(IPC.DIAGNOSTICS_EXPORT, async () => {
+    const { exportDiagnostics, defaultExportFilename } = await import('../diagnostics/diagnostics-service');
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export diagnostics',
+      defaultPath: defaultExportFilename(),
+      filters: [{ name: 'Zip', extensions: ['zip'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, error: 'cancelled' };
+    return exportDiagnostics(result.filePath);
+  });
 }
