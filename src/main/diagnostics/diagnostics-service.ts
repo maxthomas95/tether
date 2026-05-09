@@ -104,6 +104,12 @@ export async function exportDiagnostics(destPath: string): Promise<DiagnosticsEx
 
 /** Default save-dialog filename: `tether-diagnostics-2026-05-09T17-30-00.zip`. */
 export function defaultExportFilename(now: Date = new Date()): string {
-  const stamp = now.toISOString().replace(/:/g, '-').replace(/\..+$/, '');
+  // ISO format is `YYYY-MM-DDTHH:mm:ss.sssZ`; we want the seconds part with
+  // colons swapped for dashes (filename-safe). Avoid `/\..+$/` to dodge
+  // Sonar S5852's super-linear-backtracking heuristic on `.+$`.
+  const iso = now.toISOString();
+  const dotIdx = iso.indexOf('.');
+  const trimmed = dotIdx >= 0 ? iso.slice(0, dotIdx) : iso;
+  const stamp = trimmed.replaceAll(':', '-');
   return `tether-diagnostics-${stamp}.zip`;
 }
