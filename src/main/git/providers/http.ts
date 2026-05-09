@@ -1,5 +1,9 @@
 export function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, '');
+  // Trailing-slash trimming via while-loop, not regex: Sonar flags `/\/+$/`
+  // as S5852 (ReDoS) on new code — same fix as github-client's earlier sweep.
+  let normalized = baseUrl;
+  while (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
+  return normalized;
 }
 
 interface JsonRequestOptions {
