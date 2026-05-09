@@ -234,7 +234,12 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   );
 
   const handleAddProvider = async () => {
-    if (!newProviderName.trim() || !newProviderUrl.trim() || !newProviderToken.trim()) return;
+    const defaultBaseUrl =
+      newProviderType === 'github' ? 'https://api.github.com'
+      : newProviderType === 'ado' ? 'https://dev.azure.com'
+      : '';
+    const effectiveBaseUrl = newProviderUrl.trim() || defaultBaseUrl;
+    if (!newProviderName.trim() || !effectiveBaseUrl || !newProviderToken.trim()) return;
     setNewProviderError(null);
     try {
       let tokenToStore = newProviderToken.trim();
@@ -253,7 +258,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       const provider = await window.electronAPI.gitProvider.create({
         name: newProviderName.trim(),
         type: newProviderType,
-        baseUrl: newProviderUrl.trim(),
+        baseUrl: effectiveBaseUrl,
         organization: newProviderType === 'ado' ? newProviderOrg.trim() : undefined,
         token: tokenToStore,
       });
@@ -841,6 +846,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                       </button>
                     )}
                   </div>
+                  {newProviderType === 'github' && (
+                    <p className="form-hint" style={{ marginTop: 4 }}>
+                      Classic PAT: <code>repo</code> + <code>read:org</code>. Fine-grained PAT: Contents (Read).
+                    </p>
+                  )}
                   {isVaultRef(newProviderToken) && (
                     <p className="form-hint" style={{ marginTop: 4, color: 'var(--status-running)' }}>
                       Resolved from Vault on each request.
