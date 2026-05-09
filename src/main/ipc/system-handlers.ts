@@ -1,0 +1,46 @@
+import { ipcMain, shell } from 'electron';
+import { IPC } from '../../shared/constants';
+import { createLogger } from '../logger';
+import type { HandlerContext } from './helpers';
+
+const log = createLogger('ipc:system');
+
+export function registerSystemHandlers(_ctx: HandlerContext): void {
+  ipcMain.handle(IPC.UPDATE_CHECK, async () => {
+    const { checkForUpdates } = await import('../update/update-checker');
+    return checkForUpdates();
+  });
+
+  ipcMain.handle(IPC.UPDATE_OPEN_RELEASE_PAGE, async (_event, url: string) => {
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'https:' || u.host !== 'github.com' || !u.pathname.startsWith('/maxthomas95/tether/')) {
+        log.warn('Refusing to open non-release URL', { url });
+        return;
+      }
+    } catch {
+      log.warn('Refusing to open malformed URL', { url });
+      return;
+    }
+    await shell.openExternal(url);
+  });
+
+  ipcMain.handle(IPC.SHELL_OPEN_EXTERNAL, async (_event, url: string) => {
+    if (typeof url !== 'string' || url.length > 2048) {
+      log.warn('Refusing to open URL: invalid or too long', { length: typeof url === 'string' ? url.length : -1 });
+      return;
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      log.warn('Refusing to open malformed URL', { url });
+      return;
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      log.warn('Refusing to open URL with disallowed protocol', { url });
+      return;
+    }
+    await shell.openExternal(url);
+  });
+}
