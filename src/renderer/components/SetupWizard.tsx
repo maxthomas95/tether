@@ -315,6 +315,16 @@ export function SetupWizard({ isOpen, onClose }: SetupWizardProps) {
                         Classic PAT: <code>repo</code> + <code>read:org</code>. Fine-grained PAT: Contents (Read).
                       </p>
                     )}
+                    {providerType === 'gitea' && (
+                      <p className="form-hint" style={{ marginTop: 4 }}>
+                        Scoped token needs <code>read:user</code> + <code>read:repository</code> to browse, plus <code>write:user</code> + <code>write:repository</code> to create new repos.
+                      </p>
+                    )}
+                    {providerType === 'ado' && (
+                      <p className="form-hint" style={{ marginTop: 4 }}>
+                        PAT needs <strong>Code (Read)</strong> to browse, or <strong>Code (Read &amp; write)</strong> to create new repos. <strong>Project and Team (Read)</strong> is also required for the project picker.
+                      </p>
+                    )}
                   </div>
                   {providerError && (
                     <p className="form-hint" style={{ color: 'var(--status-dead)', marginBottom: 8 }}>
