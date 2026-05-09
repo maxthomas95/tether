@@ -726,6 +726,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                   >
                     <option value="gitea">Gitea</option>
                     <option value="ado">Azure DevOps</option>
+                    <option value="github">GitHub</option>
                   </select>
                 </div>
                 <div className="form-group">
@@ -743,8 +744,17 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
                     className="form-input"
                     value={newProviderUrl}
                     onChange={e => setNewProviderUrl(e.target.value)}
-                    placeholder={newProviderType === 'gitea' ? 'https://gitea.example.com' : 'https://dev.azure.com'}
+                    placeholder={
+                      newProviderType === 'gitea' ? 'https://gitea.example.com'
+                      : newProviderType === 'github' ? 'https://api.github.com'
+                      : 'https://dev.azure.com'
+                    }
                   />
+                  {newProviderType === 'github' && (
+                    <p className="form-hint" style={{ marginTop: 4 }}>
+                      Use https://api.github.com for github.com, or your GHE URL like https://github.example.com/api/v3
+                    </p>
+                  )}
                 </div>
                 {newProviderType === 'ado' && (
                   <div className="form-group">

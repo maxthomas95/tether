@@ -227,7 +227,7 @@ The IPC surface has grown to ~67 channels across these families (see `src/main/i
 **Main -> Renderer (events):**
 - `session:data` — { sessionId, data } (raw PTY bytes — high frequency)
 - `session:state-change` — { sessionId, state } (status detector updates)
-- `session:exited` — { sessionId, exitCode } (PTY exit notification)
+- `session:exited` - { sessionId, exitInfo: { exitCode, signal? } } (PTY exit notification)
 
 **Data streaming consideration:** PTY data (`session:data`) is the highest-frequency event. For local sessions this can be thousands of events per second during heavy output. Electron IPC handles this fine for a single active session, but if we're streaming data for background sessions (for status detection), we need to be mindful of IPC overhead. The main process should only send `session:data` for the **currently visible session** to the renderer. Background session data is consumed only by the status detector in the main process.
 

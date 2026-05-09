@@ -245,6 +245,15 @@ export function SetupWizard({ isOpen, onClose }: SetupWizardProps) {
                         />
                         Azure DevOps
                       </label>
+                      <label className="form-radio-label">
+                        <input
+                          type="radio"
+                          name="providerType"
+                          checked={providerType === 'github'}
+                          onChange={() => setProviderType('github')}
+                        />
+                        GitHub
+                      </label>
                     </div>
                   </div>
                   <div className="form-group">
@@ -262,9 +271,18 @@ export function SetupWizard({ isOpen, onClose }: SetupWizardProps) {
                       className="form-input"
                       value={providerUrl}
                       onChange={e => setProviderUrl(e.target.value)}
-                      placeholder={providerType === 'gitea' ? 'https://gitea.example.com' : 'https://dev.azure.com'}
+                      placeholder={
+                        providerType === 'gitea' ? 'https://gitea.example.com'
+                        : providerType === 'github' ? 'https://api.github.com'
+                        : 'https://dev.azure.com'
+                      }
                       spellCheck={false}
                     />
+                    {providerType === 'github' && (
+                      <p className="form-hint" style={{ marginTop: 4 }}>
+                        Use https://api.github.com for github.com, or your GHE URL like https://github.example.com/api/v3
+                      </p>
+                    )}
                   </div>
                   {providerType === 'ado' && (
                     <div className="form-group">
