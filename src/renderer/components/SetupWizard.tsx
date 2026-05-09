@@ -83,13 +83,18 @@ export function SetupWizard({ isOpen, onClose }: SetupWizardProps) {
   }, []);
 
   const handleProviderSave = useCallback(async () => {
-    if (!providerName.trim() || !providerUrl.trim() || !providerToken.trim()) return;
+    const defaultBaseUrl =
+      providerType === 'github' ? 'https://api.github.com'
+      : providerType === 'ado' ? 'https://dev.azure.com'
+      : '';
+    const effectiveBaseUrl = providerUrl.trim() || defaultBaseUrl;
+    if (!providerName.trim() || !effectiveBaseUrl || !providerToken.trim()) return;
     setProviderError(null);
     try {
       await window.electronAPI.gitProvider.create({
         name: providerName.trim(),
         type: providerType,
-        baseUrl: providerUrl.trim(),
+        baseUrl: effectiveBaseUrl,
         organization: providerType === 'ado' ? providerOrg.trim() : undefined,
         token: providerToken.trim(),
       });
@@ -305,6 +310,11 @@ export function SetupWizard({ isOpen, onClose }: SetupWizardProps) {
                       placeholder="ghp_... or PAT"
                       spellCheck={false}
                     />
+                    {providerType === 'github' && (
+                      <p className="form-hint" style={{ marginTop: 4 }}>
+                        Classic PAT: <code>repo</code> + <code>read:org</code>. Fine-grained PAT: Contents (Read).
+                      </p>
+                    )}
                   </div>
                   {providerError && (
                     <p className="form-hint" style={{ color: 'var(--status-dead)', marginBottom: 8 }}>
