@@ -18,8 +18,9 @@ export default defineConfig({
       'react-dom',
       'react-dom/client',
       'react/jsx-runtime',
-      'xterm',
-      'xterm-addon-fit',
+      '@xterm/xterm',
+      '@xterm/addon-fit',
+      '@xterm/addon-web-links',
     ],
   },
 });
