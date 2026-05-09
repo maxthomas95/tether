@@ -17,7 +17,8 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 - [planned] Persist scrollback per pane across re-layouts
 
 #### Usage tracking
-- [planned] Copilot CLI pricing/coverage audit (newly added tool, may not be priced)
+- [done] Codex CLI cost tracking — `src/main/usage/codex-jsonl-parser.ts` tracks the active model from `turn_context` lines and sums `last_token_usage` deltas (input, cached, output, reasoning) from `event_msg` `token_count` events; `usage-service.ts` walks `~/.codex/sessions/` on backfill and watches live files on append. Codex models all resolve under bare LiteLLM keys (`gpt-5-codex`, `gpt-5.5`, etc.) so no pricing-prefix fallback was needed.
+- [planned] Copilot CLI cost tracking — `events.jsonl` schema for token-bearing events is unverified (no sample available locally). Will need either a real session sample or upstream docs to mirror the Codex parser. Pricing has wide LiteLLM coverage under `github_copilot/*` keys; will require extending `model-pricing.ts:lookupLiteLLM` to try the `github_copilot/` prefix when ingestion lands.
 - [done] OpenCode / Crush cost tracking — `usage-service.ts` is now CLI-agnostic; OpenCode sessions read pre-computed cost from `crush.db` (`src/main/opencode/usage-reader.ts`)
 - [done] Cost accuracy audit — pricing now sourced from a vendored copy of LiteLLM's `model_prices_and_context_window.json` (`src/main/usage/litellm-prices.json`); covers Anthropic / OpenAI / Google / Bedrock / Vertex etc., with explicit cache-create / cache-read rates when published. Refresh by replacing the JSON. Existing prefix fallback retained for unknown future Anthropic models.
 - [planned] CSV / JSON export of usage history
