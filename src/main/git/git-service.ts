@@ -126,6 +126,28 @@ export function createFolder(opts: CreateFolderOptions): Promise<string> {
   });
 }
 
+export function gitRemoteAdd(repoPath: string, remoteName: string, remoteUrl: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!isGitRepo(repoPath)) {
+      return reject(new Error(`Not a git repository: ${repoPath}`));
+    }
+    // Spawning by binary name (PATH lookup) matches the rest of git-service.ts.
+    const proc = spawn('git', ['-C', repoPath, 'remote', 'add', remoteName, remoteUrl], { // NOSONAR(typescript:S4036)
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stderr = '';
+    proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+    proc.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || `git remote add exited with code ${code}`));
+    });
+
+    proc.on('error', reject);
+  });
+}
+
 export function isGitRepo(directory: string): boolean {
   try {
     const gitPath = `${directory}/.git`;

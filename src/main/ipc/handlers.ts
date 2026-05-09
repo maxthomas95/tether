@@ -8,6 +8,7 @@ import type {
   LaunchProfileInfo,
   GitProviderInfo,
   CreateGitProviderOptions,
+  CreateRepoOptions,
   VaultConfig,
   VaultStatus,
   VaultPreflightResult,
@@ -30,7 +31,7 @@ import * as envRepo from '../db/environment-repo';
 import * as sessionRepo from '../db/session-repo';
 import * as profileRepo from '../db/profile-repo';
 import * as gitProviderRepo from '../db/git-provider-repo';
-import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo, createFolder } from '../git/git-service';
+import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo, createFolder, gitRemoteAdd } from '../git/git-service';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { GiteaClient } from '../git/providers/gitea-client';
 import { AdoClient } from '../git/providers/ado-client';
@@ -498,6 +499,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       type: row.type,
       baseUrl: row.baseUrl,
       organization: row.organization || undefined,
+      defaultProject: row.defaultProject || undefined,
       hasToken: !!row.token,
       tokenIsVaultRef,
       tokenVaultRef: tokenIsVaultRef ? row.token : undefined,
@@ -514,6 +516,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       type: opts.type,
       baseUrl: opts.baseUrl,
       organization: opts.organization,
+      defaultProject: opts.defaultProject,
       token: opts.token,
     });
     return toProviderInfo(row);
@@ -566,6 +569,32 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   });
 
+  ipcMain.handle(IPC.GIT_PROVIDER_LIST_PROJECTS, async (_event, providerId: string) => {
+    const provider = gitProviderRepo.getGitProvider(providerId);
+    if (!provider) throw new Error('Provider not found');
+    if (provider.type !== 'ado') return [];
+    const token = await resolveProviderToken(provider.token);
+    const client = new AdoClient(provider.baseUrl, provider.organization || '', token);
+    return client.listProjects();
+  });
+
+  ipcMain.handle(IPC.GIT_PROVIDER_CREATE_REPO, async (_event, providerId: string, opts: CreateRepoOptions) => {
+    const provider = gitProviderRepo.getGitProvider(providerId);
+    if (!provider) throw new Error('Provider not found');
+    log.info('Git provider create repo', { providerId, type: provider.type, name: opts.name });
+    const token = await resolveProviderToken(provider.token);
+    if (provider.type === 'gitea') {
+      const client = new GiteaClient(provider.baseUrl, token);
+      return client.createRepo(opts);
+    } else if (provider.type === 'github') {
+      const client = new GitHubClient(provider.baseUrl, token);
+      return client.createRepo(opts);
+    } else {
+      const client = new AdoClient(provider.baseUrl, provider.organization || '', token);
+      return client.createRepo(opts);
+    }
+  });
+
   // === Git clone / init ===
 
   ipcMain.handle(IPC.GIT_CLONE, async (_event, url: string, destination: string) => {
@@ -586,6 +615,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.GIT_CREATE_FOLDER, async (_event, path: string, initGit: boolean) => {
     log.info('Git create folder', { path, initGit });
     return createFolder({ path, initGit });
+  });
+
+  ipcMain.handle(IPC.GIT_REMOTE_ADD, async (_event, repoPath: string, remoteName: string, remoteUrl: string) => {
+    log.info('Git remote add', { repoPath, remoteName });
+    return gitRemoteAdd(repoPath, remoteName, remoteUrl);
   });
 
   ipcMain.handle(IPC.GIT_IS_REPO, async (_event, directory: string) => isGitRepo(directory));

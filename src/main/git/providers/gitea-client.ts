@@ -1,4 +1,4 @@
-import type { GitRepoInfo } from '../../../shared/types';
+import type { GitRepoInfo, CreateRepoOptions } from '../../../shared/types';
 
 export class GiteaClient {
   private baseUrl: string;
@@ -19,6 +19,23 @@ export class GiteaClient {
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`Gitea API ${res.status}: ${body || res.statusText}`);
+    }
+    return res.json() as Promise<T>;
+  }
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    const res = await fetch(`${this.baseUrl}/api/v1${path}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${this.token}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Gitea API ${res.status}: ${text || res.statusText}`);
     }
     return res.json() as Promise<T>;
   }
@@ -50,6 +67,16 @@ export class GiteaClient {
     });
     const raw = await this.request<unknown>(`/repos/search?${params}`);
     return extractRepos(raw).map(mapGiteaRepo);
+  }
+
+  async createRepo(opts: CreateRepoOptions): Promise<GitRepoInfo> {
+    const created = await this.post<GiteaRepo>('/user/repos', {
+      name: opts.name,
+      description: opts.description || '',
+      private: opts.isPrivate,
+      auto_init: false,
+    });
+    return mapGiteaRepo(created);
   }
 }
 

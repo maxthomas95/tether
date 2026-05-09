@@ -1,4 +1,4 @@
-import type { GitRepoInfo } from '../../../shared/types';
+import type { GitRepoInfo, CreateRepoOptions, AdoProjectInfo } from '../../../shared/types';
 
 export class AdoClient {
   private baseUrl: string;
@@ -22,6 +22,24 @@ export class AdoClient {
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`ADO API ${res.status}: ${body || res.statusText}`);
+    }
+    return res.json() as Promise<T>;
+  }
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    const url = `${this.baseUrl}/${this.organization}${path}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': this.authHeader,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`ADO API ${res.status}: ${text || res.statusText}`);
     }
     return res.json() as Promise<T>;
   }
@@ -56,6 +74,37 @@ export class AdoClient {
     }
 
     return allRepos;
+  }
+
+  async listProjects(): Promise<AdoProjectInfo[]> {
+    const res = await this.request<AdoListResponse<AdoProject>>(
+      '/_apis/projects?api-version=7.0&$top=100'
+    );
+    return res.value.map(p => ({
+      id: p.id,
+      name: p.name,
+      description: p.description || '',
+    }));
+  }
+
+  async createRepo(opts: CreateRepoOptions): Promise<GitRepoInfo> {
+    if (!opts.adoProject) {
+      throw new Error('ADO repo creation requires a project');
+    }
+    const created = await this.post<AdoRepo>(
+      `/${opts.adoProject.name}/_apis/git/repositories?api-version=7.0`,
+      {
+        name: opts.name,
+        project: { id: opts.adoProject.id },
+      }
+    );
+    return {
+      fullName: `${opts.adoProject.name}/${created.name}`,
+      cloneUrl: created.remoteUrl,
+      description: opts.description || '',
+      defaultBranch: created.defaultBranch?.replace('refs/heads/', '') || 'main',
+      isPrivate: true,
+    };
   }
 }
 

@@ -1,4 +1,4 @@
-import type { GitRepoInfo } from '../../../shared/types';
+import type { GitRepoInfo, CreateRepoOptions } from '../../../shared/types';
 
 export class GitHubClient {
   private readonly baseUrl: string;
@@ -22,6 +22,24 @@ export class GitHubClient {
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`GitHub API ${res.status}: ${body || res.statusText}`);
+    }
+    return res.json() as Promise<T>;
+  }
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`GitHub API ${res.status}: ${text || res.statusText}`);
     }
     return res.json() as Promise<T>;
   }
@@ -53,6 +71,16 @@ export class GitHubClient {
     const q = (query || '').trim().toLowerCase();
     if (!q) return mapped;
     return mapped.filter(r => r.fullName.toLowerCase().includes(q));
+  }
+
+  async createRepo(opts: CreateRepoOptions): Promise<GitRepoInfo> {
+    const created = await this.post<GitHubRepo>('/user/repos', {
+      name: opts.name,
+      description: opts.description || '',
+      private: opts.isPrivate,
+      auto_init: false,
+    });
+    return mapGitHubRepo(created);
   }
 }
 
