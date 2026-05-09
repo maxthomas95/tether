@@ -315,6 +315,18 @@ export interface RepoGroupPref {
   sortOrder: number;
 }
 
+/**
+ * User-chosen ordering of sessions within a single repo group. The renderer
+ * sorts sessions in `byDir` by `orderedIds.indexOf(id)` (missing → end), so
+ * new sessions naturally append and removed sessions drop out without any
+ * cleanup pass.
+ */
+export interface SessionOrderPref {
+  environmentId: string;
+  workingDir: string;
+  orderedIds: string[];
+}
+
 export interface KnownHostInfo {
   id: string;
   hostKey: string;
@@ -461,6 +473,10 @@ export interface TetherAPI {
   repoGroup: {
     getPrefs(): Promise<RepoGroupPref[]>;
     setPrefs(environmentId: string, prefs: RepoGroupPref[]): Promise<void>;
+  };
+  sessionOrder: {
+    getPrefs(): Promise<SessionOrderPref[]>;
+    setPref(environmentId: string, workingDir: string, orderedIds: string[]): Promise<void>;
   };
   usage: {
     getSession(claudeSessionId: string): Promise<SessionUsage | null>;

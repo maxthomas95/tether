@@ -40,6 +40,9 @@ export const IPC = {
   REPOGROUP_GET_PREFS: 'repogroup:get-prefs',
   REPOGROUP_SET_PREFS: 'repogroup:set-prefs',
 
+  SESSIONORDER_GET_PREFS: 'sessionorder:get-prefs',
+  SESSIONORDER_SET_PREF: 'sessionorder:set-pref',
+
   TITLEBAR_UPDATE: 'titlebar:update',
 
   // Git provider & clone
