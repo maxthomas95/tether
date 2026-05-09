@@ -501,6 +501,8 @@ export interface TetherAPI {
 }
 
 declare global {
+  var electronAPI: TetherAPI;
+
   interface Window {
     electronAPI: TetherAPI;
   }

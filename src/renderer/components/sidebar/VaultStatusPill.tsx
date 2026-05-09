@@ -36,7 +36,7 @@ function kindColor(kind: PillKind): string {
   }
 }
 
-export function VaultStatusPill({ onAuthError }: VaultStatusPillProps) {
+export function VaultStatusPill({ onAuthError }: Readonly<VaultStatusPillProps>) {
   const [status, setStatus] = useState<VaultStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [, forceTick] = useState(0);

@@ -19,6 +19,13 @@ vi.mock('../logger', () => ({
 import { checkForUpdates } from './update-checker';
 
 const fetchMock = vi.fn();
+const releaseResponse = {
+  ok: true,
+  json: async () => [
+    { tag_name: 'v0.4.2', html_url: 'https://github.com/maxthomas95/tether/releases/tag/v0.4.2', draft: false, prerelease: false },
+  ],
+};
+const failedResponse = { ok: false, status: 503 };
 
 describe('checkForUpdates', () => {
   beforeEach(() => {
@@ -31,12 +38,7 @@ describe('checkForUpdates', () => {
   });
 
   it('reports update availability from GitHub releases', async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => [
-        { tag_name: 'v0.4.2', html_url: 'https://github.com/maxthomas95/tether/releases/tag/v0.4.2', draft: false, prerelease: false },
-      ],
-    } as unknown as Response);
+    fetchMock.mockResolvedValue(releaseResponse);
 
     const result = await checkForUpdates();
 
@@ -46,7 +48,7 @@ describe('checkForUpdates', () => {
   });
 
   it('returns a visible error for GitHub API failures', async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 503 } as unknown as Response);
+    fetchMock.mockResolvedValue(failedResponse);
 
     const result = await checkForUpdates();
 

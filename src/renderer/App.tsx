@@ -93,7 +93,7 @@ export function App() {
 
   const markExpectedSessionExit = useCallback((sessionId: string) => {
     expectedSessionExitIds.current.add(sessionId);
-    window.setTimeout(() => {
+    globalThis.setTimeout(() => {
       expectedSessionExitIds.current.delete(sessionId);
     }, 30_000);
   }, []);
@@ -304,7 +304,7 @@ export function App() {
     const removeState = window.electronAPI.session.onStateChange((sid, state: SessionState) => {
       setSessions(prev => prev.map(s => s.id === sid ? { ...s, state } : s));
     });
-    const removeExit = window.electronAPI.session.onExited((sid, exitInfo) => {
+    const removeExit = globalThis.electronAPI.session.onExited((sid, exitInfo) => {
       const managed = termManager.getOrCreate(sid);
       managed.terminal.write('\r\n\x1b[90m[Session ended]\x1b[0m\r\n');
       const wasExpected = expectedSessionExitIds.current.delete(sid);
@@ -936,7 +936,7 @@ export function App() {
         action: {
           label: 'Renew',
           onClick: () => {
-            window.electronAPI.vault.login().catch(notifyVaultAuthError);
+            globalThis.electronAPI.vault.login().catch(notifyVaultAuthError);
           },
         },
       });
