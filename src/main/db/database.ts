@@ -1,8 +1,12 @@
 import { app } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
+import { atomicWriteFileSync, cleanupOrphanTmp } from './atomic-write';
+import { createLogger } from '../logger';
 import type { CliToolId } from '../../shared/cli-tools';
 import type { RepoGroupPref, SessionOrderPref } from '../../shared/types';
+
+const log = createLogger('database');
 
 export interface SavedSession {
   workingDir: string;
@@ -210,6 +214,10 @@ function normalizeLaunchProfiles(profiles: unknown): LaunchProfileRow[] {
 export function getDb(): DbData {
   if (!data) {
     const filePath = getDbPath();
+    const orphanState = cleanupOrphanTmp(filePath);
+    if (orphanState === 'orphan-only') {
+      log.warn('Found orphan data.json.tmp with no data.json — leaving in place; starting from defaults');
+    }
     if (fs.existsSync(filePath)) {
       try {
         const loaded = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
@@ -252,7 +260,7 @@ export function getDb(): DbData {
 
 export function saveDb(): void {
   if (data) {
-    fs.writeFileSync(getDbPath(), JSON.stringify(data, null, 2), 'utf-8');
+    atomicWriteFileSync(getDbPath(), JSON.stringify(data, null, 2));
   }
 }
 
