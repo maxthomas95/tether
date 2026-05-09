@@ -756,6 +756,25 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     await shell.openExternal(url);
   });
 
+  ipcMain.handle(IPC.SHELL_OPEN_EXTERNAL, async (_event, url: string) => {
+    if (typeof url !== 'string' || url.length > 2048) {
+      log.warn('Refusing to open URL: invalid or too long', { length: typeof url === 'string' ? url.length : -1 });
+      return;
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      log.warn('Refusing to open malformed URL', { url });
+      return;
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      log.warn('Refusing to open URL with disallowed protocol', { url });
+      return;
+    }
+    await shell.openExternal(url);
+  });
+
   ipcMain.handle(IPC.VAULT_MIGRATE_SECRET, async (_event, opts: MigrateSecretOptions): Promise<void> => {
     log.info('Migrating secret to Vault', { source: opts.source, targetRef: opts.targetRef });
     const { getDb, saveDb } = await import('../db/database');

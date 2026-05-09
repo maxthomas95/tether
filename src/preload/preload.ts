@@ -167,6 +167,10 @@ const api: TetherAPI = {
     },
   },
 
+  shell: {
+    openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC.SHELL_OPEN_EXTERNAL, url),
+  },
+
   vault: {
     getConfig: (): Promise<VaultConfig> => ipcRenderer.invoke(IPC.VAULT_GET_CONFIG),
     setConfig: (config: VaultConfig): Promise<void> => ipcRenderer.invoke(IPC.VAULT_SET_CONFIG, config),
