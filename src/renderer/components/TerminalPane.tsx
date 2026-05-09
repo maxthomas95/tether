@@ -20,6 +20,8 @@ interface TerminalPaneProps {
   enablePaneSplitting: boolean;
   currentLeafCount: number;
   maxPanes: number;
+  defaultFontSize: number;
+  onFontSizeDelta: (sessionId: string, delta: number) => void;
 }
 
 export function TerminalPane({
@@ -35,6 +37,8 @@ export function TerminalPane({
   enablePaneSplitting,
   currentLeafCount,
   maxPanes,
+  defaultFontSize,
+  onFontSizeDelta,
 }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
@@ -85,6 +89,30 @@ export function TerminalPane({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [paneId, termManager]);
+
+  // Apply effective font size to the terminal whenever the session override
+  // or the global default changes.
+  useEffect(() => {
+    if (!sessionId) return;
+    const size = session?.fontSize ?? defaultFontSize;
+    termManager.setSessionFontSize(sessionId, size);
+  }, [sessionId, session?.fontSize, defaultFontSize, termManager]);
+
+  // Ctrl+wheel on the pane body adjusts this session's font size by ±1.
+  // We attach as a non-passive listener on the container so we can preventDefault
+  // (React's onWheel is passive in newer versions and can't stop the page from scaling).
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !sessionId) return;
+    const handleWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      if (e.deltaY === 0) return;
+      e.preventDefault();
+      onFontSizeDelta(sessionId, e.deltaY < 0 ? 1 : -1);
+    };
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [sessionId, onFontSizeDelta]);
 
   // Listen for focus events on the container to set focus in layout
   const handleFocus = useCallback(() => {

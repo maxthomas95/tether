@@ -44,9 +44,9 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 
 - [planned] **Reorder sessions** in a sidebar group (drag-to-reorder)
 - [planned] **Bulk actions** on a group — kill all, restart all, clear all
-- [planned] **Ctrl+scroll** on a terminal pane → terminal font size
-- [planned] **Ctrl+= / Ctrl+-** → whole-window zoom (UI + terminal together) via `webFrame.setZoomLevel`
-- [planned] Settings panel for default terminal font size + a reset shortcut
+- [done] **Ctrl+scroll** on a terminal pane → terminal font size
+- [done] **Ctrl+= / Ctrl+-** → whole-window zoom (UI + terminal together) via `webFrame.setZoomLevel`
+- [done] Settings panel for default terminal font size + a reset shortcut
 - [planned] **GitHub repo browse** in `NewSessionDialog` — parity with ADO and Gitea (GitHub is the source of truth per project conventions)
 
 ### 5. Foundation & quality

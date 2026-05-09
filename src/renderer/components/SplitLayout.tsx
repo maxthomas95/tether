@@ -17,6 +17,8 @@ interface SplitLayoutProps {
   enablePaneSplitting: boolean;
   currentLeafCount: number;
   maxPanes: number;
+  defaultFontSize: number;
+  onFontSizeDelta: (sessionId: string, delta: number) => void;
 }
 
 export function SplitLayout({
@@ -32,6 +34,8 @@ export function SplitLayout({
   enablePaneSplitting,
   currentLeafCount,
   maxPanes,
+  defaultFontSize,
+  onFontSizeDelta,
 }: SplitLayoutProps) {
   if (node.type === 'leaf') {
     const session = node.sessionId ? sessions.find(s => s.id === node.sessionId) : undefined;
@@ -49,6 +53,8 @@ export function SplitLayout({
         enablePaneSplitting={enablePaneSplitting}
         currentLeafCount={currentLeafCount}
         maxPanes={maxPanes}
+        defaultFontSize={defaultFontSize}
+        onFontSizeDelta={onFontSizeDelta}
       />
     );
   }
@@ -67,6 +73,8 @@ export function SplitLayout({
       enablePaneSplitting={enablePaneSplitting}
       currentLeafCount={currentLeafCount}
       maxPanes={maxPanes}
+      defaultFontSize={defaultFontSize}
+      onFontSizeDelta={onFontSizeDelta}
     />
   );
 }
@@ -84,6 +92,8 @@ interface SplitContainerProps {
   enablePaneSplitting: boolean;
   currentLeafCount: number;
   maxPanes: number;
+  defaultFontSize: number;
+  onFontSizeDelta: (sessionId: string, delta: number) => void;
 }
 
 function SplitContainer({
@@ -99,6 +109,8 @@ function SplitContainer({
   enablePaneSplitting,
   currentLeafCount,
   maxPanes,
+  defaultFontSize,
+  onFontSizeDelta,
 }: SplitContainerProps) {
   const [first, second] = node.children;
 
@@ -123,6 +135,8 @@ function SplitContainer({
           enablePaneSplitting={enablePaneSplitting}
           currentLeafCount={currentLeafCount}
           maxPanes={maxPanes}
+          defaultFontSize={defaultFontSize}
+          onFontSizeDelta={onFontSizeDelta}
         />
       </div>
       <div className={`split-separator split-separator--${node.direction}`} />
@@ -143,6 +157,8 @@ function SplitContainer({
           enablePaneSplitting={enablePaneSplitting}
           currentLeafCount={currentLeafCount}
           maxPanes={maxPanes}
+          defaultFontSize={defaultFontSize}
+          onFontSizeDelta={onFontSizeDelta}
         />
       </div>
     </div>
