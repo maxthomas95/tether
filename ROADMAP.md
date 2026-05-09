@@ -24,13 +24,6 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 - [planned] Per-environment cost attribution in the global footer
 - [planned] Daily / weekly / monthly rollups, not just today + 7-day sparkline
 
-#### Helm
-- [planned] Surface child-session telemetry (status, cost, errors) in the helm pane
-- [planned] Retry / recover for failed dispatch
-- [planned] Per-skill cost rollup
-- [planned] Show the brief that was sent to each child (for debugging / auditing)
-- [planned] Helm session history view
-
 ### 2. Bug: status indicator stuck on green/grey
 
 - [done] **P1 investigation** — amber and red statuses never seem to fire in real use. Detector lives at `src/main/status/status-detector.ts`. Need to capture live PTY logs from Claude / Codex / Copilot sessions and tune the cadence heuristics so "waiting on user / tool approval" reliably hits amber and PTY exit hits red.
@@ -72,7 +65,7 @@ Today `NewSessionDialog` assumes the working directory already exists — clone 
 A lot has shipped recently (Helm, Vault, GitHub provider, OpenCode / Copilot CLI, New-folder + remote-create, terminal zoom, session reorder, bulk group actions, ctrl-clickable URLs, LiteLLM-backed pricing) and the user-facing surfaces — README, in-app docs, dialog copy — haven't kept up. Discoverability is the other half of "polished": features that exist but nobody finds aren't done.
 
 - [planned] **README sweep** — refresh feature list, screenshots, and "what's new" framing for the 1.0 push. Re-evaluate whether `docs/MVP_SCOPE.md` is still load-bearing or should be archived (it predates Helm and multi-CLI). Trim anything that's now contradicted by `CHANGELOG.md`.
-- [planned] **In-app docs refresh** (`src/docs/*.md`) — bring `getting-started.md`, `sessions.md`, `environments.md`, `settings.md`, and `keyboard-shortcuts.md` current. Add pages for Helm, Vault, Git providers + new-folder / remote-create flow, usage & quota, and the recent UX additions (per-pane font size, window zoom, bulk group actions, drag-reorder, clickable URLs). The docs window is already wired up — this is content work, not plumbing.
+- [planned] **In-app docs refresh** (`src/docs/*.md`) — bring `getting-started.md`, `sessions.md`, `environments.md`, `settings.md`, and `keyboard-shortcuts.md` current. Add pages for Vault, Git providers + new-folder / remote-create flow, usage & quota, and the recent UX additions (per-pane font size, window zoom, bulk group actions, drag-reorder, clickable URLs). Helm gets a brief opt-in / how-to note rather than a polished feature page (it's personal-experimental — see `docs/HELM_DESIGN.md`). The docs window is already wired up — this is content work, not plumbing.
 - [planned] **In-context `(i)` tooltips** — replace the mini-description prose in dialogs (Settings, NewSession, NewEnvironment) with hoverable info-icon tooltips so layout breathes and copy is shorter. Single shared `<InfoTooltip>` component to keep visuals consistent across dialogs.
 - [planned] **Per-section `(?)` deep-links into docs** — small help icon at the top of each major dialog section / sidebar block that opens the docs window scrolled to the matching anchor (e.g. SettingsDialog → Vault row → `settings.md#vault`). Needs anchor IDs in the markdown plus an `openDocs(anchor)` IPC. Pairs naturally with the docs refresh above — do them in the same pass so anchors land alongside the content.
 
@@ -87,7 +80,6 @@ These are deferred on purpose. We'll revisit when 1.0 has soaked.
 - **SQLite migration** — only if usage history scale or query performance starts to bite. Likely path is hybrid: config stays in JSON, usage/transcript index moves to SQLite. `better-sqlite3@^12.8.0` may have eased the original Electron-41 ABI pain — to be verified when it matters.
 - **Session search** — Ctrl+P-style finder across all sessions. Skipped for 1.0; revisit if the sidebar gets unwieldy at higher session counts.
 - **Pin sessions** — pin a session to the top of its group.
-- **Advanced Helm workflows** — skill marketplace, multi-step orchestration, persistent helm history across restarts.
 
 ---
 

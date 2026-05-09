@@ -59,7 +59,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Vault integration** — store env vars as `vault://` references; KV v2 with token or OIDC auth, sidebar status pill, and a tree-view picker for browsing existing secrets
 - **Tether-managed worktrees** — create a git worktree at session start, with optional cleanup on session removal
 - **Repo browse + clone-on-session-start** — browse Azure DevOps and Gitea repos and clone them as part of session creation
-- **Helm** (experimental, opt-in) — designate a session as "helm" so it can dispatch pre-briefed child sessions through an MCP server, including spawning Coder workspaces
+- **Helm** (alpha, opt-in, personal-experimental) — designate a Claude Code session as "helm" so it can dispatch pre-briefed child sessions through the `tether-helm` MCP, including spawning Coder workspaces. Built primarily for the author's own dispatch workflow; off by default behind a two-level gate, not on the 1.0 roadmap
 - **CLI flag management** — app-wide, per-profile, and per-session flags scoped by CLI tool
 - **Usage tracking** (experimental) — optional quota and cost views in the sidebar and per-session panes
 - **Other CLI tools** — also supports Codex CLI, GitHub Copilot CLI, OpenCode, and custom binaries (see below)
