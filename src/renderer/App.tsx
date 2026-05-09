@@ -1308,7 +1308,7 @@ export function App() {
             );
           })}
         </div>
-        <GlobalUsageFooter onOpenHistory={() => setUsageHistoryOpen(true)} />
+        <GlobalUsageFooter environments={environments} onOpenHistory={() => setUsageHistoryOpen(true)} />
         <QuotaFooter />
         <VaultStatusPill onAuthError={notifyVaultAuthError} />
       </aside>

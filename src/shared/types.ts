@@ -311,6 +311,12 @@ export interface SessionUsage {
   sessionId: string;
   /** Which CLI tool produced this usage data. */
   cliTool: CliToolId;
+  /**
+   * Tether environment id this session ran under, when known. Backfilled
+   * sessions (out-of-band Claude/Codex transcripts) have no associated
+   * environment and surface as "Unattributed" in the UI.
+   */
+  environmentId?: string;
   inputTokens: number;
   outputTokens: number;
   cacheCreationTokens: number;
@@ -321,6 +327,14 @@ export interface SessionUsage {
   firstMessageAt: string | null;
   lastMessageAt: string | null;
   parsedByteOffset: number;
+}
+
+export interface EnvironmentUsage {
+  /** null = the "Unattributed" bucket for sessions with no environment. */
+  environmentId: string | null;
+  totalCost: number;
+  sessionCount: number;
+  totalTokens: number;
 }
 
 export interface DailyUsage {
@@ -336,6 +350,8 @@ export interface DailyUsage {
 export interface UsageInfo {
   sessions: Record<string, SessionUsage>;
   daily: DailyUsage[];
+  /** Per-environment cost rollup, sorted by totalCost desc. Includes the null-id "Unattributed" bucket if any. */
+  byEnvironment: EnvironmentUsage[];
   totalCost: number;
   lastUpdated: string | null;
 }
