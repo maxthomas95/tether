@@ -6,6 +6,7 @@ export interface Notification {
   title: string;
   message?: string;
   action?: { label: string; onClick: () => void };
+  ttl?: number;
 }
 
 export interface NotifyOptions {
@@ -13,6 +14,7 @@ export interface NotifyOptions {
   title: string;
   message?: string;
   action?: { label: string; onClick: () => void };
+  ttl?: number;
 }
 
 let notificationCounter = 0;
@@ -37,6 +39,7 @@ export function useNotifications() {
       title: opts.title,
       message: opts.message,
       action: opts.action,
+      ttl: opts.ttl,
     };
     setNotifications(prev => [...prev, next].slice(-MAX_NOTIFICATIONS));
     return id;
@@ -61,7 +64,8 @@ export function Notifications({ notifications, onDismiss }: NotificationsProps) 
 }
 
 function NotificationItem({ notification, onDismiss }: { notification: Notification; onDismiss: (id: string) => void }) {
-  const ttl = notification.action ? 20000 : notification.type === 'error' ? 12000 : 5000;
+  const ttl = notification.ttl
+    ?? (notification.action ? 20000 : notification.type === 'error' ? 12000 : 5000);
 
   useEffect(() => {
     const timer = setTimeout(() => onDismiss(notification.id), ttl);
