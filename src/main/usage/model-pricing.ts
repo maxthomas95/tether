@@ -1,5 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { createLogger } from '../logger';
-import litellmPrices from './litellm-prices.json';
+import litellmPricesBundled from './litellm-prices.json';
 
 const log = createLogger('pricing');
 
@@ -15,9 +17,13 @@ export interface ModelPricing {
 /**
  * Pricing is sourced from a vendored copy of LiteLLM's
  * `model_prices_and_context_window.json` (see ./litellm-prices.json).
- * Refresh by replacing the file. LiteLLM publishes per-token USD costs;
- * we convert to per-million at lookup time to keep the public ModelPricing
- * shape stable.
+ * The bundled file ships with each release as a fallback.
+ *
+ * At app start, `loadPrices()` looks for a fresher copy in
+ * `{userData}/litellm-prices.json` written by `pricing-fetcher.ts`. When
+ * the fetcher succeeds it calls `reloadPrices()` to invalidate the
+ * in-memory cache; live UI does not refresh, but the next launch (and
+ * any new sessions opened after) picks up the new data.
  *
  * Cache costs (when LiteLLM omits them) are derived from input rates:
  *   cache_create (5m TTL) = input × 1.25
@@ -39,7 +45,9 @@ interface LiteLLMEntry {
   mode?: string;
 }
 
-const LITELLM_TABLE = litellmPrices as Record<string, unknown>;
+// Active lookup table. Initialized to the bundled JSON; `loadPrices()`
+// can swap it for the userData cache when present.
+let litellmTable: Record<string, unknown> = litellmPricesBundled as Record<string, unknown>;
 
 // Prefix-based fallback for Anthropic models not in LiteLLM's table yet.
 const PREFIX_PRICING: Array<[string, ModelPricing]> = [
@@ -94,10 +102,58 @@ function lookupLiteLLM(modelId: string): ModelPricing | undefined {
   }
 
   for (const key of candidates) {
-    const entry = LITELLM_TABLE[key];
+    const entry = litellmTable[key];
     if (isLiteLLMEntry(entry)) return fromLiteLLM(entry);
   }
   return undefined;
+}
+
+/**
+ * Try to load the userData-cached pricing JSON. Falls back to the bundled
+ * import if the cache is missing or invalid. Safe to call repeatedly —
+ * each call replaces the active table.
+ *
+ * Pass an explicit `userDataDir` for tests; production uses
+ * `app.getPath('userData')` resolved by the caller.
+ */
+export function loadPrices(userDataDir: string): void {
+  pricingCache.clear();
+  warnedModels.clear();
+
+  const cachePath = path.join(userDataDir, 'litellm-prices.json');
+  try {
+    const raw = fs.readFileSync(cachePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      litellmTable = parsed as Record<string, unknown>;
+      log.info('using cached LiteLLM pricing', { path: cachePath });
+      return;
+    }
+    log.warn('cached pricing JSON is not an object, falling back to bundled');
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code !== 'ENOENT') {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn('failed to read cached pricing, using bundled', { error: message });
+    }
+  }
+
+  litellmTable = litellmPricesBundled as Record<string, unknown>;
+}
+
+/**
+ * Reload from disk and clear the resolved-pricing cache. Called by
+ * `pricing-fetcher.ts` after a successful 200 so subsequent lookups in
+ * the current process see the new data; live cost views do not repaint.
+ */
+export function reloadPrices(): void {
+  // Resolve userData lazily — `electron` is awkward to import at the top
+  // of a module used in tests. The caller in production passes through
+  // `loadPrices` once at startup; this convenience reload covers the
+  // post-fetch case.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const electron = require('electron') as typeof import('electron');
+  loadPrices(electron.app.getPath('userData'));
 }
 
 export function getModelPricing(modelId: string): ModelPricing {
