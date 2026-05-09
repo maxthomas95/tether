@@ -1,43 +1,34 @@
 import type { GitRepoInfo, CreateRepoOptions } from '../../../shared/types';
+import { normalizeBaseUrl, requestJson } from './http';
 
 export class GiteaClient {
   private baseUrl: string;
   private token: string;
 
   constructor(baseUrl: string, token: string) {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
+    this.baseUrl = normalizeBaseUrl(baseUrl);
     this.token = token;
   }
 
-  private async request<T>(path: string): Promise<T> {
-    const res = await fetch(`${this.baseUrl}/api/v1${path}`, {
-      headers: {
-        'Authorization': `token ${this.token}`,
-        'Accept': 'application/json',
-      },
+  private request<T>(path: string): Promise<T> {
+    return requestJson<T>(`${this.baseUrl}/api/v1${path}`, 'Gitea', {
+      headers: this.headers(),
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`Gitea API ${res.status}: ${body || res.statusText}`);
-    }
-    return res.json() as Promise<T>;
   }
 
-  private async post<T>(path: string, body: unknown): Promise<T> {
-    const res = await fetch(`${this.baseUrl}/api/v1${path}`, {
+  private post<T>(path: string, body: unknown): Promise<T> {
+    return requestJson<T>(`${this.baseUrl}/api/v1${path}`, 'Gitea', {
       method: 'POST',
-      headers: {
-        'Authorization': `token ${this.token}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
+      headers: this.headers(),
+      body,
     });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Gitea API ${res.status}: ${text || res.statusText}`);
-    }
-    return res.json() as Promise<T>;
+  }
+
+  private headers(): Record<string, string> {
+    return {
+      'Authorization': `token ${this.token}`,
+      'Accept': 'application/json',
+    };
   }
 
   async testConnection(): Promise<void> {

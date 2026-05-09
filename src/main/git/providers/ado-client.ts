@@ -1,4 +1,5 @@
 import type { GitRepoInfo, CreateRepoOptions, AdoProjectInfo } from '../../../shared/types';
+import { normalizeBaseUrl, requestJson } from './http';
 
 export class AdoClient {
   private baseUrl: string;
@@ -6,42 +7,34 @@ export class AdoClient {
   private authHeader: string;
 
   constructor(baseUrl: string, organization: string, token: string) {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
+    this.baseUrl = normalizeBaseUrl(baseUrl);
     this.organization = organization;
     this.authHeader = 'Basic ' + Buffer.from(':' + token).toString('base64');
   }
 
-  private async request<T>(path: string): Promise<T> {
-    const url = `${this.baseUrl}/${this.organization}${path}`;
-    const res = await fetch(url, {
-      headers: {
-        'Authorization': this.authHeader,
-        'Accept': 'application/json',
-      },
+  private request<T>(path: string): Promise<T> {
+    return requestJson<T>(this.url(path), 'ADO', {
+      headers: this.headers(),
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`ADO API ${res.status}: ${body || res.statusText}`);
-    }
-    return res.json() as Promise<T>;
   }
 
-  private async post<T>(path: string, body: unknown): Promise<T> {
-    const url = `${this.baseUrl}/${this.organization}${path}`;
-    const res = await fetch(url, {
+  private post<T>(path: string, body: unknown): Promise<T> {
+    return requestJson<T>(this.url(path), 'ADO', {
       method: 'POST',
-      headers: {
-        'Authorization': this.authHeader,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
+      headers: this.headers(),
+      body,
     });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`ADO API ${res.status}: ${text || res.statusText}`);
-    }
-    return res.json() as Promise<T>;
+  }
+
+  private url(path: string): string {
+    return `${this.baseUrl}/${this.organization}${path}`;
+  }
+
+  private headers(): Record<string, string> {
+    return {
+      'Authorization': this.authHeader,
+      'Accept': 'application/json',
+    };
   }
 
   async testConnection(): Promise<void> {

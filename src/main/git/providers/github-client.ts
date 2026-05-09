@@ -1,47 +1,35 @@
 import type { GitRepoInfo, CreateRepoOptions } from '../../../shared/types';
+import { normalizeBaseUrl, requestJson } from './http';
 
 export class GitHubClient {
   private readonly baseUrl: string;
   private readonly token: string;
 
   constructor(baseUrl: string, token: string) {
-    let normalized = baseUrl;
-    while (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
-    this.baseUrl = normalized;
+    this.baseUrl = normalizeBaseUrl(baseUrl);
     this.token = token;
   }
 
-  private async request<T>(path: string): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
+  private request<T>(path: string): Promise<T> {
+    return requestJson<T>(`${this.baseUrl}${path}`, 'GitHub', {
+      headers: this.headers(),
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`GitHub API ${res.status}: ${body || res.statusText}`);
-    }
-    return res.json() as Promise<T>;
   }
 
-  private async post<T>(path: string, body: unknown): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
+  private post<T>(path: string, body: unknown): Promise<T> {
+    return requestJson<T>(`${this.baseUrl}${path}`, 'GitHub', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Accept': 'application/vnd.github+json',
-        'Content-Type': 'application/json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-      body: JSON.stringify(body),
+      headers: this.headers(),
+      body,
     });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`GitHub API ${res.status}: ${text || res.statusText}`);
-    }
-    return res.json() as Promise<T>;
+  }
+
+  private headers(): Record<string, string> {
+    return {
+      'Authorization': `Bearer ${this.token}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
   }
 
   async testConnection(): Promise<void> {
