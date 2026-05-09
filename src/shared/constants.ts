@@ -103,6 +103,9 @@ export const IPC = {
   KNOWN_HOSTS_LIST: 'known-hosts:list',
   KNOWN_HOSTS_DELETE: 'known-hosts:delete',
 
+  // Diagnostics
+  DIAGNOSTICS_EXPORT: 'diagnostics:export',
+
   // Main -> Renderer
   USAGE_UPDATED: 'usage:updated',
   QUOTA_UPDATED: 'quota:updated',
