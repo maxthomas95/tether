@@ -723,6 +723,22 @@ html, body, #root {
   color: var(--status-dead);
 }
 
+.context-menu-item--disabled {
+  color: var(--text-secondary);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.context-menu-item--disabled:hover {
+  background: transparent;
+}
+
+.context-menu-separator {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 0;
+}
+
 /* Inline rename input */
 .session-rename-input {
   width: 100%;

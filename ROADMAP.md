@@ -45,7 +45,7 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 ### 4. Daily-driver UX
 
 - [done] **Reorder sessions** in a sidebar group (drag-to-reorder)
-- [planned] **Bulk actions** on a group — kill all, restart all, clear all
+- [done] **Bulk actions** on a group — kill all, restart all, clear all
 - [done] **Duplicate carries the source label** — today "Duplicate" passes `''`, so `session-manager.ts` falls back to the working-dir basename and every dupe is named after the repo. Should preserve the source's label with a `(copy)` suffix (`(copy 2)` on subsequent dupes), like Finder / VS Code.
 - [done] **Ctrl+scroll** on a terminal pane → terminal font size
 - [done] **Ctrl+= / Ctrl+-** → whole-window zoom (UI + terminal together) via `webFrame.setZoomLevel`

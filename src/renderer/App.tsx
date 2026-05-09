@@ -594,6 +594,103 @@ export function App() {
     handleCreateSession(source.workingDir, label, source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined, source.helmEnabled);
   }, [sessions, handleCreateSession]);
 
+  const sessionsInGroup = useCallback((environmentId: string, workingDir: string): SessionInfo[] => {
+    const env = environments.find(e => e.id === environmentId);
+    if (!env) return [];
+    return sessions.filter(s => {
+      if (s.workingDir !== workingDir) return false;
+      if (env.type === 'local') return !s.environmentId || s.environmentId === env.id;
+      return s.environmentId === env.id;
+    });
+  }, [sessions, environments]);
+
+  const removeSessionsLocal = useCallback(async (targets: SessionInfo[]) => {
+    for (const s of targets) {
+      markExpectedSessionExit(s.id);
+      try {
+        await window.electronAPI.session.remove(s.id);
+        termManager.remove(s.id);
+        layoutDispatch({ type: 'REMOVE_SESSION', sessionId: s.id });
+      } catch (err) {
+        expectedSessionExitIds.current.delete(s.id);
+        notifyError(`Failed to remove ${s.label}`, err);
+      }
+    }
+    setSessions(prev => prev.filter(s => !targets.some(t => t.id === s.id)));
+  }, [termManager, layoutDispatch, markExpectedSessionExit, notifyError]);
+
+  const recreateFromSnapshot = useCallback((snap: SessionInfo) => {
+    handleCreateSession(
+      snap.workingDir,
+      snap.label,
+      snap.environmentId || undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      snap.cliTool,
+      snap.customCliBinary,
+      undefined,
+      snap.worktreeOf,
+      snap.helmEnabled,
+    );
+  }, [handleCreateSession]);
+
+  const handleKillAllInGroup = useCallback(async (environmentId: string, workingDir: string) => {
+    const targets = sessionsInGroup(environmentId, workingDir).filter(
+      s => s.state === 'running' || s.state === 'starting' || s.state === 'waiting',
+    );
+    if (targets.length === 0) return;
+    for (const s of targets) {
+      markExpectedSessionExit(s.id);
+      try {
+        await window.electronAPI.session.kill(s.id);
+      } catch (err) {
+        expectedSessionExitIds.current.delete(s.id);
+        notifyError(`Failed to kill ${s.label}`, err);
+      }
+    }
+    notify({
+      type: 'info',
+      title: `Killed ${targets.length} session${targets.length === 1 ? '' : 's'}`,
+      ttl: 5000,
+    });
+  }, [sessionsInGroup, markExpectedSessionExit, notify, notifyError]);
+
+  const handleRestartAllInGroup = useCallback(async (environmentId: string, workingDir: string) => {
+    const targets = sessionsInGroup(environmentId, workingDir);
+    if (targets.length === 0) return;
+    const snapshots = targets.map(s => ({ ...s }));
+    await removeSessionsLocal(targets);
+    for (const snap of snapshots) {
+      recreateFromSnapshot(snap);
+    }
+    notify({
+      type: 'info',
+      title: `Restarted ${snapshots.length} session${snapshots.length === 1 ? '' : 's'}`,
+      ttl: 5000,
+    });
+  }, [sessionsInGroup, removeSessionsLocal, recreateFromSnapshot, notify]);
+
+  const handleClearAllInGroup = useCallback(async (environmentId: string, workingDir: string) => {
+    const targets = sessionsInGroup(environmentId, workingDir);
+    if (targets.length === 0) return;
+    const snapshots = targets.map(s => ({ ...s }));
+    await removeSessionsLocal(targets);
+    notify({
+      type: 'info',
+      title: `Cleared ${snapshots.length} session${snapshots.length === 1 ? '' : 's'}`,
+      ttl: 8000,
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          for (const snap of snapshots) recreateFromSnapshot(snap);
+        },
+      },
+    });
+  }, [sessionsInGroup, removeSessionsLocal, recreateFromSnapshot, notify]);
+
   const canResumePrevious = useCallback((session: SessionInfo) => {
     if (!enableResumePicker) return false;
     const cliTool = session.cliTool || 'claude';
@@ -1171,6 +1268,9 @@ export function App() {
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
                         onReorderSession={handleReorderSession}
+                        onKillAllInGroup={handleKillAllInGroup}
+                        onRestartAllInGroup={handleRestartAllInGroup}
+                        onClearAllInGroup={handleClearAllInGroup}
                       />
                     ));
                   })()

@@ -29,6 +29,9 @@ interface RepoGroupProps {
    * with its env+dir context so the parent doesn't need to look them up.
    */
   onReorderSession?: (environmentId: string, workingDir: string, sourceSessionId: string, targetSessionId: string, position: 'above' | 'below') => void;
+  onKillAllInGroup?: (environmentId: string, workingDir: string) => void;
+  onRestartAllInGroup?: (environmentId: string, workingDir: string) => void;
+  onClearAllInGroup?: (environmentId: string, workingDir: string) => void;
 }
 
 export function RepoGroup({
@@ -53,6 +56,9 @@ export function RepoGroup({
   onDragStart,
   onDragEnd,
   onReorderSession,
+  onKillAllInGroup,
+  onRestartAllInGroup,
+  onClearAllInGroup,
 }: RepoGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null);
@@ -189,6 +195,69 @@ export function RepoGroup({
           >
             {pinned ? 'Unpin' : 'Pin to top'}
           </div>
+          {(onKillAllInGroup || onRestartAllInGroup || onClearAllInGroup) && (
+            <div className="context-menu-separator" role="separator" />
+          )}
+          {onKillAllInGroup && (
+            <div
+              className={`context-menu-item ${runningCount === 0 ? 'context-menu-item--disabled' : ''}`}
+              role="menuitem"
+              tabIndex={runningCount === 0 ? -1 : 0}
+              aria-disabled={runningCount === 0 || undefined}
+              onClick={() => {
+                if (runningCount === 0) return;
+                setShowMenu(false);
+                onKillAllInGroup(environmentId, repoPath);
+              }}
+              onKeyDown={onKeyActivate(() => {
+                if (runningCount === 0) return;
+                setShowMenu(false);
+                onKillAllInGroup(environmentId, repoPath);
+              })}
+            >
+              Kill all{runningCount > 0 ? ` (${runningCount})` : ''}
+            </div>
+          )}
+          {onRestartAllInGroup && (
+            <div
+              className={`context-menu-item ${sessions.length === 0 ? 'context-menu-item--disabled' : ''}`}
+              role="menuitem"
+              tabIndex={sessions.length === 0 ? -1 : 0}
+              aria-disabled={sessions.length === 0 || undefined}
+              onClick={() => {
+                if (sessions.length === 0) return;
+                setShowMenu(false);
+                onRestartAllInGroup(environmentId, repoPath);
+              }}
+              onKeyDown={onKeyActivate(() => {
+                if (sessions.length === 0) return;
+                setShowMenu(false);
+                onRestartAllInGroup(environmentId, repoPath);
+              })}
+            >
+              Restart all
+            </div>
+          )}
+          {onClearAllInGroup && (
+            <div
+              className={`context-menu-item context-menu-item--danger ${sessions.length === 0 ? 'context-menu-item--disabled' : ''}`}
+              role="menuitem"
+              tabIndex={sessions.length === 0 ? -1 : 0}
+              aria-disabled={sessions.length === 0 || undefined}
+              onClick={() => {
+                if (sessions.length === 0) return;
+                setShowMenu(false);
+                onClearAllInGroup(environmentId, repoPath);
+              }}
+              onKeyDown={onKeyActivate(() => {
+                if (sessions.length === 0) return;
+                setShowMenu(false);
+                onClearAllInGroup(environmentId, repoPath);
+              })}
+            >
+              Clear all
+            </div>
+          )}
         </div>
       )}
       {!collapsed && sessions.map(session => (
