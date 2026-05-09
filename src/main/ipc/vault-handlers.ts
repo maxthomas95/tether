@@ -110,7 +110,14 @@ export function registerVaultHandlers(ctx: HandlerContext): void {
     const db = getDb();
     const out: VaultPlaintextSecret[] = [];
     const sensitiveKey = /key|secret|token|password/i;
-    const slugify = (s: string): string => s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'item';
+    // Sonar S5852: prefer a while-loop trim over `/^-+|-+$/g` — the regex variant
+    // gets flagged for super-linear backtracking even though this input is bounded.
+    const slugify = (s: string): string => {
+      let out = s.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+      while (out.startsWith('-')) out = out.slice(1);
+      while (out.endsWith('-')) out = out.slice(0, -1);
+      return out || 'item';
+    };
 
     // SSH passwords on environments
     for (const env of db.environments) {
