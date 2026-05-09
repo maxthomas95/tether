@@ -4,14 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## Unreleased
+## [0.4.2-beta.3] — 2026-05-09
 
-### Improvements
-- Error toasts now cover session restore failures, session command failures, unexpected transport exits, Vault login/renew failures, and manual update-check failures.
-- The notification stack is capped so repeated failures cannot flood the UI.
+A daily-driver UX release. Reorder and bulk-manage sessions, ctrl-click links in the terminal, zoom the whole window or just one pane, and bootstrap a fresh repo end-to-end (folder + git init + remote provisioning) without leaving the dialog. Pricing is now driven by a vendored LiteLLM snapshot with a daily background refresh, OpenCode/Crush sessions are cost-tracked, and notification toasts now cover the failure paths that previously hid in DevTools.
+
+### New Features
+- **"New folder" mode in NewSessionDialog** — create a folder under `reposRoot`, optionally `git init` it, and use it as the session cwd. Local environments only (#61)
+- **Create on remote** — "New folder" mode can also provision an empty repo on GitHub, Gitea, or ADO and wire `git remote add origin` locally; ADO supports a per-provider `defaultProject` selectable from the loaded project list (#65)
+- **GitHub provider for repo browse** in NewSessionDialog — parity with ADO and Gitea, including a PAT scope hint and a default `baseUrl` when blank (#55, #64)
+- **Drag-reorder sessions** within a repo group (#51)
+- **Bulk group actions** — Kill all / Restart all / Clear all per repo group (#63)
+- **Window zoom shortcuts** — `Ctrl+=` / `Ctrl+-` / `Ctrl+0` zoom UI + terminal together via `webFrame.setZoomLevel`; `Ctrl+scroll` on a terminal pane resizes just that pane's font (#62)
+- **Clickable URLs in the terminal** — ctrl-click pasted/printed links to open in the system browser via `@xterm/addon-web-links` and `shell.openExternal` (#56)
+- **Duplicate carries source label** with a `(copy)` / `(copy 2)` suffix instead of falling back to the working-dir basename (#58)
+- **OpenCode / Crush cost tracking** — `usage-service.ts` is now CLI-agnostic; OpenCode sessions read pre-computed cost from `crush.db` (#60)
+- **LiteLLM-backed pricing** — model pricing is now sourced from a vendored copy of LiteLLM's `model_prices_and_context_window.json` covering Anthropic / OpenAI / Google / Bedrock / Vertex etc. with explicit cache-create/cache-read rates, plus a background refresh that pings `raw.githubusercontent.com` on app start (24h throttle, ETag conditional GET, 5 MB cap, sentinel-key validation). Bundled snapshot stays as the offline fallback (#67, #69)
 
 ### Bug Fixes
-- Manual update checks now distinguish "up to date" from "could not check" when GitHub Releases is unreachable.
+- **Stale tabs after install** — workspace persist effect now waits until restore reads saved sessions before writing, eliminating the race that wrote an empty workspace on startup (#68)
+- **Stale xterm names in Vite optimizeDeps** fixed (#57)
+- **Manual update checks** now distinguish "up to date" from "could not check" when GitHub Releases is unreachable
+
+### Improvements
+- **Error toasts** now cover session restore failures, session command failures, unexpected transport exits, Vault login/renew failures, and manual update-check failures (#54)
+- **Notification stack capped** so repeated failures cannot flood the UI
+- **Network endpoints documented** — README now enumerates every outbound destination Tether contacts (GitHub for updates, `raw.githubusercontent.com` for LiteLLM pricing, plus user-configured Vault, SSH, and Coder hosts) for corporate firewall configuration; settings docs note the daily pricing refresh (#69)
+
+### Security
+- **`ip-address` → 10.2.0** to patch XSS GHSA-v2v4-37r5-5v8g in the main app and `tether-helm` (#49, #66)
+
+### Dependencies
+- `fast-uri` → 3.1.2 (main + tether-helm) (#52, #53)
+- `hono` → 4.12.18 (tether-helm) (#50)
 
 ---
 
