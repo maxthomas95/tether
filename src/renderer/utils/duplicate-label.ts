@@ -1,4 +1,4 @@
-const COPY_SUFFIX_RE = /\s*\(copy(?:\s+\d+)?\)$/;
+const COPY_SUFFIX_RE = /\s?\(copy(?:\s\d{1,9})?\)$/;
 
 export function stripCopySuffix(label: string): string {
   return label.replace(COPY_SUFFIX_RE, '').trimEnd();
