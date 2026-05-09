@@ -1106,6 +1106,61 @@ html, body, #root {
   width: 560px;
 }
 
+/* Settings dialog (left-rail nav + content) */
+.dialog--settings {
+  width: 720px;
+}
+
+.dialog--settings .dialog-body {
+  padding: 0;
+}
+
+.settings-layout {
+  display: flex;
+  min-height: 0;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  width: 160px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-color);
+  padding: 8px 0;
+  gap: 2px;
+}
+
+.settings-nav-item {
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 8px 14px;
+  text-align: left;
+  transition: color 0.1s, background 0.1s, border-color 0.1s;
+}
+
+.settings-nav-item:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.settings-nav-item--active {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-left-color: var(--accent);
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  padding: 16px 20px;
+  overflow-y: auto;
+  height: 70vh;
+}
+
 /* Repo quick picker */
 .repo-picker {
   display: flex;

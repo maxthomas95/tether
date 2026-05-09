@@ -36,6 +36,16 @@ function formatExpiry(expiresAt?: string): string {
   return `in ${Math.round(hours / 24)}d`;
 }
 
+type SettingsSection = 'general' | 'terminal' | 'sessions' | 'integrations' | 'usage';
+
+const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
+  { id: 'general', label: 'General' },
+  { id: 'terminal', label: 'Terminal' },
+  { id: 'sessions', label: 'Sessions' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'usage', label: 'Usage' },
+];
+
 interface SettingsDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -63,6 +73,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
   const [terminalFontSize, setTerminalFontSize] = useState(14);
   const [loaded, setLoaded] = useState(false);
+  const [activeSection, setActiveSection] = useState<SettingsSection>('general');
 
   // Profile state
   const [profiles, setProfiles] = useState<LaunchProfileInfo[]>([]);
@@ -301,12 +312,28 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
   return (
     <div className="dialog-overlay">
-      <div className="dialog dialog--wide" role="dialog" aria-modal="true">
+      <div className="dialog dialog--settings" role="dialog" aria-modal="true">
         <div className="dialog-header">
           <span>Settings</span>
           <button className="dialog-close" onClick={onClose}>&times;</button>
         </div>
-        <div className="dialog-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+        <div className="dialog-body">
+        <div className="settings-layout">
+          <aside className="settings-nav">
+            {SECTIONS.map(s => (
+              <button
+                key={s.id}
+                className={`settings-nav-item${activeSection === s.id ? ' settings-nav-item--active' : ''}`}
+                onClick={() => setActiveSection(s.id)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </aside>
+          <div className="settings-content">
+
+          {activeSection === 'general' && (
+            <>
           <div className="form-group">
             <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Theme
@@ -320,110 +347,6 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                 <option key={t.name} value={t.name}>{t.label}</option>
               ))}
             </select>
-          </div>
-
-          <div className="form-group">
-            <label className="form-radio-label">
-              <input
-                type="checkbox"
-                checked={hideTerminalCursor}
-                onChange={e => setHideTerminalCursor(e.target.checked)}
-              />
-              Hide terminal cursor
-            </label>
-            <p className="form-hint">
-              Suppress the xterm.js block cursor. Claude Code, Codex, and OpenCode draw
-              their own input indicator, so the xterm cursor often reads as a redundant
-              second cursor that bounces around during thinking animations.
-              Turn this off if you use plain shells, vim, or htop in Tether.
-            </p>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="terminal-font-size-input">
-              Default terminal font size
-            </label>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
-                id="terminal-font-size-input"
-                className="form-input"
-                type="number"
-                min={8}
-                max={32}
-                step={1}
-                value={terminalFontSize}
-                onChange={e => {
-                  const n = parseInt(e.target.value, 10);
-                  if (Number.isFinite(n)) setTerminalFontSize(Math.max(8, Math.min(32, n)));
-                }}
-                style={{ width: 80 }}
-              />
-              <button
-                type="button"
-                className="form-btn"
-                onClick={onResetSessionFontSizes}
-              >
-                Reset all session font sizes
-              </button>
-            </div>
-            <p className="form-hint">
-              Base size in pixels (8&ndash;32). Ctrl+wheel on a terminal pane sets a
-              per-session override that lasts for the session&rsquo;s lifetime; the reset
-              button clears all overrides so panes pick up the default again.
-            </p>
-          </div>
-
-          <div className="form-group">
-            <label className="form-radio-label">
-              <input
-                type="checkbox"
-                checked={allowHelm}
-                onChange={e => setAllowHelm(e.target.checked)}
-              />
-              <span>Allow Helm</span>
-              <span className="settings-tag settings-tag--experimental">Experimental</span>
-            </label>
-            <p className="form-hint">
-              Unlocks the per-session &ldquo;Enable Helm&rdquo; toggle, which lets a designated
-              Claude session dispatch pre-briefed child sessions via the <code>tether-helm</code> MCP.
-              Leave off unless you&rsquo;re specifically using this — it changes Tether&rsquo;s surface area.
-            </p>
-          </div>
-
-          <div className="form-group">
-            <label className="form-radio-label">
-              <input
-                type="checkbox"
-                checked={enablePaneSplitting}
-                onChange={e => setEnablePaneSplitting(e.target.checked)}
-              />
-              <span>Enable pane splitting</span>
-              <span className="settings-tag settings-tag--experimental">Experimental</span>
-            </label>
-            <p className="form-hint">
-              Drag session headers to split the terminal area into multiple panes.
-              Disable if you hit layout bugs &mdash; new sessions will replace the focused pane instead.
-            </p>
-            {enablePaneSplitting && (
-              <div style={{ marginLeft: 22, marginTop: 10 }}>
-                <label className="form-label" htmlFor="max-panes-select">
-                  Maximum panes
-                </label>
-                <select
-                  id="max-panes-select"
-                  className="form-input"
-                  value={maxPanes}
-                  onChange={e => setMaxPanes(parseMaxPanes(e.target.value))}
-                >
-                  <option value={1}>1</option>
-                  <option value={2}>2</option>
-                  <option value={4}>4</option>
-                </select>
-                <p className="form-hint">
-                  Panes use equal locked splits. Three-pane layouts are skipped.
-                </p>
-              </div>
-            )}
           </div>
 
           <div className="form-group">
@@ -479,6 +402,136 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                 Lets you manually pick an older Claude Code or Codex CLI conversation for a session&rsquo;s working directory.
               </p>
             </div>
+          </div>
+
+          {/* Updates */}
+          <div className="form-group" style={{ marginTop: 20 }}>
+            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              Updates
+            </label>
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={updateCheckEnabled}
+                onChange={e => setUpdateCheckEnabled(e.target.checked)}
+              />
+              Check for updates on launch
+            </label>
+            <p className="form-hint">
+              Automatically check GitHub for new Tether releases when the app starts.
+            </p>
+          </div>
+            </>
+          )}
+
+          {activeSection === 'terminal' && (
+            <>
+          <div className="form-group">
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={hideTerminalCursor}
+                onChange={e => setHideTerminalCursor(e.target.checked)}
+              />
+              Hide terminal cursor
+            </label>
+            <p className="form-hint">
+              Suppress the xterm.js block cursor. Claude Code, Codex, and OpenCode draw
+              their own input indicator, so the xterm cursor often reads as a redundant
+              second cursor that bounces around during thinking animations.
+              Turn this off if you use plain shells, vim, or htop in Tether.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="terminal-font-size-input">
+              Default terminal font size
+            </label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                id="terminal-font-size-input"
+                className="form-input"
+                type="number"
+                min={8}
+                max={32}
+                step={1}
+                value={terminalFontSize}
+                onChange={e => {
+                  const n = parseInt(e.target.value, 10);
+                  if (Number.isFinite(n)) setTerminalFontSize(Math.max(8, Math.min(32, n)));
+                }}
+                style={{ width: 80 }}
+              />
+              <button
+                type="button"
+                className="form-btn"
+                onClick={onResetSessionFontSizes}
+              >
+                Reset all session font sizes
+              </button>
+            </div>
+            <p className="form-hint">
+              Base size in pixels (8&ndash;32). Ctrl+wheel on a terminal pane sets a
+              per-session override that lasts for the session&rsquo;s lifetime; the reset
+              button clears all overrides so panes pick up the default again.
+            </p>
+          </div>
+            </>
+          )}
+
+          {activeSection === 'sessions' && (
+            <>
+          <div className="form-group">
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={allowHelm}
+                onChange={e => setAllowHelm(e.target.checked)}
+              />
+              <span>Allow Helm</span>
+              <span className="settings-tag settings-tag--experimental">Experimental</span>
+            </label>
+            <p className="form-hint">
+              Unlocks the per-session &ldquo;Enable Helm&rdquo; toggle, which lets a designated
+              Claude session dispatch pre-briefed child sessions via the <code>tether-helm</code> MCP.
+              Leave off unless you&rsquo;re specifically using this — it changes Tether&rsquo;s surface area.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={enablePaneSplitting}
+                onChange={e => setEnablePaneSplitting(e.target.checked)}
+              />
+              <span>Enable pane splitting</span>
+              <span className="settings-tag settings-tag--experimental">Experimental</span>
+            </label>
+            <p className="form-hint">
+              Drag session headers to split the terminal area into multiple panes.
+              Disable if you hit layout bugs &mdash; new sessions will replace the focused pane instead.
+            </p>
+            {enablePaneSplitting && (
+              <div style={{ marginLeft: 22, marginTop: 10 }}>
+                <label className="form-label" htmlFor="max-panes-select">
+                  Maximum panes
+                </label>
+                <select
+                  id="max-panes-select"
+                  className="form-input"
+                  value={maxPanes}
+                  onChange={e => setMaxPanes(parseMaxPanes(e.target.value))}
+                >
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                  <option value={4}>4</option>
+                </select>
+                <p className="form-hint">
+                  Panes use equal locked splits. Three-pane layouts are skipped.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="form-group" style={{ marginTop: 20 }}>
@@ -714,9 +767,13 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             </p>
             {loaded && <EnvVarEditor vars={envVars} onChange={setEnvVars} vaultEnabled={vaultStatus.enabled} />}
           </div>
+            </>
+          )}
 
+          {activeSection === 'integrations' && (
+            <>
           {/* Git Providers */}
-          <div className="form-group" style={{ marginTop: 20 }}>
+          <div className="form-group">
             <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Git Providers
             </label>
@@ -986,65 +1043,6 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             )}
           </div>
 
-          {/* Updates */}
-          <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
-              Updates
-            </label>
-            <label className="form-radio-label">
-              <input
-                type="checkbox"
-                checked={updateCheckEnabled}
-                onChange={e => setUpdateCheckEnabled(e.target.checked)}
-              />
-              Check for updates on launch
-            </label>
-            <p className="form-hint">
-              Automatically check GitHub for new Tether releases when the app starts.
-            </p>
-          </div>
-
-          {/* Quota display */}
-          <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label settings-section-label" style={{ fontSize: 14, marginBottom: 8 }}>
-              <span>Usage Quota</span>
-              <span className="settings-tag settings-tag--experimental">Experimental</span>
-            </label>
-            <label className="form-radio-label">
-              <input
-                type="checkbox"
-                checked={quotaEnabled}
-                onChange={e => setQuotaEnabled(e.target.checked)}
-              />
-              Show usage quota in sidebar
-            </label>
-            <p className="form-hint">
-              Display Claude and Codex subscription usage (5-hour and 7-day windows) in the sidebar footer. Polls every 5 minutes.
-            </p>
-            <label className="form-radio-label" style={{ marginTop: 8 }}>
-              <input
-                type="checkbox"
-                checked={usageStripEnabled}
-                onChange={e => setUsageStripEnabled(e.target.checked)}
-              />
-              Show per-session cost strip below terminal
-            </label>
-            <p className="form-hint">
-              Display the active session's model, message count, and API-equivalent cost below each terminal pane. Updates live as Claude responds.
-            </p>
-            <label className="form-radio-label" style={{ marginTop: 8 }}>
-              <input
-                type="checkbox"
-                checked={globalUsageEnabled}
-                onChange={e => setGlobalUsageEnabled(e.target.checked)}
-              />
-              Show global usage in sidebar
-            </label>
-            <p className="form-hint">
-              Display today's total cost and a 7-day sparkline above the quota footer. Hover for a full breakdown including monthly and all-time totals.
-            </p>
-          </div>
-
           {/* Vault */}
           <div className="form-group" style={{ marginTop: 20 }}>
             <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
@@ -1151,6 +1149,56 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               </>
             )}
           </div>
+            </>
+          )}
+
+          {activeSection === 'usage' && (
+            <>
+          {/* Quota display */}
+          <div className="form-group">
+            <label className="form-label settings-section-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              <span>Usage Quota</span>
+              <span className="settings-tag settings-tag--experimental">Experimental</span>
+            </label>
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={quotaEnabled}
+                onChange={e => setQuotaEnabled(e.target.checked)}
+              />
+              Show usage quota in sidebar
+            </label>
+            <p className="form-hint">
+              Display Claude and Codex subscription usage (5-hour and 7-day windows) in the sidebar footer. Polls every 5 minutes.
+            </p>
+            <label className="form-radio-label" style={{ marginTop: 8 }}>
+              <input
+                type="checkbox"
+                checked={usageStripEnabled}
+                onChange={e => setUsageStripEnabled(e.target.checked)}
+              />
+              Show per-session cost strip below terminal
+            </label>
+            <p className="form-hint">
+              Display the active session's model, message count, and API-equivalent cost below each terminal pane. Updates live as Claude responds.
+            </p>
+            <label className="form-radio-label" style={{ marginTop: 8 }}>
+              <input
+                type="checkbox"
+                checked={globalUsageEnabled}
+                onChange={e => setGlobalUsageEnabled(e.target.checked)}
+              />
+              Show global usage in sidebar
+            </label>
+            <p className="form-hint">
+              Display today's total cost and a 7-day sparkline above the quota footer. Hover for a full breakdown including monthly and all-time totals.
+            </p>
+          </div>
+            </>
+          )}
+
+          </div>
+        </div>
         </div>
         <div className="dialog-footer">
           <button className="form-btn" onClick={onClose}>Cancel</button>

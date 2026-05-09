@@ -2,7 +2,7 @@
 
 This is a living document. The goal is to ship a polished **1.0 (Windows)** by tightening what already exists rather than chasing new surface area. Cross-platform, deeper persistence, and advanced workflows are deliberately deferred to post-1.0.
 
-Status legend: **[planned]** not started · **[in progress]** active · **[blocked]** waiting on something · **[done]** shipped (kept here for context until next release).
+Status legend: **[planned]** not started · **[in progress]** active · **[blocked]** waiting on something · **[review]** under evaluation, not committed · **[done]** shipped (kept here for context until next release).
 
 ---
 
@@ -66,7 +66,8 @@ A lot has shipped recently (Helm, Vault, GitHub provider, OpenCode / Copilot CLI
 
 - [planned] **README sweep** — refresh feature list, screenshots, and "what's new" framing for the 1.0 push. Re-evaluate whether `docs/MVP_SCOPE.md` is still load-bearing or should be archived (it predates Helm and multi-CLI). Trim anything that's now contradicted by `CHANGELOG.md`.
 - [planned] **In-app docs refresh** (`src/docs/*.md`) — bring `getting-started.md`, `sessions.md`, `environments.md`, `settings.md`, and `keyboard-shortcuts.md` current. Add pages for Vault, Git providers + new-folder / remote-create flow, usage & quota, and the recent UX additions (per-pane font size, window zoom, bulk group actions, drag-reorder, clickable URLs). Helm gets a brief opt-in / how-to note rather than a polished feature page (it's personal-experimental — see `docs/HELM_DESIGN.md`). The docs window is already wired up — this is content work, not plumbing.
-- [planned] **In-context `(i)` tooltips** — replace the mini-description prose in dialogs (Settings, NewSession, NewEnvironment) with hoverable info-icon tooltips so layout breathes and copy is shorter. Single shared `<InfoTooltip>` component to keep visuals consistent across dialogs.
+- [review] **In-context `(i)` tooltips** — _leaning against, not now._ Idea was to replace the mini-description prose in dialogs (Settings, NewSession, NewEnvironment) with hoverable info-icon tooltips so layout breathes. The catch: a lot of the existing hint copy is consequence/warning text ("Disable if you hit layout bugs", "changes Tether's surface area", "Turn this off if you use plain shells, vim, or htop") that users shouldn't have to hover to see. Hover is also mouse-only and Settings is visited rarely, so there's little expert-speed payoff. If revisited, scope to label-clarifier hints only (e.g. Vault OIDC field captions), not the consequence text. Likely better solved by sectioning Settings (see below) than by hiding copy.
+- [planned] **Split Settings into sections / tabs** — `SettingsDialog.tsx` is ~1170 lines / 35 inline hints in a single 70vh scroll with no headers; cognitive load is the bigger UX problem than copy density. Group into clear sections (Appearance, Terminal, Experimental, Sessions, CLI flags, Notifications, Vault, Git providers) via a left-rail nav (VS Code-style) or top tabs. Should be done before re-evaluating the tooltip question — once density is fixed in-place, the tooltip swap may not be needed at all.
 - [planned] **Per-section `(?)` deep-links into docs** — small help icon at the top of each major dialog section / sidebar block that opens the docs window scrolled to the matching anchor (e.g. SettingsDialog → Vault row → `settings.md#vault`). Needs anchor IDs in the markdown plus an `openDocs(anchor)` IPC. Pairs naturally with the docs refresh above — do them in the same pass so anchors land alongside the content.
 
 
