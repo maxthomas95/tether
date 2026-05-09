@@ -16,6 +16,8 @@ import type {
   SessionOrderPref,
   SessionUsage,
   UsageInfo,
+  UsageExportFormat,
+  UsageExportResult,
   KnownHostInfo,
   HostVerifyRequest,
   SessionExitInfo,
@@ -230,6 +232,8 @@ const api: TetherAPI = {
       ipcRenderer.invoke(IPC.USAGE_GET_ALL),
     refresh: (sessionId?: string): Promise<UsageInfo> =>
       ipcRenderer.invoke(IPC.USAGE_REFRESH, sessionId),
+    export: (format: UsageExportFormat): Promise<UsageExportResult> =>
+      ipcRenderer.invoke(IPC.USAGE_EXPORT, format),
     onUpdate(cb: (info: UsageInfo) => void): () => void {
       const h = (_e: Electron.IpcRendererEvent, info: UsageInfo) => cb(info);
       ipcRenderer.on(IPC.USAGE_UPDATED, h);

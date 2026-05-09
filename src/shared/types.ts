@@ -340,6 +340,19 @@ export interface UsageInfo {
   lastUpdated: string | null;
 }
 
+export type UsageExportFormat = 'csv' | 'json';
+
+export interface UsageExportResult {
+  /** True when a file was written; false on user cancel. */
+  ok: boolean;
+  /** Absolute path written. Present when ok=true. */
+  filePath?: string;
+  /** Number of sessions included in the export. Present when ok=true. */
+  sessionCount?: number;
+  /** Error detail when the write itself failed (vs. user cancel). */
+  error?: string;
+}
+
 export interface RepoGroupPref {
   environmentId: string;
   workingDir: string;
@@ -525,6 +538,7 @@ export interface TetherAPI {
     getSession(sessionId: string): Promise<SessionUsage | null>;
     getAll(): Promise<UsageInfo>;
     refresh(sessionId?: string): Promise<UsageInfo>;
+    export(format: UsageExportFormat): Promise<UsageExportResult>;
     onUpdate(cb: (info: UsageInfo) => void): () => void;
   };
   ssh: {
