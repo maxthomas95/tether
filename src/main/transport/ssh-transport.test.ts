@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createTransportOptions } from './transport-test-utils.test-helper';
 
 const ssh2Harness = vi.hoisted(() => {
   // EventEmitter must be required inside the hoisted block — vi.hoisted runs
@@ -59,18 +60,7 @@ function baseConfig(overrides: Partial<SSHConfig> = {}): SSHConfig {
   };
 }
 
-function baseOptions(overrides: Partial<TransportStartOptions> = {}): TransportStartOptions {
-  return {
-    workingDir: '/home/me/repo',
-    env: {},
-    cols: 80,
-    rows: 24,
-    cliArgs: [],
-    cliTool: 'claude',
-    binaryName: 'claude',
-    ...overrides,
-  };
-}
+const baseOptions = createTransportOptions('/home/me/repo');
 
 /**
  * Drive the post-connect handshake to completion: emits a shell prompt so
@@ -81,6 +71,20 @@ function driveSetupToCompletion(stream: InstanceType<typeof ssh2Harness.FakeStre
   stream.emitData('user@host:~$ ');
   // Second prompt → triggers final command write + resolve()
   stream.emitData('user@host:~$ ');
+}
+
+async function startConnected(
+  t: SSHTransport,
+  options: TransportStartOptions = baseOptions(),
+) {
+  const start = t.start(options);
+  const client = ssh2Harness.current!;
+  client.emit('ready');
+  const stream = new ssh2Harness.FakeStream();
+  client.lastShellCb!(undefined, stream);
+  driveSetupToCompletion(stream);
+  await start;
+  return { client, stream };
 }
 
 describe('SSHTransport', () => {
@@ -100,13 +104,7 @@ describe('SSHTransport', () => {
 
   it('passes username / port / keepalives to ssh2.connect', async () => {
     const t = new SSHTransport(baseConfig({ host: 'host.example', port: 2222, username: 'alice' }));
-    const start = t.start(baseOptions());
-    const client = ssh2Harness.current!;
-    client.emit('ready');
-    const stream = new ssh2Harness.FakeStream();
-    client.lastShellCb!(undefined, stream);
-    driveSetupToCompletion(stream);
-    await start;
+    const { client } = await startConnected(t);
 
     const cfg = client.connect.mock.calls[0][0] as Record<string, unknown>;
     expect(cfg.host).toBe('host.example');
@@ -119,13 +117,7 @@ describe('SSHTransport', () => {
   it('uses agent path when useAgent is set', async () => {
     const t = new SSHTransport(baseConfig({ useAgent: true, password: undefined }));
     delete process.env.SSH_AUTH_SOCK;
-    const start = t.start(baseOptions());
-    const client = ssh2Harness.current!;
-    client.emit('ready');
-    const stream = new ssh2Harness.FakeStream();
-    client.lastShellCb!(undefined, stream);
-    driveSetupToCompletion(stream);
-    await start;
+    const { client } = await startConnected(t);
 
     const cfg = client.connect.mock.calls[0][0] as Record<string, unknown>;
     expect(cfg.agent).toBeDefined();
@@ -135,13 +127,7 @@ describe('SSHTransport', () => {
 
   it('falls back to password auth when no agent / key configured', async () => {
     const t = new SSHTransport(baseConfig({ password: 'secret' }));
-    const start = t.start(baseOptions());
-    const client = ssh2Harness.current!;
-    client.emit('ready');
-    const stream = new ssh2Harness.FakeStream();
-    client.lastShellCb!(undefined, stream);
-    driveSetupToCompletion(stream);
-    await start;
+    const { client } = await startConnected(t);
 
     const cfg = client.connect.mock.calls[0][0] as Record<string, unknown>;
     expect(cfg.password).toBe('secret');
@@ -184,19 +170,13 @@ describe('SSHTransport', () => {
 
   it('builds the launch command with cd + env + binary + initialPrompt', async () => {
     const t = new SSHTransport(baseConfig());
-    const start = t.start(baseOptions({
+    const { stream } = await startConnected(t, baseOptions({
       workingDir: '/srv/app',
       env: { FOO: 'bar' },
       cliArgs: ['--model', 'sonnet'],
       initialPrompt: "what's up",
       binaryName: 'claude',
     }));
-    const client = ssh2Harness.current!;
-    client.emit('ready');
-    const stream = new ssh2Harness.FakeStream();
-    client.lastShellCb!(undefined, stream);
-    driveSetupToCompletion(stream);
-    await start;
 
     // Final write is the launch command
     const writes = stream.write.mock.calls.map((c) => c[0]).join('');
@@ -208,13 +188,7 @@ describe('SSHTransport', () => {
 
   it('write delegates to the stream when started', async () => {
     const t = new SSHTransport(baseConfig());
-    const start = t.start(baseOptions());
-    const client = ssh2Harness.current!;
-    client.emit('ready');
-    const stream = new ssh2Harness.FakeStream();
-    client.lastShellCb!(undefined, stream);
-    driveSetupToCompletion(stream);
-    await start;
+    const { stream } = await startConnected(t);
 
     t.write('user input');
     // last write should be 'user input' (writes also include the launch cmd)
@@ -223,13 +197,7 @@ describe('SSHTransport', () => {
 
   it('resize calls setWindow with rows-then-cols ordering', async () => {
     const t = new SSHTransport(baseConfig());
-    const start = t.start(baseOptions());
-    const client = ssh2Harness.current!;
-    client.emit('ready');
-    const stream = new ssh2Harness.FakeStream();
-    client.lastShellCb!(undefined, stream);
-    driveSetupToCompletion(stream);
-    await start;
+    const { stream } = await startConnected(t);
 
     t.resize(132, 50);
     expect(stream.setWindow).toHaveBeenCalledWith(50, 132, 0, 0);
@@ -237,13 +205,7 @@ describe('SSHTransport', () => {
 
   it('kill destroys client, nulls stream/client, flips connected', async () => {
     const t = new SSHTransport(baseConfig());
-    const start = t.start(baseOptions());
-    const client = ssh2Harness.current!;
-    client.emit('ready');
-    const stream = new ssh2Harness.FakeStream();
-    client.lastShellCb!(undefined, stream);
-    driveSetupToCompletion(stream);
-    await start;
+    const { client } = await startConnected(t);
 
     expect(t.connected).toBe(true);
     t.kill();
@@ -255,13 +217,7 @@ describe('SSHTransport', () => {
     const t = new SSHTransport(baseConfig());
     const dataCb = vi.fn();
     t.onData(dataCb);
-    const start = t.start(baseOptions());
-    const client = ssh2Harness.current!;
-    client.emit('ready');
-    const stream = new ssh2Harness.FakeStream();
-    client.lastShellCb!(undefined, stream);
-    driveSetupToCompletion(stream);
-    await start;
+    const { stream } = await startConnected(t);
     dataCb.mockClear();
 
     // Emit a multi-byte glyph split across two writes ("é" = C3 A9).
@@ -275,13 +231,7 @@ describe('SSHTransport', () => {
     const t = new SSHTransport(baseConfig());
     const exitCb = vi.fn();
     t.onExit(exitCb);
-    const start = t.start(baseOptions());
-    const client = ssh2Harness.current!;
-    client.emit('ready');
-    const stream = new ssh2Harness.FakeStream();
-    client.lastShellCb!(undefined, stream);
-    driveSetupToCompletion(stream);
-    await start;
+    const { stream } = await startConnected(t);
 
     stream.emitClose();
     expect(exitCb).toHaveBeenCalledWith(expect.objectContaining({ exitCode: 0 }));
@@ -294,13 +244,7 @@ describe('SSHTransport', () => {
     const exitCb = vi.fn();
     t.onData(dataCb);
     t.onExit(exitCb);
-    const start = t.start(baseOptions());
-    const client = ssh2Harness.current!;
-    client.emit('ready');
-    const stream = new ssh2Harness.FakeStream();
-    client.lastShellCb!(undefined, stream);
-    driveSetupToCompletion(stream);
-    await start;
+    const { stream } = await startConnected(t);
 
     // Setup-phase prompts emitted via driveSetupToCompletion also reach the
     // dataCb (the listener is wired before setup runs). Clear before asserting.
