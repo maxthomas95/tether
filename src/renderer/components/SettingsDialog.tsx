@@ -235,10 +235,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   );
 
   const handleAddProvider = async () => {
-    const defaultBaseUrl =
-      newProviderType === 'github' ? 'https://api.github.com'
-      : newProviderType === 'ado' ? 'https://dev.azure.com'
-      : '';
+    const defaultBaseUrls: Partial<Record<GitProviderType, string>> = {
+      github: 'https://api.github.com',
+      ado: 'https://dev.azure.com',
+    };
+    const defaultBaseUrl = defaultBaseUrls[newProviderType] || '';
     const effectiveBaseUrl = newProviderUrl.trim() || defaultBaseUrl;
     if (!newProviderName.trim() || !effectiveBaseUrl || !newProviderToken.trim()) return;
     setNewProviderError(null);
@@ -818,8 +819,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Default project (optional)</label>
+                      <label className="form-label" htmlFor="provider-default-project">Default project (optional)</label>
                       <input
+                        id="provider-default-project"
                         className="form-input"
                         value={newProviderDefaultProject}
                         onChange={e => setNewProviderDefaultProject(e.target.value)}
