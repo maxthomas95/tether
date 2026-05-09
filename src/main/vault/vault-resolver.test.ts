@@ -16,6 +16,7 @@ import {
 import { VaultError } from './vault-types';
 
 const mockedBuildClient = vi.mocked(buildClient);
+const VALID_REF = 'vault://secret/foo#bar';
 
 interface FakeClient {
   hasToken: () => boolean;
@@ -28,6 +29,14 @@ function fakeClient(overrides: Partial<FakeClient> = {}): FakeClient {
     kvRead: async () => ({ data: {} }),
     ...overrides,
   };
+}
+
+function useFakeClient(overrides: Partial<FakeClient> = {}): void {
+  mockedBuildClient.mockReturnValue(fakeClient(overrides) as never);
+}
+
+function useKvData(data: Record<string, unknown>): void {
+  useFakeClient({ kvRead: async () => ({ data }) });
 }
 
 describe('vault-resolver', () => {
@@ -44,53 +53,36 @@ describe('vault-resolver', () => {
       expect(isVaultRef('plaintext-value')).toBe(false);
     });
 
-    it('returns false for non-strings', () => {
-      expect(isVaultRef(undefined)).toBe(false);
-      expect(isVaultRef(null)).toBe(false);
-      expect(isVaultRef(42)).toBe(false);
-      expect(isVaultRef({})).toBe(false);
+    it.each([undefined, null, 42, {}])('returns false for non-string value %j', (value) => {
+      expect(isVaultRef(value)).toBe(false);
     });
   });
 
   describe('parseRef', () => {
-    it('parses a simple ref', () => {
-      expect(parseRef('vault://secret/api-keys#ANTHROPIC_API_KEY')).toEqual({
-        mount: 'secret',
-        path: 'api-keys',
-        key: 'ANTHROPIC_API_KEY',
-      });
+    it.each([
+      [
+        'simple ref',
+        'vault://secret/api-keys#ANTHROPIC_API_KEY',
+        { mount: 'secret', path: 'api-keys', key: 'ANTHROPIC_API_KEY' },
+      ],
+      [
+        'multi-segment path',
+        'vault://secret/tether/ssh/prod#password',
+        { mount: 'secret', path: 'tether/ssh/prod', key: 'password' },
+      ],
+    ])('parses a %s', (_label, ref, expected) => {
+      expect(parseRef(ref)).toEqual(expected);
     });
 
-    it('parses a ref with a multi-segment path', () => {
-      expect(parseRef('vault://secret/tether/ssh/prod#password')).toEqual({
-        mount: 'secret',
-        path: 'tether/ssh/prod',
-        key: 'password',
-      });
-    });
-
-    it('returns null for non-vault-ref input', () => {
-      expect(parseRef('not-a-ref')).toBeNull();
-    });
-
-    it('returns null when # is missing', () => {
-      expect(parseRef('vault://secret/foo')).toBeNull();
-    });
-
-    it('returns null when the key is empty', () => {
-      expect(parseRef('vault://secret/foo#')).toBeNull();
-    });
-
-    it('returns null when the mount is empty', () => {
-      expect(parseRef('vault:///foo#key')).toBeNull();
-    });
-
-    it('returns null when the path is empty', () => {
-      expect(parseRef('vault://secret/#key')).toBeNull();
-    });
-
-    it('returns null when there is no slash between mount and path', () => {
-      expect(parseRef('vault://secret#key')).toBeNull();
+    it.each([
+      ['non-vault-ref input', 'not-a-ref'],
+      ['missing #', 'vault://secret/foo'],
+      ['empty key', 'vault://secret/foo#'],
+      ['empty mount', 'vault:///foo#key'],
+      ['empty path', 'vault://secret/#key'],
+      ['missing slash between mount and path', 'vault://secret#key'],
+    ])('returns null for %s', (_label, ref) => {
+      expect(parseRef(ref)).toBeNull();
     });
   });
 
@@ -104,50 +96,33 @@ describe('vault-resolver', () => {
 
   describe('resolveRef', () => {
     it('returns the secret value on the happy path', async () => {
-      mockedBuildClient.mockReturnValue(fakeClient({
-        kvRead: async () => ({ data: { ANTHROPIC_API_KEY: 'sk-ant-test' } }),
-      }) as never);
+      useKvData({ ANTHROPIC_API_KEY: 'sk-ant-test' });
 
       await expect(resolveRef('vault://secret/api-keys#ANTHROPIC_API_KEY')).resolves.toBe('sk-ant-test');
     });
 
     it('throws VaultError on a malformed ref', async () => {
-      mockedBuildClient.mockReturnValue(fakeClient() as never);
+      useFakeClient();
       await expect(resolveRef('vault://broken')).rejects.toBeInstanceOf(VaultError);
     });
 
     it('throws when Vault integration is not enabled (buildClient returns null)', async () => {
       mockedBuildClient.mockReturnValue(null);
-      await expect(resolveRef('vault://secret/foo#bar')).rejects.toThrow(/not enabled/);
+      await expect(resolveRef(VALID_REF)).rejects.toThrow(/not enabled/);
     });
 
     it('throws when client has no token', async () => {
-      mockedBuildClient.mockReturnValue(fakeClient({ hasToken: () => false }) as never);
-      await expect(resolveRef('vault://secret/foo#bar')).rejects.toThrow(/Not logged in/);
+      useFakeClient({ hasToken: () => false });
+      await expect(resolveRef(VALID_REF)).rejects.toThrow(/Not logged in/);
     });
 
-    it('throws when the secret is missing the requested key', async () => {
-      mockedBuildClient.mockReturnValue(fakeClient({
-        kvRead: async () => ({ data: { other: 'value' } }),
-      }) as never);
-
-      await expect(resolveRef('vault://secret/foo#missing')).rejects.toThrow(/no field "missing"/);
-    });
-
-    it('throws when the value is not a string', async () => {
-      mockedBuildClient.mockReturnValue(fakeClient({
-        kvRead: async () => ({ data: { count: 42 } }),
-      }) as never);
-
-      await expect(resolveRef('vault://secret/foo#count')).rejects.toThrow(/is not a string/);
-    });
-
-    it('throws when the value is null (treated as missing)', async () => {
-      mockedBuildClient.mockReturnValue(fakeClient({
-        kvRead: async () => ({ data: { key: null } }),
-      }) as never);
-
-      await expect(resolveRef('vault://secret/foo#key')).rejects.toThrow(/no field "key"/);
+    it.each([
+      ['missing the requested key', { other: 'value' }, 'vault://secret/foo#missing', /no field "missing"/],
+      ['not a string', { count: 42 }, 'vault://secret/foo#count', /is not a string/],
+      ['null', { key: null }, 'vault://secret/foo#key', /no field "key"/],
+    ])('throws when the secret value is %s', async (_label, data, ref, expectedError) => {
+      useKvData(data);
+      await expect(resolveRef(ref)).rejects.toThrow(expectedError);
     });
   });
 
@@ -164,11 +139,11 @@ describe('vault-resolver', () => {
     });
 
     it('resolves a mix of refs and plain values', async () => {
-      mockedBuildClient.mockReturnValue(fakeClient({
+      useFakeClient({
         kvRead: async (_mount, path) => ({
           data: path === 'a' ? { k: 'value-a' } : { k: 'value-b' },
         }),
-      }) as never);
+      });
 
       const result = await resolveAll({
         PLAIN: 'literal',
@@ -185,14 +160,14 @@ describe('vault-resolver', () => {
 
     it('resolves multiple refs in parallel', async () => {
       const callOrder: string[] = [];
-      mockedBuildClient.mockReturnValue(fakeClient({
+      useFakeClient({
         kvRead: async (_mount, path) => {
           callOrder.push(`start:${path}`);
           await new Promise((r) => setTimeout(r, 0));
           callOrder.push(`end:${path}`);
           return { data: { k: path } };
         },
-      }) as never);
+      });
 
       await resolveAll({
         A: 'vault://secret/a#k',
@@ -204,12 +179,12 @@ describe('vault-resolver', () => {
     });
 
     it('rejects the whole batch when any ref fails', async () => {
-      mockedBuildClient.mockReturnValue(fakeClient({
+      useFakeClient({
         kvRead: async (_mount, path) => {
           if (path === 'bad') throw new VaultError('not found', 404);
           return { data: { k: 'ok' } };
         },
-      }) as never);
+      });
 
       await expect(
         resolveAll({
