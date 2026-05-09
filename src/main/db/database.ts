@@ -30,7 +30,7 @@ export interface SavedWorkspace {
 export interface GitProviderRow {
   id: string;
   name: string;
-  type: 'gitea' | 'ado';
+  type: 'gitea' | 'ado' | 'github';
   baseUrl: string;
   organization: string | null;
   token: string;

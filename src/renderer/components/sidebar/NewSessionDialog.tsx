@@ -8,7 +8,7 @@ import { onKeyActivate } from '../../utils/a11y';
 
 type CliFlagsPerTool = Partial<Record<CliToolId, string[]>>;
 
-type SourceTab = 'local' | 'clone' | 'gitea' | 'ado';
+type SourceTab = 'local' | 'clone' | 'gitea' | 'ado' | 'github';
 
 interface CoderCreateInlineProps {
   templates: CoderTemplate[];
@@ -375,7 +375,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
 
   // Set default provider when tab changes to a provider tab
   useEffect(() => {
-    if (activeTab === 'gitea' || activeTab === 'ado') {
+    if (activeTab === 'gitea' || activeTab === 'ado' || activeTab === 'github') {
       const matching = gitProviders.filter(p => p.type === activeTab);
       if (matching.length > 0 && !selectedProviderId) {
         setSelectedProviderId(matching[0].id);
@@ -385,7 +385,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
 
   // Debounced repo search for provider tabs
   useEffect(() => {
-    if (activeTab !== 'gitea' && activeTab !== 'ado') return;
+    if (activeTab !== 'gitea' && activeTab !== 'ado' && activeTab !== 'github') return;
     if (!selectedProviderId) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -727,7 +727,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
 
   const hasGitea = gitProviders.some(p => p.type === 'gitea');
   const hasAdo = gitProviders.some(p => p.type === 'ado');
-  const isProviderTab = activeTab === 'gitea' || activeTab === 'ado';
+  const hasGithub = gitProviders.some(p => p.type === 'github');
+  const isProviderTab = activeTab === 'gitea' || activeTab === 'ado' || activeTab === 'github';
   const dialogClass = `dialog ${isProviderTab ? 'dialog--wide' : ''}`;
 
   const matchingProviders = gitProviders.filter(p => p.type === activeTab);
@@ -761,6 +762,12 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                 className={`source-tab ${activeTab === 'ado' ? 'source-tab--active' : ''}`}
                 onClick={() => setActiveTab('ado')}
               >ADO</button>
+            )}
+            {hasGithub && (
+              <button
+                className={`source-tab ${activeTab === 'github' ? 'source-tab--active' : ''}`}
+                onClick={() => setActiveTab('github')}
+              >GitHub</button>
             )}
           </div>
 
