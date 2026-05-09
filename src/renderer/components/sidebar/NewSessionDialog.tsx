@@ -433,14 +433,18 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     setWorktreePath(`${parent}${sep}${repoName}-${safeBranch}`);
   }, [createWorktree, worktreeBranch, worktreePathEdited, directory]);
 
-  // Set default provider when tab changes to a provider tab
+  // Set default provider when tab changes to a provider tab.
+  // If the current selection belongs to a different provider type (e.g. switching
+  // from Gitea to GitHub), reset to the first matching provider and clear stale results.
   useEffect(() => {
-    if (activeTab === 'gitea' || activeTab === 'ado' || activeTab === 'github') {
-      const matching = gitProviders.filter(p => p.type === activeTab);
-      if (matching.length > 0 && !selectedProviderId) {
-        setSelectedProviderId(matching[0].id);
-      }
-    }
+    if (activeTab !== 'gitea' && activeTab !== 'ado' && activeTab !== 'github') return;
+    const matching = gitProviders.filter(p => p.type === activeTab);
+    if (matching.length === 0) return;
+    if (matching.some(p => p.id === selectedProviderId)) return;
+    setSelectedProviderId(matching[0].id);
+    setProviderRepos([]);
+    setSelectedRepo(null);
+    setProviderSearchQuery('');
   }, [activeTab, gitProviders, selectedProviderId]);
 
   // Debounced repo search for provider tabs
