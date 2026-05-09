@@ -21,6 +21,7 @@ import type {
   UsageInfo,
   SessionUsage,
   CliToolId,
+  SessionExitInfo,
 } from '../../shared/types';
 import { sessionManager, findVaultRefInSession, setHelmChildCallbacks } from '../session/session-manager';
 import { quotaService } from '../quota/quota-service';
@@ -122,8 +123,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     onCreated(sessionId: string, info: import('../../shared/types').SessionInfo) {
       send(IPC.SESSION_CREATED, sessionId, info);
     },
-    onExit(sessionId: string, exitCode: number) {
-      send(IPC.SESSION_EXITED, sessionId, exitCode);
+    onExit(sessionId: string, exitInfo: SessionExitInfo) {
+      send(IPC.SESSION_EXITED, sessionId, exitInfo);
       const s = sessionManager.getSession(sessionId);
       if (s?.claudeSessionId) {
         usageService.untrackSession(s.claudeSessionId);

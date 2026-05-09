@@ -16,7 +16,7 @@ import { copilotTranscriptExists } from '../copilot/transcripts';
 import { detectNewCopilotSession, releaseCopilotSessionClaim } from '../copilot/session-watcher';
 import { opencodeTranscriptExists } from '../opencode/transcripts';
 import { detectNewOpencodeSession, releaseOpencodeSessionClaim } from '../opencode/session-watcher';
-import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId } from '../../shared/types';
+import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId, SessionExitInfo } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
@@ -105,7 +105,7 @@ function buildHelmChildCliArgs(params: Record<string, unknown>): string[] {
 export interface SessionCallbacks {
   onData(sessionId: string, data: string): void;
   onStateChange(sessionId: string, state: SessionState): void;
-  onExit(sessionId: string, exitCode: number): void;
+  onExit(sessionId: string, exitInfo: SessionExitInfo): void;
   /**
    * Fired when non-state session metadata changes (currently: the codex
    * toolSessionId captured after spawn). Renderer uses this to keep its
@@ -335,14 +335,15 @@ class SessionManager {
       callbacks.onData(id, data);
     });
 
-    transport.onExit(({ exitCode }) => {
+    transport.onExit((exitInfo) => {
+      const { exitCode } = exitInfo;
       if (!session.transport) return;
       log.info('Session exited', { id, exitCode });
       statusDetector.markExited(id, exitCode);
       session.transport = null;
       session.helmIntegration?.cleanup();
       session.helmIntegration = null;
-      callbacks.onExit(id, exitCode);
+      callbacks.onExit(id, { exitCode, signal: exitInfo.signal });
     });
 
     // Resolve env var cascade: app defaults -> environment -> profile -> session override

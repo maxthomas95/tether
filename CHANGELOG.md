@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## Unreleased
+
+### Improvements
+- Error toasts now cover session restore failures, session command failures, unexpected transport exits, Vault login/renew failures, and manual update-check failures.
+- The notification stack is capped so repeated failures cannot flood the UI.
+
+### Bug Fixes
+- Manual update checks now distinguish "up to date" from "could not check" when GitHub Releases is unreachable.
+
+---
+
 ## [0.4.1-beta.2] — 2026-05-01
 
 Patch on top of `0.4.0-beta.1` rolling up new CLI tool support, broader resume-picker coverage, and a security fix for SSH session output.
@@ -294,4 +305,4 @@ The first working build. Tether runs as a standalone Windows exe.
 ### Known Issues
 - VS 2025 not recognized by node-gyp — using prebuilt N-API binaries and JSON persistence instead of SQLite
 - Status detection heuristics may need tuning across different Claude Code versions
-- No error toasts yet — errors show in DevTools console only
+- Error toasts were not yet available in this first alpha; current releases now surface IPC and transport errors in the app.

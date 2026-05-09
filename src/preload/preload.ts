@@ -18,6 +18,7 @@ import type {
   UsageInfo,
   KnownHostInfo,
   HostVerifyRequest,
+  SessionExitInfo,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -45,8 +46,8 @@ const api: TetherAPI = {
       ipcRenderer.on(IPC.SESSION_STATE_CHANGE, h);
       return () => ipcRenderer.removeListener(IPC.SESSION_STATE_CHANGE, h);
     },
-    onExited(cb: (id: string, code: number) => void): () => void {
-      const h = (_e: Electron.IpcRendererEvent, id: string, code: number) => cb(id, code);
+    onExited(cb: (id: string, info: SessionExitInfo) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, id: string, info: SessionExitInfo) => cb(id, info);
       ipcRenderer.on(IPC.SESSION_EXITED, h);
       return () => ipcRenderer.removeListener(IPC.SESSION_EXITED, h);
     },
