@@ -175,3 +175,43 @@ export function codexTranscriptExists(cwd: string, sessionId: string, codexHome 
 export function findLatestCodexTranscript(cwd: string, codexHome = getCodexHome()): TranscriptInfo | null {
   return listCodexTranscripts(cwd, 1, codexHome)[0] || null;
 }
+
+export interface DiscoveredCodexTranscript {
+  /** Codex session UUID from the file's `session_meta` line. */
+  sessionId: string;
+  /** Absolute path to the rollout JSONL. */
+  filePath: string;
+  /** Original cwd recorded in `session_meta` (may be a Windows path). */
+  cwd: string;
+  size: number;
+  mtimeMs: number;
+}
+
+/**
+ * Walk every `*.jsonl` under `~/.codex/sessions/` and resolve each file's
+ * session id + cwd via its `session_meta` line. Used by the usage service
+ * to backfill historical Codex sessions on startup. Files whose session
+ * id can't be parsed are skipped.
+ */
+export function scanAllCodexTranscripts(codexHome = getCodexHome()): DiscoveredCodexTranscript[] {
+  const root = getCodexSessionsRoot(codexHome);
+  const out: DiscoveredCodexTranscript[] = [];
+  for (const filePath of walkJsonlFiles(root)) {
+    const meta = readSessionMeta(filePath);
+    if (!meta) continue;
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(filePath);
+    } catch {
+      continue;
+    }
+    out.push({
+      sessionId: meta.id,
+      filePath,
+      cwd: meta.cwd,
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+    });
+  }
+  return out;
+}

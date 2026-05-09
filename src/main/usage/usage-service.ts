@@ -1,7 +1,9 @@
 import * as fs from 'node:fs';
 import { createLogger } from '../logger';
 import { transcriptPath, scanAllTranscripts } from '../claude/transcripts';
+import { scanAllCodexTranscripts } from '../codex/transcripts';
 import { parseJsonlFile, type ParsedMessage } from './jsonl-parser';
+import { parseCodexJsonl } from './codex-jsonl-parser';
 import { readCrushSessions } from '../opencode/usage-reader';
 import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
 import type { SessionUsage, UsageModelBreakdown, UsageInfo, DailyUsage, CliToolId } from '../../shared/types';
@@ -20,6 +22,13 @@ interface TrackedSession {
   watching: boolean;
   debounceTimer: ReturnType<typeof setTimeout> | null;
   usage: SessionUsage;
+  /**
+   * Codex only: model id active at the end of the last parse. Codex publishes
+   * the model in `turn_context` lines that precede each `token_count`, so an
+   * appended chunk that begins with token_count needs the prior model to
+   * cost-attribute correctly.
+   */
+  lastSeenModel?: string | null;
 }
 
 function emptySessionUsage(sessionId: string, cliTool: CliToolId): SessionUsage {
@@ -133,6 +142,10 @@ class UsageService {
             lastMessageAt: summary.lastMessageAt,
             parsedByteOffset: summary.parsedByteOffset,
           },
+          // lastSeenModel isn't persisted; the next turn_context line resets it.
+          // A handful of token_count events appended pre-turn_context after a
+          // restart will attribute to 'unknown' until the next turn_context.
+          lastSeenModel: null,
         });
       }
     }
@@ -191,6 +204,38 @@ class UsageService {
       }
     }
 
+    // 1b. Backfill Codex transcripts (JSONL with event_msg/token_count lines).
+    let codexDiscovered: ReturnType<typeof scanAllCodexTranscripts> = [];
+    try {
+      codexDiscovered = scanAllCodexTranscripts();
+    } catch (err) {
+      log.warn('Codex transcript scan failed', { error: err instanceof Error ? err.message : String(err) });
+    }
+
+    for (const d of codexDiscovered) {
+      const existing = this.tracked.get(d.sessionId);
+      if (!existing) {
+        const session: TrackedSession = {
+          sessionId: d.sessionId,
+          cliTool: 'codex',
+          workingDir: d.cwd,
+          filePath: d.filePath,
+          watching: false,
+          debounceTimer: null,
+          usage: emptySessionUsage(d.sessionId, 'codex'),
+          lastSeenModel: null,
+        };
+        this.tracked.set(d.sessionId, session);
+        this.parseSession(session);
+        newSessions++;
+        continue;
+      }
+      if (d.size > existing.usage.parsedByteOffset) {
+        this.parseSession(existing);
+        updatedSessions++;
+      }
+    }
+
     // 2. Backfill Crush/OpenCode sessions from SQLite
     const crushSessions = readCrushSessions();
     for (const cs of crushSessions) {
@@ -243,7 +288,7 @@ class UsageService {
 
     if (newSessions > 0 || updatedSessions > 0) {
       log.info('Transcript scan complete', {
-        total: discovered.length + crushSessions.length,
+        total: discovered.length + codexDiscovered.length + crushSessions.length,
         newSessions,
         updatedSessions,
       });
@@ -256,8 +301,11 @@ class UsageService {
     if (existing) {
       // start() pre-loads DB summaries into `tracked` without a watcher,
       // so a subsequent trackSession from session:create used to silently
-      // skip the watcher. Make sure one is attached.
-      if (!existing.watching && existing.cliTool === 'claude') this.startWatching(existing);
+      // skip the watcher. Attach one for any transcript-backed CLI whose
+      // file path we already know.
+      if (!existing.watching && existing.filePath && (existing.cliTool === 'claude' || existing.cliTool === 'codex')) {
+        this.startWatching(existing);
+      }
       return;
     }
 
@@ -269,6 +317,10 @@ class UsageService {
     // its workingDir is the encoded project dir name, which is lossy to
     // recover into a real path. transcriptPath() is correct for fresh
     // Tether sessions where workingDir is the actual cwd.
+    //
+    // Codex stores transcripts at `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`,
+    // so the path can't be derived from sessionId + cwd alone. We fall back
+    // to the periodic backfill which discovers the file via session_meta.
     const filePath = persisted?.filePath ?? (cliTool === 'claude' ? transcriptPath(workingDir, sessionId) : '');
     log.info('Tracking session', { sessionId, cliTool, filePath });
 
@@ -293,14 +345,24 @@ class UsageService {
         lastMessageAt: persisted.lastMessageAt,
         parsedByteOffset: persisted.parsedByteOffset,
       } : emptySessionUsage(sessionId, cliTool),
+      lastSeenModel: cliTool === 'codex' && persisted && persisted.models.length > 0
+        ? persisted.models[persisted.models.length - 1].model
+        : null,
     };
 
     this.tracked.set(sessionId, session);
 
-    // Initial parse (Claude only — Crush data is read from SQLite)
+    // Initial parse (Claude/Codex parse from JSONL; Crush is from SQLite)
     if (cliTool === 'claude') {
       this.parseSession(session);
       this.startWatching(session);
+    } else if (cliTool === 'codex') {
+      if (filePath) {
+        this.parseSession(session);
+        this.startWatching(session);
+      }
+      // No file path yet — the backfill rescan picks it up once Codex
+      // writes session_meta.
     } else if (cliTool === 'opencode') {
       // For OpenCode, pull from crush.db on track and on untrack.
       // No file watching — the DB is the source of truth.
@@ -315,13 +377,13 @@ class UsageService {
     log.info('Untracking session', { sessionId });
 
     // Final parse/refresh
-    if (session.cliTool === 'claude') {
-      this.parseSession(session);
+    if (session.cliTool === 'claude' || session.cliTool === 'codex') {
+      if (session.filePath) this.parseSession(session);
     } else if (session.cliTool === 'opencode') {
       this.refreshCrushSession(session);
     }
 
-    // Close watcher (Claude only)
+    // Close watcher (Claude / Codex)
     this.closeWatcher(session);
 
     // Keep data in map for queries — don't delete
@@ -349,29 +411,41 @@ class UsageService {
   }
 
   async refresh(sessionId?: string): Promise<UsageInfo> {
+    const refreshOne = (session: TrackedSession): void => {
+      if (session.cliTool === 'claude' || session.cliTool === 'codex') {
+        if (session.filePath) this.parseSession(session);
+      } else if (session.cliTool === 'opencode') {
+        this.refreshCrushSession(session);
+      }
+    };
+
     if (sessionId) {
       const session = this.tracked.get(sessionId);
-      if (session) {
-        if (session.cliTool === 'claude') {
-          this.parseSession(session);
-        } else if (session.cliTool === 'opencode') {
-          this.refreshCrushSession(session);
-        }
-      }
+      if (session) refreshOne(session);
     } else {
-      for (const session of this.tracked.values()) {
-        if (session.cliTool === 'claude') {
-          this.parseSession(session);
-        } else if (session.cliTool === 'opencode') {
-          this.refreshCrushSession(session);
-        }
-      }
+      for (const session of this.tracked.values()) refreshOne(session);
     }
     return this.getAll();
   }
 
   private parseSession(session: TrackedSession): void {
     try {
+      if (session.cliTool === 'codex') {
+        const result = parseCodexJsonl(session.filePath, {
+          startOffset: session.usage.parsedByteOffset,
+          priorModel: session.lastSeenModel ?? null,
+        });
+        if (result.messages.length > 0 || result.newByteOffset !== session.usage.parsedByteOffset) {
+          session.usage = mergeMessages(session.usage, result.messages, result.newByteOffset);
+          session.lastSeenModel = result.currentModel;
+          this.persistSession(session);
+          this.notifyUpdate();
+        } else if (result.currentModel && result.currentModel !== session.lastSeenModel) {
+          session.lastSeenModel = result.currentModel;
+        }
+        return;
+      }
+
       const result = parseJsonlFile(session.filePath, session.usage.parsedByteOffset);
       if (result.messages.length > 0 || result.newByteOffset !== session.usage.parsedByteOffset) {
         session.usage = mergeMessages(session.usage, result.messages, result.newByteOffset);
@@ -381,6 +455,7 @@ class UsageService {
     } catch (err) {
       log.warn('Failed to parse session JSONL', {
         sessionId: session.sessionId,
+        cliTool: session.cliTool,
         error: err instanceof Error ? err.message : String(err),
       });
     }
