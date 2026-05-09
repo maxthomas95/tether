@@ -177,4 +177,41 @@ describe('GitHubClient', () => {
       expect(repos[0].defaultBranch).toBe('main');
     });
   });
+
+  describe('createRepo', () => {
+    it('POSTs to /user/repos with name, description, private, and auto_init=false', async () => {
+      fetchMock.mockResolvedValueOnce(makeResponse(201, makeRepo('alice/new-repo', { private: true })));
+
+      const client = new GitHubClient('https://api.github.com', 'token-abc');
+      const created = await client.createRepo({
+        name: 'new-repo',
+        description: 'a test',
+        isPrivate: true,
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('https://api.github.com/user/repos');
+      const initObj = init as { method: string; headers: Record<string, string>; body: string };
+      expect(initObj.method).toBe('POST');
+      expect(initObj.headers['Authorization']).toBe('Bearer token-abc');
+      expect(initObj.headers['Content-Type']).toBe('application/json');
+      expect(JSON.parse(initObj.body)).toEqual({
+        name: 'new-repo',
+        description: 'a test',
+        private: true,
+        auto_init: false,
+      });
+      expect(created.fullName).toBe('alice/new-repo');
+      expect(created.isPrivate).toBe(true);
+    });
+
+    it('rejects with the API error body on failure', async () => {
+      fetchMock.mockResolvedValueOnce(makeResponse(422, '{"message":"name already exists"}'));
+
+      const client = new GitHubClient('https://api.github.com', 'token');
+      await expect(client.createRepo({ name: 'dup', isPrivate: false }))
+        .rejects.toThrow(/GitHub API 422.*name already exists/);
+    });
+  });
 });

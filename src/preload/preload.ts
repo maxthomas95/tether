@@ -5,7 +5,7 @@ import type {
   CreateEnvironmentOptions, EnvironmentInfo,
   CreateLaunchProfileOptions, LaunchProfileInfo,
   TetherAPI,
-  CreateGitProviderOptions, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderTemplate, CoderTemplateParam, CreateCoderWorkspaceOptions,
+  CreateGitProviderOptions, GitProviderInfo, GitRepoInfo, CloneProgressInfo, AdoProjectInfo, CreateRepoOptions, CoderTemplate, CoderTemplateParam, CreateCoderWorkspaceOptions,
   UpdateCheckResult,
   VaultConfig, VaultStatus, VaultPlaintextSecret, MigrateSecretOptions, VaultPreflightResult, VaultExpiryWarning,
   TranscriptInfo,
@@ -121,12 +121,15 @@ const api: TetherAPI = {
     delete: (id: string): Promise<void> => ipcRenderer.invoke(IPC.GIT_PROVIDER_DELETE, id),
     test: (id: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(IPC.GIT_PROVIDER_TEST, id),
     listRepos: (providerId: string, query?: string): Promise<GitRepoInfo[]> => ipcRenderer.invoke(IPC.GIT_PROVIDER_REPOS, providerId, query),
+    listProjects: (providerId: string): Promise<AdoProjectInfo[]> => ipcRenderer.invoke(IPC.GIT_PROVIDER_LIST_PROJECTS, providerId),
+    createRepo: (providerId: string, opts: CreateRepoOptions): Promise<GitRepoInfo> => ipcRenderer.invoke(IPC.GIT_PROVIDER_CREATE_REPO, providerId, opts),
   },
 
   git: {
     clone: (url: string, destination: string): Promise<string> => ipcRenderer.invoke(IPC.GIT_CLONE, url, destination),
     init: (directory: string): Promise<string> => ipcRenderer.invoke(IPC.GIT_INIT, directory),
     createFolder: (path: string, initGit: boolean): Promise<string> => ipcRenderer.invoke(IPC.GIT_CREATE_FOLDER, path, initGit),
+    remoteAdd: (repoPath: string, remoteName: string, remoteUrl: string): Promise<void> => ipcRenderer.invoke(IPC.GIT_REMOTE_ADD, repoPath, remoteName, remoteUrl),
     isRepo: (directory: string): Promise<boolean> => ipcRenderer.invoke(IPC.GIT_IS_REPO, directory),
     worktreeAdd: (opts: { sourceRepo: string; worktreePath: string; branch: string }): Promise<string> => ipcRenderer.invoke(IPC.GIT_WORKTREE_ADD, opts),
     worktreeRemove: (opts: { sourceRepo: string; worktreePath: string; force?: boolean }): Promise<void> =>

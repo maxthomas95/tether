@@ -58,11 +58,27 @@ export interface GitProviderInfo {
   type: GitProviderType;
   baseUrl: string;
   organization?: string;
+  /** ADO only: pre-fills the project picker when creating a new repo. */
+  defaultProject?: string;
   hasToken: boolean;
   /** When true, the stored token is a `vault://...` reference, not a literal secret. */
   tokenIsVaultRef?: boolean;
   /** The vault reference itself (only set when tokenIsVaultRef is true). Safe to show in UI. */
   tokenVaultRef?: string;
+}
+
+export interface AdoProjectInfo {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface CreateRepoOptions {
+  name: string;
+  description?: string;
+  isPrivate: boolean;
+  /** ADO only: project to create the repo under. Required for ADO. */
+  adoProject?: { id: string; name: string };
 }
 
 export interface GitRepoInfo {
@@ -84,6 +100,8 @@ export interface CreateGitProviderOptions {
   type: GitProviderType;
   baseUrl: string;
   organization?: string;
+  /** ADO only: pre-fills the project picker when creating a new repo. */
+  defaultProject?: string;
   token: string;
 }
 
@@ -438,11 +456,14 @@ export interface TetherAPI {
     delete(id: string): Promise<void>;
     test(id: string): Promise<{ ok: boolean; error?: string }>;
     listRepos(providerId: string, query?: string): Promise<GitRepoInfo[]>;
+    listProjects(providerId: string): Promise<AdoProjectInfo[]>;
+    createRepo(providerId: string, opts: CreateRepoOptions): Promise<GitRepoInfo>;
   };
   git: {
     clone(url: string, destination: string): Promise<string>;
     init(directory: string): Promise<string>;
     createFolder(path: string, initGit: boolean): Promise<string>;
+    remoteAdd(repoPath: string, remoteName: string, remoteUrl: string): Promise<void>;
     isRepo(directory: string): Promise<boolean>;
     worktreeAdd(opts: { sourceRepo: string; worktreePath: string; branch: string }): Promise<string>;
     worktreeRemove(opts: { sourceRepo: string; worktreePath: string; force?: boolean }): Promise<void>;

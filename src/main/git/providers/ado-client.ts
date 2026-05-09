@@ -1,4 +1,5 @@
-import type { GitRepoInfo } from '../../../shared/types';
+import type { GitRepoInfo, CreateRepoOptions, AdoProjectInfo } from '../../../shared/types';
+import { normalizeBaseUrl, requestJson } from './http';
 
 export class AdoClient {
   private baseUrl: string;
@@ -6,24 +7,34 @@ export class AdoClient {
   private authHeader: string;
 
   constructor(baseUrl: string, organization: string, token: string) {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
+    this.baseUrl = normalizeBaseUrl(baseUrl);
     this.organization = organization;
     this.authHeader = 'Basic ' + Buffer.from(':' + token).toString('base64');
   }
 
-  private async request<T>(path: string): Promise<T> {
-    const url = `${this.baseUrl}/${this.organization}${path}`;
-    const res = await fetch(url, {
-      headers: {
-        'Authorization': this.authHeader,
-        'Accept': 'application/json',
-      },
+  private request<T>(path: string): Promise<T> {
+    return requestJson<T>(this.url(path), 'ADO', {
+      headers: this.headers(),
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`ADO API ${res.status}: ${body || res.statusText}`);
-    }
-    return res.json() as Promise<T>;
+  }
+
+  private post<T>(path: string, body: unknown): Promise<T> {
+    return requestJson<T>(this.url(path), 'ADO', {
+      method: 'POST',
+      headers: this.headers(),
+      body,
+    });
+  }
+
+  private url(path: string): string {
+    return `${this.baseUrl}/${this.organization}${path}`;
+  }
+
+  private headers(): Record<string, string> {
+    return {
+      'Authorization': this.authHeader,
+      'Accept': 'application/json',
+    };
   }
 
   async testConnection(): Promise<void> {
@@ -56,6 +67,37 @@ export class AdoClient {
     }
 
     return allRepos;
+  }
+
+  async listProjects(): Promise<AdoProjectInfo[]> {
+    const res = await this.request<AdoListResponse<AdoProject>>(
+      '/_apis/projects?api-version=7.0&$top=100'
+    );
+    return res.value.map(p => ({
+      id: p.id,
+      name: p.name,
+      description: p.description || '',
+    }));
+  }
+
+  async createRepo(opts: CreateRepoOptions): Promise<GitRepoInfo> {
+    if (!opts.adoProject) {
+      throw new Error('ADO repo creation requires a project');
+    }
+    const created = await this.post<AdoRepo>(
+      `/${opts.adoProject.name}/_apis/git/repositories?api-version=7.0`,
+      {
+        name: opts.name,
+        project: { id: opts.adoProject.id },
+      }
+    );
+    return {
+      fullName: `${opts.adoProject.name}/${created.name}`,
+      cloneUrl: created.remoteUrl,
+      description: opts.description || '',
+      defaultBranch: created.defaultBranch?.replace('refs/heads/', '') || 'main',
+      isPrivate: true,
+    };
   }
 }
 

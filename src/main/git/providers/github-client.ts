@@ -1,29 +1,35 @@
-import type { GitRepoInfo } from '../../../shared/types';
+import type { GitRepoInfo, CreateRepoOptions } from '../../../shared/types';
+import { normalizeBaseUrl, requestJson } from './http';
 
 export class GitHubClient {
   private readonly baseUrl: string;
   private readonly token: string;
 
   constructor(baseUrl: string, token: string) {
-    let normalized = baseUrl;
-    while (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
-    this.baseUrl = normalized;
+    this.baseUrl = normalizeBaseUrl(baseUrl);
     this.token = token;
   }
 
-  private async request<T>(path: string): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
+  private request<T>(path: string): Promise<T> {
+    return requestJson<T>(`${this.baseUrl}${path}`, 'GitHub', {
+      headers: this.headers(),
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`GitHub API ${res.status}: ${body || res.statusText}`);
-    }
-    return res.json() as Promise<T>;
+  }
+
+  private post<T>(path: string, body: unknown): Promise<T> {
+    return requestJson<T>(`${this.baseUrl}${path}`, 'GitHub', {
+      method: 'POST',
+      headers: this.headers(),
+      body,
+    });
+  }
+
+  private headers(): Record<string, string> {
+    return {
+      'Authorization': `Bearer ${this.token}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
   }
 
   async testConnection(): Promise<void> {
@@ -53,6 +59,16 @@ export class GitHubClient {
     const q = (query || '').trim().toLowerCase();
     if (!q) return mapped;
     return mapped.filter(r => r.fullName.toLowerCase().includes(q));
+  }
+
+  async createRepo(opts: CreateRepoOptions): Promise<GitRepoInfo> {
+    const created = await this.post<GitHubRepo>('/user/repos', {
+      name: opts.name,
+      description: opts.description || '',
+      private: opts.isPrivate,
+      auto_init: false,
+    });
+    return mapGitHubRepo(created);
   }
 }
 

@@ -9,6 +9,8 @@ export interface CreateGitProviderInput {
   type: 'gitea' | 'ado' | 'github';
   baseUrl: string;
   organization?: string;
+  /** ADO only: pre-fills the project picker when creating a new repo. */
+  defaultProject?: string;
   token: string;
 }
 
@@ -28,6 +30,7 @@ export function createGitProvider(input: CreateGitProviderInput): GitProviderRow
     type: input.type,
     baseUrl: input.baseUrl.replace(/\/+$/, ''),
     organization: input.organization || null,
+    defaultProject: input.defaultProject || null,
     token: input.token,
     created_at: now,
     updated_at: now,
@@ -44,6 +47,7 @@ export function updateGitProvider(id: string, updates: Partial<CreateGitProvider
   if (updates.type !== undefined) provider.type = updates.type;
   if (updates.baseUrl !== undefined) provider.baseUrl = updates.baseUrl.replace(/\/+$/, '');
   if (updates.organization !== undefined) provider.organization = updates.organization || null;
+  if (updates.defaultProject !== undefined) provider.defaultProject = updates.defaultProject || null;
   if (updates.token !== undefined) provider.token = updates.token;
   provider.updated_at = new Date().toISOString();
   saveDb();

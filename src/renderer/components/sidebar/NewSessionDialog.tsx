@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
-import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, CoderWorkspace, CoderTemplate, CoderTemplateParam, CreateCoderWorkspaceOptions, CliToolId } from '../../../shared/types';
+import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, AdoProjectInfo, CoderWorkspace, CoderTemplate, CoderTemplateParam, CreateCoderWorkspaceOptions, CliToolId } from '../../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import type { CliToolDef } from '../../../shared/cli-tools';
 import { onKeyActivate } from '../../utils/a11y';
@@ -267,6 +267,16 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [creatingNewFolder, setCreatingNewFolder] = useState(false);
   const [newFolderError, setNewFolderError] = useState('');
 
+  // Create-on-remote state (within New folder mode)
+  const [createOnRemote, setCreateOnRemote] = useState(false);
+  const [remoteProviderId, setRemoteProviderId] = useState('');
+  const [remoteIsPrivate, setRemoteIsPrivate] = useState(true);
+  const [remoteDescription, setRemoteDescription] = useState('');
+  const [adoProjects, setAdoProjects] = useState<AdoProjectInfo[]>([]);
+  const [loadingAdoProjects, setLoadingAdoProjects] = useState(false);
+  const [selectedAdoProjectId, setSelectedAdoProjectId] = useState('');
+  const [adoProjectsError, setAdoProjectsError] = useState('');
+
   // Clone state
   const [cloneUrl, setCloneUrl] = useState('');
   const [cloneDestination, setCloneDestination] = useState('');
@@ -357,6 +367,43 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       setActiveTab('local');
     }
   }, [activeTab, isSSH, isCoder]);
+
+  // Auto-pick first provider when "Create on remote" turns on
+  useEffect(() => {
+    if (createOnRemote && !remoteProviderId && gitProviders.length > 0) {
+      setRemoteProviderId(gitProviders[0].id);
+    }
+  }, [createOnRemote, remoteProviderId, gitProviders]);
+
+  // Load ADO projects when an ADO provider is the remote target
+  useEffect(() => {
+    if (!createOnRemote || !remoteProviderId) {
+      setAdoProjects([]);
+      setSelectedAdoProjectId('');
+      setAdoProjectsError('');
+      return;
+    }
+    const provider = gitProviders.find(p => p.id === remoteProviderId);
+    if (provider?.type !== 'ado') {
+      setAdoProjects([]);
+      setSelectedAdoProjectId('');
+      setAdoProjectsError('');
+      return;
+    }
+    setLoadingAdoProjects(true);
+    setAdoProjectsError('');
+    globalThis.electronAPI.gitProvider.listProjects(remoteProviderId)
+      .then(projects => {
+        setAdoProjects(projects);
+        const defaultProj = provider.defaultProject;
+        if (defaultProj) {
+          const match = projects.find(p => p.name === defaultProj);
+          if (match) setSelectedAdoProjectId(match.id);
+        }
+      })
+      .catch(err => setAdoProjectsError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoadingAdoProjects(false));
+  }, [createOnRemote, remoteProviderId, gitProviders]);
 
   // Detect whether the chosen local directory is a git repo
   useEffect(() => {
@@ -584,6 +631,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     return `${reposRoot}${sep}${trimmed}`;
   }, [reposRoot, newFolderName]);
 
+  const selectedRemoteProvider = gitProviders.find(p => p.id === remoteProviderId);
+
   // For Coder: joined "<parentPath>/<repoName>" inside the workspace.
   const coderCloneFullPath = useMemo(() => {
     const repoName = activeTab === 'clone'
@@ -643,17 +692,79 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     resetAndClose();
   };
 
-  const handleCreateNewFolder = async () => {
+  type NewFolderValidation =
+    | { ok: false; err?: string }
+    | { ok: true; name: string; adoProject?: { id: string; name: string } };
+
+  const validateNewFolderForm = (): NewFolderValidation => {
     const name = newFolderName.trim();
-    if (!name || !reposRoot) return;
-    if (/[\\/]/.test(name)) {
-      setNewFolderError('Folder name cannot contain path separators.');
+    if (!name || !reposRoot) return { ok: false };
+    if (/[\\/]/.test(name)) return { ok: false, err: 'Folder name cannot contain path separators.' };
+    if (!createOnRemote) return { ok: true, name };
+    if (!selectedRemoteProvider) return { ok: false, err: 'Pick a remote provider.' };
+    if (selectedRemoteProvider.type === 'ado') {
+      const proj = adoProjects.find(p => p.id === selectedAdoProjectId);
+      if (!proj) return { ok: false, err: 'Pick an ADO project.' };
+      return { ok: true, name, adoProject: { id: proj.id, name: proj.name } };
+    }
+    return { ok: true, name };
+  };
+
+  const createRemoteRepoIfRequested = async (
+    name: string,
+    adoProject: { id: string; name: string } | undefined,
+  ): Promise<string | null> => {
+    if (!createOnRemote || !selectedRemoteProvider) return null;
+    const created = await globalThis.electronAPI.gitProvider.createRepo(selectedRemoteProvider.id, {
+      name,
+      description: remoteDescription.trim() || undefined,
+      isPrivate: remoteIsPrivate,
+      adoProject,
+    });
+    return created.cloneUrl;
+  };
+
+  const handleCreateNewFolder = async () => {
+    const validation = validateNewFolderForm();
+    if (!validation.ok) {
+      if (validation.err) setNewFolderError(validation.err);
       return;
     }
+    const { name, adoProject } = validation;
+
     setCreatingNewFolder(true);
     setNewFolderError('');
+
     try {
-      const createdPath = await window.electronAPI.git.createFolder(newFolderFullPath, initGitOnNewFolder);
+      // Step 1: Create remote first. If this fails, no local mess.
+      const remoteUrl = await createRemoteRepoIfRequested(name, adoProject);
+
+      // Step 2: Create local folder + git init. Force git init when wiring a remote.
+      const willInitGit = createOnRemote || initGitOnNewFolder;
+      let createdPath: string;
+      try {
+        createdPath = await globalThis.electronAPI.git.createFolder(newFolderFullPath, willInitGit);
+      } catch (localErr) {
+        // Rare: local fails after remote succeeded. Surface both so the user can recover.
+        const localMsg = localErr instanceof Error ? localErr.message : String(localErr);
+        const message = remoteUrl
+          ? `Remote was created but local folder failed: ${localMsg}. Clone manually with: git clone ${remoteUrl}`
+          : localMsg;
+        setNewFolderError(message);
+        setCreatingNewFolder(false);
+        return;
+      }
+
+      // Step 3: Wire remote (if created). Non-fatal — open the session even if this fails.
+      if (remoteUrl) {
+        try {
+          await globalThis.electronAPI.git.remoteAdd(createdPath, 'origin', remoteUrl);
+        } catch (remoteAddErr) {
+          const msg = remoteAddErr instanceof Error ? remoteAddErr.message : String(remoteAddErr);
+          setNewFolderError(`Folder + remote created but 'git remote add' failed: ${msg}. Run: git -C "${createdPath}" remote add origin ${remoteUrl}`);
+        }
+      }
+
       const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
       const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
       const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
@@ -735,6 +846,14 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     setInitGitOnNewFolder(true);
     setCreatingNewFolder(false);
     setNewFolderError('');
+    setCreateOnRemote(false);
+    setRemoteProviderId('');
+    setRemoteIsPrivate(true);
+    setRemoteDescription('');
+    setAdoProjects([]);
+    setLoadingAdoProjects(false);
+    setSelectedAdoProjectId('');
+    setAdoProjectsError('');
     setCloneUrl('');
     setCloneDestination(reposRoot || '');
     setCloning(false);
@@ -1268,13 +1387,100 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                     <label className="form-radio-label" style={{ cursor: 'pointer' }}>
                       <input
                         type="checkbox"
-                        checked={initGitOnNewFolder}
+                        checked={createOnRemote || initGitOnNewFolder}
                         onChange={e => setInitGitOnNewFolder(e.target.checked)}
-                        disabled={creatingNewFolder}
+                        disabled={creatingNewFolder || createOnRemote}
                       />
-                      <span>Initialize as a git repository</span>
+                      <span>
+                        Initialize as a git repository
+                        {createOnRemote && (
+                          <span className="form-hint" style={{ display: 'inline', marginLeft: 6 }}>
+                            (required for remote)
+                          </span>
+                        )}
+                      </span>
                     </label>
                   </div>
+
+                  {gitProviders.length > 0 && (
+                    <div className="form-group">
+                      <label className="form-radio-label" style={{ cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={createOnRemote}
+                          onChange={e => setCreateOnRemote(e.target.checked)}
+                          disabled={creatingNewFolder}
+                        />
+                        <span>Create on remote provider</span>
+                      </label>
+
+                      {createOnRemote && (
+                        <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: '2px solid var(--accent)' }}>
+                          <label className="form-label" htmlFor="newfolder-remote-provider">Provider</label>
+                          <select
+                            id="newfolder-remote-provider"
+                            className="form-input"
+                            value={remoteProviderId}
+                            onChange={e => setRemoteProviderId(e.target.value)}
+                            disabled={creatingNewFolder}
+                          >
+                            {gitProviders.map(p => (
+                              <option key={p.id} value={p.id}>
+                                {p.name} ({p.type})
+                              </option>
+                            ))}
+                          </select>
+
+                          {selectedRemoteProvider?.type === 'ado' && (
+                            <>
+                              <label className="form-label" htmlFor="newfolder-ado-project" style={{ marginTop: 8 }}>Project</label>
+                              <select
+                                id="newfolder-ado-project"
+                                className="form-input"
+                                value={selectedAdoProjectId}
+                                onChange={e => setSelectedAdoProjectId(e.target.value)}
+                                disabled={creatingNewFolder || loadingAdoProjects}
+                              >
+                                <option value="">
+                                  {loadingAdoProjects ? 'Loading projects...' : 'Select a project'}
+                                </option>
+                                {adoProjects.map(p => (
+                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                              </select>
+                              {adoProjectsError && (
+                                <span className="form-hint" style={{ color: 'var(--status-dead)' }}>{adoProjectsError}</span>
+                              )}
+                            </>
+                          )}
+
+                          <label className="form-label" htmlFor="newfolder-remote-desc" style={{ marginTop: 8 }}>Description (optional)</label>
+                          <input
+                            id="newfolder-remote-desc"
+                            className="form-input"
+                            value={remoteDescription}
+                            onChange={e => setRemoteDescription(e.target.value)}
+                            placeholder="Short summary"
+                            disabled={creatingNewFolder}
+                          />
+
+                          <label className="form-radio-label" style={{ marginTop: 8, cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={remoteIsPrivate}
+                              onChange={e => setRemoteIsPrivate(e.target.checked)}
+                              disabled={creatingNewFolder}
+                            />
+                            <span>Private</span>
+                          </label>
+
+                          <p className="form-hint" style={{ marginTop: 4 }}>
+                            Creates the empty repo and wires <code>origin</code>. You push your first commit yourself.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="form-group">
                     <label className="form-label">Label (optional)</label>
@@ -1581,7 +1787,15 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
             <button
               className="form-btn form-btn--primary"
               onClick={() => { void handleCreateNewFolder(); }}
-              disabled={!newFolderName.trim() || !reposRoot || creatingNewFolder}
+              disabled={(() => {
+                if (creatingNewFolder) return true;
+                if (!newFolderName.trim() || !reposRoot) return true;
+                if (createOnRemote) {
+                  if (!remoteProviderId) return true;
+                  if (selectedRemoteProvider?.type === 'ado' && !selectedAdoProjectId) return true;
+                }
+                return false;
+              })()}
             >
               {creatingNewFolder ? 'Creating...' : 'Create Session'}
             </button>

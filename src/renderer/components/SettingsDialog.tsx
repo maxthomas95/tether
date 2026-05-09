@@ -83,6 +83,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [newProviderName, setNewProviderName] = useState('');
   const [newProviderUrl, setNewProviderUrl] = useState('');
   const [newProviderOrg, setNewProviderOrg] = useState('');
+  const [newProviderDefaultProject, setNewProviderDefaultProject] = useState('');
   const [newProviderToken, setNewProviderToken] = useState('');
   const [newProviderStoreInVault, setNewProviderStoreInVault] = useState(false);
   const [newProviderVaultPath, setNewProviderVaultPath] = useState('');
@@ -234,10 +235,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   );
 
   const handleAddProvider = async () => {
-    const defaultBaseUrl =
-      newProviderType === 'github' ? 'https://api.github.com'
-      : newProviderType === 'ado' ? 'https://dev.azure.com'
-      : '';
+    const defaultBaseUrls: Partial<Record<GitProviderType, string>> = {
+      github: 'https://api.github.com',
+      ado: 'https://dev.azure.com',
+    };
+    const defaultBaseUrl = defaultBaseUrls[newProviderType] || '';
     const effectiveBaseUrl = newProviderUrl.trim() || defaultBaseUrl;
     if (!newProviderName.trim() || !effectiveBaseUrl || !newProviderToken.trim()) return;
     setNewProviderError(null);
@@ -260,6 +262,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
         type: newProviderType,
         baseUrl: effectiveBaseUrl,
         organization: newProviderType === 'ado' ? newProviderOrg.trim() : undefined,
+        defaultProject: newProviderType === 'ado' && newProviderDefaultProject.trim() ? newProviderDefaultProject.trim() : undefined,
         token: tokenToStore,
       });
       setGitProviders(prev => [...prev, provider]);
@@ -267,6 +270,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       setNewProviderName('');
       setNewProviderUrl('');
       setNewProviderOrg('');
+      setNewProviderDefaultProject('');
       setNewProviderToken('');
       setNewProviderStoreInVault(false);
       setNewProviderVaultPath('');
@@ -804,15 +808,30 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                   )}
                 </div>
                 {newProviderType === 'ado' && (
-                  <div className="form-group">
-                    <label className="form-label">Organization</label>
-                    <input
-                      className="form-input"
-                      value={newProviderOrg}
-                      onChange={e => setNewProviderOrg(e.target.value)}
-                      placeholder="my-org"
-                    />
-                  </div>
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Organization</label>
+                      <input
+                        className="form-input"
+                        value={newProviderOrg}
+                        onChange={e => setNewProviderOrg(e.target.value)}
+                        placeholder="my-org"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="provider-default-project">Default project (optional)</label>
+                      <input
+                        id="provider-default-project"
+                        className="form-input"
+                        value={newProviderDefaultProject}
+                        onChange={e => setNewProviderDefaultProject(e.target.value)}
+                        placeholder="my-project"
+                      />
+                      <p className="form-hint" style={{ marginTop: 4 }}>
+                        Pre-fills the project picker when creating a new repo on this provider.
+                      </p>
+                    </div>
+                  </>
                 )}
                 <div className="form-group">
                   <label className="form-label">Personal Access Token</label>

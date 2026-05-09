@@ -33,6 +33,8 @@ export interface GitProviderRow {
   type: 'gitea' | 'ado' | 'github';
   baseUrl: string;
   organization: string | null;
+  /** ADO only: pre-fills the project picker when creating a new repo. */
+  defaultProject?: string | null;
   token: string;
   created_at: string;
   updated_at: string;
