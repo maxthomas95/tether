@@ -36,7 +36,7 @@ import {
 import { toolSupportsHistory } from '../shared/cli-tools';
 import { onKeyActivate, stopPropagationOnKey } from './utils/a11y';
 import type { LayoutNode } from '../shared/layout-types';
-import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, HostVerifyRequest } from '../shared/types';
+import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, SessionOrderPref, HostVerifyRequest } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
 import logoSrc from './assets/logo.png';
 
@@ -63,6 +63,7 @@ export function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null);
   const [repoGroupPrefs, setRepoGroupPrefs] = useState<RepoGroupPref[]>([]);
+  const [sessionOrderPrefs, setSessionOrderPrefs] = useState<SessionOrderPref[]>([]);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
   const [editingEnv, setEditingEnv] = useState<EnvironmentInfo | null>(null);
   const [envMenuOpenId, setEnvMenuOpenId] = useState<string | null>(null);
@@ -99,6 +100,11 @@ export function App() {
   // Load repo group preferences on mount
   useEffect(() => {
     window.electronAPI.repoGroup.getPrefs().then(setRepoGroupPrefs).catch(() => {});
+  }, []);
+
+  // Load session-within-group order preferences on mount
+  useEffect(() => {
+    window.electronAPI.sessionOrder.getPrefs().then(setSessionOrderPrefs).catch(() => {});
   }, []);
 
   // Load resume-related UI settings
@@ -639,6 +645,56 @@ export function App() {
     await window.electronAPI.repoGroup.setPrefs(environmentId, updated);
   }, [repoGroupPrefs]);
 
+  /**
+   * Sort sessions inside a single repo group by the user-saved order. New
+   * sessions (not in the prefs list) sink to the bottom, with creation order
+   * as the tiebreaker so a fresh session always lands after older ones.
+   */
+  const sortSessionsInGroup = useCallback((
+    envId: string,
+    workingDir: string,
+    groupSessions: SessionInfo[],
+  ): SessionInfo[] => {
+    const pref = sessionOrderPrefs.find(p => p.environmentId === envId && p.workingDir === workingDir);
+    if (!pref || pref.orderedIds.length === 0) return groupSessions;
+    const indexById = new Map(pref.orderedIds.map((id, i) => [id, i]));
+    return [...groupSessions].sort((a, b) => {
+      const ia = indexById.get(a.id) ?? Infinity;
+      const ib = indexById.get(b.id) ?? Infinity;
+      if (ia !== ib) return ia - ib;
+      return a.createdAt.localeCompare(b.createdAt);
+    });
+  }, [sessionOrderPrefs]);
+
+  const handleReorderSession = useCallback(async (
+    envId: string,
+    workingDir: string,
+    sourceSessionId: string,
+    targetSessionId: string,
+    position: 'above' | 'below',
+  ) => {
+    if (sourceSessionId === targetSessionId) return;
+    // Build the current group ordering from live sessions, then move source.
+    const groupSessions = sessions.filter(s => {
+      if (s.workingDir !== workingDir) return false;
+      const env = environments.find(e => e.id === envId);
+      if (!env) return false;
+      if (env.type === 'local') return !s.environmentId || s.environmentId === env.id;
+      return s.environmentId === env.id;
+    });
+    const sortedIds = sortSessionsInGroup(envId, workingDir, groupSessions).map(s => s.id);
+    const without = sortedIds.filter(id => id !== sourceSessionId);
+    const targetIdx = without.indexOf(targetSessionId);
+    if (targetIdx === -1) return;
+    const insertIdx = position === 'above' ? targetIdx : targetIdx + 1;
+    without.splice(insertIdx, 0, sourceSessionId);
+    setSessionOrderPrefs(prev => [
+      ...prev.filter(p => !(p.environmentId === envId && p.workingDir === workingDir)),
+      { environmentId: envId, workingDir, orderedIds: without },
+    ]);
+    await window.electronAPI.sessionOrder.setPref(envId, workingDir, without);
+  }, [sessions, environments, sortSessionsInGroup]);
+
   const handleDropRepoGroup = useCallback(async (
     environmentId: string,
     sourceDir: string,
@@ -976,7 +1032,7 @@ export function App() {
                         key={dir}
                         repoPath={dir}
                         environmentId={env.id}
-                        sessions={dirSessions}
+                        sessions={sortSessionsInGroup(env.id, dir, dirSessions)}
                         activeSessionId={activeSessionId}
                         pinned={repoGroupPrefs.find(p => p.environmentId === env.id && p.workingDir === dir)?.pinned ?? false}
                         onTogglePin={handleTogglePin}
@@ -994,6 +1050,7 @@ export function App() {
                         onToggleHelm={handleToggleHelm}
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
+                        onReorderSession={handleReorderSession}
                       />
                     ));
                   })()

@@ -13,6 +13,7 @@ import type {
   CliToolId,
   QuotaInfo,
   RepoGroupPref,
+  SessionOrderPref,
   SessionUsage,
   UsageInfo,
   KnownHostInfo,
@@ -202,6 +203,11 @@ const api: TetherAPI = {
   repoGroup: {
     getPrefs: (): Promise<RepoGroupPref[]> => ipcRenderer.invoke(IPC.REPOGROUP_GET_PREFS),
     setPrefs: (environmentId: string, prefs: RepoGroupPref[]): Promise<void> => ipcRenderer.invoke(IPC.REPOGROUP_SET_PREFS, environmentId, prefs),
+  },
+  sessionOrder: {
+    getPrefs: (): Promise<SessionOrderPref[]> => ipcRenderer.invoke(IPC.SESSIONORDER_GET_PREFS),
+    setPref: (environmentId: string, workingDir: string, orderedIds: string[]): Promise<void> =>
+      ipcRenderer.invoke(IPC.SESSIONORDER_SET_PREF, environmentId, workingDir, orderedIds),
   },
   usage: {
     getSession: (claudeSessionId: string): Promise<SessionUsage | null> =>
