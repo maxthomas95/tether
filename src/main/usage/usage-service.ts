@@ -2,8 +2,9 @@ import * as fs from 'node:fs';
 import { createLogger } from '../logger';
 import { transcriptPath, scanAllTranscripts } from '../claude/transcripts';
 import { parseJsonlFile, type ParsedMessage } from './jsonl-parser';
+import { readCrushSessions } from '../opencode/usage-reader';
 import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
-import type { SessionUsage, UsageModelBreakdown, UsageInfo, DailyUsage } from '../../shared/types';
+import type { SessionUsage, UsageModelBreakdown, UsageInfo, DailyUsage, CliToolId } from '../../shared/types';
 
 const log = createLogger('usage');
 
@@ -12,7 +13,8 @@ const WATCH_POLL_INTERVAL_MS = 2_000;
 const RESCAN_INTERVAL_MS = 5 * 60 * 1_000;
 
 interface TrackedSession {
-  claudeSessionId: string;
+  sessionId: string;
+  cliTool: CliToolId;
   workingDir: string;
   filePath: string;
   watching: boolean;
@@ -20,9 +22,10 @@ interface TrackedSession {
   usage: SessionUsage;
 }
 
-function emptySessionUsage(claudeSessionId: string): SessionUsage {
+function emptySessionUsage(sessionId: string, cliTool: CliToolId): SessionUsage {
   return {
-    claudeSessionId,
+    sessionId,
+    cliTool,
     inputTokens: 0,
     outputTokens: 0,
     cacheCreationTokens: 0,
@@ -78,7 +81,8 @@ function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOff
   }
 
   return {
-    claudeSessionId: existing.claudeSessionId,
+    sessionId: existing.sessionId,
+    cliTool: existing.cliTool,
     inputTokens,
     outputTokens,
     cacheCreationTokens,
@@ -106,15 +110,18 @@ class UsageService {
     // Load persisted summaries into memory
     const db = getDb();
     for (const summary of db.usageSummaries) {
-      if (!this.tracked.has(summary.claudeSessionId)) {
-        this.tracked.set(summary.claudeSessionId, {
-          claudeSessionId: summary.claudeSessionId,
+      if (!this.tracked.has(summary.sessionId)) {
+        const cliTool = (summary.cliTool as CliToolId) || 'claude';
+        this.tracked.set(summary.sessionId, {
+          sessionId: summary.sessionId,
+          cliTool,
           workingDir: summary.workingDir,
-          filePath: summary.filePath ?? transcriptPath(summary.workingDir, summary.claudeSessionId),
+          filePath: summary.filePath ?? (cliTool === 'claude' ? transcriptPath(summary.workingDir, summary.sessionId) : ''),
           watching: false,
           debounceTimer: null,
           usage: {
-            claudeSessionId: summary.claudeSessionId,
+            sessionId: summary.sessionId,
+            cliTool,
             inputTokens: summary.inputTokens,
             outputTokens: summary.outputTokens,
             cacheCreationTokens: summary.cacheCreationTokens,
@@ -143,8 +150,11 @@ class UsageService {
    * files or any appends to files we've already seen. Only token counts,
    * model names, and timestamps are persisted — prompts and responses are
    * parsed transiently then discarded. Safe to call repeatedly.
+   *
+   * Also scans Crush (OpenCode) SQLite database for historical sessions.
    */
   private backfillFromDisk(): void {
+    // 1. Backfill Claude Code transcripts (JSONL)
     let discovered;
     try {
       discovered = scanAllTranscripts();
@@ -161,12 +171,13 @@ class UsageService {
       if (!existing) {
         // New-to-us session. Create an in-memory entry and parse in full.
         const session: TrackedSession = {
-          claudeSessionId: d.sessionId,
+          sessionId: d.sessionId,
+          cliTool: 'claude',
           workingDir: d.projectDirName,
           filePath: d.filePath,
           watching: false,
           debounceTimer: null,
-          usage: emptySessionUsage(d.sessionId),
+          usage: emptySessionUsage(d.sessionId, 'claude'),
         };
         this.tracked.set(d.sessionId, session);
         this.parseSession(session);
@@ -180,9 +191,59 @@ class UsageService {
       }
     }
 
+    // 2. Backfill Crush/OpenCode sessions from SQLite
+    const crushSessions = readCrushSessions();
+    for (const cs of crushSessions) {
+      const existing = this.tracked.get(cs.id);
+      if (!existing) {
+        // New-to-us Crush session — load from DB (cost is pre-computed by Crush)
+        const modelBreakdown: UsageModelBreakdown = cs.model ? {
+          model: cs.model,
+          inputTokens: cs.promptTokens,
+          outputTokens: cs.completionTokens,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          cost: cs.cost,
+        } : {
+          model: 'unknown',
+          inputTokens: cs.promptTokens,
+          outputTokens: cs.completionTokens,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          cost: cs.cost,
+        };
+
+        const session: TrackedSession = {
+          sessionId: cs.id,
+          cliTool: 'opencode',
+          workingDir: cs.directory,
+          filePath: '',
+          watching: false,
+          debounceTimer: null,
+          usage: {
+            sessionId: cs.id,
+            cliTool: 'opencode',
+            inputTokens: cs.promptTokens,
+            outputTokens: cs.completionTokens,
+            cacheCreationTokens: 0,
+            cacheReadTokens: 0,
+            totalCost: cs.cost,
+            models: [modelBreakdown],
+            messageCount: cs.messageCount,
+            firstMessageAt: cs.createdAt,
+            lastMessageAt: cs.updatedAt,
+            parsedByteOffset: 0,
+          },
+        };
+        this.tracked.set(cs.id, session);
+        this.persistSession(session);
+        newSessions++;
+      }
+    }
+
     if (newSessions > 0 || updatedSessions > 0) {
       log.info('Transcript scan complete', {
-        total: discovered.length,
+        total: discovered.length + crushSessions.length,
         newSessions,
         updatedSessions,
       });
@@ -190,35 +251,37 @@ class UsageService {
     }
   }
 
-  trackSession(claudeSessionId: string, workingDir: string): void {
-    const existing = this.tracked.get(claudeSessionId);
+  trackSession(sessionId: string, workingDir: string, cliTool: CliToolId = 'claude'): void {
+    const existing = this.tracked.get(sessionId);
     if (existing) {
       // start() pre-loads DB summaries into `tracked` without a watcher,
       // so a subsequent trackSession from session:create used to silently
       // skip the watcher. Make sure one is attached.
-      if (!existing.watching) this.startWatching(existing);
+      if (!existing.watching && existing.cliTool === 'claude') this.startWatching(existing);
       return;
     }
 
     // Check for persisted data
     const db = getDb();
-    const persisted = db.usageSummaries.find(s => s.claudeSessionId === claudeSessionId);
+    const persisted = db.usageSummaries.find(s => s.sessionId === sessionId);
 
     // Prefer the authoritative filePath from a scan-discovered summary —
     // its workingDir is the encoded project dir name, which is lossy to
     // recover into a real path. transcriptPath() is correct for fresh
     // Tether sessions where workingDir is the actual cwd.
-    const filePath = persisted?.filePath ?? transcriptPath(workingDir, claudeSessionId);
-    log.info('Tracking session', { claudeSessionId, filePath });
+    const filePath = persisted?.filePath ?? (cliTool === 'claude' ? transcriptPath(workingDir, sessionId) : '');
+    log.info('Tracking session', { sessionId, cliTool, filePath });
 
     const session: TrackedSession = {
-      claudeSessionId,
+      sessionId,
+      cliTool,
       workingDir,
       filePath,
       watching: false,
       debounceTimer: null,
       usage: persisted ? {
-        claudeSessionId,
+        sessionId,
+        cliTool: (persisted.cliTool as CliToolId) || cliTool,
         inputTokens: persisted.inputTokens,
         outputTokens: persisted.outputTokens,
         cacheCreationTokens: persisted.cacheCreationTokens,
@@ -229,35 +292,43 @@ class UsageService {
         firstMessageAt: persisted.firstMessageAt,
         lastMessageAt: persisted.lastMessageAt,
         parsedByteOffset: persisted.parsedByteOffset,
-      } : emptySessionUsage(claudeSessionId),
+      } : emptySessionUsage(sessionId, cliTool),
     };
 
-    this.tracked.set(claudeSessionId, session);
+    this.tracked.set(sessionId, session);
 
-    // Initial parse
-    this.parseSession(session);
-
-    // Start watching
-    this.startWatching(session);
+    // Initial parse (Claude only — Crush data is read from SQLite)
+    if (cliTool === 'claude') {
+      this.parseSession(session);
+      this.startWatching(session);
+    } else if (cliTool === 'opencode') {
+      // For OpenCode, pull from crush.db on track and on untrack.
+      // No file watching — the DB is the source of truth.
+      this.refreshCrushSession(session);
+    }
   }
 
-  untrackSession(claudeSessionId: string): void {
-    const session = this.tracked.get(claudeSessionId);
+  untrackSession(sessionId: string): void {
+    const session = this.tracked.get(sessionId);
     if (!session) return;
 
-    log.info('Untracking session', { claudeSessionId });
+    log.info('Untracking session', { sessionId });
 
-    // Final parse
-    this.parseSession(session);
+    // Final parse/refresh
+    if (session.cliTool === 'claude') {
+      this.parseSession(session);
+    } else if (session.cliTool === 'opencode') {
+      this.refreshCrushSession(session);
+    }
 
-    // Close watcher
+    // Close watcher (Claude only)
     this.closeWatcher(session);
 
     // Keep data in map for queries — don't delete
   }
 
-  getSessionUsage(claudeSessionId: string): SessionUsage | null {
-    return this.tracked.get(claudeSessionId)?.usage ?? null;
+  getSessionUsage(sessionId: string): SessionUsage | null {
+    return this.tracked.get(sessionId)?.usage ?? null;
   }
 
   getAll(): UsageInfo {
@@ -277,13 +348,23 @@ class UsageService {
     };
   }
 
-  async refresh(claudeSessionId?: string): Promise<UsageInfo> {
-    if (claudeSessionId) {
-      const session = this.tracked.get(claudeSessionId);
-      if (session) this.parseSession(session);
+  async refresh(sessionId?: string): Promise<UsageInfo> {
+    if (sessionId) {
+      const session = this.tracked.get(sessionId);
+      if (session) {
+        if (session.cliTool === 'claude') {
+          this.parseSession(session);
+        } else if (session.cliTool === 'opencode') {
+          this.refreshCrushSession(session);
+        }
+      }
     } else {
       for (const session of this.tracked.values()) {
-        this.parseSession(session);
+        if (session.cliTool === 'claude') {
+          this.parseSession(session);
+        } else if (session.cliTool === 'opencode') {
+          this.refreshCrushSession(session);
+        }
       }
     }
     return this.getAll();
@@ -299,16 +380,61 @@ class UsageService {
       }
     } catch (err) {
       log.warn('Failed to parse session JSONL', {
-        claudeSessionId: session.claudeSessionId,
+        sessionId: session.sessionId,
         error: err instanceof Error ? err.message : String(err),
       });
     }
   }
 
+  /**
+   * Refresh a Crush/OpenCode session's usage data from the SQLite database.
+   * This is a point-in-time read — Crush computes cost internally.
+   */
+  private refreshCrushSession(session: TrackedSession): void {
+    const crushSessions = readCrushSessions();
+    const found = crushSessions.find(cs => cs.id === session.sessionId);
+    if (!found) return;
+
+    const modelBreakdown: UsageModelBreakdown = found.model ? {
+      model: found.model,
+      inputTokens: found.promptTokens,
+      outputTokens: found.completionTokens,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      cost: found.cost,
+    } : {
+      model: 'unknown',
+      inputTokens: found.promptTokens,
+      outputTokens: found.completionTokens,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      cost: found.cost,
+    };
+
+    session.usage = {
+      sessionId: found.id,
+      cliTool: 'opencode',
+      inputTokens: found.promptTokens,
+      outputTokens: found.completionTokens,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalCost: found.cost,
+      models: [modelBreakdown],
+      messageCount: found.messageCount,
+      firstMessageAt: found.createdAt,
+      lastMessageAt: found.updatedAt,
+      parsedByteOffset: 0,
+    };
+
+    this.persistSession(session);
+    this.notifyUpdate();
+  }
+
   private persistSession(session: TrackedSession): void {
     const db = getDb();
     const entry: PersistedSessionUsage = {
-      claudeSessionId: session.claudeSessionId,
+      sessionId: session.sessionId,
+      cliTool: session.cliTool,
       workingDir: session.workingDir,
       filePath: session.filePath,
       inputTokens: session.usage.inputTokens,
@@ -323,7 +449,7 @@ class UsageService {
       parsedByteOffset: session.usage.parsedByteOffset,
     };
 
-    const idx = db.usageSummaries.findIndex(s => s.claudeSessionId === session.claudeSessionId);
+    const idx = db.usageSummaries.findIndex(s => s.sessionId === session.sessionId);
     if (idx >= 0) {
       db.usageSummaries[idx] = entry;
     } else {

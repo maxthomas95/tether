@@ -3,7 +3,7 @@ import { useSessionUsage } from '../hooks/useSessionUsage';
 import type { SessionUsage } from '../../shared/types';
 
 interface Props {
-  claudeSessionId: string | undefined;
+  sessionId: string | undefined;
 }
 
 /** Shorten "claude-opus-4-6" → "opus-4-6". */
@@ -63,11 +63,11 @@ function buildTooltip(usage: SessionUsage): string {
   return lines.join('\n');
 }
 
-export function PaneStatusStrip({ claudeSessionId }: Props) {
-  const { usage, enabled } = useSessionUsage(claudeSessionId);
+export function PaneStatusStrip({ sessionId }: Props) {
+  const { usage, enabled } = useSessionUsage(sessionId);
 
   if (!enabled) return null;
-  if (!claudeSessionId) return null;
+  if (!sessionId) return null;
 
   const model = usage ? dominantModel(usage) : null;
   const messageCount = usage?.messageCount ?? 0;

@@ -18,6 +18,8 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 
 #### Usage tracking
 - [planned] Copilot CLI pricing/coverage audit (newly added tool, may not be priced)
+- [planned] OpenCode / Crush cost tracking — query `crush.db` SQLite for `prompt_tokens`, `completion_tokens`, `cost` per session; wire into `usageService` so non-Claude sessions report usage
+- [planned] Cost accuracy audit — `model-pricing.ts` has hardcoded Anthropic prices; non-Anthropic models (Gemini, OpenAI via OpenCode) report $0; pricing table may be stale for Claude models too
 - [planned] CSV / JSON export of usage history
 - [planned] Per-environment cost attribution in the global footer
 - [planned] Daily / weekly / monthly rollups, not just today + 7-day sparkline

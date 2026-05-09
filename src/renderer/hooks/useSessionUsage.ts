@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import type { SessionUsage } from '../../shared/types';
 
 /**
- * Subscribes to per-session usage updates filtered by claudeSessionId.
+ * Subscribes to per-session usage updates filtered by sessionId.
  * Returns null if no session ID provided, the feature is disabled, or
  * no data exists yet.
  */
-export function useSessionUsage(claudeSessionId: string | undefined): {
+export function useSessionUsage(sessionId: string | undefined): {
   usage: SessionUsage | null;
   enabled: boolean;
 } {
@@ -27,20 +27,20 @@ export function useSessionUsage(claudeSessionId: string | undefined): {
 
   // Load initial data + subscribe to updates for this specific session
   useEffect(() => {
-    if (!claudeSessionId || !enabled) {
+    if (!sessionId || !enabled) {
       setUsage(null);
       return;
     }
 
-    window.electronAPI.usage.getSession(claudeSessionId).then(setUsage);
+    window.electronAPI.usage.getSession(sessionId).then(setUsage);
 
     const remove = window.electronAPI.usage.onUpdate((info) => {
-      const sessionUsage = info.sessions[claudeSessionId] ?? null;
+      const sessionUsage = info.sessions[sessionId] ?? null;
       setUsage(sessionUsage);
     });
 
     return () => remove();
-  }, [claudeSessionId, enabled]);
+  }, [sessionId, enabled]);
 
   return { usage, enabled };
 }
