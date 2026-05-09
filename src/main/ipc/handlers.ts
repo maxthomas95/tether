@@ -30,7 +30,7 @@ import * as envRepo from '../db/environment-repo';
 import * as sessionRepo from '../db/session-repo';
 import * as profileRepo from '../db/profile-repo';
 import * as gitProviderRepo from '../db/git-provider-repo';
-import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo } from '../git/git-service';
+import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo, createFolder } from '../git/git-service';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { GiteaClient } from '../git/providers/gitea-client';
 import { AdoClient } from '../git/providers/ado-client';
@@ -129,6 +129,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (s?.claudeSessionId) {
         usageService.untrackSession(s.claudeSessionId);
       }
+      if (s?.cliTool && s.cliTool !== 'claude' && s.toolSessionId) {
+        usageService.untrackSession(s.toolSessionId);
+      }
     },
   };
   setHelmChildCallbacks(sessionCallbacks);
@@ -154,7 +157,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
     // Start tracking usage for Claude sessions
     if (session.claudeSessionId) {
-      usageService.trackSession(session.claudeSessionId, session.workingDir);
+      usageService.trackSession(session.claudeSessionId, session.workingDir, 'claude');
+    }
+
+    // Start tracking usage for OpenCode sessions
+    if (session.cliTool === 'opencode' && session.toolSessionId) {
+      usageService.trackSession(session.toolSessionId, session.workingDir, 'opencode');
     }
 
     return session.toInfo();
@@ -575,6 +583,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return gitInit(directory);
   });
 
+  ipcMain.handle(IPC.GIT_CREATE_FOLDER, async (_event, path: string, initGit: boolean) => {
+    log.info('Git create folder', { path, initGit });
+    return createFolder({ path, initGit });
+  });
+
   ipcMain.handle(IPC.GIT_IS_REPO, async (_event, directory: string) => isGitRepo(directory));
 
   ipcMain.handle(IPC.GIT_WORKTREE_ADD, async (_event, opts: { sourceRepo: string; worktreePath: string; branch: string }) => {
@@ -890,16 +903,16 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     send(IPC.USAGE_UPDATED, info);
   });
 
-  ipcMain.handle(IPC.USAGE_GET_SESSION, async (_event, claudeSessionId: string): Promise<SessionUsage | null> => {
-    return usageService.getSessionUsage(claudeSessionId);
+  ipcMain.handle(IPC.USAGE_GET_SESSION, async (_event, sessionId: string): Promise<SessionUsage | null> => {
+    return usageService.getSessionUsage(sessionId);
   });
 
   ipcMain.handle(IPC.USAGE_GET_ALL, async (): Promise<UsageInfo> => {
     return usageService.getAll();
   });
 
-  ipcMain.handle(IPC.USAGE_REFRESH, async (_event, claudeSessionId?: string): Promise<UsageInfo> => {
-    return usageService.refresh(claudeSessionId);
+  ipcMain.handle(IPC.USAGE_REFRESH, async (_event, sessionId?: string): Promise<UsageInfo> => {
+    return usageService.refresh(sessionId);
   });
 
   // === SSH known hosts ===

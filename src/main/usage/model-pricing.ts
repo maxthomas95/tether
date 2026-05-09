@@ -13,6 +13,15 @@ export interface ModelPricing {
  *   cache_create (5m TTL) = input × 1.25
  *   cache_create (1h TTL) = input × 2.0
  *   cache_read             = input × 0.1
+ *
+ * BUG: Cost accuracy issues tracked:
+ * 1. Only Anthropic Claude models are priced. Sessions using OpenCode with
+ *    Gemini, GPT-4, OpenRouter, etc. will report $0 cost (falls through to
+ *    DEFAULT_PRICING which uses Sonnet rates — wrong model, wrong price).
+ * 2. Prices may be stale vs current Anthropic API pricing.
+ * 3. Crush/OpenCode computes cost internally from its own model config
+ *    (crush.json), so we use Crush's pre-computed cost directly rather than
+ *    recalculating here. This file only applies to Claude JSONL transcripts.
  */
 const PRICING: Record<string, ModelPricing> = {
   // Opus family

@@ -190,7 +190,7 @@ export function TerminalPane({
               ref={containerRef}
               className="terminal-pane-xterm"
             />
-            <PaneStatusStrip claudeSessionId={session?.claudeSessionId} />
+            <PaneStatusStrip sessionId={session?.claudeSessionId || session?.toolSessionId} />
           </div>
         )}
         {enablePaneSplitting && isDragging && draggingPaneId !== paneId && (

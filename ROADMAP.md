@@ -18,6 +18,8 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 
 #### Usage tracking
 - [planned] Copilot CLI pricing/coverage audit (newly added tool, may not be priced)
+- [planned] OpenCode / Crush cost tracking — query `crush.db` SQLite for `prompt_tokens`, `completion_tokens`, `cost` per session; wire into `usageService` so non-Claude sessions report usage
+- [planned] Cost accuracy audit — `model-pricing.ts` has hardcoded Anthropic prices; non-Anthropic models (Gemini, OpenAI via OpenCode) report $0; pricing table may be stale for Claude models too
 - [planned] CSV / JSON export of usage history
 - [planned] Per-environment cost attribution in the global footer
 - [planned] Daily / weekly / monthly rollups, not just today + 7-day sparkline
@@ -31,23 +33,25 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 
 ### 2. Bug: status indicator stuck on green/grey
 
-- [in progress] **P1 investigation** — amber and red statuses never seem to fire in real use. Detector lives at `src/main/status/status-detector.ts`. Need to capture live PTY logs from Claude / Codex / Copilot sessions and tune the cadence heuristics so "waiting on user / tool approval" reliably hits amber and PTY exit hits red.
+- [done] **P1 investigation** — amber and red statuses never seem to fire in real use. Detector lives at `src/main/status/status-detector.ts`. Need to capture live PTY logs from Claude / Codex / Copilot sessions and tune the cadence heuristics so "waiting on user / tool approval" reliably hits amber and PTY exit hits red.
 - [planned] **Smarter waiting signals via CLI hooks** — once the byte-level fix lands, layer in Claude's `Notification`/`Stop` hooks and Codex's `notify` program for higher-fidelity state (distinguish `permission_prompt` from `idle_prompt` → distinct UI sub-state, e.g. amber-with-bang). Needs a design pass on safe config injection: pointing the CLI at a fresh `CLAUDE_CONFIG_DIR` / `CODEX_HOME` loses transcripts and projects, so the path is either (a) merging into the user's existing settings file with conflict-free overlay logic, or (b) overlaying our settings on top of a symlinked/copied config dir per session. Pick after weighing cross-platform symlink constraints (Windows dev-mode requirement).
 
 ### 3. Notifications & error surfacing
 
-- [planned] Audit `src/renderer/components/Notifications.tsx` — wire up real error paths or remove
-- [planned] Toast on session spawn failure, transport errors, Vault auth issues, update-check failures
-- [planned] Keep CHANGELOG known-issues list honest (the "errors only in DevTools" note from 0.3.0 is stale either way)
+- [done] Audit `src/renderer/components/Notifications.tsx` — wire up real error paths or remove
+- [done] Toast on session spawn failure, transport errors, Vault auth issues, update-check failures
+- [done] Keep CHANGELOG known-issues list honest (the "errors only in DevTools" note from 0.3.0 is stale either way)
 
 ### 4. Daily-driver UX
 
-- [planned] **Reorder sessions** in a sidebar group (drag-to-reorder)
+- [done] **Reorder sessions** in a sidebar group (drag-to-reorder)
 - [planned] **Bulk actions** on a group — kill all, restart all, clear all
+- [done] **Duplicate carries the source label** — today "Duplicate" passes `''`, so `session-manager.ts` falls back to the working-dir basename and every dupe is named after the repo. Should preserve the source's label with a `(copy)` suffix (`(copy 2)` on subsequent dupes), like Finder / VS Code.
 - [done] **Ctrl+scroll** on a terminal pane → terminal font size
 - [done] **Ctrl+= / Ctrl+-** → whole-window zoom (UI + terminal together) via `webFrame.setZoomLevel`
 - [done] Settings panel for default terminal font size + a reset shortcut
-- [planned] **GitHub repo browse** in `NewSessionDialog` — parity with ADO and Gitea (GitHub is the source of truth per project conventions)
+- [done] **Clickable URLs in the terminal** — ctrl-click (or click) to open pasted/printed links in the system browser, like VS Code's terminal. Use `@xterm/addon-web-links` and route through `shell.openExternal` so the main process owns the open.
+- [done] **GitHub repo browse** in `NewSessionDialog` — parity with ADO and Gitea (GitHub is the source of truth per project conventions)
 
 ### 5. Foundation & quality
 
@@ -55,6 +59,14 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 - [planned] **Test coverage** — transports (`local`, `ssh`, `coder`), IPC handlers (`ipc/handlers.ts`), and Vault resolver are largely uncovered. Currently 7 test files for the whole codebase.
 - [planned] **Crash / diagnostics export** — single command to bundle logs + workspace snapshot for support, with secrets scrubbed.
 - [planned] **Cross-platform hygiene rule** — codify in CLAUDE.md: no `\\` path literals, no Windows-only shells, no registry assumptions. Keeps post-1.0 cross-platform from becoming a rewrite.
+
+### 6. Repo & folder bootstrapping
+
+Today `NewSessionDialog` assumes the working directory already exists — clone an existing repo, browse the filesystem, or pick a known one. Starting a fresh project means dropping to a shell first.
+
+- [planned] **New folder for a new repo** — add a configurable "default projects directory" to settings. In `NewSessionDialog`, a third path alongside "Clone" / "Browse": name a folder, it's created under the default location, optionally `git init`, and selected as the session cwd. Plumbing is mostly in place — `gitInit` already exists in `src/main/git/git-service.ts` and is wired through IPC; this is primarily a UI flow.
+- [planned] **Create the remote repo too (GitHub/Gitea/ADO)** — extend the above to optionally provision the remote and `git remote add` on first push. Depends on per-provider auth + repo-create scope: GitHub has no client yet (see §4's "GitHub repo browse" — same auth foundation), and the existing Gitea / ADO clients only do browse, not create. Likely too big for 1.0; revisit post-1.0 once the GitHub client lands. The folder-only piece above is independent and ships first.
+
 
 ---
 

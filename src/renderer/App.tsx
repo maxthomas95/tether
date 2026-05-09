@@ -36,6 +36,7 @@ import {
 import { toolSupportsHistory } from '../shared/cli-tools';
 import { onKeyActivate, stopPropagationOnKey } from './utils/a11y';
 import { extractErrorMessage, formatSessionExitMessage } from './utils/errors';
+import { nextDuplicateLabel } from './utils/duplicate-label';
 import type { LayoutNode } from '../shared/layout-types';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, SessionOrderPref, HostVerifyRequest } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
@@ -586,7 +587,11 @@ export function App() {
   const handleDuplicate = useCallback(async (id: string) => {
     const source = sessions.find(s => s.id === id);
     if (!source) return;
-    handleCreateSession(source.workingDir, '', source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined, source.helmEnabled);
+    const siblingLabels = sessions
+      .filter(s => s.workingDir === source.workingDir)
+      .map(s => s.label);
+    const label = nextDuplicateLabel(source.label, siblingLabels);
+    handleCreateSession(source.workingDir, label, source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined, source.helmEnabled);
   }, [sessions, handleCreateSession]);
 
   const canResumePrevious = useCallback((session: SessionInfo) => {

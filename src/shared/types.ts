@@ -289,7 +289,10 @@ export interface UsageModelBreakdown {
 }
 
 export interface SessionUsage {
-  claudeSessionId: string;
+  /** Session identifier — Claude UUID or Crush id. */
+  sessionId: string;
+  /** Which CLI tool produced this usage data. */
+  cliTool: CliToolId;
   inputTokens: number;
   outputTokens: number;
   cacheCreationTokens: number;
@@ -439,6 +442,7 @@ export interface TetherAPI {
   git: {
     clone(url: string, destination: string): Promise<string>;
     init(directory: string): Promise<string>;
+    createFolder(path: string, initGit: boolean): Promise<string>;
     isRepo(directory: string): Promise<boolean>;
     worktreeAdd(opts: { sourceRepo: string; worktreePath: string; branch: string }): Promise<string>;
     worktreeRemove(opts: { sourceRepo: string; worktreePath: string; force?: boolean }): Promise<void>;
@@ -497,9 +501,9 @@ export interface TetherAPI {
     setPref(environmentId: string, workingDir: string, orderedIds: string[]): Promise<void>;
   };
   usage: {
-    getSession(claudeSessionId: string): Promise<SessionUsage | null>;
+    getSession(sessionId: string): Promise<SessionUsage | null>;
     getAll(): Promise<UsageInfo>;
-    refresh(claudeSessionId?: string): Promise<UsageInfo>;
+    refresh(sessionId?: string): Promise<UsageInfo>;
     onUpdate(cb: (info: UsageInfo) => void): () => void;
   };
   ssh: {

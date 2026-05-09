@@ -126,6 +126,7 @@ const api: TetherAPI = {
   git: {
     clone: (url: string, destination: string): Promise<string> => ipcRenderer.invoke(IPC.GIT_CLONE, url, destination),
     init: (directory: string): Promise<string> => ipcRenderer.invoke(IPC.GIT_INIT, directory),
+    createFolder: (path: string, initGit: boolean): Promise<string> => ipcRenderer.invoke(IPC.GIT_CREATE_FOLDER, path, initGit),
     isRepo: (directory: string): Promise<boolean> => ipcRenderer.invoke(IPC.GIT_IS_REPO, directory),
     worktreeAdd: (opts: { sourceRepo: string; worktreePath: string; branch: string }): Promise<string> => ipcRenderer.invoke(IPC.GIT_WORKTREE_ADD, opts),
     worktreeRemove: (opts: { sourceRepo: string; worktreePath: string; force?: boolean }): Promise<void> =>
@@ -220,12 +221,12 @@ const api: TetherAPI = {
       ipcRenderer.invoke(IPC.SESSIONORDER_SET_PREF, environmentId, workingDir, orderedIds),
   },
   usage: {
-    getSession: (claudeSessionId: string): Promise<SessionUsage | null> =>
-      ipcRenderer.invoke(IPC.USAGE_GET_SESSION, claudeSessionId),
+    getSession: (sessionId: string): Promise<SessionUsage | null> =>
+      ipcRenderer.invoke(IPC.USAGE_GET_SESSION, sessionId),
     getAll: (): Promise<UsageInfo> =>
       ipcRenderer.invoke(IPC.USAGE_GET_ALL),
-    refresh: (claudeSessionId?: string): Promise<UsageInfo> =>
-      ipcRenderer.invoke(IPC.USAGE_REFRESH, claudeSessionId),
+    refresh: (sessionId?: string): Promise<UsageInfo> =>
+      ipcRenderer.invoke(IPC.USAGE_REFRESH, sessionId),
     onUpdate(cb: (info: UsageInfo) => void): () => void {
       const h = (_e: Electron.IpcRendererEvent, info: UsageInfo) => cb(info);
       ipcRenderer.on(IPC.USAGE_UPDATED, h);
