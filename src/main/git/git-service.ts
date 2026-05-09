@@ -108,7 +108,9 @@ export function createFolder(opts: CreateFolderOptions): Promise<string> {
       return resolve(opts.path);
     }
 
-    const proc = spawn('git', ['init', opts.path], {
+    // Spawning by binary name (PATH lookup) matches the rest of git-service.ts;
+    // Tether shells out to whichever `git` is on the user's PATH.
+    const proc = spawn('git', ['init', opts.path], { // NOSONAR(typescript:S4036)
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
