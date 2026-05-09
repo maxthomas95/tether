@@ -6,6 +6,10 @@ type PillKind = 'ok' | 'warn' | 'expired';
 
 const WARN_WINDOW_MS = 30 * 60 * 1000;
 
+interface VaultStatusPillProps {
+  onAuthError?: (err: unknown) => void;
+}
+
 function computeKind(status: VaultStatus | null): PillKind {
   if (!status || !status.loggedIn) return 'expired';
   if (!status.expiresAt) return 'ok';
@@ -32,7 +36,7 @@ function kindColor(kind: PillKind): string {
   }
 }
 
-export function VaultStatusPill() {
+export function VaultStatusPill({ onAuthError }: Readonly<VaultStatusPillProps>) {
   const [status, setStatus] = useState<VaultStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [, forceTick] = useState(0);
@@ -71,9 +75,10 @@ export function VaultStatusPill() {
     setBusy(true);
     try {
       await window.electronAPI.vault.login();
-    } catch {
-      // login() rejects on user cancel or server error â€” let the status event
+    } catch (err) {
+      // login() rejects on user cancel or server error — let the status event
       // reflect the final state; no inline error UI in the pill.
+      onAuthError?.(err);
     } finally {
       setBusy(false);
     }
