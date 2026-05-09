@@ -402,6 +402,23 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     saveDb();
   });
 
+  // === Session order preferences (within a repo group) ===
+
+  ipcMain.handle(IPC.SESSIONORDER_GET_PREFS, async () => {
+    const { getDb } = await import('../db/database');
+    return getDb().sessionOrderPrefs;
+  });
+
+  ipcMain.handle(IPC.SESSIONORDER_SET_PREF, async (_event, environmentId: string, workingDir: string, orderedIds: string[]) => {
+    const { getDb, saveDb } = await import('../db/database');
+    const db = getDb();
+    db.sessionOrderPrefs = [
+      ...db.sessionOrderPrefs.filter(p => !(p.environmentId === environmentId && p.workingDir === workingDir)),
+      { environmentId, workingDir, orderedIds },
+    ];
+    saveDb();
+  });
+
   // === Workspace save/restore ===
 
   ipcMain.handle(IPC.WORKSPACE_SAVE, async (_event, sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string }>, activeIndex: number) => {
