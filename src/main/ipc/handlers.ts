@@ -33,6 +33,7 @@ import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo } from 
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { GiteaClient } from '../git/providers/gitea-client';
 import { AdoClient } from '../git/providers/ado-client';
+import { GitHubClient } from '../git/providers/github-client';
 import {
   getVaultConfig,
   setVaultConfig,
@@ -526,6 +527,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (provider.type === 'gitea') {
         const client = new GiteaClient(provider.baseUrl, token);
         await client.testConnection();
+      } else if (provider.type === 'github') {
+        const client = new GitHubClient(provider.baseUrl, token);
+        await client.testConnection();
       } else {
         const client = new AdoClient(provider.baseUrl, provider.organization || '', token);
         await client.testConnection();
@@ -543,6 +547,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const token = await resolveProviderToken(provider.token);
     if (provider.type === 'gitea') {
       const client = new GiteaClient(provider.baseUrl, token);
+      return client.listRepos(query);
+    } else if (provider.type === 'github') {
+      const client = new GitHubClient(provider.baseUrl, token);
       return client.listRepos(query);
     } else {
       const client = new AdoClient(provider.baseUrl, provider.organization || '', token);

@@ -6,7 +6,7 @@ export type { GitProviderRow };
 
 export interface CreateGitProviderInput {
   name: string;
-  type: 'gitea' | 'ado';
+  type: 'gitea' | 'ado' | 'github';
   baseUrl: string;
   organization?: string;
   token: string;
