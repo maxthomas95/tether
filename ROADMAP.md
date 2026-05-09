@@ -23,7 +23,7 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 - [done] Cost accuracy audit — pricing now sourced from a vendored copy of LiteLLM's `model_prices_and_context_window.json` (`src/main/usage/litellm-prices.json`); covers Anthropic / OpenAI / Google / Bedrock / Vertex etc., with explicit cache-create / cache-read rates when published. Refresh by replacing the JSON. Existing prefix fallback retained for unknown future Anthropic models.
 - [done] CSV / JSON export of usage history — Settings → Usage now has "Export as CSV…" and "Export as JSON…" buttons. CSV is one row per session with totals (RFC 4180 quoting); JSON includes the full per-model breakdown, daily rollups, and Tether version. `usageService.getEnrichedSessions()` carries `workingDir` through; serialization lives in `src/main/usage/usage-exporter.ts`.
 - [planned] Per-environment cost attribution in the global footer
-- [planned] Daily / weekly / monthly rollups, not just today + 7-day sparkline
+- [done] Daily / weekly / monthly rollups — global usage footer is now a button that opens a "Usage history" dialog with Today / 7d / 30d / All-time tiles plus tabbed Daily (30) / Weekly (12) / Monthly (12) tables. Pure renderer-side rollup math (`src/renderer/utils/usage-rollups.ts`) over the existing `daily[]` array, ISO-week boundaries (Mon start), no schema change.
 
 ### 2. Bug: status indicator stuck on green/grey
 

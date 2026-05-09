@@ -13,6 +13,7 @@ import { VaultLoginPromptDialog } from './components/VaultLoginPromptDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { MenuBar } from './components/MenuBar';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
+import { UsageHistoryDialog } from './components/UsageHistoryDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { HostKeyVerifyDialog } from './components/HostKeyVerifyDialog';
 import { SetupWizard } from './components/SetupWizard';
@@ -54,6 +55,7 @@ export function App() {
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [usageHistoryOpen, setUsageHistoryOpen] = useState(false);
   const [setupWizardOpen, setSetupWizardOpen] = useState(false);
   const [hostVerifyRequest, setHostVerifyRequest] = useState<HostVerifyRequest | null>(null);
   const [showResumeBadge, setShowResumeBadge] = useState(false);
@@ -1306,7 +1308,7 @@ export function App() {
             );
           })}
         </div>
-        <GlobalUsageFooter />
+        <GlobalUsageFooter onOpenHistory={() => setUsageHistoryOpen(true)} />
         <QuotaFooter />
         <VaultStatusPill onAuthError={notifyVaultAuthError} />
       </aside>
@@ -1374,6 +1376,10 @@ export function App() {
       <KeyboardShortcutsDialog
         isOpen={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
+      />
+      <UsageHistoryDialog
+        isOpen={usageHistoryOpen}
+        onClose={() => setUsageHistoryOpen(false)}
       />
       <AboutDialog
         isOpen={aboutOpen}

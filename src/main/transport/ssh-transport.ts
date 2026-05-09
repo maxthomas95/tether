@@ -2,17 +2,9 @@ import { StringDecoder } from 'node:string_decoder';
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
 import { createLogger } from '../logger';
 import { verifyHost } from '../ssh/host-verifier';
+import { loadSsh2 } from './ssh2-loader';
 
 const log = createLogger('ssh');
-
-let ssh2Module: typeof import('ssh2') | null = null;
-
-function getSsh2(): typeof import('ssh2') {
-  if (!ssh2Module) {
-    ssh2Module = require('ssh2');
-  }
-  return ssh2Module!;
-}
 
 export interface SSHConfig {
   host: string;
@@ -177,7 +169,7 @@ export class SSHTransport implements SessionTransport {
   }
 
   async start(options: TransportStartOptions): Promise<void> {
-    const { Client } = getSsh2();
+    const { Client } = loadSsh2();
     const fs = require('node:fs');
 
     this.client = new Client();

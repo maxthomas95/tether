@@ -1,11 +1,13 @@
-import { ipcMain, shell } from 'electron';
+import { ipcMain, dialog, shell } from 'electron';
 import { IPC } from '../../shared/constants';
 import { createLogger } from '../logger';
 import type { HandlerContext } from './helpers';
 
 const log = createLogger('ipc:system');
 
-export function registerSystemHandlers(_ctx: HandlerContext): void {
+export function registerSystemHandlers(ctx: HandlerContext): void {
+  const { mainWindow } = ctx;
+
   ipcMain.handle(IPC.UPDATE_CHECK, async () => {
     const { checkForUpdates } = await import('../update/update-checker');
     return checkForUpdates();
@@ -42,5 +44,18 @@ export function registerSystemHandlers(_ctx: HandlerContext): void {
       return;
     }
     await shell.openExternal(url);
+  });
+
+  // === Diagnostics export ===
+
+  ipcMain.handle(IPC.DIAGNOSTICS_EXPORT, async () => {
+    const { exportDiagnostics, defaultExportFilename } = await import('../diagnostics/diagnostics-service');
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export diagnostics',
+      defaultPath: defaultExportFilename(),
+      filters: [{ name: 'Zip', extensions: ['zip'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, error: 'cancelled' };
+    return exportDiagnostics(result.filePath);
   });
 }
