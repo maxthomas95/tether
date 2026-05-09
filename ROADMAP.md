@@ -67,6 +67,15 @@ Today `NewSessionDialog` assumes the working directory already exists — clone 
 - [done] **New folder for a new repo** — `NewSessionDialog` has a "New folder" tab (local envs only) that creates a folder under `reposRoot`, optionally `git init`s it, and uses it as the session cwd.
 - [done] **Create the remote repo too (GitHub/Gitea/ADO)** — "New folder" mode can optionally provision an empty repo on GitHub, Gitea, or ADO and wires `git remote add origin` locally. Remote-first ordering on failure, first push left to the user. ADO supports a per-provider `defaultProject` selectable from the loaded project list.
 
+### 7. Documentation & discoverability
+
+A lot has shipped recently (Helm, Vault, GitHub provider, OpenCode / Copilot CLI, New-folder + remote-create, terminal zoom, session reorder, bulk group actions, ctrl-clickable URLs, LiteLLM-backed pricing) and the user-facing surfaces — README, in-app docs, dialog copy — haven't kept up. Discoverability is the other half of "polished": features that exist but nobody finds aren't done.
+
+- [planned] **README sweep** — refresh feature list, screenshots, and "what's new" framing for the 1.0 push. Re-evaluate whether `docs/MVP_SCOPE.md` is still load-bearing or should be archived (it predates Helm and multi-CLI). Trim anything that's now contradicted by `CHANGELOG.md`.
+- [planned] **In-app docs refresh** (`src/docs/*.md`) — bring `getting-started.md`, `sessions.md`, `environments.md`, `settings.md`, and `keyboard-shortcuts.md` current. Add pages for Helm, Vault, Git providers + new-folder / remote-create flow, usage & quota, and the recent UX additions (per-pane font size, window zoom, bulk group actions, drag-reorder, clickable URLs). The docs window is already wired up — this is content work, not plumbing.
+- [planned] **In-context `(i)` tooltips** — replace the mini-description prose in dialogs (Settings, NewSession, NewEnvironment) with hoverable info-icon tooltips so layout breathes and copy is shorter. Single shared `<InfoTooltip>` component to keep visuals consistent across dialogs.
+- [planned] **Per-section `(?)` deep-links into docs** — small help icon at the top of each major dialog section / sidebar block that opens the docs window scrolled to the matching anchor (e.g. SettingsDialog → Vault row → `settings.md#vault`). Needs anchor IDs in the markdown plus an `openDocs(anchor)` IPC. Pairs naturally with the docs refresh above — do them in the same pass so anchors land alongside the content.
+
 
 ---
 
