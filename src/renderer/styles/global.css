@@ -276,12 +276,27 @@ html, body, #root {
 
 /* Global usage footer */
 .global-usage-footer {
-  padding: 6px 12px;
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
   border-top: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 6px 12px;
   flex-shrink: 0;
-  cursor: default;
+  cursor: pointer;
   user-select: none;
   font-variant-numeric: tabular-nums;
+}
+
+.global-usage-footer:hover {
+  background: var(--bg-hover);
+}
+
+.global-usage-footer:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
 }
 
 .global-usage-row {
@@ -1972,4 +1987,99 @@ body.tether-hide-cursor .xterm-cursor {
   border-radius: 4px;
   font-size: 13px;
   margin-bottom: 12px;
+}
+
+/* Usage history dialog */
+.usage-history-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.usage-history-tile {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-history-tile-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.usage-history-tile-cost {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 4px;
+}
+
+.usage-history-tile-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.usage-history-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.usage-history-tab {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.usage-history-tab:hover {
+  color: var(--text-primary);
+}
+
+.usage-history-tab--active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.usage-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-history-table th {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.usage-history-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.usage-history-table tr:last-child td {
+  border-bottom: none;
+}
+
+.usage-history-row--empty td {
+  color: var(--text-muted);
 }
