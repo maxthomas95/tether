@@ -434,6 +434,7 @@ export interface TetherAPI {
   git: {
     clone(url: string, destination: string): Promise<string>;
     init(directory: string): Promise<string>;
+    createFolder(path: string, initGit: boolean): Promise<string>;
     isRepo(directory: string): Promise<boolean>;
     worktreeAdd(opts: { sourceRepo: string; worktreePath: string; branch: string }): Promise<string>;
     worktreeRemove(opts: { sourceRepo: string; worktreePath: string; force?: boolean }): Promise<void>;

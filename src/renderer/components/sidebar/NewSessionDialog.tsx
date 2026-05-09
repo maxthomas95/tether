@@ -8,7 +8,7 @@ import { onKeyActivate } from '../../utils/a11y';
 
 type CliFlagsPerTool = Partial<Record<CliToolId, string[]>>;
 
-type SourceTab = 'local' | 'clone' | 'gitea' | 'ado' | 'github';
+type SourceTab = 'local' | 'newfolder' | 'clone' | 'gitea' | 'ado' | 'github';
 
 interface CoderCreateInlineProps {
   templates: CoderTemplate[];
@@ -261,6 +261,12 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [activeTab, setActiveTab] = useState<SourceTab>('local');
   const [gitProviders, setGitProviders] = useState<GitProviderInfo[]>([]);
 
+  // New folder state
+  const [newFolderName, setNewFolderName] = useState('');
+  const [initGitOnNewFolder, setInitGitOnNewFolder] = useState(true);
+  const [creatingNewFolder, setCreatingNewFolder] = useState(false);
+  const [newFolderError, setNewFolderError] = useState('');
+
   // Clone state
   const [cloneUrl, setCloneUrl] = useState('');
   const [cloneDestination, setCloneDestination] = useState('');
@@ -344,6 +350,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const selectedEnv = environments.find(e => e.id === envId);
   const isSSH = selectedEnv?.type === 'ssh';
   const isCoder = selectedEnv?.type === 'coder';
+
+  // New folder mode is local-only; revert to Local tab if env switches to SSH/Coder
+  useEffect(() => {
+    if (activeTab === 'newfolder' && (isSSH || isCoder)) {
+      setActiveTab('local');
+    }
+  }, [activeTab, isSSH, isCoder]);
 
   // Detect whether the chosen local directory is a git repo
   useEffect(() => {
@@ -564,6 +577,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     return `${cloneDestination}${sep}${derivedRepoName}`;
   }, [cloneDestination, derivedRepoName]);
 
+  const newFolderFullPath = useMemo(() => {
+    const trimmed = newFolderName.trim();
+    if (!reposRoot || !trimmed) return '';
+    const sep = reposRoot.includes('/') ? '/' : '\\';
+    return `${reposRoot}${sep}${trimmed}`;
+  }, [reposRoot, newFolderName]);
+
   // For Coder: joined "<parentPath>/<repoName>" inside the workspace.
   const coderCloneFullPath = useMemo(() => {
     const repoName = activeTab === 'clone'
@@ -621,6 +641,28 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
     onCreate(effectiveDir, label.trim(), envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, worktreeSourceRepo, helmEnabled || undefined);
     resetAndClose();
+  };
+
+  const handleCreateNewFolder = async () => {
+    const name = newFolderName.trim();
+    if (!name || !reposRoot) return;
+    if (/[\\/]/.test(name)) {
+      setNewFolderError('Folder name cannot contain path separators.');
+      return;
+    }
+    setCreatingNewFolder(true);
+    setNewFolderError('');
+    try {
+      const createdPath = await window.electronAPI.git.createFolder(newFolderFullPath, initGitOnNewFolder);
+      const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
+      const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
+      const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
+      onCreate(createdPath, label.trim() || name, envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, undefined, helmEnabled || undefined);
+      resetAndClose();
+    } catch (err: unknown) {
+      setNewFolderError(err instanceof Error ? err.message : String(err));
+      setCreatingNewFolder(false);
+    }
   };
 
   const handleClone = async () => {
@@ -689,6 +731,10 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     setSessionCliFlags([]);
     setCustomFlag('');
     setActiveTab('local');
+    setNewFolderName('');
+    setInitGitOnNewFolder(true);
+    setCreatingNewFolder(false);
+    setNewFolderError('');
     setCloneUrl('');
     setCloneDestination(reposRoot || '');
     setCloning(false);
@@ -720,6 +766,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && activeTab === 'local' && directory.trim()) void handleCreate();
+    if (e.key === 'Enter' && activeTab === 'newfolder' && newFolderName.trim() && reposRoot) void handleCreateNewFolder();
     // Esc handled by useEscapeKey at document level (works regardless of focus)
   };
 
@@ -747,6 +794,12 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               className={`source-tab ${activeTab === 'local' ? 'source-tab--active' : ''}`}
               onClick={() => setActiveTab('local')}
             >Local</button>
+            {!isSSH && !isCoder && (
+              <button
+                className={`source-tab ${activeTab === 'newfolder' ? 'source-tab--active' : ''}`}
+                onClick={() => setActiveTab('newfolder')}
+              >New folder</button>
+            )}
             <button
               className={`source-tab ${activeTab === 'clone' ? 'source-tab--active' : ''}`}
               onClick={() => setActiveTab('clone')}
@@ -1173,6 +1226,95 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
             </>
           )}
 
+          {/* === NEW FOLDER TAB === */}
+          {activeTab === 'newfolder' && (
+            <>
+              {!reposRoot ? (
+                <div className="form-group">
+                  <span className="form-hint">
+                    New folders are created under your repos directory. Set it to continue:
+                  </span>
+                  <div className="form-row" style={{ marginTop: 8 }}>
+                    <input
+                      className="form-input"
+                      value={reposRootInput}
+                      onChange={e => setReposRootInput(e.target.value)}
+                      placeholder="C:\repo"
+                      onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); saveReposRoot(); } }}
+                    />
+                    <button className="form-btn" onClick={saveReposRoot}>Save</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Folder name</label>
+                    <input
+                      className="form-input"
+                      value={newFolderName}
+                      onChange={e => setNewFolderName(e.target.value)}
+                      placeholder="my-new-project"
+                      autoFocus
+                      disabled={creatingNewFolder}
+                    />
+                    {newFolderFullPath && (
+                      <span className="form-hint">
+                        Will be created at: <code>{newFolderFullPath}</code>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-radio-label" style={{ cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={initGitOnNewFolder}
+                        onChange={e => setInitGitOnNewFolder(e.target.checked)}
+                        disabled={creatingNewFolder}
+                      />
+                      <span>Initialize as a git repository</span>
+                    </label>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Label (optional)</label>
+                    <input
+                      className="form-input"
+                      value={label}
+                      onChange={e => setLabel(e.target.value)}
+                      placeholder="Auto-generated from folder name"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <button
+                      className="form-link"
+                      onClick={() => { setShowRepoConfig(true); setReposRootInput(reposRoot); }}
+                    >
+                      Change repos directory ({reposRoot})
+                    </button>
+                    {showRepoConfig && (
+                      <div className="form-row" style={{ marginTop: 8 }}>
+                        <input
+                          className="form-input"
+                          value={reposRootInput}
+                          onChange={e => setReposRootInput(e.target.value)}
+                          placeholder="C:\repo"
+                          onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); saveReposRoot(); } }}
+                        />
+                        <button className="form-btn" onClick={saveReposRoot}>Save</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {newFolderError && (
+                    <div className="clone-error">{newFolderError}</div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
           {/* === CLONE URL TAB === */}
           {activeTab === 'clone' && (
             <>
@@ -1434,6 +1576,14 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               disabled={!directory.trim() || creatingWorktree}
             >
               {creatingWorktree ? 'Creating worktree...' : 'Create Session'}
+            </button>
+          ) : activeTab === 'newfolder' ? (
+            <button
+              className="form-btn form-btn--primary"
+              onClick={() => { void handleCreateNewFolder(); }}
+              disabled={!newFolderName.trim() || !reposRoot || creatingNewFolder}
+            >
+              {creatingNewFolder ? 'Creating...' : 'Create Session'}
             </button>
           ) : (
             <button

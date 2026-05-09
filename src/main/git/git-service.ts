@@ -87,6 +87,43 @@ export function gitInit(directory: string): Promise<string> {
   });
 }
 
+export interface CreateFolderOptions {
+  path: string;
+  initGit: boolean;
+}
+
+export function createFolder(opts: CreateFolderOptions): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (fs.existsSync(opts.path)) {
+      return reject(new Error(`Folder already exists: ${opts.path}`));
+    }
+
+    try {
+      fs.mkdirSync(opts.path, { recursive: true });
+    } catch (err) {
+      return reject(err instanceof Error ? err : new Error(String(err)));
+    }
+
+    if (!opts.initGit) {
+      return resolve(opts.path);
+    }
+
+    const proc = spawn('git', ['init', opts.path], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stderr = '';
+    proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+    proc.on('close', (code) => {
+      if (code === 0) resolve(opts.path);
+      else reject(new Error(stderr.trim() || `git init exited with code ${code}`));
+    });
+
+    proc.on('error', reject);
+  });
+}
+
 export function isGitRepo(directory: string): boolean {
   try {
     const gitPath = `${directory}/.git`;
