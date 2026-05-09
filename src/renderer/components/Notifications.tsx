@@ -16,6 +16,7 @@ export interface NotifyOptions {
 }
 
 let notificationCounter = 0;
+const MAX_NOTIFICATIONS = 5;
 
 /**
  * Tiny toast/notification stack. Errors auto-dismiss after 12s,
@@ -37,7 +38,7 @@ export function useNotifications() {
       message: opts.message,
       action: opts.action,
     };
-    setNotifications(prev => [...prev, next]);
+    setNotifications(prev => [...prev, next].slice(-MAX_NOTIFICATIONS));
     return id;
   }, []);
 
@@ -68,7 +69,7 @@ function NotificationItem({ notification, onDismiss }: { notification: Notificat
   }, [notification.id, ttl, onDismiss]);
 
   return (
-    <div className={`notification notification--${notification.type}`}>
+    <div className={`notification notification--${notification.type}`} role={notification.type === 'error' ? 'alert' : undefined}>
       <div className="notification-body">
         <div className="notification-title">{notification.title}</div>
         {notification.message && (

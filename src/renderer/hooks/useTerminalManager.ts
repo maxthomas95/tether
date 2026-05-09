@@ -1,17 +1,20 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { PaneId } from '../../shared/layout-types';
 
 interface ManagedTerminal {
   terminal: Terminal;
   fitAddon: FitAddon;
+  linksAddon: WebLinksAddon;
 }
 
 interface PaneEntry {
   sessionId: string;
   terminal: Terminal;
   fitAddon: FitAddon;
+  linksAddon: WebLinksAddon;
   container: HTMLDivElement | null;
 }
 
@@ -54,6 +57,11 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
 
+    const linksAddon = new WebLinksAddon((_event, uri) => {
+      window.electronAPI.shell.openExternal(uri);
+    });
+    terminal.loadAddon(linksAddon);
+
     // Wire up input forwarding
     terminal.onData((data: string) => {
       window.electronAPI.session.sendInput(sessionId, data);
@@ -92,7 +100,7 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
       return true;
     });
 
-    return { terminal, fitAddon };
+    return { terminal, fitAddon, linksAddon };
   }, []);
 
   // Get or create a background terminal for sessions not in any visible pane
@@ -127,6 +135,7 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
 
     let terminal: Terminal;
     let fitAddon: FitAddon;
+    let linksAddon: WebLinksAddon;
 
     // Reuse background terminal if it exists — it has the scrollback buffer
     const bg = backgroundTerminals.current.get(sessionId);
@@ -134,6 +143,7 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
     if (bg) {
       terminal = bg.terminal;
       fitAddon = bg.fitAddon;
+      linksAddon = bg.linksAddon;
       backgroundTerminals.current.delete(sessionId);
       wasBackground = true;
 
@@ -147,10 +157,11 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
       const managed = createTerminal(sessionId);
       terminal = managed.terminal;
       fitAddon = managed.fitAddon;
+      linksAddon = managed.linksAddon;
       terminal.open(container);
     }
 
-    panes.current.set(paneId, { sessionId, terminal, fitAddon, container });
+    panes.current.set(paneId, { sessionId, terminal, fitAddon, linksAddon, container });
 
     // Fit after the layout has settled — a single rAF can be too early for
     // flex containers that haven't received their final dimensions yet.
@@ -183,7 +194,7 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
     const entry = panes.current.get(paneId);
     if (!entry) return;
 
-    const { sessionId, terminal, fitAddon } = entry;
+    const { sessionId, terminal, fitAddon, linksAddon } = entry;
 
     // Check if any OTHER pane shows this session
     let otherPaneExists = false;
@@ -201,7 +212,7 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
       if (terminal.element?.parentElement) {
         terminal.element.parentElement.removeChild(terminal.element);
       }
-      backgroundTerminals.current.set(sessionId, { terminal, fitAddon });
+      backgroundTerminals.current.set(sessionId, { terminal, fitAddon, linksAddon });
     } else {
       terminal.dispose();
     }

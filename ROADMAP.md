@@ -84,3 +84,4 @@ _Tracked here briefly until the next release; archived to `CHANGELOG.md` after t
 - [done] Per-session and global usage / cost views
 - [done] Subscription quota tracking
 - [done] First-run Setup Wizard
+- [done] Clickable URLs in the terminal — ctrl-click pasted/printed links to open in the system browser via `@xterm/addon-web-links` and `shell.openExternal`.

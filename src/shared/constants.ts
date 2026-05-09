@@ -90,6 +90,9 @@ export const IPC = {
   UPDATE_CHECK: 'update:check',
   UPDATE_OPEN_RELEASE_PAGE: 'update:open-release',
 
+  // Shell
+  SHELL_OPEN_EXTERNAL: 'shell:open-external',
+
   // SSH known hosts
   SSH_HOST_VERIFY_REQUEST: 'ssh:host-verify-request',
   SSH_HOST_VERIFY_RESPONSE: 'ssh:host-verify-response',
