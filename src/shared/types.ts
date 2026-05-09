@@ -448,6 +448,9 @@ export interface TetherAPI {
     openReleasePage(url: string): Promise<void>;
     onUpdateAvailable(cb: (result: UpdateCheckResult) => void): () => void;
   };
+  shell: {
+    openExternal(url: string): Promise<void>;
+  };
   vault: {
     getConfig(): Promise<VaultConfig>;
     setConfig(config: VaultConfig): Promise<void>;
