@@ -1,12 +1,21 @@
-import { ipcMain } from 'electron';
+import { ipcMain, app, dialog } from 'electron';
 import { IPC } from '../../shared/constants';
-import type { QuotaInfo, UsageInfo, SessionUsage } from '../../shared/types';
+import type {
+  QuotaInfo,
+  UsageInfo,
+  SessionUsage,
+  UsageExportFormat,
+  UsageExportResult,
+} from '../../shared/types';
 import { quotaService } from '../quota/quota-service';
 import { usageService } from '../usage/usage-service';
+import { createLogger } from '../logger';
 import type { HandlerContext } from './helpers';
 
+const log = createLogger('ipc:usage');
+
 export function registerUsageHandlers(ctx: HandlerContext): void {
-  const { send } = ctx;
+  const { mainWindow, send } = ctx;
 
   // === Quota ===
 
@@ -42,5 +51,36 @@ export function registerUsageHandlers(ctx: HandlerContext): void {
 
   ipcMain.handle(IPC.USAGE_REFRESH, async (_event, sessionId?: string): Promise<UsageInfo> => {
     return usageService.refresh(sessionId);
+  });
+
+  ipcMain.handle(IPC.USAGE_EXPORT, async (_event, format: UsageExportFormat): Promise<UsageExportResult> => {
+    const fmt: UsageExportFormat = format === 'json' ? 'json' : 'csv';
+    const stamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const defaultName = `tether-usage-${stamp}.${fmt}`;
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: fmt === 'csv' ? 'Export usage as CSV' : 'Export usage as JSON',
+      defaultPath: defaultName,
+      filters: fmt === 'csv'
+        ? [{ name: 'CSV', extensions: ['csv'] }]
+        : [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false };
+
+    try {
+      const usage = usageService.getAll();
+      const enriched = usageService.getEnrichedSessions();
+      const { serializeUsageCsv, serializeUsageJson } = await import('../usage/usage-exporter');
+      const body = fmt === 'csv'
+        ? serializeUsageCsv(enriched)
+        : serializeUsageJson(usage, enriched, app.getVersion());
+      const fs = await import('node:fs');
+      fs.writeFileSync(result.filePath, body, 'utf8');
+      log.info('Usage exported', { format: fmt, filePath: result.filePath, sessionCount: enriched.length });
+      return { ok: true, filePath: result.filePath, sessionCount: enriched.length };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn('Usage export failed', { format: fmt, error: message });
+      return { ok: false, error: message };
+    }
   });
 }

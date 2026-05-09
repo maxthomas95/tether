@@ -21,7 +21,7 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 - [planned] Copilot CLI cost tracking — `events.jsonl` schema for token-bearing events is unverified (no sample available locally). Will need either a real session sample or upstream docs to mirror the Codex parser. Pricing has wide LiteLLM coverage under `github_copilot/*` keys; will require extending `model-pricing.ts:lookupLiteLLM` to try the `github_copilot/` prefix when ingestion lands.
 - [done] OpenCode / Crush cost tracking — `usage-service.ts` is now CLI-agnostic; OpenCode sessions read pre-computed cost from `crush.db` (`src/main/opencode/usage-reader.ts`)
 - [done] Cost accuracy audit — pricing now sourced from a vendored copy of LiteLLM's `model_prices_and_context_window.json` (`src/main/usage/litellm-prices.json`); covers Anthropic / OpenAI / Google / Bedrock / Vertex etc., with explicit cache-create / cache-read rates when published. Refresh by replacing the JSON. Existing prefix fallback retained for unknown future Anthropic models.
-- [planned] CSV / JSON export of usage history
+- [done] CSV / JSON export of usage history — Settings → Usage now has "Export as CSV…" and "Export as JSON…" buttons. CSV is one row per session with totals (RFC 4180 quoting); JSON includes the full per-model breakdown, daily rollups, and Tether version. `usageService.getEnrichedSessions()` carries `workingDir` through; serialization lives in `src/main/usage/usage-exporter.ts`.
 - [planned] Per-environment cost attribution in the global footer
 - [planned] Daily / weekly / monthly rollups, not just today + 7-day sparkline
 
