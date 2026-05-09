@@ -24,6 +24,11 @@ interface RepoGroupProps {
   onToggleHelm?: (id: string, enabled: boolean) => void;
   onDragStart?: (sessionId: string) => void;
   onDragEnd?: () => void;
+  /**
+   * Reorder a session within this group. RepoGroup forwards the call enriched
+   * with its env+dir context so the parent doesn't need to look them up.
+   */
+  onReorderSession?: (environmentId: string, workingDir: string, sourceSessionId: string, targetSessionId: string, position: 'above' | 'below') => void;
 }
 
 export function RepoGroup({
@@ -47,6 +52,7 @@ export function RepoGroup({
   onToggleHelm,
   onDragStart,
   onDragEnd,
+  onReorderSession,
 }: RepoGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null);
@@ -202,6 +208,12 @@ export function RepoGroup({
           onToggleHelm={onToggleHelm ? (enabled) => onToggleHelm(session.id, enabled) : undefined}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
+          onReorderDrop={
+            onReorderSession
+              ? (sourceId, targetId, position) =>
+                  onReorderSession(environmentId, repoPath, sourceId, targetId, position)
+              : undefined
+          }
           nested
         />
       ))}

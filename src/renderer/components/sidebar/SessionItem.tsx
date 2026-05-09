@@ -23,12 +23,26 @@ interface SessionItemProps {
   nested?: boolean;
   onDragStart?: (sessionId: string) => void;
   onDragEnd?: () => void;
+  /**
+   * Called when another session in the same repo group is dropped onto this
+   * one. The parent group resolves source vs. target and persists the new order.
+   */
+  onReorderDrop?: (sourceSessionId: string, targetSessionId: string, position: 'above' | 'below') => void;
 }
 
-export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, nested, onDragStart, onDragEnd }: SessionItemProps) {
+/**
+ * Module-local snapshot of the session being dragged for reorder. Set on
+ * dragStart, cleared on dragEnd. dragOver consults this so we can show the
+ * indicator only when source and target are in the same repo group —
+ * dataTransfer.getData isn't readable until drop in Electron's HTML5 DnD.
+ */
+let activeReorderSource: { id: string; environmentId: string | null; workingDir: string } | null = null;
+
+export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, nested, onDragStart, onDragEnd, onReorderDrop }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
+  const [reorderDropPosition, setReorderDropPosition] = useState<'above' | 'below' | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -65,9 +79,29 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
     setEditing(false);
   };
 
+  /**
+   * Re-checked inline in handlers (not at render) because activeReorderSource
+   * is module-local and mutates without triggering a re-render — render-time
+   * closure would be stale.
+   */
+  const isReorderEligible = (): boolean =>
+    !!onReorderDrop &&
+    !!activeReorderSource &&
+    activeReorderSource.id !== session.id &&
+    activeReorderSource.environmentId === (session.environmentId ?? null) &&
+    activeReorderSource.workingDir === session.workingDir;
+
+  const itemClasses = [
+    'session-item',
+    isActive ? 'session-item--active' : '',
+    nested ? 'session-item--nested' : '',
+    reorderDropPosition === 'above' ? 'session-item--drop-above' : '',
+    reorderDropPosition === 'below' ? 'session-item--drop-below' : '',
+  ].filter(Boolean).join(' ');
+
   return (
     <div
-      className={`session-item ${isActive ? 'session-item--active' : ''} ${nested ? 'session-item--nested' : ''}`}
+      className={itemClasses}
       onClick={onClick}
       onKeyDown={onKeyActivate(onClick)}
       role="button"
@@ -76,10 +110,51 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData('application/tether-session', session.id);
-        e.dataTransfer.effectAllowed = 'copy';
+        // Second payload signals reorder intent — separate type so existing
+        // pane-drop receivers (TerminalPane / DropZoneOverlay) ignore it.
+        e.dataTransfer.setData('application/tether-session-reorder', session.id);
+        e.dataTransfer.effectAllowed = 'copyMove';
+        activeReorderSource = {
+          id: session.id,
+          environmentId: session.environmentId ?? null,
+          workingDir: session.workingDir,
+        };
         onDragStart?.(session.id);
       }}
-      onDragEnd={() => onDragEnd?.()}
+      onDragEnd={() => {
+        activeReorderSource = null;
+        setReorderDropPosition(null);
+        onDragEnd?.();
+      }}
+      onDragOver={(e) => {
+        if (!isReorderEligible()) return;
+        if (!e.dataTransfer.types.includes('application/tether-session-reorder')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = e.currentTarget.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        setReorderDropPosition(e.clientY < midY ? 'above' : 'below');
+      }}
+      onDragLeave={() => setReorderDropPosition(null)}
+      onDrop={(e) => {
+        if (!isReorderEligible() || !onReorderDrop) {
+          setReorderDropPosition(null);
+          return;
+        }
+        const sourceId = e.dataTransfer.getData('application/tether-session-reorder');
+        if (!sourceId || sourceId === session.id) {
+          setReorderDropPosition(null);
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const pos: 'above' | 'below' = e.clientY < midY ? 'above' : 'below';
+        setReorderDropPosition(null);
+        onReorderDrop(sourceId, session.id, pos);
+      }}
     >
       <span className={`status-dot status-dot--${getStatusClass(session.state)}`} />
       <div className="session-info">

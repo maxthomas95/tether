@@ -2,7 +2,7 @@ import { app } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { CliToolId } from '../../shared/cli-tools';
-import type { RepoGroupPref } from '../../shared/types';
+import type { RepoGroupPref, SessionOrderPref } from '../../shared/types';
 
 export interface SavedSession {
   workingDir: string;
@@ -70,6 +70,7 @@ export interface DbData {
   savedWorkspace: SavedWorkspace | null;
   gitProviders: GitProviderRow[];
   repoGroupPrefs: RepoGroupPref[];
+  sessionOrderPrefs: SessionOrderPref[];
   usageSummaries: PersistedSessionUsage[];
   knownHosts: KnownHostEntry[];
 }
@@ -230,14 +231,15 @@ export function getDb(): DbData {
           savedWorkspace: loaded.savedWorkspace || null,
           gitProviders: loaded.gitProviders || [],
           repoGroupPrefs: loaded.repoGroupPrefs || [],
+          sessionOrderPrefs: loaded.sessionOrderPrefs || [],
           usageSummaries: loaded.usageSummaries || [],
           knownHosts: loaded.knownHosts || [],
         };
       } catch {
-        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], usageSummaries: [], knownHosts: [] };
+        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], sessionOrderPrefs: [], usageSummaries: [], knownHosts: [] };
       }
     } else {
-      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], usageSummaries: [], knownHosts: [] };
+      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], sessionOrderPrefs: [], usageSummaries: [], knownHosts: [] };
     }
   }
   return data;
