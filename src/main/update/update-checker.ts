@@ -51,16 +51,19 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
-
-    const res = await fetch(GITHUB_API, {
-      headers: { Accept: 'application/vnd.github+json' },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
+    let res: Response;
+    try {
+      res = await fetch(GITHUB_API, {
+        headers: { Accept: 'application/vnd.github+json' },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!res.ok) {
       log.warn(`GitHub API returned ${res.status}`);
-      return empty;
+      return { ...empty, error: `GitHub Releases returned HTTP ${res.status}.` };
     }
 
     const releases: GitHubRelease[] = await res.json();
@@ -84,7 +87,9 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
       currentVersion,
     };
   } catch (err) {
-    log.warn('Update check failed', { error: err instanceof Error ? err.message : String(err) });
-    return empty;
+    const message = err instanceof Error ? err.message : String(err);
+    log.warn('Update check failed', { error: message });
+    const error = message.toLowerCase().includes('abort') ? 'Update check timed out after 10 seconds.' : `Could not reach GitHub Releases: ${message}`;
+    return { ...empty, error };
   }
 }

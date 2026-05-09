@@ -239,6 +239,12 @@ export interface UpdateCheckResult {
   latestTag: string;
   releaseUrl: string;
   currentVersion: string;
+  error?: string;
+}
+
+export interface SessionExitInfo {
+  exitCode: number;
+  signal?: string;
 }
 
 export interface QuotaWindow {
@@ -367,7 +373,7 @@ export interface TetherAPI {
     resize(sessionId: string, cols: number, rows: number): void;
     onData(callback: (sessionId: string, data: string) => void): () => void;
     onStateChange(callback: (sessionId: string, state: SessionState) => void): () => void;
-    onExited(callback: (sessionId: string, exitCode: number) => void): () => void;
+    onExited(callback: (sessionId: string, exitInfo: SessionExitInfo) => void): () => void;
     onUpdated(callback: (sessionId: string, info: SessionInfo) => void): () => void;
     /**
      * Fires when a session is created in the main process without the renderer

@@ -35,6 +35,7 @@ import {
 } from './lib/layout-tree';
 import { toolSupportsHistory } from '../shared/cli-tools';
 import { onKeyActivate, stopPropagationOnKey } from './utils/a11y';
+import { extractErrorMessage, formatSessionExitMessage } from './utils/errors';
 import type { LayoutNode } from '../shared/layout-types';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, SessionOrderPref, HostVerifyRequest } from '../shared/types';
 import type { MenuDef } from './components/MenuBar';
@@ -76,14 +77,35 @@ export function App() {
   const termManager = useTerminalManager(effectiveXtermTheme);
   const { layoutState, layoutDispatch } = useLayoutState();
   const { notifications, notify, dismiss } = useNotifications();
+  const notifyError = useCallback((title: string, err: unknown) => {
+    notify({ type: 'error', title, message: extractErrorMessage(err) });
+  }, [notify]);
+  const notifyVaultAuthError = useCallback((err: unknown) => {
+    const message = extractErrorMessage(err);
+    if (/cancel/i.test(message)) return;
+    notify({ type: 'error', title: 'Vault login failed', message });
+  }, [notify]);
   const { confirm: confirmDialog, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [vaultPrompt, setVaultPrompt] = useState<{ reason?: string; onDone: (loggedIn: boolean) => void } | null>(null);
+  const expectedSessionExitIds = useRef<Set<string>>(new Set());
+  const sessionsRef = useRef<SessionInfo[]>([]);
   const effectiveMaxPanes = enablePaneSplitting ? maxPanes : 1;
+
+  const markExpectedSessionExit = useCallback((sessionId: string) => {
+    expectedSessionExitIds.current.add(sessionId);
+    window.setTimeout(() => {
+      expectedSessionExitIds.current.delete(sessionId);
+    }, 30_000);
+  }, []);
 
   useEffect(() => {
     document.body.classList.toggle('tether-hide-cursor', hideTerminalCursor);
     return () => document.body.classList.remove('tether-hide-cursor');
   }, [hideTerminalCursor]);
+
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
 
   // Derive activeSessionId from focused pane
   const focusedLeaf = layoutState.focusedPaneId && layoutState.root
@@ -159,6 +181,7 @@ export function App() {
       // Build layout tree from restored sessions
       let root: LayoutNode | null = null;
       let focusPaneId: string | null = null;
+      const restoreFailures: Array<{ label: string; error: string }> = [];
 
       for (let i = 0; i < workspace.sessions.length; i++) {
         const saved = workspace.sessions[i];
@@ -198,9 +221,24 @@ export function App() {
             const leaf = leaves.find(l => l.sessionId === session.id);
             if (leaf) focusPaneId = leaf.id;
           }
-        } catch {
+        } catch (err) {
           // Skip sessions that fail to restore
+          restoreFailures.push({
+            label: saved.label || saved.workingDir,
+            error: extractErrorMessage(err),
+          });
         }
+      }
+
+      if (mounted && restoreFailures.length > 0) {
+        const first = restoreFailures[0];
+        notify({
+          type: 'error',
+          title: restoreFailures.length === 1
+            ? `Failed to restore ${first.label}`
+            : `Failed to restore ${restoreFailures.length} sessions`,
+          message: first.error,
+        });
       }
 
       if (root) {
@@ -266,9 +304,18 @@ export function App() {
     const removeState = window.electronAPI.session.onStateChange((sid, state: SessionState) => {
       setSessions(prev => prev.map(s => s.id === sid ? { ...s, state } : s));
     });
-    const removeExit = window.electronAPI.session.onExited((sid) => {
+    const removeExit = window.electronAPI.session.onExited((sid, exitInfo) => {
       const managed = termManager.getOrCreate(sid);
       managed.terminal.write('\r\n\x1b[90m[Session ended]\x1b[0m\r\n');
+      const wasExpected = expectedSessionExitIds.current.delete(sid);
+      if (!wasExpected && exitInfo.exitCode !== 0) {
+        const session = sessionsRef.current.find(s => s.id === sid);
+        notify({
+          type: 'error',
+          title: session ? `Session failed: ${session.label}` : 'Session failed',
+          message: formatSessionExitMessage(exitInfo.exitCode, exitInfo.signal),
+        });
+      }
     });
     const removeUpdated = window.electronAPI.session.onUpdated((sid, info) => {
       setSessions(prev => prev.map(s => s.id === sid ? { ...s, ...info } : s));
@@ -281,7 +328,7 @@ export function App() {
       setSessions(prev => prev.some(s => s.id === sid) ? prev : [...prev, info]);
     });
     return () => { removeData(); removeState(); removeExit(); removeUpdated(); removeCreated(); };
-  }, [termManager]);
+  }, [termManager, notify]);
 
   const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean) => {
     const createOpts: CreateSessionOptions = {
@@ -352,13 +399,9 @@ export function App() {
       }
     } catch (err) {
       console.error('Failed to create session:', err);
-      notify({
-        type: 'error',
-        title: 'Failed to create session',
-        message: extractErrorMessage(err),
-      });
+      notifyError('Failed to create session', err);
     }
-  }, [termManager, layoutState.root, layoutState.focusedPaneId, layoutDispatch, notify, enablePaneSplitting, effectiveMaxPanes]);
+  }, [termManager, layoutState.root, layoutState.focusedPaneId, layoutDispatch, notifyError, enablePaneSplitting, effectiveMaxPanes]);
 
   const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
     try {
@@ -366,13 +409,9 @@ export function App() {
       setEnvironments(prev => [...prev, env]);
     } catch (err) {
       console.error('Failed to create environment:', err);
-      notify({
-        type: 'error',
-        title: 'Failed to create environment',
-        message: extractErrorMessage(err),
-      });
+      notifyError('Failed to create environment', err);
     }
-  }, [notify]);
+  }, [notifyError]);
 
   const handleUpdateEnvironment = useCallback(async (id: string, name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
     try {
@@ -382,13 +421,9 @@ export function App() {
       ));
     } catch (err) {
       console.error('Failed to update environment:', err);
-      notify({
-        type: 'error',
-        title: 'Failed to update environment',
-        message: extractErrorMessage(err),
-      });
+      notifyError('Failed to update environment', err);
     }
-  }, [notify]);
+  }, [notifyError]);
 
   const handleDeleteEnvironment = useCallback(async (env: EnvironmentInfo) => {
     const envSessions = sessions.filter(s => s.environmentId === env.id);
@@ -406,6 +441,7 @@ export function App() {
     try {
       // Remove associated sessions first
       for (const s of envSessions) {
+        markExpectedSessionExit(s.id);
         await window.electronAPI.session.remove(s.id);
         termManager.remove(s.id);
         layoutDispatch({ type: 'REMOVE_SESSION', sessionId: s.id });
@@ -415,13 +451,9 @@ export function App() {
       setSessions(prev => prev.filter(s => !envSessions.some(es => es.id === s.id)));
     } catch (err) {
       console.error('Failed to delete environment:', err);
-      notify({
-        type: 'error',
-        title: 'Failed to delete environment',
-        message: extractErrorMessage(err),
-      });
+      notifyError('Failed to delete environment', err);
     }
-  }, [sessions, termManager, layoutDispatch, notify, confirmDialog]);
+  }, [sessions, termManager, layoutDispatch, notifyError, confirmDialog, markExpectedSessionExit]);
 
   // Close env context menu on outside click
   useEffect(() => {
@@ -436,17 +468,33 @@ export function App() {
   }, [envMenuOpenId]);
 
   const handleStop = useCallback(async (id: string) => {
-    await window.electronAPI.session.stop(id);
-  }, []);
+    markExpectedSessionExit(id);
+    try {
+      await window.electronAPI.session.stop(id);
+    } catch (err) {
+      expectedSessionExitIds.current.delete(id);
+      notifyError('Failed to stop session', err);
+    }
+  }, [markExpectedSessionExit, notifyError]);
 
   const handleKill = useCallback(async (id: string) => {
-    await window.electronAPI.session.kill(id);
-  }, []);
+    markExpectedSessionExit(id);
+    try {
+      await window.electronAPI.session.kill(id);
+    } catch (err) {
+      expectedSessionExitIds.current.delete(id);
+      notifyError('Failed to kill session', err);
+    }
+  }, [markExpectedSessionExit, notifyError]);
 
   const handleRename = useCallback(async (id: string, label: string) => {
-    await window.electronAPI.session.rename(id, label);
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, label } : s));
-  }, []);
+    try {
+      await window.electronAPI.session.rename(id, label);
+      setSessions(prev => prev.map(s => s.id === id ? { ...s, label } : s));
+    } catch (err) {
+      notifyError('Failed to rename session', err);
+    }
+  }, [notifyError]);
 
   const handleRemove = useCallback(async (id: string) => {
     const session = sessions.find(s => s.id === id);
@@ -468,10 +516,17 @@ export function App() {
       removeWorktree = result.checkboxValue;
     }
 
-    await window.electronAPI.session.remove(id);
-    termManager.remove(id);
-    layoutDispatch({ type: 'REMOVE_SESSION', sessionId: id });
-    setSessions(prev => prev.filter(s => s.id !== id));
+    markExpectedSessionExit(id);
+    try {
+      await window.electronAPI.session.remove(id);
+      termManager.remove(id);
+      layoutDispatch({ type: 'REMOVE_SESSION', sessionId: id });
+      setSessions(prev => prev.filter(s => s.id !== id));
+    } catch (err) {
+      expectedSessionExitIds.current.delete(id);
+      notifyError('Failed to remove session', err);
+      return;
+    }
 
     if (removeWorktree && session?.worktreeOf) {
       try {
@@ -503,12 +558,16 @@ export function App() {
         }
       }
     }
-  }, [sessions, termManager, layoutDispatch, confirmDialog, notify]);
+  }, [sessions, termManager, layoutDispatch, confirmDialog, notify, notifyError, markExpectedSessionExit]);
 
   const handleToggleHelm = useCallback(async (id: string, enabled: boolean) => {
-    await window.electronAPI.session.setHelmEnabled(id, enabled);
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, helmEnabled: enabled } : s));
-  }, []);
+    try {
+      await window.electronAPI.session.setHelmEnabled(id, enabled);
+      setSessions(prev => prev.map(s => s.id === id ? { ...s, helmEnabled: enabled } : s));
+    } catch (err) {
+      notifyError('Failed to update Helm setting', err);
+    }
+  }, [notifyError]);
 
   const handleDuplicate = useCallback(async (id: string) => {
     const source = sessions.find(s => s.id === id);
@@ -642,8 +701,12 @@ export function App() {
       ...prev.filter(p => p.environmentId !== environmentId),
       ...updated,
     ]);
-    await window.electronAPI.repoGroup.setPrefs(environmentId, updated);
-  }, [repoGroupPrefs]);
+    try {
+      await window.electronAPI.repoGroup.setPrefs(environmentId, updated);
+    } catch (err) {
+      notifyError('Failed to update repo group', err);
+    }
+  }, [repoGroupPrefs, notifyError]);
 
   /**
    * Sort sessions inside a single repo group by the user-saved order. New
@@ -692,8 +755,12 @@ export function App() {
       ...prev.filter(p => !(p.environmentId === envId && p.workingDir === workingDir)),
       { environmentId: envId, workingDir, orderedIds: without },
     ]);
-    await window.electronAPI.sessionOrder.setPref(envId, workingDir, without);
-  }, [sessions, environments, sortSessionsInGroup]);
+    try {
+      await window.electronAPI.sessionOrder.setPref(envId, workingDir, without);
+    } catch (err) {
+      notifyError('Failed to reorder sessions', err);
+    }
+  }, [sessions, environments, sortSessionsInGroup, notifyError]);
 
   const handleDropRepoGroup = useCallback(async (
     environmentId: string,
@@ -733,8 +800,12 @@ export function App() {
       ...prev.filter(p => p.environmentId !== environmentId),
       ...updated,
     ]);
-    await window.electronAPI.repoGroup.setPrefs(environmentId, updated);
-  }, [sessions, environments, repoGroupPrefs, sortRepoGroups]);
+    try {
+      await window.electronAPI.repoGroup.setPrefs(environmentId, updated);
+    } catch (err) {
+      notifyError('Failed to reorder repo groups', err);
+    }
+  }, [sessions, environments, repoGroupPrefs, sortRepoGroups, notifyError]);
 
   // Drag handler for pane header drags
   const handlePaneDragStateChange = useCallback((dragging: boolean, sourcePaneId?: string) => {
@@ -815,6 +886,11 @@ export function App() {
   const handleCheckForUpdates = useCallback(async () => {
     try {
       const result = await window.electronAPI.update.check();
+      if (result.error) {
+        notify({ type: 'error', title: 'Update check failed', message: result.error });
+        return;
+      }
+
       if (result.updateAvailable) {
         notify({
           type: 'info',
@@ -828,10 +904,10 @@ export function App() {
       } else {
         notify({ type: 'success', title: 'You\'re up to date', message: `Tether v${result.currentVersion} is the latest version.` });
       }
-    } catch {
-      notify({ type: 'error', title: 'Update check failed', message: 'Could not reach the update server.' });
+    } catch (err) {
+      notifyError('Update check failed', err);
     }
-  }, [notify]);
+  }, [notify, notifyError]);
 
   // Listen for background update check result from main process
   useEffect(() => {
@@ -859,12 +935,14 @@ export function App() {
         message: `Expires in ~${minutesLeft} minutes. Click the Vault pill in the sidebar or renew now.`,
         action: {
           label: 'Renew',
-          onClick: () => { window.electronAPI.vault.login().catch(() => { /* status event will reflect outcome */ }); },
+          onClick: () => {
+            window.electronAPI.vault.login().catch(notifyVaultAuthError);
+          },
         },
       });
     });
     return cleanup;
-  }, [notify]);
+  }, [notify, notifyVaultAuthError]);
 
   useEffect(() => {
     const cleanup = window.electronAPI.ssh.onHostVerifyRequest((req: HostVerifyRequest) => {
@@ -1069,7 +1147,7 @@ export function App() {
         </div>
         <GlobalUsageFooter />
         <QuotaFooter />
-        <VaultStatusPill />
+        <VaultStatusPill onAuthError={notifyVaultAuthError} />
       </aside>
       {sidebarVisible && <SidebarResizeHandle onResize={setSidebarWidth} />}
       <main
@@ -1173,12 +1251,6 @@ export function App() {
       <ConfirmDialog {...confirmDialogProps} />
     </div>
   );
-}
-
-function extractErrorMessage(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  const match = raw.match(/Error invoking remote method '[^']+':\s*(?:Error:\s*)?(.*)$/s);
-  return match ? match[1].trim() : raw;
 }
 
 function withHiddenXtermCursor(theme: ITheme): ITheme {
