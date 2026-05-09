@@ -81,6 +81,16 @@ CLI flag presets are stored as strings in arrays. Multi-token flags (e.g. `--per
 
 Env vars can hold a `vault://` reference instead of a literal value. `vault-resolver.ts` resolves these at session start using `vault-client.ts` (KV v2). Auth modes: token, OIDC. The sidebar shows a Vault status pill; expiry warnings surface before sessions launch.
 
+### Cross-platform hygiene
+
+Tether ships Windows-only today; macOS and Linux are post-1.0 (see `ROADMAP.md`). Bake in the habits now so that port isn't a rewrite.
+
+- **Paths:** compose with `path.join` / `path.resolve` — no hardcoded absolute paths in string literals (no `'C:\\Users\\...'`, no `'/home/...'`). Code that handles both `/` and `\\` separators defensively is fine — that's the goal.
+- **Standard dirs:** use `os.homedir()` (not `process.env.HOME` — undefined on Windows — or `process.env.USERPROFILE` — undefined elsewhere). Prefer Electron's `app.getPath('userData' | 'temp' | 'logs')` for app-managed locations.
+- **Path comparison:** Windows is case-insensitive, POSIX is case-sensitive. Don't `===` raw paths when behavior depends on equality — normalize via `path.normalize` and decide consciously.
+- **Shells:** invoke binaries directly with `child_process.spawn(cmd, args)`. `cmd.exe` / `powershell.exe` only behind a `process.platform === 'win32'` gate (see `local-transport.ts` and `coder-transport.ts` for the pattern). No `shell: true` for one-liners that depend on Windows shell semantics.
+- **Windows-only APIs:** registry (`winreg`, `HKLM`, `HKCU`), WMI (`wmic`), Win32 named pipes — only behind a platform gate AND with a documented POSIX equivalent (see the SSH agent fallback in `ssh-transport.ts`).
+
 ### What NOT to do
 
 - Never parse or filter ANSI output — raw bytes only
