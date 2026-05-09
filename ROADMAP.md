@@ -47,9 +47,9 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 - [done] **Reorder sessions** in a sidebar group (drag-to-reorder)
 - [planned] **Bulk actions** on a group — kill all, restart all, clear all
 - [done] **Duplicate carries the source label** — today "Duplicate" passes `''`, so `session-manager.ts` falls back to the working-dir basename and every dupe is named after the repo. Should preserve the source's label with a `(copy)` suffix (`(copy 2)` on subsequent dupes), like Finder / VS Code.
-- [planned] **Ctrl+scroll** on a terminal pane → terminal font size
-- [planned] **Ctrl+= / Ctrl+-** → whole-window zoom (UI + terminal together) via `webFrame.setZoomLevel`
-- [planned] Settings panel for default terminal font size + a reset shortcut
+- [done] **Ctrl+scroll** on a terminal pane → terminal font size
+- [done] **Ctrl+= / Ctrl+-** → whole-window zoom (UI + terminal together) via `webFrame.setZoomLevel`
+- [done] Settings panel for default terminal font size + a reset shortcut
 - [done] **Clickable URLs in the terminal** — ctrl-click (or click) to open pasted/printed links in the system browser, like VS Code's terminal. Use `@xterm/addon-web-links` and route through `shell.openExternal` so the main process owns the open.
 - [done] **GitHub repo browse** in `NewSessionDialog` — parity with ADO and Gitea (GitHub is the source of truth per project conventions)
 

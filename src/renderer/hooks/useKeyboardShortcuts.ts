@@ -8,6 +8,9 @@ interface ShortcutActions {
   onToggleSidebar: () => void;
   onStopSession: () => void;
   onOpenSettings: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onZoomReset: () => void;
 }
 
 export function useKeyboardShortcuts(actions: ShortcutActions) {
@@ -41,6 +44,27 @@ export function useKeyboardShortcuts(actions: ShortcutActions) {
       if (e.key === ',') {
         e.preventDefault();
         actions.onOpenSettings();
+        return;
+      }
+
+      // Ctrl+= / Ctrl++ — window zoom in
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        actions.onZoomIn();
+        return;
+      }
+
+      // Ctrl+- — window zoom out
+      if (e.key === '-') {
+        e.preventDefault();
+        actions.onZoomOut();
+        return;
+      }
+
+      // Ctrl+0 — reset window zoom
+      if (e.key === '0') {
+        e.preventDefault();
+        actions.onZoomReset();
         return;
       }
 

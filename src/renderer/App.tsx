@@ -67,6 +67,7 @@ export function App() {
   const [repoGroupPrefs, setRepoGroupPrefs] = useState<RepoGroupPref[]>([]);
   const [sessionOrderPrefs, setSessionOrderPrefs] = useState<SessionOrderPref[]>([]);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
+  const [defaultTerminalFontSize, setDefaultTerminalFontSize] = useState(14);
   const [editingEnv, setEditingEnv] = useState<EnvironmentInfo | null>(null);
   const [envMenuOpenId, setEnvMenuOpenId] = useState<string | null>(null);
   const envMenuRef = useRef<HTMLDivElement>(null);
@@ -140,7 +141,8 @@ export function App() {
       window.electronAPI.config.get?.('maxPanes')?.catch(() => null),
       window.electronAPI.config.get?.('hideTerminalCursor')?.catch(() => null),
       window.electronAPI.config.get?.('allowHelm')?.catch(() => null),
-    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor, helm]) => {
+      window.electronAPI.config.get?.('terminalFontSize')?.catch(() => null),
+    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor, helm, fontSize]) => {
       if (cancelled) return;
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
@@ -149,6 +151,10 @@ export function App() {
       const shouldHideCursor = hideCursor !== 'false';
       setHideTerminalCursor(shouldHideCursor);
       setAllowHelm(helm === 'true');
+      const parsedFontSize = fontSize ? parseInt(fontSize, 10) : NaN;
+      if (Number.isFinite(parsedFontSize) && parsedFontSize >= 8 && parsedFontSize <= 32) {
+        setDefaultTerminalFontSize(parsedFontSize);
+      }
     });
     return () => { cancelled = true; };
   }, [settingsOpen]);
@@ -157,6 +163,14 @@ export function App() {
   useEffect(() => {
     window.electronAPI.config.get('setupComplete').then(val => {
       if (val !== 'true') setSetupWizardOpen(true);
+    }).catch(() => {});
+  }, []);
+
+  // Restore persisted window zoom level on mount
+  useEffect(() => {
+    window.electronAPI.config.get?.('windowZoomLevel').then(val => {
+      const level = val !== null && val !== undefined ? parseFloat(val) : NaN;
+      if (Number.isFinite(level)) window.electronAPI.webFrame.setZoomLevel(level);
     }).catch(() => {});
   }, []);
 
@@ -845,12 +859,35 @@ export function App() {
     window.electronAPI.config.set('setupComplete', 'true');
   }, []);
 
+  // Window zoom: persist whatever level is set so the next launch matches.
+  const setWindowZoom = useCallback((level: number) => {
+    const clamped = Math.max(-3, Math.min(3, level));
+    window.electronAPI.webFrame.setZoomLevel(clamped);
+    window.electronAPI.config.set?.('windowZoomLevel', String(clamped));
+  }, []);
+
+  const handleSessionFontSizeChange = useCallback((sessionId: string, delta: number) => {
+    setSessions(prev => prev.map(s => {
+      if (s.id !== sessionId) return s;
+      const current = s.fontSize ?? defaultTerminalFontSize;
+      const next = Math.max(8, Math.min(32, current + delta));
+      return next === current ? s : { ...s, fontSize: next };
+    }));
+  }, [defaultTerminalFontSize]);
+
+  const handleResetSessionFontSizes = useCallback(() => {
+    setSessions(prev => prev.map(s => s.fontSize === undefined ? s : { ...s, fontSize: undefined }));
+  }, []);
+
   // Keyboard shortcuts
   const shortcutActions = useMemo(() => ({
     onNewSession: () => setSessionDialogOpen(true),
     onToggleSidebar: () => setSidebarVisible(v => !v),
     onStopSession: () => { if (activeSessionId) handleStop(activeSessionId); },
     onOpenSettings: () => setSettingsOpen(true),
+    onZoomIn: () => setWindowZoom(window.electronAPI.webFrame.getZoomLevel() + 0.5),
+    onZoomOut: () => setWindowZoom(window.electronAPI.webFrame.getZoomLevel() - 0.5),
+    onZoomReset: () => setWindowZoom(0),
     onSwitchSession: (index: number) => {
       if (!layoutState.root) return;
       const leaves = getLeaves(layoutState.root);
@@ -877,7 +914,7 @@ export function App() {
       layoutDispatch({ type: 'SET_FOCUS', paneId: prev.id });
       termManager.focusPane(prev.id);
     },
-  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutDispatch, termManager, handleStop]);
+  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom]);
 
   useKeyboardShortcuts(shortcutActions);
 
@@ -1176,6 +1213,8 @@ export function App() {
             enablePaneSplitting={enablePaneSplitting}
             currentLeafCount={currentLeafCount}
             maxPanes={effectiveMaxPanes}
+            defaultFontSize={defaultTerminalFontSize}
+            onFontSizeDelta={handleSessionFontSizeChange}
           />
         ) : (
           <div className="terminal-container">
@@ -1211,6 +1250,7 @@ export function App() {
         }}
         currentTheme={themeName}
         onThemeChange={setTheme}
+        onResetSessionFontSizes={handleResetSessionFontSizes}
       />
       <KeyboardShortcutsDialog
         isOpen={shortcutsOpen}

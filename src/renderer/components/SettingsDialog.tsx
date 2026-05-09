@@ -41,9 +41,10 @@ interface SettingsDialogProps {
   onClose: () => void;
   currentTheme: string;
   onThemeChange: (name: string) => void;
+  onResetSessionFontSizes: () => void;
 }
 
-export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }: SettingsDialogProps) {
+export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, onResetSessionFontSizes }: SettingsDialogProps) {
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [cliFlagsPerTool, setCliFlagsPerTool] = useState<Partial<Record<CliToolId, string[]>>>({});
   const [flagTool, setFlagTool] = useState<CliToolId>('claude');
@@ -60,6 +61,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
   const [usageStripEnabled, setUsageStripEnabled] = useState(true);
   const [globalUsageEnabled, setGlobalUsageEnabled] = useState(true);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
+  const [terminalFontSize, setTerminalFontSize] = useState(14);
   const [loaded, setLoaded] = useState(false);
 
   // Profile state
@@ -114,7 +116,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       window.electronAPI.config.get?.('globalUsageEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('hideTerminalCursor')?.catch(() => null),
       window.electronAPI.config.get?.('allowHelm')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, hideCursor, helm]) => {
+      window.electronAPI.config.get?.('terminalFontSize')?.catch(() => null),
+    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, hideCursor, helm, fontSize]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -129,6 +132,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
       setGlobalUsageEnabled(globalUsage !== 'false');
       setHideTerminalCursor(hideCursor !== 'false');
       setAllowHelm(helm === 'true');
+      const parsedFontSize = fontSize ? parseInt(fontSize, 10) : NaN;
+      if (Number.isFinite(parsedFontSize) && parsedFontSize >= 8 && parsedFontSize <= 32) {
+        setTerminalFontSize(parsedFontSize);
+      }
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -159,13 +166,14 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
     await window.electronAPI.config.set?.('globalUsageEnabled', globalUsageEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('hideTerminalCursor', hideTerminalCursor ? 'true' : 'false');
     await window.electronAPI.config.set?.('allowHelm', allowHelm ? 'true' : 'false');
+    await window.electronAPI.config.set?.('terminalFontSize', String(terminalFontSize));
     window.dispatchEvent(new CustomEvent('tether:settings-changed'));
     for (const toolId of FLAG_TOOLS) {
       await window.electronAPI.config.setDefaultCliFlagsForTool?.(toolId, cliFlagsPerTool[toolId] || []);
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, hideTerminalCursor, allowHelm, cliFlagsPerTool, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, hideTerminalCursor, allowHelm, terminalFontSize, cliFlagsPerTool, vaultConfig, onClose]);
 
   const handleVaultLogin = async () => {
     setVaultLoginError(null);
@@ -319,6 +327,40 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange }:
               their own input indicator, so the xterm cursor often reads as a redundant
               second cursor that bounces around during thinking animations.
               Turn this off if you use plain shells, vim, or htop in Tether.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="terminal-font-size-input">
+              Default terminal font size
+            </label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                id="terminal-font-size-input"
+                className="form-input"
+                type="number"
+                min={8}
+                max={32}
+                step={1}
+                value={terminalFontSize}
+                onChange={e => {
+                  const n = parseInt(e.target.value, 10);
+                  if (Number.isFinite(n)) setTerminalFontSize(Math.max(8, Math.min(32, n)));
+                }}
+                style={{ width: 80 }}
+              />
+              <button
+                type="button"
+                className="form-btn"
+                onClick={onResetSessionFontSizes}
+              >
+                Reset all session font sizes
+              </button>
+            </div>
+            <p className="form-hint">
+              Base size in pixels (8&ndash;32). Ctrl+wheel on a terminal pane sets a
+              per-session override that lasts for the session&rsquo;s lifetime; the reset
+              button clears all overrides so panes pick up the default again.
             </p>
           </div>
 

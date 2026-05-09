@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, clipboard } from 'electron';
+import { contextBridge, ipcRenderer, clipboard, webFrame } from 'electron';
 import { IPC } from '../shared/constants';
 import type {
   CreateSessionOptions, SessionInfo, SessionState,
@@ -170,6 +170,11 @@ const api: TetherAPI = {
 
   shell: {
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC.SHELL_OPEN_EXTERNAL, url),
+  },
+
+  webFrame: {
+    getZoomLevel: (): number => webFrame.getZoomLevel(),
+    setZoomLevel: (level: number): void => { webFrame.setZoomLevel(level); },
   },
 
   vault: {

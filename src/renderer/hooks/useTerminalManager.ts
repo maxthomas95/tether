@@ -32,6 +32,7 @@ export interface TerminalManagerAPI {
   detachPane: (paneId: PaneId) => void;
   fitPane: (paneId: PaneId) => void;
   focusPane: (paneId: PaneId) => void;
+  setSessionFontSize: (sessionId: string, fontSize: number) => void;
   remove: (sessionId: string) => void;
 }
 
@@ -232,6 +233,26 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
     }
   }, []);
 
+  // Apply a font size to all terminals (panes + background) for a session,
+  // then refit visible panes so the dimensions stay accurate.
+  const setSessionFontSize = useCallback((sessionId: string, fontSize: number) => {
+    const bg = backgroundTerminals.current.get(sessionId);
+    if (bg && bg.terminal.options.fontSize !== fontSize) {
+      bg.terminal.options.fontSize = fontSize;
+    }
+    for (const entry of panes.current.values()) {
+      if (entry.sessionId !== sessionId) continue;
+      if (entry.terminal.options.fontSize === fontSize) continue;
+      entry.terminal.options.fontSize = fontSize;
+      try {
+        entry.fitAddon.fit();
+        window.electronAPI.session.resize(sessionId, entry.terminal.cols, entry.terminal.rows);
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
   // Focus a specific pane's terminal
   const focusPane = useCallback((paneId: PaneId) => {
     const entry = panes.current.get(paneId);
@@ -283,6 +304,7 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
     detachPane,
     fitPane,
     focusPane,
+    setSessionFontSize,
     remove,
-  }), [getOrCreate, writeData, attachToPane, detachPane, fitPane, focusPane, remove]);
+  }), [getOrCreate, writeData, attachToPane, detachPane, fitPane, focusPane, setSessionFontSize, remove]);
 }

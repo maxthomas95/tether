@@ -162,6 +162,11 @@ export interface SessionInfo {
    * so users can see at a glance which sessions were spawned vs. user-created.
    */
   parentSessionId?: string;
+  /**
+   * Per-session terminal font-size override (Ctrl+wheel on the pane). Renderer-only:
+   * not persisted in the session row, falls back to the global default at next launch.
+   */
+  fontSize?: number;
 }
 
 export interface CreateSessionOptions {
@@ -460,6 +465,10 @@ export interface TetherAPI {
   };
   shell: {
     openExternal(url: string): Promise<void>;
+  };
+  webFrame: {
+    getZoomLevel(): number;
+    setZoomLevel(level: number): void;
   };
   vault: {
     getConfig(): Promise<VaultConfig>;
