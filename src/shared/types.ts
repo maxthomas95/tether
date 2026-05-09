@@ -3,7 +3,7 @@ import type { CliToolId } from './cli-tools';
 export type { CliToolId };
 export type SessionState = 'starting' | 'running' | 'waiting' | 'idle' | 'stopped' | 'dead';
 export type EnvironmentType = 'local' | 'ssh' | 'coder';
-export type GitProviderType = 'gitea' | 'ado';
+export type GitProviderType = 'gitea' | 'ado' | 'github';
 
 export interface VaultConfig {
   enabled: boolean;
