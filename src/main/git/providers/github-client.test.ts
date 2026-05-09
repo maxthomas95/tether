@@ -33,15 +33,15 @@ function makeRepo(fullName: string, overrides: Partial<Record<string, unknown>> 
 
 describe('GitHubClient', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
-  const originalFetch = global.fetch;
+  const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     fetchMock = vi.fn();
-    global.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = fetchMock as typeof fetch;
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
+    globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
 
@@ -122,7 +122,7 @@ describe('GitHubClient', () => {
       const repos = await client.listRepos('tether');
 
       expect(repos).toHaveLength(2);
-      expect(repos.map(r => r.fullName).sort()).toEqual(['alice/tether', 'bob/tether-fork']);
+      expect(repos.map(r => r.fullName).sort((a, b) => a.localeCompare(b))).toEqual(['alice/tether', 'bob/tether-fork']);
     });
 
     it('matches case-insensitively', async () => {

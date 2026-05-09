@@ -1,11 +1,13 @@
 import type { GitRepoInfo } from '../../../shared/types';
 
 export class GitHubClient {
-  private baseUrl: string;
-  private token: string;
+  private readonly baseUrl: string;
+  private readonly token: string;
 
   constructor(baseUrl: string, token: string) {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
+    let normalized = baseUrl;
+    while (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
+    this.baseUrl = normalized;
     this.token = token;
   }
 
