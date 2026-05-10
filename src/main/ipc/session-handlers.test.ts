@@ -117,16 +117,16 @@ describe('session-handlers', () => {
       expect(result).toEqual({ id: 's1', label: 'session', workingDir: '/repo' });
     });
 
-    it('tracks Claude usage when claudeSessionId is set', async () => {
-      sessionManagerMock.createSession.mockResolvedValue(fakeSession({ claudeSessionId: 'claude-uuid' }));
-      await harness.invoke(IPC.SESSION_CREATE, { workingDir: '/repo' });
-      expect(usageServiceMock.trackSession).toHaveBeenCalledWith('claude-uuid', '/repo', 'claude');
+    it('tracks Claude usage when claudeSessionId is set, with environmentId', async () => {
+      sessionManagerMock.createSession.mockResolvedValue(fakeSession({ claudeSessionId: 'claude-uuid', environmentId: 'env-1' }));
+      await harness.invoke(IPC.SESSION_CREATE, { workingDir: '/repo', environmentId: 'env-1' });
+      expect(usageServiceMock.trackSession).toHaveBeenCalledWith('claude-uuid', '/repo', 'claude', 'env-1');
     });
 
     it('tracks OpenCode usage when cliTool=opencode + toolSessionId set', async () => {
       sessionManagerMock.createSession.mockResolvedValue(fakeSession({ cliTool: 'opencode', toolSessionId: 'oc-id' }));
       await harness.invoke(IPC.SESSION_CREATE, { workingDir: '/repo', cliTool: 'opencode' });
-      expect(usageServiceMock.trackSession).toHaveBeenCalledWith('oc-id', '/repo', 'opencode');
+      expect(usageServiceMock.trackSession).toHaveBeenCalledWith('oc-id', '/repo', 'opencode', undefined);
     });
   });
 
