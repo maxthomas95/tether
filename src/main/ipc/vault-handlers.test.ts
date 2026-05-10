@@ -1,23 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createHarness, makeElectronMockBase, type IpcRegistry } from './ipc-test-harness.test-helper';
 
-const registry = vi.hoisted(() => ({
-  handlers: new Map<string, (event: unknown, ...args: unknown[]) => unknown>(),
-  listeners: new Map<string, (event: unknown, ...args: unknown[]) => void>(),
-}));
-
+const registry = vi.hoisted<IpcRegistry>(() => ({ handlers: new Map(), listeners: new Map() }));
 const safeStorageMock = vi.hoisted(() => ({
   isEncryptionAvailable: vi.fn(() => false),
   encryptString: vi.fn(),
   decryptString: vi.fn(),
 }));
-
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: (ch: string, fn: (event: unknown, ...args: unknown[]) => unknown) => { registry.handlers.set(ch, fn); },
-    on: (ch: string, fn: (event: unknown, ...args: unknown[]) => void) => { registry.listeners.set(ch, fn); },
-  },
-  safeStorage: safeStorageMock,
-}));
+vi.mock('electron', () => ({ ...makeElectronMockBase(registry), safeStorage: safeStorageMock }));
 
 const vaultAuthMock = vi.hoisted(() => ({
   getVaultConfig: vi.fn(),
@@ -35,9 +25,19 @@ vi.mock('../vault/vault-auth', () => vaultAuthMock);
 const vaultResolverMock = vi.hoisted(() => ({
   isVaultRef: vi.fn((v: unknown) => typeof v === 'string' && v.startsWith('vault://')),
   resolveRef: vi.fn(),
+  // Mirrors the real parseRef logic without a regex (Sonar S5852 flags `.+#.+`
+  // alternations as super-linear backtracking even when input is bounded).
   parseRef: vi.fn((ref: string) => {
-    const m = /^vault:\/\/([^/]+)\/(.+)#(.+)$/.exec(ref);
-    return m ? { mount: m[1], path: m[2], key: m[3] } : null;
+    if (!ref.startsWith('vault://')) return null;
+    const rest = ref.slice('vault://'.length);
+    const hashIdx = rest.indexOf('#');
+    if (hashIdx <= 0) return null;
+    const pathPart = rest.slice(0, hashIdx);
+    const key = rest.slice(hashIdx + 1);
+    if (!key) return null;
+    const slashIdx = pathPart.indexOf('/');
+    if (slashIdx <= 0 || slashIdx === pathPart.length - 1) return null;
+    return { mount: pathPart.slice(0, slashIdx), path: pathPart.slice(slashIdx + 1), key };
   }),
   buildRef: vi.fn((mount: string, path: string, key: string) => `vault://${mount}/${path}#${key}`),
 }));
@@ -56,7 +56,6 @@ vi.mock('../db/database', () => ({
 
 import { IPC } from '../../shared/constants';
 import { registerVaultHandlers } from './vault-handlers';
-import { createHarness } from './ipc-test-harness.test-helper';
 
 const harness = createHarness(registry);
 

@@ -1,21 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createHarness, makeElectronMockBase, type IpcRegistry } from './ipc-test-harness.test-helper';
 
-const registry = vi.hoisted(() => ({
-  handlers: new Map<string, (event: unknown, ...args: unknown[]) => unknown>(),
-  listeners: new Map<string, (event: unknown, ...args: unknown[]) => void>(),
-}));
-
+const registry = vi.hoisted<IpcRegistry>(() => ({ handlers: new Map(), listeners: new Map() }));
 const shellMock = vi.hoisted(() => ({ openExternal: vi.fn() }));
 const dialogMock = vi.hoisted(() => ({ showSaveDialog: vi.fn() }));
-
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: (ch: string, fn: (event: unknown, ...args: unknown[]) => unknown) => { registry.handlers.set(ch, fn); },
-    on: (ch: string, fn: (event: unknown, ...args: unknown[]) => void) => { registry.listeners.set(ch, fn); },
-  },
-  dialog: dialogMock,
-  shell: shellMock,
-}));
+vi.mock('electron', () => ({ ...makeElectronMockBase(registry), dialog: dialogMock, shell: shellMock }));
 
 const updateCheckerMock = vi.hoisted(() => ({ checkForUpdates: vi.fn() }));
 vi.mock('../update/update-checker', () => updateCheckerMock);
@@ -28,7 +17,6 @@ vi.mock('../diagnostics/diagnostics-service', () => diagnosticsMock);
 
 import { IPC } from '../../shared/constants';
 import { registerSystemHandlers } from './system-handlers';
-import { createHarness } from './ipc-test-harness.test-helper';
 
 const harness = createHarness(registry);
 
@@ -58,6 +46,8 @@ describe('system-handlers', () => {
     });
 
     it('refuses non-https schemes', async () => {
+      // NOSONAR(typescript:S5332): http URL is the test fixture for the
+      // refuse-non-https branch — the whole point is asserting we reject it.
       await harness.invoke(IPC.UPDATE_OPEN_RELEASE_PAGE, 'http://github.com/maxthomas95/tether/releases');
       expect(shellMock.openExternal).not.toHaveBeenCalled();
     });

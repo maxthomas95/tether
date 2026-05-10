@@ -31,6 +31,22 @@ export interface IpcRegistry {
   listeners: Map<string, (event: unknown, ...args: unknown[]) => void>;
 }
 
+/**
+ * The base `electron` module shape needed by every IPC handler test —
+ * `ipcMain.handle` / `ipcMain.on` capture into the supplied registry. Test
+ * files spread this into their `vi.mock('electron', ...)` factory and add any
+ * extra electron exports their SUT needs (`dialog`, `shell`, `safeStorage`,
+ * `app`, etc.).
+ */
+export function makeElectronMockBase(registry: IpcRegistry): { ipcMain: { handle: (ch: string, fn: (event: unknown, ...args: unknown[]) => unknown) => void; on: (ch: string, fn: (event: unknown, ...args: unknown[]) => void) => void } } {
+  return {
+    ipcMain: {
+      handle: (ch, fn) => { registry.handlers.set(ch, fn); },
+      on: (ch, fn) => { registry.listeners.set(ch, fn); },
+    },
+  };
+}
+
 export interface IpcHarness {
   ctx: HandlerContext;
   send: ReturnType<typeof vi.fn>;

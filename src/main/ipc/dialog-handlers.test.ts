@@ -2,25 +2,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHarness, makeElectronMockBase, type IpcRegistry } from './ipc-test-harness.test-helper';
 
-const registry = vi.hoisted(() => ({
-  handlers: new Map<string, (event: unknown, ...args: unknown[]) => unknown>(),
-  listeners: new Map<string, (event: unknown, ...args: unknown[]) => void>(),
-}));
-
+const registry = vi.hoisted<IpcRegistry>(() => ({ handlers: new Map(), listeners: new Map() }));
 const dialogMock = vi.hoisted(() => ({ showOpenDialog: vi.fn() }));
-
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: (ch: string, fn: (event: unknown, ...args: unknown[]) => unknown) => { registry.handlers.set(ch, fn); },
-    on: (ch: string, fn: (event: unknown, ...args: unknown[]) => void) => { registry.listeners.set(ch, fn); },
-  },
-  dialog: dialogMock,
-}));
+vi.mock('electron', () => ({ ...makeElectronMockBase(registry), dialog: dialogMock }));
 
 import { IPC } from '../../shared/constants';
 import { registerDialogHandlers } from './dialog-handlers';
-import { createHarness } from './ipc-test-harness.test-helper';
 
 const harness = createHarness(registry);
 

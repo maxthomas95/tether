@@ -1,15 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createHarness, makeElectronMockBase, type IpcRegistry } from './ipc-test-harness.test-helper';
 
-const registry = vi.hoisted(() => ({
-  handlers: new Map<string, (event: unknown, ...args: unknown[]) => unknown>(),
-  listeners: new Map<string, (event: unknown, ...args: unknown[]) => void>(),
-}));
-
+const registry = vi.hoisted<IpcRegistry>(() => ({ handlers: new Map(), listeners: new Map() }));
 vi.mock('electron', () => ({
-  ipcMain: {
-    handle: (ch: string, fn: (event: unknown, ...args: unknown[]) => unknown) => { registry.handlers.set(ch, fn); },
-    on: (ch: string, fn: (event: unknown, ...args: unknown[]) => void) => { registry.listeners.set(ch, fn); },
-  },
+  ...makeElectronMockBase(registry),
   // safeStorage is referenced via helpers.ts (encrypt/decrypt). Mark unavailable
   // so password handling falls through cleanly.
   safeStorage: { isEncryptionAvailable: () => false, encryptString: vi.fn(), decryptString: vi.fn() },
@@ -28,7 +22,6 @@ vi.mock('../session/session-manager', () => ({ sessionManager: sessionManagerMoc
 
 import { IPC } from '../../shared/constants';
 import { registerEnvHandlers } from './env-handlers';
-import { createHarness } from './ipc-test-harness.test-helper';
 
 const harness = createHarness(registry);
 

@@ -1,16 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createHarness, makeElectronMockBase, type IpcRegistry } from './ipc-test-harness.test-helper';
 
-const registry = vi.hoisted(() => ({
-  handlers: new Map<string, (event: unknown, ...args: unknown[]) => unknown>(),
-  listeners: new Map<string, (event: unknown, ...args: unknown[]) => void>(),
-}));
-
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: (ch: string, fn: (event: unknown, ...args: unknown[]) => unknown) => { registry.handlers.set(ch, fn); },
-    on: (ch: string, fn: (event: unknown, ...args: unknown[]) => void) => { registry.listeners.set(ch, fn); },
-  },
-}));
+const registry = vi.hoisted<IpcRegistry>(() => ({ handlers: new Map(), listeners: new Map() }));
+vi.mock('electron', () => makeElectronMockBase(registry));
 
 const verifierMocks = vi.hoisted(() => ({
   setHostVerifyDispatcher: vi.fn(),
@@ -26,7 +18,6 @@ vi.mock('../db/known-hosts-repo', () => knownHostsMocks);
 
 import { IPC } from '../../shared/constants';
 import { registerSshHandlers } from './ssh-handlers';
-import { createHarness } from './ipc-test-harness.test-helper';
 
 const harness = createHarness(registry);
 
