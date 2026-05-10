@@ -4,6 +4,7 @@ import {
   addPane,
   addPaneConstrained,
   buildConstrainedLayout,
+  compactPlaceholders,
   getLeafCount,
   getLeaves,
   isConstrainedLayout,
@@ -65,6 +66,53 @@ describe('constrained layout tree helpers', () => {
     expect(isConstrainedLayout(normalized, 2)).toBe(true);
     expect(getLeafCount(normalized)).toBe(2);
     expect(getLeaves(normalized).map(l => l.sessionId)).toContain('s3');
+  });
+});
+
+describe('compactPlaceholders', () => {
+  it('collapses a 4-grid with one session and three placeholders down to a single fullscreen pane in one shot', () => {
+    const root: LayoutNode = buildConstrainedLayout(['s1', null, null, null])!;
+    expect(getLeafCount(root)).toBe(4);
+    const placeholder = getLeaves(root).find(l => l.sessionId === null)!;
+
+    const compacted = compactPlaceholders(root, placeholder.id)!;
+
+    // One click on any placeholder X drops every empty slot, not just the targeted one.
+    expect(compacted.type).toBe('leaf');
+    expect(getLeafCount(compacted)).toBe(1);
+    expect((compacted as { sessionId: string | null }).sessionId).toBe('s1');
+  });
+
+  it('collapses a 4-grid with two sessions to a 2-pane split when a placeholder is removed', () => {
+    const root: LayoutNode = buildConstrainedLayout(['s1', 's2', null, null])!;
+    const placeholder = getLeaves(root).find(l => l.sessionId === null)!;
+
+    const compacted = compactPlaceholders(root, placeholder.id)!;
+
+    expect(isConstrainedLayout(compacted, 2)).toBe(true);
+    expect(getLeafCount(compacted)).toBe(2);
+    expect(getLeaves(compacted).map(l => l.sessionId).sort()).toEqual(['s1', 's2']);
+  });
+
+  it('keeps the 2x2 shape when removing one of two placeholders from a 3-session grid', () => {
+    const root: LayoutNode = buildConstrainedLayout(['s1', 's2', 's3', null])!;
+    const placeholder = getLeaves(root).find(l => l.sessionId === null)!;
+
+    const compacted = compactPlaceholders(root, placeholder.id)!;
+
+    // Three real sessions can't tile cleanly without a placeholder, so 2x2 stays.
+    expect(getLeafCount(compacted)).toBe(4);
+    expect(getLeaves(compacted).filter(l => l.sessionId !== null).map(l => l.sessionId).sort())
+      .toEqual(['s1', 's2', 's3']);
+  });
+
+  it('returns the tree unchanged when the target is a session-bearing leaf', () => {
+    const root: LayoutNode = buildConstrainedLayout(['s1', 's2', null, null])!;
+    const sessionLeaf = getLeaves(root).find(l => l.sessionId === 's1')!;
+
+    const result = compactPlaceholders(root, sessionLeaf.id);
+
+    expect(result).toBe(root);
   });
 });
 

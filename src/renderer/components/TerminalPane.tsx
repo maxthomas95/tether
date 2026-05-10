@@ -121,8 +121,12 @@ export function TerminalPane({
 
   const handleClose = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    layoutDispatch({ type: 'REMOVE_PANE', paneId });
-  }, [paneId, layoutDispatch]);
+    if (isPlaceholder) {
+      layoutDispatch({ type: 'COMPACT_PLACEHOLDER', paneId });
+    } else {
+      layoutDispatch({ type: 'REMOVE_PANE', paneId });
+    }
+  }, [paneId, layoutDispatch, isPlaceholder]);
 
   const handleMaximize = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -169,7 +173,7 @@ export function TerminalPane({
         <button
           className="terminal-pane-header-btn"
           onClick={handleClose}
-          title="Close pane"
+          title={isPlaceholder ? 'Remove slot' : 'Close pane'}
         >
           {'\u2715'}
         </button>

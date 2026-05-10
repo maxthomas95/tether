@@ -12,12 +12,14 @@ import {
   isConstrainedLayout,
   swapLeafSessions,
   clampMaxPanes,
+  compactPlaceholders,
 } from '../lib/layout-tree';
 
 export type LayoutAction =
   | { type: 'SET_ROOT'; root: LayoutNode | null }
   | { type: 'ADD_PANE'; targetPaneId: string; sessionId: string; zone: DropZone }
   | { type: 'REMOVE_PANE'; paneId: string }
+  | { type: 'COMPACT_PLACEHOLDER'; paneId: string }
   | { type: 'REPLACE_SESSION'; paneId: string; sessionId: string }
   | { type: 'UPDATE_RATIO'; splitId: string; ratio: number }
   | { type: 'SET_FOCUS'; paneId: string | null }
@@ -63,6 +65,17 @@ function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
         state.focusedPaneId === action.paneId ? null : state.focusedPaneId,
       );
       const focused = pickFocusPane(state.root, newRoot, state.focusedPaneId === action.paneId ? null : state.focusedPaneId);
+      const maximized = newRoot && state.maximizedPaneId && findLeaf(newRoot, state.maximizedPaneId)
+        ? state.maximizedPaneId
+        : null;
+      return { ...state, root: newRoot, focusedPaneId: focused, maximizedPaneId: maximized };
+    }
+
+    case 'COMPACT_PLACEHOLDER': {
+      const newRoot = compactPlaceholders(state.root, action.paneId);
+      if (newRoot === state.root) return state;
+      const previousFocus = state.focusedPaneId === action.paneId ? null : state.focusedPaneId;
+      const focused = pickFocusPane(state.root, newRoot, previousFocus);
       const maximized = newRoot && state.maximizedPaneId && findLeaf(newRoot, state.maximizedPaneId)
         ? state.maximizedPaneId
         : null;
