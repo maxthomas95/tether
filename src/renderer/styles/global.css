@@ -1839,53 +1839,14 @@ body.tether-hide-cursor .xterm-cursor {
   background: color-mix(in srgb, var(--bg-primary) 35%, transparent);
 }
 
-.drop-preview-grid {
+.drop-preview-highlight {
   position: absolute;
-  inset: 10px;
-  display: grid;
-  gap: 6px;
   pointer-events: none;
-}
-
-.drop-preview-grid--single {
-  grid-template-columns: 1fr;
-  grid-template-rows: 1fr;
-}
-
-.drop-preview-grid--2h {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: 1fr;
-}
-
-.drop-preview-grid--2v {
-  grid-template-columns: 1fr;
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-}
-
-.drop-preview-grid--4 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-}
-
-.drop-preview-cell {
-  min-width: 0;
-  min-height: 0;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--bg-header) 50%, transparent);
-}
-
-.drop-preview-cell--existing {
-  border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
-}
-
-.drop-preview-cell--target {
   border: 2px solid var(--accent);
   background: color-mix(in srgb, var(--accent) 22%, transparent);
-}
-
-.drop-preview-cell--placeholder {
-  border: 1px dotted color-mix(in srgb, var(--text-muted) 75%, transparent);
-  background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+  border-radius: 4px;
+  transition: top 80ms ease, left 80ms ease, right 80ms ease, bottom 80ms ease,
+    width 80ms ease, height 80ms ease;
 }
 
 .drop-preview-blocked {
