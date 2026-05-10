@@ -91,7 +91,7 @@ describe('system-handlers', () => {
     });
 
     it('refuses non-string input', async () => {
-      await harness.invoke(IPC.SHELL_OPEN_EXTERNAL, 42 as unknown as string);
+      await harness.invoke(IPC.SHELL_OPEN_EXTERNAL, 42);
       expect(shellMock.openExternal).not.toHaveBeenCalled();
     });
 
@@ -116,11 +116,12 @@ describe('system-handlers', () => {
     });
 
     it('confirmed save dialog forwards to exportDiagnostics', async () => {
-      dialogMock.showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/tmp/out.zip' });
-      diagnosticsMock.exportDiagnostics.mockResolvedValue({ ok: true, path: '/tmp/out.zip', bytes: 100, files: [] });
+      const fakePath = 'fake-out.zip';
+      dialogMock.showSaveDialog.mockResolvedValue({ canceled: false, filePath: fakePath });
+      diagnosticsMock.exportDiagnostics.mockResolvedValue({ ok: true, path: fakePath, bytes: 100, files: [] });
       const result = await harness.invoke(IPC.DIAGNOSTICS_EXPORT);
-      expect(diagnosticsMock.exportDiagnostics).toHaveBeenCalledWith('/tmp/out.zip');
-      expect(result).toEqual({ ok: true, path: '/tmp/out.zip', bytes: 100, files: [] });
+      expect(diagnosticsMock.exportDiagnostics).toHaveBeenCalledWith(fakePath);
+      expect(result).toEqual({ ok: true, path: fakePath, bytes: 100, files: [] });
     });
   });
 });

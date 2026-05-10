@@ -207,7 +207,7 @@ describe('vault-handlers', () => {
       dbState.defaultEnvVars = { OPENAI_API_KEY: 'sk-real', PLAIN: 'v', VAULTED: 'vault://secret/k#v' };
 
       const result = await harness.invoke<Array<{ source: string; key?: string }>>(IPC.VAULT_LIST_PLAINTEXT);
-      const sources = result.map(r => `${r.source}:${r.key || ''}`).sort();
+      const sources = result.map(r => `${r.source}:${r.key || ''}`).sort((a, b) => a.localeCompare(b));
       // Only plaintext sensitive things should appear; vault refs should not
       expect(sources).toContain('sshPassword:');
       expect(sources).toContain('gitProvider:');

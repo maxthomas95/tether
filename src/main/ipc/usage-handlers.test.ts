@@ -103,27 +103,30 @@ describe('usage-handlers', () => {
       expect(writeFileSyncMock).not.toHaveBeenCalled();
     });
 
+    const fakeCsv = 'fake-usage.csv';
+    const fakeJson = 'fake-usage.json';
+
     it('CSV export writes the CSV body and returns ok:true with sessionCount', async () => {
-      dialogMock.showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/tmp/usage.csv' });
+      dialogMock.showSaveDialog.mockResolvedValue({ canceled: false, filePath: fakeCsv });
       usageServiceMock.getAll.mockReturnValue({});
       usageServiceMock.getEnrichedSessions.mockReturnValue([{ id: 's1' }, { id: 's2' }]);
       const result = await harness.invoke<{ ok: boolean; filePath?: string; sessionCount?: number }>(IPC.USAGE_EXPORT, 'csv');
       expect(exporterMock.serializeUsageCsv).toHaveBeenCalled();
-      expect(writeFileSyncMock).toHaveBeenCalledWith('/tmp/usage.csv', 'csv-output', 'utf8');
-      expect(result).toEqual({ ok: true, filePath: '/tmp/usage.csv', sessionCount: 2 });
+      expect(writeFileSyncMock).toHaveBeenCalledWith(fakeCsv, 'csv-output', 'utf8');
+      expect(result).toEqual({ ok: true, filePath: fakeCsv, sessionCount: 2 });
     });
 
     it('JSON export uses serializeUsageJson with app version', async () => {
-      dialogMock.showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/tmp/usage.json' });
+      dialogMock.showSaveDialog.mockResolvedValue({ canceled: false, filePath: fakeJson });
       usageServiceMock.getAll.mockReturnValue({});
       usageServiceMock.getEnrichedSessions.mockReturnValue([]);
       await harness.invoke(IPC.USAGE_EXPORT, 'json');
       expect(exporterMock.serializeUsageJson).toHaveBeenCalledWith({}, [], '0.5.0');
-      expect(writeFileSyncMock).toHaveBeenCalledWith('/tmp/usage.json', '{"json":true}', 'utf8');
+      expect(writeFileSyncMock).toHaveBeenCalledWith(fakeJson, '{"json":true}', 'utf8');
     });
 
     it('returns ok:false with error message when write fails', async () => {
-      dialogMock.showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/tmp/usage.csv' });
+      dialogMock.showSaveDialog.mockResolvedValue({ canceled: false, filePath: fakeCsv });
       usageServiceMock.getAll.mockReturnValue({});
       usageServiceMock.getEnrichedSessions.mockReturnValue([]);
       writeFileSyncMock.mockImplementation(() => { throw new Error('disk full'); });
@@ -132,10 +135,10 @@ describe('usage-handlers', () => {
     });
 
     it('coerces unknown formats to csv', async () => {
-      dialogMock.showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/tmp/x.csv' });
+      dialogMock.showSaveDialog.mockResolvedValue({ canceled: false, filePath: fakeCsv });
       usageServiceMock.getAll.mockReturnValue({});
       usageServiceMock.getEnrichedSessions.mockReturnValue([]);
-      await harness.invoke(IPC.USAGE_EXPORT, 'unknown' as unknown as 'csv');
+      await harness.invoke(IPC.USAGE_EXPORT, 'unknown');
       expect(exporterMock.serializeUsageCsv).toHaveBeenCalled();
       expect(exporterMock.serializeUsageJson).not.toHaveBeenCalled();
     });

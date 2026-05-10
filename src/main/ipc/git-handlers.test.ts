@@ -54,13 +54,29 @@ const githubInstance = vi.hoisted(() => ({
 }));
 
 vi.mock('../git/providers/gitea-client', () => ({
-  GiteaClient: class { constructor(...args: unknown[]) { giteaCtor(...args); return giteaInstance as unknown as object; } },
+  GiteaClient: class {
+    testConnection = giteaInstance.testConnection;
+    listRepos = giteaInstance.listRepos;
+    createRepo = giteaInstance.createRepo;
+    constructor(...args: unknown[]) { giteaCtor(...args); }
+  },
 }));
 vi.mock('../git/providers/ado-client', () => ({
-  AdoClient: class { constructor(...args: unknown[]) { adoCtor(...args); return adoInstance as unknown as object; } },
+  AdoClient: class {
+    testConnection = adoInstance.testConnection;
+    listRepos = adoInstance.listRepos;
+    listProjects = adoInstance.listProjects;
+    createRepo = adoInstance.createRepo;
+    constructor(...args: unknown[]) { adoCtor(...args); }
+  },
 }));
 vi.mock('../git/providers/github-client', () => ({
-  GitHubClient: class { constructor(...args: unknown[]) { githubCtor(...args); return githubInstance as unknown as object; } },
+  GitHubClient: class {
+    testConnection = githubInstance.testConnection;
+    listRepos = githubInstance.listRepos;
+    createRepo = githubInstance.createRepo;
+    constructor(...args: unknown[]) { githubCtor(...args); }
+  },
 }));
 
 const vaultResolverMocks = vi.hoisted(() => ({
