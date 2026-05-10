@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
+import type { CSSProperties } from 'react';
 import type { DropZone } from '../../shared/layout-types';
 import type { LayoutAction } from '../hooks/useLayoutState';
 
@@ -9,13 +10,6 @@ interface DropZoneOverlayProps {
   maxPanes: number;
   isTargetPlaceholder?: boolean;
   isPaneDrag?: boolean;
-}
-
-type CellState = 'existing' | 'target' | 'placeholder';
-
-interface PreviewCell {
-  key: string;
-  state: CellState;
 }
 
 const QUADRANT_ZONES: DropZone[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
@@ -33,7 +27,7 @@ export function DropZoneOverlay({
   const isBlocked = currentLeafCount >= maxPanes && !isTargetPlaceholder && !isPaneDrag;
 
   const getZoneFromPosition = useCallback((clientX: number, clientY: number): DropZone => {
-    if (isTargetPlaceholder && currentLeafCount >= maxPanes) return 'center';
+    if (isTargetPlaceholder) return 'center';
 
     const el = overlayRef.current;
     if (!el) return 'right';
@@ -97,8 +91,6 @@ export function DropZoneOverlay({
     setActiveZone(null);
   }, [activeZone, isBlocked, isTargetPlaceholder, layoutDispatch, paneId]);
 
-  const preview = getPreview(activeZone, currentLeafCount, maxPanes, isTargetPlaceholder);
-
   return (
     <div
       ref={overlayRef}
@@ -109,77 +101,37 @@ export function DropZoneOverlay({
     >
       {isBlocked ? (
         <div className="drop-preview-blocked">Maximum panes reached</div>
-      ) : (
-        <div className={`drop-preview-grid ${preview.modifier}`}>
-          {preview.cells.map(cell => (
-            <div
-              key={cell.key}
-              className={`drop-preview-cell drop-preview-cell--${cell.state}`}
-            />
-          ))}
-        </div>
-      )}
+      ) : activeZone ? (
+        <div
+          className="drop-preview-highlight"
+          style={getHighlightStyle(activeZone)}
+        />
+      ) : null}
     </div>
   );
 }
 
-function getPreview(
-  activeZone: DropZone | null,
-  currentLeafCount: number,
-  maxPanes: number,
-  isTargetPlaceholder: boolean,
-): { modifier: string; cells: PreviewCell[] } {
-  if (isTargetPlaceholder && currentLeafCount >= maxPanes) {
-    return {
-      modifier: 'drop-preview-grid--single',
-      cells: [{ key: 'target', state: 'target' }],
-    };
+function getHighlightStyle(zone: DropZone): CSSProperties {
+  if (zone === 'center') {
+    return { inset: 0 };
   }
 
-  if (currentLeafCount === 2 && maxPanes >= 4) {
-    const target = isQuadrantZone(activeZone) ? activeZone : 'bottom-left';
-    return {
-      modifier: 'drop-preview-grid--4',
-      cells: buildGridCells(QUADRANT_ZONES, target, Math.min(2, currentLeafCount)),
-    };
+  if (QUADRANT_ZONES.includes(zone)) {
+    const top = zone.startsWith('top') ? 0 : '50%';
+    const left = zone.endsWith('left') ? 0 : '50%';
+    return { top, left, width: '50%', height: '50%' };
   }
 
-  if (currentLeafCount >= 4) {
-    const target = isQuadrantZone(activeZone) ? activeZone : 'bottom-right';
-    return {
-      modifier: 'drop-preview-grid--4',
-      cells: buildGridCells(QUADRANT_ZONES, target, 3),
-    };
+  switch (zone) {
+    case 'left':
+      return { top: 0, left: 0, width: '50%', height: '100%' };
+    case 'right':
+      return { top: 0, right: 0, width: '50%', height: '100%' };
+    case 'top':
+      return { top: 0, left: 0, width: '100%', height: '50%' };
+    case 'bottom':
+      return { bottom: 0, left: 0, width: '100%', height: '50%' };
+    default:
+      return { inset: 0 };
   }
-
-  const zone = activeZone ?? 'right';
-  const vertical = zone === 'top' || zone === 'bottom';
-  const firstKey = vertical ? 'top' : 'left';
-  const secondKey = vertical ? 'bottom' : 'right';
-  const targetKey = zone === firstKey ? firstKey : secondKey;
-
-  return {
-    modifier: vertical ? 'drop-preview-grid--2v' : 'drop-preview-grid--2h',
-    cells: [firstKey, secondKey].map(key => ({
-      key,
-      state: key === targetKey ? 'target' : 'existing',
-    })),
-  };
-}
-
-function buildGridCells(zones: DropZone[], target: DropZone, existingCount: number): PreviewCell[] {
-  const existingZones = new Set(zones.filter(zone => zone !== target).slice(0, existingCount));
-
-  return zones.map(zone => ({
-    key: zone,
-    state: zone === target
-      ? 'target'
-      : existingZones.has(zone)
-        ? 'existing'
-        : 'placeholder',
-  }));
-}
-
-function isQuadrantZone(zone: DropZone | null): zone is DropZone {
-  return zone !== null && QUADRANT_ZONES.includes(zone);
 }
