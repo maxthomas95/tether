@@ -91,7 +91,7 @@ describe('compactPlaceholders', () => {
 
     expect(isConstrainedLayout(compacted, 2)).toBe(true);
     expect(getLeafCount(compacted)).toBe(2);
-    expect(getLeaves(compacted).map(l => l.sessionId).sort()).toEqual(['s1', 's2']);
+    expect(getLeaves(compacted).map(l => l.sessionId).sort((a, b) => (a ?? '').localeCompare(b ?? ''))).toEqual(['s1', 's2']);
   });
 
   it('keeps the 2x2 shape when removing one of two placeholders from a 3-session grid', () => {
@@ -102,7 +102,7 @@ describe('compactPlaceholders', () => {
 
     // Three real sessions can't tile cleanly without a placeholder, so 2x2 stays.
     expect(getLeafCount(compacted)).toBe(4);
-    expect(getLeaves(compacted).filter(l => l.sessionId !== null).map(l => l.sessionId).sort())
+    expect(getLeaves(compacted).filter(l => l.sessionId !== null).map(l => l.sessionId).sort((a, b) => (a ?? '').localeCompare(b ?? '')))
       .toEqual(['s1', 's2', 's3']);
   });
 
