@@ -6,6 +6,7 @@ import { parseJsonlFile, type ParsedMessage } from './jsonl-parser';
 import { parseCodexJsonl } from './codex-jsonl-parser';
 import { readCrushSessions } from '../opencode/usage-reader';
 import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
+import { aggregateByEnvironment } from './env-aggregator';
 import type { SessionUsage, UsageModelBreakdown, UsageInfo, DailyUsage, CliToolId } from '../../shared/types';
 
 const log = createLogger('usage');
@@ -31,10 +32,11 @@ interface TrackedSession {
   lastSeenModel?: string | null;
 }
 
-function emptySessionUsage(sessionId: string, cliTool: CliToolId): SessionUsage {
+function emptySessionUsage(sessionId: string, cliTool: CliToolId, environmentId?: string): SessionUsage {
   return {
     sessionId,
     cliTool,
+    environmentId,
     inputTokens: 0,
     outputTokens: 0,
     cacheCreationTokens: 0,
@@ -92,6 +94,7 @@ function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOff
   return {
     sessionId: existing.sessionId,
     cliTool: existing.cliTool,
+    environmentId: existing.environmentId,
     inputTokens,
     outputTokens,
     cacheCreationTokens,
@@ -131,6 +134,7 @@ class UsageService {
           usage: {
             sessionId: summary.sessionId,
             cliTool,
+            environmentId: summary.environmentId,
             inputTokens: summary.inputTokens,
             outputTokens: summary.outputTokens,
             cacheCreationTokens: summary.cacheCreationTokens,
@@ -296,7 +300,7 @@ class UsageService {
     }
   }
 
-  trackSession(sessionId: string, workingDir: string, cliTool: CliToolId = 'claude'): void {
+  trackSession(sessionId: string, workingDir: string, cliTool: CliToolId = 'claude', environmentId?: string): void {
     const existing = this.tracked.get(sessionId);
     if (existing) {
       // start() pre-loads DB summaries into `tracked` without a watcher,
@@ -305,6 +309,15 @@ class UsageService {
       // file path we already know.
       if (!existing.watching && existing.filePath && (existing.cliTool === 'claude' || existing.cliTool === 'codex')) {
         this.startWatching(existing);
+      }
+      // If the session was first picked up via disk backfill (no env id) and
+      // we now know one — e.g. a Codex session whose toolSessionId arrives
+      // post-spawn from the watcher in session-manager — promote it so the
+      // per-environment rollup attributes the cost on the next refresh.
+      if (environmentId && !existing.usage.environmentId) {
+        existing.usage.environmentId = environmentId;
+        this.persistSession(existing);
+        this.notifyUpdate();
       }
       return;
     }
@@ -322,7 +335,7 @@ class UsageService {
     // so the path can't be derived from sessionId + cwd alone. We fall back
     // to the periodic backfill which discovers the file via session_meta.
     const filePath = persisted?.filePath ?? (cliTool === 'claude' ? transcriptPath(workingDir, sessionId) : '');
-    log.info('Tracking session', { sessionId, cliTool, filePath });
+    log.info('Tracking session', { sessionId, cliTool, filePath, environmentId: environmentId ?? null });
 
     const session: TrackedSession = {
       sessionId,
@@ -334,6 +347,7 @@ class UsageService {
       usage: persisted ? {
         sessionId,
         cliTool: (persisted.cliTool as CliToolId) || cliTool,
+        environmentId: persisted.environmentId ?? environmentId,
         inputTokens: persisted.inputTokens,
         outputTokens: persisted.outputTokens,
         cacheCreationTokens: persisted.cacheCreationTokens,
@@ -344,7 +358,7 @@ class UsageService {
         firstMessageAt: persisted.firstMessageAt,
         lastMessageAt: persisted.lastMessageAt,
         parsedByteOffset: persisted.parsedByteOffset,
-      } : emptySessionUsage(sessionId, cliTool),
+      } : emptySessionUsage(sessionId, cliTool, environmentId),
       lastSeenModel: cliTool === 'codex' && persisted && persisted.models.length > 0
         ? persisted.models[persisted.models.length - 1].model
         : null,
@@ -395,16 +409,19 @@ class UsageService {
 
   getAll(): UsageInfo {
     const sessions: Record<string, SessionUsage> = {};
+    const allUsage: SessionUsage[] = [];
     let totalCost = 0;
 
     for (const [id, tracked] of this.tracked) {
       sessions[id] = tracked.usage;
+      allUsage.push(tracked.usage);
       totalCost += tracked.usage.totalCost;
     }
 
     return {
       sessions,
       daily: this.buildDailyRollups(),
+      byEnvironment: aggregateByEnvironment(allUsage),
       totalCost,
       lastUpdated: new Date().toISOString(),
     };
@@ -502,6 +519,7 @@ class UsageService {
     session.usage = {
       sessionId: found.id,
       cliTool: 'opencode',
+      environmentId: session.usage.environmentId,
       inputTokens: found.promptTokens,
       outputTokens: found.completionTokens,
       cacheCreationTokens: 0,
@@ -525,6 +543,7 @@ class UsageService {
       cliTool: session.cliTool,
       workingDir: session.workingDir,
       filePath: session.filePath,
+      environmentId: session.usage.environmentId,
       inputTokens: session.usage.inputTokens,
       outputTokens: session.usage.outputTokens,
       cacheCreationTokens: session.usage.cacheCreationTokens,

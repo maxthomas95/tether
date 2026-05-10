@@ -22,7 +22,7 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 - [done] OpenCode / Crush cost tracking — `usage-service.ts` is now CLI-agnostic; OpenCode sessions read pre-computed cost from `crush.db` (`src/main/opencode/usage-reader.ts`)
 - [done] Cost accuracy audit — pricing now sourced from a vendored copy of LiteLLM's `model_prices_and_context_window.json` (`src/main/usage/litellm-prices.json`); covers Anthropic / OpenAI / Google / Bedrock / Vertex etc., with explicit cache-create / cache-read rates when published. Refresh by replacing the JSON. Existing prefix fallback retained for unknown future Anthropic models.
 - [done] CSV / JSON export of usage history — Settings → Usage now has "Export as CSV…" and "Export as JSON…" buttons. CSV is one row per session with totals (RFC 4180 quoting); JSON includes the full per-model breakdown, daily rollups, and Tether version. `usageService.getEnrichedSessions()` carries `workingDir` through; serialization lives in `src/main/usage/usage-exporter.ts`.
-- [planned] Per-environment cost attribution in the global footer
+- [done] Per-environment cost attribution in the global footer — `environmentId` flows through `PersistedSessionUsage`, `SessionUsage`, and `TrackedSession`. Tracked at session create for Claude/OpenCode (handlers.ts) and at toolSessionId-detect time for Codex/OpenCode in `session-manager.ts`. New `aggregateByEnvironment` (`src/main/usage/env-aggregator.ts`) groups sessions into a sorted `byEnvironment[]` exposed on `UsageInfo`; the footer tooltip resolves env names client-side from the existing `environments` list. Backfilled / out-of-band sessions surface in an "Unattributed" bucket.
 - [done] Daily / weekly / monthly rollups — global usage footer is now a button that opens a "Usage history" dialog with Today / 7d / 30d / All-time tiles plus tabbed Daily (30) / Weekly (12) / Monthly (12) tables. Pure renderer-side rollup math (`src/renderer/utils/usage-rollups.ts`) over the existing `daily[]` array, ISO-week boundaries (Mon start), no schema change.
 
 ### 2. Bug: status indicator stuck on green/grey
@@ -50,9 +50,13 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 
 ### 5. Foundation & quality
 
-- [in progress] **Atomic JSON writes** — write-temp + rename in `src/main/db/database.ts`. ~90% of SQLite's reliability benefit for an afternoon of work; lets us keep JSON storage credibly through 1.0. (PR #77.)
-- [planned] **Test coverage** — transports (`local`, `ssh`, `coder`), IPC handlers (`ipc/handlers.ts`), and Vault resolver are largely uncovered. Currently 7 test files for the whole codebase.
-- [planned] **Crash / diagnostics export** — single command to bundle logs + workspace snapshot for support, with secrets scrubbed.
+- [done] **Atomic JSON writes** — `saveDb()` writes `data.json.tmp` → `fsync` → atomic rename, with EBUSY/EPERM/EACCES retry × 3 (50 ms backoff) for AV / OneDrive transient locks. Orphan `.tmp` is cleaned on startup. ~90% of SQLite's reliability benefit, no new dependency.
+- [in progress] **Test coverage** — transports, IPC handlers, and Vault resolver were largely uncovered. Going from 7 → ~25 test files across:
+  - [done] **Vault resolver** — 24 tests covering `parseRef` edge cases, `resolveRef` error paths (vault disabled, no token, missing key, non-string value), and `resolveAll` (mixed input, parallel resolution, partial-failure rejection).
+  - [done] **Transports** — local / coder / ssh, 44 tests. Extracted `pty-loader.ts` and `ssh2-loader.ts` for mockability (lazy `require()` inside the transports bypassed Vitest's `vi.mock`); behaviour preserved.
+  - [done] **IPC handlers structural refactor** — `handlers.ts` (969 lines, 79 handlers) split into 11 domain modules (`session-handlers`, `env-handlers`, `vault-handlers`, etc.) so each is testable in isolation. Top-level `handlers.ts` is now a 40-line dispatcher.
+  - [planned] **Per-domain IPC handler tests** — one test file per domain module, layered on top of the refactor.
+- [done] **Crash / diagnostics export** — "Export diagnostics for support" button in About bundles a scrubbed `data.json` (SSH passwords, plaintext git tokens, sensitive env-var values, vault token redacted; vault refs preserved) plus rotated logs (with light scrubbing for known API key prefixes — `sk-ant-`, `ghp_`, `hvs.` etc.) plus a `manifest.json` of versions / OS / generated timestamp into a single zip.
 - [done] **Cross-platform hygiene rule** — codified in CLAUDE.md: no `\\` path literals, no Windows-only shells, no registry assumptions. Carves out the patterns already in use (defensive separator handling, platform-gated `cmd.exe` in transports, OpenSSH named-pipe fallback) so the rule reflects existing code rather than flagging it. Keeps post-1.0 cross-platform from becoming a rewrite.
 
 ### 6. Repo & folder bootstrapping
