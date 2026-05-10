@@ -1,6 +1,6 @@
 import React from 'react';
 import { useUsage } from '../../hooks/useUsage';
-import type { DailyUsage } from '../../../shared/types';
+import type { DailyUsage, EnvironmentInfo, EnvironmentUsage } from '../../../shared/types';
 
 function formatCost(cost: number): string {
   if (cost === 0) return '$0';
@@ -53,12 +53,33 @@ function sumWindow(days: DailyUsage[]): { cost: number; tokens: number; sessions
 
 interface GlobalUsageFooterProps {
   onOpenHistory?: () => void;
+  /**
+   * Environments list for resolving display names in the per-environment
+   * tooltip section. Pass-through from App; if omitted, env rows render as
+   * "<id>" verbatim.
+   */
+  environments?: EnvironmentInfo[];
 }
 
-export function GlobalUsageFooter({ onOpenHistory }: GlobalUsageFooterProps = {}) {
+/** Format a single per-env tooltip row. */
+function formatEnvRow(row: EnvironmentUsage, envMap: Map<string, string>): string {
+  const id = row.environmentId;
+  let name: string;
+  if (id === null) {
+    name = 'Unattributed';
+  } else {
+    name = envMap.get(id) ?? 'Deleted env';
+  }
+  return `  ${name.padEnd(16, ' ').slice(0, 16)} ${formatCost(row.totalCost).padStart(8, ' ')}  (${row.sessionCount} ${row.sessionCount === 1 ? 'session' : 'sessions'})`;
+}
+
+export function GlobalUsageFooter({ onOpenHistory, environments }: GlobalUsageFooterProps = {}) {
   const { usage, enabled } = useUsage();
 
   if (!enabled || !usage) return null;
+
+  const envMap = new Map<string, string>();
+  for (const env of environments ?? []) envMap.set(env.id, env.name);
 
   const today = todayDate();
   const last7 = fillLastNDays(usage.daily, 7);
@@ -76,6 +97,19 @@ export function GlobalUsageFooter({ onOpenHistory }: GlobalUsageFooterProps = {}
     .reverse()
     .map(d => `  ${d.date}: ${formatCost(d.totalCost)} (${d.sessionCount} sess)`)
     .join('\n');
+
+  // Per-environment all-time breakdown. The aggregate already arrives sorted
+  // by cost desc; we cap the displayed rows to keep the tooltip manageable
+  // and surface a "+N more" line when truncated.
+  const envRows = usage.byEnvironment ?? [];
+  const ENV_MAX_ROWS = 6;
+  const envLines: string[] = [];
+  if (envRows.length > 0) {
+    envLines.push('', 'By environment (all-time):');
+    for (const r of envRows.slice(0, ENV_MAX_ROWS)) envLines.push(formatEnvRow(r, envMap));
+    if (envRows.length > ENV_MAX_ROWS) envLines.push(`  …and ${envRows.length - ENV_MAX_ROWS} more`);
+  }
+
   const tooltip = [
     `Today:    ${formatCost(todayData.totalCost)}  (${todayData.sessionCount} sessions)`,
     `7 days:   ${formatCost(week.cost)}  (${week.sessions} sessions, ${formatTokens(week.tokens)} tokens)`,
@@ -84,6 +118,7 @@ export function GlobalUsageFooter({ onOpenHistory }: GlobalUsageFooterProps = {}
     '',
     'Last 7 days:',
     dayList,
+    ...envLines,
     '',
     '(API-equivalent cost — your subscription covers this usage)',
   ].join('\n');

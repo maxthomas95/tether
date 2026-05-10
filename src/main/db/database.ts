@@ -88,6 +88,13 @@ export interface PersistedSessionUsage {
   cliTool: string;
   workingDir: string;
   /**
+   * Tether environment id this session ran under, when known. Sessions
+   * discovered via disk backfill (Claude's `~/.claude/projects/`, Codex's
+   * `~/.codex/sessions/`) have no environment context, so this stays
+   * undefined and the renderer surfaces them as "Unattributed".
+   */
+  environmentId?: string;
+  /**
    * Full path to the JSONL transcript (Claude/Codex only). Set when the
    * session was discovered via directory scan (where `workingDir` is the
    * encoded Claude project dir name, which is lossy to decode). When absent,

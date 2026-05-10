@@ -19,6 +19,7 @@ import { detectNewOpencodeSession, releaseOpencodeSessionClaim } from '../openco
 import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId, SessionExitInfo } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
+import { usageService } from '../usage/usage-service';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { createLogger } from '../logger';
 
@@ -577,6 +578,11 @@ class SessionManager {
         session.codexDetectCancel = null;
         if (!detectedId || !this.sessions.has(session.id)) return;
         session.toolSessionId = detectedId;
+        // Codex doesn't go through the create-time trackSession in handlers.ts
+        // (the toolSessionId isn't known yet there). Hook it here so the
+        // per-environment rollup attributes the cost as soon as the watcher
+        // catches the new transcript — no waiting for the periodic backfill.
+        usageService.trackSession(detectedId, opts.workingDir, 'codex', opts.environmentId ?? undefined);
         callbacks.onUpdate?.(session.id, session.toInfo());
       });
     }
@@ -604,6 +610,9 @@ class SessionManager {
         session.opencodeDetectCancel = null;
         if (!detectedId || !this.sessions.has(session.id)) return;
         session.toolSessionId = detectedId;
+        // OpenCode usage is sourced from crush.db. Track here so a freshly
+        // created (non-resumed) session is attributed to its environment.
+        usageService.trackSession(detectedId, opts.workingDir, 'opencode', opts.environmentId ?? undefined);
         callbacks.onUpdate?.(session.id, session.toInfo());
       });
     }

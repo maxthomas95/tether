@@ -67,12 +67,14 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
 
     // Start tracking usage for Claude sessions
     if (session.claudeSessionId) {
-      usageService.trackSession(session.claudeSessionId, session.workingDir, 'claude');
+      usageService.trackSession(session.claudeSessionId, session.workingDir, 'claude', session.environmentId ?? undefined);
     }
 
-    // Start tracking usage for OpenCode sessions
+    // Start tracking usage for OpenCode sessions (only when toolSessionId is
+    // already set — e.g. resume. New OpenCode sessions get tracked from the
+    // session-manager's detect callback once the id lands.)
     if (session.cliTool === 'opencode' && session.toolSessionId) {
-      usageService.trackSession(session.toolSessionId, session.workingDir, 'opencode');
+      usageService.trackSession(session.toolSessionId, session.workingDir, 'opencode', session.environmentId ?? undefined);
     }
 
     return session.toInfo();
