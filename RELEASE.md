@@ -116,7 +116,7 @@ If `wait-merge` times out (e.g. a required check is failing and needs attention)
 
 ## Auth
 
-The GitHub token is read from `~/.tether/github-token` (override with `GITHUB_TOKEN_FILE`). Needs `repo` scope. The script also shells out to `gh` for PR creation and auto-merge, so `gh auth status` must be green.
+The script prefers `gh auth token` for API auth (same creds it already uses for PR create/merge), so a green `gh auth status` is all you need. If `gh` isn't installed or hasn't logged in, it falls back to a PAT at `~/.tether/github-token` (override path with `GITHUB_TOKEN_FILE`). Either way the token needs `repo` scope.
 
 **Never commit tokens or paste them into chat.**
 

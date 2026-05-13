@@ -25,9 +25,10 @@
 //   node scripts/release.mjs alpha.N --dry-run  # print what would happen
 //   node scripts/release.mjs --next             # auto-pick next prerelease number
 //
-// Environment:
-//   GITHUB_TOKEN_FILE  override the default GitHub token path
-//                      (default: ~/.tether/github-token)
+// Auth:
+//   The script prefers `gh auth token` (same creds gh CLI uses for PR
+//   create/merge), falling back to a PAT file at ~/.tether/github-token
+//   (override path with GITHUB_TOKEN_FILE). Needs `repo` scope.
 
 import { execSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs';
@@ -105,9 +106,21 @@ function curlUpload(filePath, url, authHeader) {
 function readJSON(path)  { return JSON.parse(readFileSync(path, 'utf8')); }
 function writeJSON(path, obj) { writeFileSync(path, JSON.stringify(obj, null, 2) + '\n'); }
 
+// Prefer `gh auth token` so the script reuses the same creds gh CLI is
+// already using for PR create/merge. Falls back to a PAT file so users
+// without gh CLI (or with a separate token) can still run releases.
 function readGithubToken() {
+  try {
+    const r = spawnSync('gh', ['auth', 'token'], { cwd: REPO_ROOT, encoding: 'utf8' }); // NOSONAR(javascript:S4036)
+    if (r.status === 0) {
+      const token = (r.stdout || '').trim();
+      if (token) return token;
+    }
+  } catch { /* gh not installed; fall through to PAT file */ }
   const tokenFile = process.env.GITHUB_TOKEN_FILE || DEFAULT_GITHUB_TOKEN_FILE;
-  if (!existsSync(tokenFile)) die(`GitHub token not found at ${tokenFile}. Set GITHUB_TOKEN_FILE or place the token there.`);
+  if (!existsSync(tokenFile)) {
+    die(`No GitHub token: run \`gh auth login\` or place a PAT at ${tokenFile} (override with GITHUB_TOKEN_FILE).`);
+  }
   return readFileSync(tokenFile, 'utf8').trim();
 }
 
