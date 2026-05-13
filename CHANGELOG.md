@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.4.3-beta.4] — 2026-05-12
+
+Usage tracking goes deep this release: clickable footer expands into daily/weekly/monthly rollups, every dollar is now attributed per-environment, history is exportable as CSV/JSON, and Codex CLI costs are tracked from JSONL alongside Claude. Plus a settings dialog overhaul, a diagnostics export to help triage support issues, and a handful of layout/sidebar fixes.
+
+### New Features
+- **Daily / weekly / monthly usage rollups** — clickable global footer expands into a rollup view across time windows (#85)
+- **Per-environment cost attribution** in the global usage footer — see which environment is spending what (#87)
+- **Export usage history** as CSV or JSON for offline analysis (#83)
+- **Codex CLI cost tracking** — Codex sessions now contribute to usage totals via JSONL transcript parsing, on par with Claude (#75)
+- **Diagnostics bundle export** — one-click export of a scrubbed support bundle (logs + redacted config) (#86)
+- **Compact empty placeholder panes** — close out drag-target placeholders that didn't get used (#91)
+- **Atomic JSON writes for `data.json`** — write-temp-then-rename eliminates a corruption window on crash or power loss (#77)
+- **Settings dialog left-rail nav** — five sections (General / Environments / CLI / Vault / Advanced) replace the long single column (#74)
+
+### Bug Fixes
+- **Sidebar inline-rename** now accepts spaces — space key no longer gets swallowed by global shortcut handling (#92)
+- **Drop-target preview** now bisects only the hovered pane, matching the drop that actually happens (#90)
+- **NewSessionDialog provider reset** — switching tabs clears the stale repo list from the previous provider (#71)
+- **Usage history dialog** stays at a stable size as you switch between empty and populated views (#94)
+
+### Improvements
+- **Themed webkit scrollbars** match the active Tether palette across the app (#78)
+- **PAT scope hints** under the provider token field for Gitea + ADO (#72)
+
+### Internal
+- IPC `handlers.ts` split into 11 domain modules with new test coverage (#84, #89)
+- Test coverage added for local/coder/ssh transports (#82) and vault-resolver (#81)
+- Cross-platform hygiene rule codified in `CLAUDE.md` (#79)
+- ROADMAP synced with shipped work; Helm reframed as personal-experimental (#80, #88, #73)
+- `adm-zip` externalized from the main-process Vite bundle (#93)
+
+---
+
 ## [0.4.2-beta.3] — 2026-05-09
 
 A daily-driver UX release. Reorder and bulk-manage sessions, ctrl-click links in the terminal, zoom the whole window or just one pane, and bootstrap a fresh repo end-to-end (folder + git init + remote provisioning) without leaving the dialog. Pricing is now driven by a vendored LiteLLM snapshot with a daily background refresh, OpenCode/Crush sessions are cost-tracked, and notification toasts now cover the failure paths that previously hid in DevTools.
