@@ -26,6 +26,7 @@ export type LayoutAction =
   | { type: 'TOGGLE_MAXIMIZE'; paneId: string }
   | { type: 'REMOVE_SESSION'; sessionId: string }
   | { type: 'MOVE_PANE'; sourcePaneId: string; targetPaneId: string; zone: DropZone }
+  | { type: 'SWAP_PANES'; sourcePaneId: string; targetPaneId: string }
   | { type: 'SET_MAX_PANES'; maxPanes: number };
 
 const initialState: LayoutState = {
@@ -122,6 +123,16 @@ function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
         action.zone,
       );
       return { ...state, root: newRoot, focusedPaneId: newPaneId };
+    }
+
+    case 'SWAP_PANES': {
+      if (!state.root) return state;
+      if (action.sourcePaneId === action.targetPaneId) return state;
+      const sourceLeaf = findLeaf(state.root, action.sourcePaneId);
+      const targetLeaf = findLeaf(state.root, action.targetPaneId);
+      if (!sourceLeaf || !targetLeaf) return state;
+      const newRoot = swapLeafSessions(state.root, action.sourcePaneId, action.targetPaneId);
+      return newRoot === state.root ? state : { ...state, root: newRoot };
     }
 
     case 'REMOVE_SESSION': {

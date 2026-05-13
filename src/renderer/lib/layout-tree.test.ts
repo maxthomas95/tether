@@ -5,11 +5,13 @@ import {
   addPaneConstrained,
   buildConstrainedLayout,
   compactPlaceholders,
+  getAdjacentPane,
   getLeafCount,
   getLeaves,
   getPaneLocationForSession,
   isConstrainedLayout,
   normalizeToConstrained,
+  swapLeafSessions,
 } from './layout-tree';
 
 describe('constrained layout tree helpers', () => {
@@ -148,6 +150,126 @@ describe('getPaneLocationForSession', () => {
     expect(getPaneLocationForSession(root, 'tr')).toMatchObject({ shape: 'grid', slotIndex: 1, totalSlots: 4 });
     expect(getPaneLocationForSession(root, 'bl')).toMatchObject({ shape: 'grid', slotIndex: 2, totalSlots: 4 });
     expect(getPaneLocationForSession(root, 'br')).toMatchObject({ shape: 'grid', slotIndex: 3, totalSlots: 4 });
+  });
+});
+
+describe('getAdjacentPane', () => {
+  function paneIdOf(root: LayoutNode, sessionId: string): string {
+    const leaf = getLeaves(root).find(l => l.sessionId === sessionId);
+    if (!leaf) throw new Error(`session ${sessionId} not found`);
+    return leaf.id;
+  }
+  function sessionAtPane(root: LayoutNode, paneId: string | null): string | null | undefined {
+    if (!paneId) return undefined;
+    return getLeaves(root).find(l => l.id === paneId)?.sessionId;
+  }
+
+  it('returns null in every direction for a single-leaf layout', () => {
+    const root = buildConstrainedLayout(['solo'])!;
+    const id = paneIdOf(root, 'solo');
+    expect(getAdjacentPane(root, id, 'left')).toBeNull();
+    expect(getAdjacentPane(root, id, 'right')).toBeNull();
+    expect(getAdjacentPane(root, id, 'up')).toBeNull();
+    expect(getAdjacentPane(root, id, 'down')).toBeNull();
+  });
+
+  it('resolves left/right in a horizontal split and returns null on the orthogonal axis', () => {
+    const root = buildConstrainedLayout(['l', 'r'], 'horizontal')!;
+    const lId = paneIdOf(root, 'l');
+    const rId = paneIdOf(root, 'r');
+    expect(sessionAtPane(root, getAdjacentPane(root, lId, 'right'))).toBe('r');
+    expect(sessionAtPane(root, getAdjacentPane(root, rId, 'left'))).toBe('l');
+    expect(getAdjacentPane(root, lId, 'up')).toBeNull();
+    expect(getAdjacentPane(root, lId, 'down')).toBeNull();
+    expect(getAdjacentPane(root, lId, 'left')).toBeNull();
+    expect(getAdjacentPane(root, rId, 'right')).toBeNull();
+  });
+
+  it('resolves up/down in a vertical split and returns null on the orthogonal axis', () => {
+    const root = buildConstrainedLayout(['t', 'b'], 'vertical')!;
+    const tId = paneIdOf(root, 't');
+    const bId = paneIdOf(root, 'b');
+    expect(sessionAtPane(root, getAdjacentPane(root, tId, 'down'))).toBe('b');
+    expect(sessionAtPane(root, getAdjacentPane(root, bId, 'up'))).toBe('t');
+    expect(getAdjacentPane(root, tId, 'left')).toBeNull();
+    expect(getAdjacentPane(root, tId, 'right')).toBeNull();
+    expect(getAdjacentPane(root, tId, 'up')).toBeNull();
+    expect(getAdjacentPane(root, bId, 'down')).toBeNull();
+  });
+
+  it('navigates all four cardinals correctly from each corner of a 2x2 grid', () => {
+    const root = buildConstrainedLayout(['tl', 'tr', 'bl', 'br'])!;
+    const tl = paneIdOf(root, 'tl');
+    const tr = paneIdOf(root, 'tr');
+    const bl = paneIdOf(root, 'bl');
+    const br = paneIdOf(root, 'br');
+
+    expect(sessionAtPane(root, getAdjacentPane(root, tl, 'right'))).toBe('tr');
+    expect(sessionAtPane(root, getAdjacentPane(root, tl, 'down'))).toBe('bl');
+    expect(getAdjacentPane(root, tl, 'left')).toBeNull();
+    expect(getAdjacentPane(root, tl, 'up')).toBeNull();
+
+    expect(sessionAtPane(root, getAdjacentPane(root, tr, 'left'))).toBe('tl');
+    expect(sessionAtPane(root, getAdjacentPane(root, tr, 'down'))).toBe('br');
+    expect(getAdjacentPane(root, tr, 'right')).toBeNull();
+    expect(getAdjacentPane(root, tr, 'up')).toBeNull();
+
+    expect(sessionAtPane(root, getAdjacentPane(root, bl, 'right'))).toBe('br');
+    expect(sessionAtPane(root, getAdjacentPane(root, bl, 'up'))).toBe('tl');
+    expect(getAdjacentPane(root, bl, 'left')).toBeNull();
+    expect(getAdjacentPane(root, bl, 'down')).toBeNull();
+
+    expect(sessionAtPane(root, getAdjacentPane(root, br, 'left'))).toBe('bl');
+    expect(sessionAtPane(root, getAdjacentPane(root, br, 'up'))).toBe('tr');
+    expect(getAdjacentPane(root, br, 'right')).toBeNull();
+    expect(getAdjacentPane(root, br, 'down')).toBeNull();
+  });
+
+  it('returns null when the source pane id is not in the tree', () => {
+    const root = buildConstrainedLayout(['s1', 's2'])!;
+    expect(getAdjacentPane(root, 'no-such-id', 'right')).toBeNull();
+  });
+});
+
+describe('swapLeafSessions', () => {
+  it('exchanges session ids between two leaves in a 2-pane layout', () => {
+    const root = buildConstrainedLayout(['a', 'b'])!;
+    const [first, second] = getLeaves(root);
+    const swapped = swapLeafSessions(root, first.id, second.id);
+    const newLeaves = getLeaves(swapped);
+    expect(newLeaves.find(l => l.id === first.id)?.sessionId).toBe('b');
+    expect(newLeaves.find(l => l.id === second.id)?.sessionId).toBe('a');
+  });
+
+  it('preserves pane ids and tree shape — only sessionId fields change', () => {
+    const root = buildConstrainedLayout(['tl', 'tr', 'bl', 'br'])!;
+    const tl = getLeaves(root).find(l => l.sessionId === 'tl')!;
+    const br = getLeaves(root).find(l => l.sessionId === 'br')!;
+    const swapped = swapLeafSessions(root, tl.id, br.id);
+
+    expect(getLeafCount(swapped)).toBe(4);
+    expect(isConstrainedLayout(swapped, 4)).toBe(true);
+    const swappedIds = getLeaves(swapped).map(l => l.id).sort();
+    const originalIds = getLeaves(root).map(l => l.id).sort();
+    expect(swappedIds).toEqual(originalIds);
+    expect(getLeaves(swapped).find(l => l.id === tl.id)?.sessionId).toBe('br');
+    expect(getLeaves(swapped).find(l => l.id === br.id)?.sessionId).toBe('tl');
+  });
+
+  it('is idempotent over a double swap', () => {
+    const root = buildConstrainedLayout(['a', 'b'])!;
+    const [first, second] = getLeaves(root);
+    const once = swapLeafSessions(root, first.id, second.id);
+    const twice = swapLeafSessions(once, first.id, second.id);
+    expect(getLeaves(twice).map(l => ({ id: l.id, sessionId: l.sessionId })))
+      .toEqual(getLeaves(root).map(l => ({ id: l.id, sessionId: l.sessionId })));
+  });
+
+  it('returns the tree unchanged when either pane id is missing', () => {
+    const root = buildConstrainedLayout(['a', 'b'])!;
+    const [first] = getLeaves(root);
+    expect(swapLeafSessions(root, first.id, 'no-such-id')).toBe(root);
+    expect(swapLeafSessions(root, 'no-such-id', first.id)).toBe(root);
   });
 });
 

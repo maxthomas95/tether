@@ -17,6 +17,13 @@ All shortcuts use **Ctrl** on Windows/Linux (or **Cmd** on macOS).
 | **Ctrl+ArrowDown** | Next session |
 | **Ctrl+ArrowUp** | Previous session |
 
+## Split Panes
+
+| Shortcut | Action |
+|----------|--------|
+| **Alt+Arrow** | Focus the pane in that direction |
+| **Alt+Shift+Arrow** | Swap the focused pane with its neighbor |
+
 ## Interface
 
 | Shortcut | Action |
