@@ -249,8 +249,8 @@ describe('swapLeafSessions', () => {
 
     expect(getLeafCount(swapped)).toBe(4);
     expect(isConstrainedLayout(swapped, 4)).toBe(true);
-    const swappedIds = getLeaves(swapped).map(l => l.id).sort();
-    const originalIds = getLeaves(root).map(l => l.id).sort();
+    const swappedIds = getLeaves(swapped).map(l => l.id).sort((a, b) => a.localeCompare(b));
+    const originalIds = getLeaves(root).map(l => l.id).sort((a, b) => a.localeCompare(b));
     expect(swappedIds).toEqual(originalIds);
     expect(getLeaves(swapped).find(l => l.id === tl.id)?.sessionId).toBe('br');
     expect(getLeaves(swapped).find(l => l.id === br.id)?.sessionId).toBe('tl');
