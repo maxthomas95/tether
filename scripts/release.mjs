@@ -111,7 +111,7 @@ function writeJSON(path, obj) { writeFileSync(path, JSON.stringify(obj, null, 2)
 // without gh CLI (or with a separate token) can still run releases.
 function readGithubToken() {
   try {
-    const r = spawnSync('gh', ['auth', 'token'], { cwd: REPO_ROOT, encoding: 'utf8' });
+    const r = spawnSync('gh', ['auth', 'token'], { cwd: REPO_ROOT, encoding: 'utf8' }); // NOSONAR(javascript:S4036)
     if (r.status === 0) {
       const token = (r.stdout || '').trim();
       if (token) return token;
