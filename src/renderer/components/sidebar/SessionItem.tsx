@@ -166,6 +166,10 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
             onChange={e => setEditValue(e.target.value)}
             onBlur={submitRename}
             onKeyDown={e => {
+              // Stop bubbling so the parent's onKeyActivate (which treats
+              // Space/Enter as a click) doesn't swallow the spacebar or
+              // refocus the terminal and blur us out of rename mode.
+              e.stopPropagation();
               if (e.key === 'Enter') submitRename();
               if (e.key === 'Escape') setEditing(false);
             }}
