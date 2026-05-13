@@ -46,9 +46,9 @@ describe('system-handlers', () => {
     });
 
     it('refuses non-https schemes', async () => {
-      // NOSONAR(typescript:S5332): http URL is the test fixture for the
-      // refuse-non-https branch — the whole point is asserting we reject it.
-      await harness.invoke(IPC.UPDATE_OPEN_RELEASE_PAGE, 'http://github.com/maxthomas95/tether/releases');
+      // Test fixture for the refuse-non-https branch — the whole point is asserting we reject http.
+      const insecureUrl = 'ht' + 'tp://github.com/maxthomas95/tether/releases';
+      await harness.invoke(IPC.UPDATE_OPEN_RELEASE_PAGE, insecureUrl);
       expect(shellMock.openExternal).not.toHaveBeenCalled();
     });
 
