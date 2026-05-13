@@ -31,9 +31,11 @@ import {
   findLeaf,
   getLeaves,
   getLeafCount,
+  getPaneLocationForSession,
   isConstrainedLayout,
   normalizeToConstrained,
 } from './lib/layout-tree';
+import type { PaneLocation } from './lib/layout-tree';
 import { toolSupportsHistory } from '../shared/cli-tools';
 import { onKeyActivate, stopPropagationOnKey } from './utils/a11y';
 import { extractErrorMessage, formatSessionExitMessage } from './utils/errors';
@@ -1043,6 +1045,67 @@ export function App() {
     : false;
   const currentLeafCount = getLeafCount(layoutState.root);
 
+  const paneLocations = useMemo<Map<string, PaneLocation>>(() => {
+    const map = new Map<string, PaneLocation>();
+    if (!layoutState.root) return map;
+    for (const leaf of getLeaves(layoutState.root)) {
+      if (!leaf.sessionId) continue;
+      const loc = getPaneLocationForSession(layoutState.root, leaf.sessionId);
+      if (loc) map.set(leaf.sessionId, loc);
+    }
+    return map;
+  }, [layoutState.root]);
+
+  const hiddenPaneIds = useMemo<Set<string>>(() => {
+    const set = new Set<string>();
+    if (!layoutState.root || !layoutState.maximizedPaneId) return set;
+    for (const leaf of getLeaves(layoutState.root)) {
+      if (leaf.id !== layoutState.maximizedPaneId) set.add(leaf.id);
+    }
+    return set;
+  }, [layoutState.root, layoutState.maximizedPaneId]);
+
+  const handleFocusPane = useCallback((paneId: string) => {
+    if (layoutState.maximizedPaneId && layoutState.maximizedPaneId !== paneId) {
+      layoutDispatch({ type: 'TOGGLE_MAXIMIZE', paneId: layoutState.maximizedPaneId });
+    }
+    layoutDispatch({ type: 'SET_FOCUS', paneId });
+  }, [layoutState.maximizedPaneId, layoutDispatch]);
+
+  /**
+   * Defensive recovery for a dead session inside a layout: spawn a fresh
+   * session with the same params and swap it into the existing pane so the
+   * layout slot is preserved. Old session is cleaned up quietly.
+   */
+  const handleRestartInPane = useCallback(async (paneId: string, deadSessionId: string) => {
+    const dead = sessions.find(s => s.id === deadSessionId);
+    if (!dead) return;
+    try {
+      const createOpts: CreateSessionOptions = {
+        workingDir: dead.workingDir,
+        label: dead.label,
+        environmentId: dead.environmentId || undefined,
+        cliTool: dead.cliTool,
+        customCliBinary: dead.customCliBinary || undefined,
+        worktreeOf: dead.worktreeOf,
+        helmEnabled: dead.helmEnabled,
+      };
+      const fresh = await window.electronAPI.session.create(createOpts);
+      termManager.getOrCreate(fresh.id);
+      setSessions(prev => [...prev.filter(s => s.id !== deadSessionId), fresh]);
+      layoutDispatch({ type: 'REPLACE_SESSION', paneId, sessionId: fresh.id });
+      layoutDispatch({ type: 'SET_FOCUS', paneId });
+      termManager.remove(deadSessionId);
+      try {
+        await window.electronAPI.session.remove(deadSessionId);
+      } catch {
+        // Main may have already cleaned up the dead session; not worth surfacing.
+      }
+    } catch (err) {
+      notifyError('Failed to restart session', err);
+    }
+  }, [sessions, termManager, layoutDispatch, notifyError]);
+
   const handleCheckForUpdates = useCallback(async () => {
     try {
       const result = await window.electronAPI.update.check();
@@ -1292,6 +1355,9 @@ export function App() {
                         onKillAllInGroup={handleKillAllInGroup}
                         onRestartAllInGroup={handleRestartAllInGroup}
                         onClearAllInGroup={handleClearAllInGroup}
+                        paneLocations={paneLocations}
+                        hiddenPaneIds={hiddenPaneIds}
+                        onFocusPane={handleFocusPane}
                       />
                     ));
                   })()
@@ -1336,6 +1402,7 @@ export function App() {
             maxPanes={effectiveMaxPanes}
             defaultFontSize={defaultTerminalFontSize}
             onFontSizeDelta={handleSessionFontSizeChange}
+            onRestartInPane={handleRestartInPane}
           />
         ) : (
           <div className="terminal-container">

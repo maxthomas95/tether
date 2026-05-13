@@ -19,6 +19,7 @@ interface SplitLayoutProps {
   maxPanes: number;
   defaultFontSize: number;
   onFontSizeDelta: (sessionId: string, delta: number) => void;
+  onRestartInPane?: (paneId: string, sessionId: string) => void;
 }
 
 export function SplitLayout({
@@ -36,6 +37,7 @@ export function SplitLayout({
   maxPanes,
   defaultFontSize,
   onFontSizeDelta,
+  onRestartInPane,
 }: SplitLayoutProps) {
   if (node.type === 'leaf') {
     const session = node.sessionId ? sessions.find(s => s.id === node.sessionId) : undefined;
@@ -55,6 +57,7 @@ export function SplitLayout({
         maxPanes={maxPanes}
         defaultFontSize={defaultFontSize}
         onFontSizeDelta={onFontSizeDelta}
+        onRestartInPane={onRestartInPane}
       />
     );
   }
@@ -75,6 +78,7 @@ export function SplitLayout({
       maxPanes={maxPanes}
       defaultFontSize={defaultFontSize}
       onFontSizeDelta={onFontSizeDelta}
+      onRestartInPane={onRestartInPane}
     />
   );
 }
@@ -94,6 +98,7 @@ interface SplitContainerProps {
   maxPanes: number;
   defaultFontSize: number;
   onFontSizeDelta: (sessionId: string, delta: number) => void;
+  onRestartInPane?: (paneId: string, sessionId: string) => void;
 }
 
 function SplitContainer({
@@ -111,6 +116,7 @@ function SplitContainer({
   maxPanes,
   defaultFontSize,
   onFontSizeDelta,
+  onRestartInPane,
 }: SplitContainerProps) {
   const [first, second] = node.children;
 
@@ -137,6 +143,7 @@ function SplitContainer({
           maxPanes={maxPanes}
           defaultFontSize={defaultFontSize}
           onFontSizeDelta={onFontSizeDelta}
+          onRestartInPane={onRestartInPane}
         />
       </div>
       <div className={`split-separator split-separator--${node.direction}`} />
@@ -159,6 +166,7 @@ function SplitContainer({
           maxPanes={maxPanes}
           defaultFontSize={defaultFontSize}
           onFontSizeDelta={onFontSizeDelta}
+          onRestartInPane={onRestartInPane}
         />
       </div>
     </div>

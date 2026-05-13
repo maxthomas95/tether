@@ -502,6 +502,47 @@ function getEdgeLeaf(node: LayoutNode, edge: 'first' | 'last', axis: 'horizontal
   return getEdgeLeaf(node.children[0], edge, axis);
 }
 
+export type PaneLocationShape = 'single' | 'split-h' | 'split-v' | 'grid';
+
+export interface PaneLocation {
+  paneId: PaneId;
+  shape: PaneLocationShape;
+  /** Row-major slot index in the layout shape. 0 for single; 0-1 for split; 0-3 for grid (tl, tr, bl, br). */
+  slotIndex: number;
+  totalSlots: number;
+}
+
+/**
+ * Locate a session within a constrained layout tree. Relies on the layout being
+ * canonical (1/2/4 leaves in the well-known shapes) — non-constrained trees may
+ * still resolve correctly for the slot index but the shape falls back to grid.
+ */
+export function getPaneLocationForSession(
+  root: LayoutNode | null,
+  sessionId: string,
+): PaneLocation | null {
+  if (!root) return null;
+  const leaves = getLeavesForConstrainedOrder(root);
+  const slotIndex = leaves.findIndex(l => l.sessionId === sessionId);
+  if (slotIndex === -1) return null;
+
+  let shape: PaneLocationShape;
+  if (leaves.length === 1) {
+    shape = 'single';
+  } else if (leaves.length === 2) {
+    shape = root.type === 'split' && root.direction === 'vertical' ? 'split-v' : 'split-h';
+  } else {
+    shape = 'grid';
+  }
+
+  return {
+    paneId: leaves[slotIndex].id,
+    shape,
+    slotIndex,
+    totalSlots: leaves.length,
+  };
+}
+
 /**
  * Remove all leaves showing a given session. Returns the new root or null.
  */

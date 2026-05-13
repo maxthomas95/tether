@@ -13,7 +13,7 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 #### Split panes
 - [planned] Keyboard-driven pane focus and swap (no mouse required)
 - [planned] Broadcast input to N panes — high-value for parallel agent runs
-- [planned] Recover gracefully when a session inside a layout dies (don't strand the layout)
+- [done] Recover gracefully when a session inside a layout dies — defensive in-pane overlay on `state === 'dead'/'stopped'` offering "Restart in this pane" (re-spawn with the dead session's params and `REPLACE_SESSION` so the layout slot is preserved) and "Close pane". Paired with a sidebar pane-location badge so users can also tell at a glance which sessions are mounted, where, and whether their pane is hidden behind a maximize — click to focus + un-maximize.
 - [planned] Persist scrollback per pane across re-layouts
 
 #### Usage tracking
@@ -51,11 +51,11 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 ### 5. Foundation & quality
 
 - [done] **Atomic JSON writes** — `saveDb()` writes `data.json.tmp` → `fsync` → atomic rename, with EBUSY/EPERM/EACCES retry × 3 (50 ms backoff) for AV / OneDrive transient locks. Orphan `.tmp` is cleaned on startup. ~90% of SQLite's reliability benefit, no new dependency.
-- [in progress] **Test coverage** — transports, IPC handlers, and Vault resolver were largely uncovered. Going from 7 → ~25 test files across:
+- [done] **Test coverage** — transports, IPC handlers, and Vault resolver were largely uncovered. Went from 7 → ~25 test files across:
   - [done] **Vault resolver** — 24 tests covering `parseRef` edge cases, `resolveRef` error paths (vault disabled, no token, missing key, non-string value), and `resolveAll` (mixed input, parallel resolution, partial-failure rejection).
   - [done] **Transports** — local / coder / ssh, 44 tests. Extracted `pty-loader.ts` and `ssh2-loader.ts` for mockability (lazy `require()` inside the transports bypassed Vitest's `vi.mock`); behaviour preserved.
   - [done] **IPC handlers structural refactor** — `handlers.ts` (969 lines, 79 handlers) split into 11 domain modules (`session-handlers`, `env-handlers`, `vault-handlers`, etc.) so each is testable in isolation. Top-level `handlers.ts` is now a 40-line dispatcher.
-  - [planned] **Per-domain IPC handler tests** — one test file per domain module, layered on top of the refactor.
+  - [done] **Per-domain IPC handler tests** — one `*-handlers.test.ts` per domain module via a shared `ipc-test-harness` helper that stubs `ipcMain.handle`/`on` and provides a fake `HandlerContext`; covers arg forwarding, return shape, and side-effect targets (PR #89).
 - [done] **Crash / diagnostics export** — "Export diagnostics for support" button in About bundles a scrubbed `data.json` (SSH passwords, plaintext git tokens, sensitive env-var values, vault token redacted; vault refs preserved) plus rotated logs (with light scrubbing for known API key prefixes — `sk-ant-`, `ghp_`, `hvs.` etc.) plus a `manifest.json` of versions / OS / generated timestamp into a single zip.
 - [done] **Cross-platform hygiene rule** — codified in CLAUDE.md: no `\\` path literals, no Windows-only shells, no registry assumptions. Carves out the patterns already in use (defensive separator handling, platform-gated `cmd.exe` in transports, OpenSSH named-pipe fallback) so the rule reflects existing code rather than flagging it. Keeps post-1.0 cross-platform from becoming a rewrite.
 

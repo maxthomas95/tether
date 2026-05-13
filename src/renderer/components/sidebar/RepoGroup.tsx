@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { SessionItem } from './SessionItem';
 import type { SessionInfo } from '../../../shared/types';
 import { onKeyActivate, stopPropagationOnKey } from '../../utils/a11y';
+import type { PaneLocation } from '../../lib/layout-tree';
 
 interface RepoGroupProps {
   repoPath: string;
@@ -32,6 +33,12 @@ interface RepoGroupProps {
   onKillAllInGroup?: (environmentId: string, workingDir: string) => void;
   onRestartAllInGroup?: (environmentId: string, workingDir: string) => void;
   onClearAllInGroup?: (environmentId: string, workingDir: string) => void;
+  /** Map of sessionId -> pane location for sessions currently mounted in the layout. */
+  paneLocations?: Map<string, PaneLocation>;
+  /** Map of paneId -> true when the pane is hidden by another maximized pane. */
+  hiddenPaneIds?: Set<string>;
+  /** Focus the pane at the given id (and un-maximize if it's hidden). */
+  onFocusPane?: (paneId: string) => void;
 }
 
 export function RepoGroup({
@@ -59,6 +66,9 @@ export function RepoGroup({
   onKillAllInGroup,
   onRestartAllInGroup,
   onClearAllInGroup,
+  paneLocations,
+  hiddenPaneIds,
+  onFocusPane,
 }: RepoGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null);
@@ -260,32 +270,38 @@ export function RepoGroup({
           )}
         </div>
       )}
-      {!collapsed && sessions.map(session => (
-        <SessionItem
-          key={session.id}
-          session={session}
-          isActive={session.id === activeSessionId}
-          onClick={() => onSelectSession(session.id)}
-          onStop={() => onStop(session.id)}
-          onKill={() => onKill(session.id)}
-          onRename={(label) => onRename(session.id, label)}
-          onRemove={() => onRemove(session.id)}
-          onDuplicate={() => onDuplicate(session.id)}
-          onResumePrevious={onResumePrevious && canResumePrevious?.(session) ? () => onResumePrevious(session.id) : undefined}
-          showResumeBadge={showResumeBadge}
-          allowHelm={allowHelm}
-          onToggleHelm={onToggleHelm ? (enabled) => onToggleHelm(session.id, enabled) : undefined}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
-          onReorderDrop={
-            onReorderSession
-              ? (sourceId, targetId, position) =>
-                  onReorderSession(environmentId, repoPath, sourceId, targetId, position)
-              : undefined
-          }
-          nested
-        />
-      ))}
+      {!collapsed && sessions.map(session => {
+        const location = paneLocations?.get(session.id);
+        return (
+          <SessionItem
+            key={session.id}
+            session={session}
+            isActive={session.id === activeSessionId}
+            onClick={() => onSelectSession(session.id)}
+            onStop={() => onStop(session.id)}
+            onKill={() => onKill(session.id)}
+            onRename={(label) => onRename(session.id, label)}
+            onRemove={() => onRemove(session.id)}
+            onDuplicate={() => onDuplicate(session.id)}
+            onResumePrevious={onResumePrevious && canResumePrevious?.(session) ? () => onResumePrevious(session.id) : undefined}
+            showResumeBadge={showResumeBadge}
+            allowHelm={allowHelm}
+            onToggleHelm={onToggleHelm ? (enabled) => onToggleHelm(session.id, enabled) : undefined}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onReorderDrop={
+              onReorderSession
+                ? (sourceId, targetId, position) =>
+                    onReorderSession(environmentId, repoPath, sourceId, targetId, position)
+                : undefined
+            }
+            paneLocation={location}
+            paneHidden={location ? hiddenPaneIds?.has(location.paneId) : false}
+            onFocusPane={onFocusPane}
+            nested
+          />
+        );
+      })}
     </div>
   );
 }

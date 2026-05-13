@@ -7,6 +7,7 @@ import {
   compactPlaceholders,
   getLeafCount,
   getLeaves,
+  getPaneLocationForSession,
   isConstrainedLayout,
   normalizeToConstrained,
 } from './layout-tree';
@@ -113,6 +114,40 @@ describe('compactPlaceholders', () => {
     const result = compactPlaceholders(root, sessionLeaf.id);
 
     expect(result).toBe(root);
+  });
+});
+
+describe('getPaneLocationForSession', () => {
+  it('returns null when the layout is empty or the session is not present', () => {
+    expect(getPaneLocationForSession(null, 's1')).toBeNull();
+    const single = buildConstrainedLayout(['s1'])!;
+    expect(getPaneLocationForSession(single, 'missing')).toBeNull();
+  });
+
+  it('classifies a single-leaf layout as shape "single" at slot 0', () => {
+    const root = buildConstrainedLayout(['s1'])!;
+    const loc = getPaneLocationForSession(root, 's1');
+    expect(loc).toMatchObject({ shape: 'single', slotIndex: 0, totalSlots: 1 });
+  });
+
+  it('classifies a two-pane horizontal layout as split-h with left=0 / right=1', () => {
+    const root = buildConstrainedLayout(['l', 'r'], 'horizontal')!;
+    expect(getPaneLocationForSession(root, 'l')).toMatchObject({ shape: 'split-h', slotIndex: 0, totalSlots: 2 });
+    expect(getPaneLocationForSession(root, 'r')).toMatchObject({ shape: 'split-h', slotIndex: 1, totalSlots: 2 });
+  });
+
+  it('classifies a two-pane vertical layout as split-v with top=0 / bottom=1', () => {
+    const root = buildConstrainedLayout(['t', 'b'], 'vertical')!;
+    expect(getPaneLocationForSession(root, 't')).toMatchObject({ shape: 'split-v', slotIndex: 0, totalSlots: 2 });
+    expect(getPaneLocationForSession(root, 'b')).toMatchObject({ shape: 'split-v', slotIndex: 1, totalSlots: 2 });
+  });
+
+  it('reports row-major quadrants for a 2x2 grid: tl=0, tr=1, bl=2, br=3', () => {
+    const root = buildConstrainedLayout(['tl', 'tr', 'bl', 'br'])!;
+    expect(getPaneLocationForSession(root, 'tl')).toMatchObject({ shape: 'grid', slotIndex: 0, totalSlots: 4 });
+    expect(getPaneLocationForSession(root, 'tr')).toMatchObject({ shape: 'grid', slotIndex: 1, totalSlots: 4 });
+    expect(getPaneLocationForSession(root, 'bl')).toMatchObject({ shape: 'grid', slotIndex: 2, totalSlots: 4 });
+    expect(getPaneLocationForSession(root, 'br')).toMatchObject({ shape: 'grid', slotIndex: 3, totalSlots: 4 });
   });
 });
 
