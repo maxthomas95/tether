@@ -99,7 +99,7 @@ export function ResumeChatDialog({ isOpen, workingDir, cliTool, currentTranscrip
                     {isCurrent && ' · current'}
                   </span>
                 </div>
-                <div className="form-hint" style={{ fontSize: 10, marginTop: 2, fontFamily: 'monospace' }}>
+                <div className="form-hint" style={{ fontSize: 10, marginTop: 2, fontFamily: 'var(--font-mono-ui, monospace)' }}>
                   {t.id}
                 </div>
               </div>

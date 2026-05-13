@@ -1,0 +1,87 @@
+/*
+ * Design tokens — Tether UX Refresh (Phase 1, Tether 0.4)
+ *
+ * These are the structural design tokens that DO NOT change with theme:
+ * font stacks, type scale, spacing scale, focus ring. Theme-dependent
+ * variables (colors, surfaces) live in themes.ts and are injected on
+ * document.documentElement at runtime.
+ *
+ * Imported before global.css so every component selector resolves these.
+ */
+
+:root {
+  /* ── Font stacks ───────────────────────────────────────────────────
+   * --font-mono-ui   Locked identity face. Menubar wordmark, dialog
+   *                  titles, section headers, inline code, kbd, env-var
+   *                  keys, fingerprints. NOT user-overridable.
+   * --font-mono-terminal  Defaults to the same face but is the seam for a
+   *                  future "Terminal font family" user setting. ONLY the
+   *                  xterm.js container reads this.
+   */
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono-ui: 'JetBrains Mono Variable', 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
+  --font-mono-terminal: 'Cascadia Code', 'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', 'Consolas', 'Courier New', monospace;
+
+  /* ── Type scale ────────────────────────────────────────────────────
+   * Size + paired line-height. Most components only need the size; the
+   * body inherits a sensible default line-height. Use the *-lh token
+   * explicitly for headers where the default 1.5 reads loose.
+   */
+  --text-xs: 11px;
+  --text-xs-lh: 1.4;
+
+  --text-sm: 12px;
+  --text-sm-lh: 1.45;
+
+  --text-base: 13px;
+  --text-base-lh: 1.5;
+
+  --text-md: 14px;
+  --text-md-lh: 1.5;
+
+  --text-lg: 16px;
+  --text-lg-lh: 1.4;
+
+  --text-xl: 20px;
+  --text-xl-lh: 1.3;
+
+  --text-display: 28px;
+  --text-display-lh: 1.15;
+
+  /* Smaller-than-xs is rare but used for badges/quota labels at 10px */
+  --text-2xs: 10px;
+  --text-2xs-lh: 1.3;
+
+  /* ── Spacing scale ─────────────────────────────────────────────────
+   * 4pt base, 8pt for layout-level gaps. Most padding/margin should map
+   * to one of these. Deviate only when matching pixel-precise xterm
+   * geometry or single-pixel borders.
+   */
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+
+  /* ── Focus ring ────────────────────────────────────────────────────
+   * Two-tone halo: inner ring matches surface color (so it visually
+   * separates from the element), outer ring is the accent. Resolves
+   * against the active theme at use-time.
+   */
+  --focus-ring: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent);
+  --focus-ring-inset: inset 0 0 0 2px var(--accent);
+
+  /* ── Motion timing ─────────────────────────────────────────────────
+   * Phase 1 sets the hover transition constant. Phase 2 will add more
+   * timing tokens for enter/exit animations and reduced-motion gating.
+   */
+  --hover-transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+
+  /* ── Layout structurals (carried over from global.css) ─────────── */
+  --sidebar-width: 220px;
+  --header-height: 36px;
+}

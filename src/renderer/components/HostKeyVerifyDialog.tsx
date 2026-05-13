@@ -45,13 +45,13 @@ export function HostKeyVerifyDialog({ request, onTrust, onReject }: HostKeyVerif
           </div>
           <div className="form-group">
             <label className="form-label">Host</label>
-            <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}>{target}</div>
+            <div style={{ fontFamily: 'var(--font-mono-ui, monospace)', fontSize: 13 }}>{target}</div>
           </div>
           <div className="form-group">
             <label className="form-label">Fingerprint</label>
             <div
               style={{
-                fontFamily: 'var(--font-mono, monospace)',
+                fontFamily: 'var(--font-mono-ui, monospace)',
                 fontSize: 12,
                 wordBreak: 'break-all',
                 padding: 8,

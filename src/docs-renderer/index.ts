@@ -7,6 +7,13 @@ import environmentsMd from '../docs/environments.md?raw';
 import keyboardShortcutsMd from '../docs/keyboard-shortcuts.md?raw';
 import settingsMd from '../docs/settings.md?raw';
 
+// Self-hosted fonts — same identity as the main renderer (Phase 1 UX refresh).
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/ibm-plex-sans/700.css';
+import '@fontsource-variable/jetbrains-mono';
+
 import './docs.css';
 
 // Extended theme map for CSS variables beyond the loader-theme subset.
