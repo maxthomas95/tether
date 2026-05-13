@@ -1362,9 +1362,10 @@ export function App() {
                       byDir.get(dir)!.push(s);
                     }
                     const sortedEntries = sortRepoGroups(Array.from(byDir.entries()), env.id);
-                    return sortedEntries.map(([dir, dirSessions]) => (
+                    return sortedEntries.map(([dir, dirSessions], idx) => (
                       <RepoGroup
                         key={dir}
+                        staggerIndex={idx}
                         repoPath={dir}
                         environmentId={env.id}
                         sessions={sortSessionsInGroup(env.id, dir, dirSessions)}

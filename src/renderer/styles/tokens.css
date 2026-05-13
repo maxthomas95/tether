@@ -76,10 +76,34 @@
   --focus-ring-inset: inset 0 0 0 2px var(--accent);
 
   /* ── Motion timing ─────────────────────────────────────────────────
-   * Phase 1 sets the hover transition constant. Phase 2 will add more
-   * timing tokens for enter/exit animations and reduced-motion gating.
+   * --motion-fast/-base/-slow are the canonical durations for entering
+   * UI surfaces. --ease-out-quint is the spring-like decel used for
+   * dialogs and dropdowns. --hover-transition stays narrow (color
+   * properties only) so it composes cleanly with transform animations.
    */
+  --motion-fast: 100ms;
+  --motion-base: 160ms;
+  --motion-slow: 240ms;
+  --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
   --hover-transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+
+  /* ── Elevation: shadows + inner highlight ───────────────────────────
+   * Surface *colors* are per-theme (see themes.ts → --surface-1..4).
+   * Shadow recipes are theme-neutral — pure black at varying alpha
+   * works for every dark theme. Latte stays flat (decision E).
+   *
+   * --inner-highlight: the 1px white-alpha trick on the top edge of a
+   * raised surface. Sells the lift far more than the drop shadow does.
+   */
+  --shadow-dropdown:
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    0 8px 24px -4px rgba(0, 0, 0, 0.4);
+  --shadow-dialog:
+    0 4px 8px rgba(0, 0, 0, 0.3),
+    0 24px 48px -16px rgba(0, 0, 0, 0.6);
+  --shadow-toast:
+    0 4px 12px rgba(0, 0, 0, 0.45);
+  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
   /* ── Layout structurals (carried over from global.css) ─────────── */
   --sidebar-width: 220px;

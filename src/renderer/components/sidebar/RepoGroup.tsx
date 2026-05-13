@@ -39,6 +39,11 @@ interface RepoGroupProps {
   hiddenPaneIds?: Set<string>;
   /** Focus the pane at the given id (and un-maximize if it's hidden). */
   onFocusPane?: (paneId: string) => void;
+  /**
+   * Phase 2 stagger: index within the environment's group list, used by CSS
+   * to delay the enter animation per row. Optional — falls back to 0.
+   */
+  staggerIndex?: number;
 }
 
 export function RepoGroup({
@@ -69,6 +74,7 @@ export function RepoGroup({
   paneLocations,
   hiddenPaneIds,
   onFocusPane,
+  staggerIndex,
 }: RepoGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null);
@@ -145,7 +151,12 @@ export function RepoGroup({
   ].filter(Boolean).join(' ');
 
   return (
-    <div className="repo-group">
+    <div
+      className="repo-group"
+      style={staggerIndex != null
+        ? ({ '--stagger-index': staggerIndex } as React.CSSProperties)
+        : undefined}
+    >
       <div
         className={headerClasses}
         onClick={() => setCollapsed(c => !c)}
