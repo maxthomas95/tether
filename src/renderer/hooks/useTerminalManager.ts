@@ -58,7 +58,8 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
 
-    const linksAddon = new WebLinksAddon((_event, uri) => {
+    const linksAddon = new WebLinksAddon((event, uri) => {
+      if (!event.ctrlKey && !event.metaKey) return;
       window.electronAPI.shell.openExternal(uri);
     });
     terminal.loadAddon(linksAddon);
