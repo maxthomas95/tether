@@ -365,6 +365,29 @@ function getPreferredTwoPaneDirection(root: LayoutNode): SplitDirection {
   return 'horizontal';
 }
 
+/**
+ * Removes the targeted placeholder leaf and rebuilds the tree from session-bearing
+ * leaves only — without re-padding back to maxPanes. Use when the user explicitly
+ * dismisses an empty slot (vs. closing a session pane, which preserves the slot).
+ *
+ * Returns the original tree unchanged if the target is not a placeholder.
+ */
+export function compactPlaceholders(
+  root: LayoutNode | null,
+  paneIdToRemove: PaneId,
+): LayoutNode | null {
+  if (!root) return root;
+  const target = findLeaf(root, paneIdToRemove);
+  if (!target || target.sessionId !== null) return root;
+
+  const sessions = getLeavesForConstrainedOrder(root)
+    .filter(l => l.id !== paneIdToRemove && l.sessionId !== null)
+    .map(l => l.sessionId as string);
+
+  const direction = getPreferredTwoPaneDirection(root);
+  return buildConstrainedLayout(sessions, direction);
+}
+
 export function isConstrainedLayout(root: LayoutNode | null, maxPanes: number): boolean {
   if (!root) return true;
 
