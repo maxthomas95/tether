@@ -443,39 +443,46 @@ export function swapLeafSessions(
 
 /**
  * Find the neighboring pane in the given direction for keyboard navigation.
- * This walks up the tree to find a split in the matching axis, then descends
- * into the adjacent subtree to find the closest leaf.
+ * Walks up the tree to find a split in the matching axis where the source is on
+ * the "wrong" side, then descends into the adjacent subtree picking children
+ * that match the source's perpendicular position so the focus moves to a
+ * spatially-adjacent pane (e.g. bl + right → br, not tr).
  */
 export function getAdjacentPane(
   root: LayoutNode,
   currentPaneId: PaneId,
   direction: 'left' | 'right' | 'up' | 'down',
 ): PaneId | null {
-  // Build path from root to the target leaf
   const path = findPath(root, currentPaneId);
   if (!path || path.length === 0) return null;
 
   const axis: 'horizontal' | 'vertical' =
     direction === 'left' || direction === 'right' ? 'horizontal' : 'vertical';
+  const perpAxis: 'horizontal' | 'vertical' = axis === 'horizontal' ? 'vertical' : 'horizontal';
   const goFirst = direction === 'left' || direction === 'up';
 
-  // Walk up the path from the leaf to find a split node in the correct axis
-  // where the current pane is on the "wrong" side (so we can go to the other side)
+  // Perpendicular position: child indices taken through perp-axis splits on the way down.
+  // Used during descent to land on a spatially-adjacent leaf, not just the first leaf.
+  const perpPositions: number[] = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    const node = path[i];
+    if (node.type !== 'split' || node.direction !== perpAxis) continue;
+    const childOnPath = path[i + 1];
+    perpPositions.push(node.children[0].id === childOnPath.id ? 0 : 1);
+  }
+
   for (let i = path.length - 2; i >= 0; i--) {
     const node = path[i];
-    if (node.type !== 'split') continue;
-    if (node.direction !== axis) continue;
+    if (node.type !== 'split' || node.direction !== axis) continue;
 
     const childOnPath = path[i + 1];
     const childIndex = node.children[0].id === childOnPath.id ? 0 : 1;
 
-    // goFirst means we want to go toward index 0 (left/top), so current must be at index 1
-    // !goFirst means we want to go toward index 1 (right/bottom), so current must be at index 0
     if (goFirst && childIndex === 1) {
-      return getEdgeLeaf(node.children[0], goFirst ? 'last' : 'first', axis);
+      return descendMatchingPerp(node.children[0], axis, perpAxis, goFirst, perpPositions);
     }
     if (!goFirst && childIndex === 0) {
-      return getEdgeLeaf(node.children[1], goFirst ? 'last' : 'first', axis);
+      return descendMatchingPerp(node.children[1], axis, perpAxis, goFirst, perpPositions);
     }
   }
 
@@ -493,13 +500,24 @@ function findPath(root: LayoutNode, targetId: PaneId): LayoutNode[] | null {
   return null;
 }
 
-function getEdgeLeaf(node: LayoutNode, edge: 'first' | 'last', axis: 'horizontal' | 'vertical'): PaneId {
+function descendMatchingPerp(
+  node: LayoutNode,
+  axis: 'horizontal' | 'vertical',
+  perpAxis: 'horizontal' | 'vertical',
+  goFirst: boolean,
+  perpPositions: number[],
+  perpDepth = 0,
+): PaneId {
   if (node.type === 'leaf') return node.id;
   if (node.direction === axis) {
-    const child = edge === 'first' ? node.children[0] : node.children[1];
-    return getEdgeLeaf(child, edge, axis);
+    // Travel-axis split: pick the child closest to the crossing edge.
+    const child = goFirst ? node.children[1] : node.children[0];
+    return descendMatchingPerp(child, axis, perpAxis, goFirst, perpPositions, perpDepth);
   }
-  return getEdgeLeaf(node.children[0], edge, axis);
+  // Perpendicular split: follow the source's perpendicular position; default to 0
+  // if the adjacent subtree is deeper on this axis than the source path was.
+  const pos = perpPositions[perpDepth] ?? 0;
+  return descendMatchingPerp(node.children[pos], axis, perpAxis, goFirst, perpPositions, perpDepth + 1);
 }
 
 export type PaneLocationShape = 'single' | 'split-h' | 'split-v' | 'grid';

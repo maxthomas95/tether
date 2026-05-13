@@ -29,6 +29,7 @@ import {
   clampMaxPanes,
   generatePaneId,
   findLeaf,
+  getAdjacentPane,
   getLeaves,
   getLeafCount,
   getPaneLocationForSession,
@@ -1068,7 +1069,28 @@ export function App() {
       layoutDispatch({ type: 'SET_FOCUS', paneId: prev.id });
       termManager.focusPane(prev.id);
     },
-  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom]);
+    onFocusPaneDirection: (direction: 'left' | 'right' | 'up' | 'down') => {
+      if (!layoutState.root || !layoutState.focusedPaneId) return;
+      const neighborId = getAdjacentPane(layoutState.root, layoutState.focusedPaneId, direction);
+      if (!neighborId) return;
+      // Un-maximize so the focus move is visible (mirrors the sidebar pane-location badge click).
+      if (layoutState.maximizedPaneId) {
+        layoutDispatch({ type: 'TOGGLE_MAXIMIZE', paneId: layoutState.maximizedPaneId });
+      }
+      layoutDispatch({ type: 'SET_FOCUS', paneId: neighborId });
+      termManager.focusPane(neighborId);
+    },
+    onSwapPaneDirection: (direction: 'left' | 'right' | 'up' | 'down') => {
+      if (!layoutState.root || !layoutState.focusedPaneId) return;
+      const neighborId = getAdjacentPane(layoutState.root, layoutState.focusedPaneId, direction);
+      if (!neighborId) return;
+      layoutDispatch({
+        type: 'SWAP_PANES',
+        sourcePaneId: layoutState.focusedPaneId,
+        targetPaneId: neighborId,
+      });
+    },
+  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom]);
 
   useKeyboardShortcuts(shortcutActions);
 

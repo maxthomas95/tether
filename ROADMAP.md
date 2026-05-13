@@ -11,7 +11,7 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 ### 1. Polish the experimental features
 
 #### Split panes
-- [planned] Keyboard-driven pane focus and swap (no mouse required)
+- [done] Keyboard-driven pane focus and swap (no mouse required) — Alt+Arrow focuses the neighboring pane (un-maximizing first if needed); Alt+Shift+Arrow swaps the focused pane's session with its neighbor. Wired in `useKeyboardShortcuts.ts` over the existing `getAdjacentPane` / `swapLeafSessions` helpers; new `SWAP_PANES` reducer action keeps swap as a pure session-id exchange. Non-xterm editable targets are guarded so inline rename and dialog inputs keep native arrow behavior.
 - [planned] Broadcast input to N panes — high-value for parallel agent runs
 - [done] Recover gracefully when a session inside a layout dies — defensive in-pane overlay on `state === 'dead'/'stopped'` offering "Restart in this pane" (re-spawn with the dead session's params and `REPLACE_SESSION` so the layout slot is preserved) and "Close pane". Paired with a sidebar pane-location badge so users can also tell at a glance which sessions are mounted, where, and whether their pane is hidden behind a maximize — click to focus + un-maximize.
 - [planned] Persist scrollback per pane across re-layouts

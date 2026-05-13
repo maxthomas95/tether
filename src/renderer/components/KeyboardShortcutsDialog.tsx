@@ -13,6 +13,8 @@ const SHORTCUTS = [
   { keys: 'Ctrl+1\u20139', action: 'Switch to session 1\u20139' },
   { keys: 'Ctrl+\u2191', action: 'Previous session' },
   { keys: 'Ctrl+\u2193', action: 'Next session' },
+  { keys: 'Alt+\u2190 / \u2191 / \u2192 / \u2193', action: 'Focus pane in direction' },
+  { keys: 'Alt+Shift+\u2190 / \u2191 / \u2192 / \u2193', action: 'Swap pane with neighbor' },
   { keys: 'Ctrl+= / Ctrl+\u2212', action: 'Zoom window in / out' },
   { keys: 'Ctrl+0', action: 'Reset window zoom' },
   { keys: 'Ctrl+Wheel', action: 'Adjust terminal pane font size' },
