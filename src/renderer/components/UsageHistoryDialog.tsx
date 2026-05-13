@@ -124,32 +124,34 @@ export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps)
             ))}
           </div>
 
-          {empty ? (
-            <p className="form-hint" style={{ textAlign: 'center', marginTop: 16 }}>
-              No usage tracked yet. Start a Claude, Codex, or OpenCode session to populate this view.
-            </p>
-          ) : (
-            <table className="usage-history-table">
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left' }}>Period</th>
-                  <th style={{ textAlign: 'right' }}>Sessions</th>
-                  <th style={{ textAlign: 'right' }}>Tokens</th>
-                  <th style={{ textAlign: 'right' }}>Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rollups.map(r => (
-                  <tr key={r.key} className={r.totalCost === 0 && r.sessionCount === 0 ? 'usage-history-row--empty' : ''}>
-                    <td>{r.label}</td>
-                    <td style={{ textAlign: 'right' }}>{r.sessionCount || ''}</td>
-                    <td style={{ textAlign: 'right' }}>{rowTokens(r) > 0 ? formatTokens(rowTokens(r)) : ''}</td>
-                    <td style={{ textAlign: 'right' }}>{r.totalCost > 0 ? formatCost(r.totalCost) : ''}</td>
+          <div className="usage-history-table-wrap">
+            {empty ? (
+              <p className="form-hint" style={{ textAlign: 'center', marginTop: 16 }}>
+                No usage tracked yet. Start a Claude, Codex, or OpenCode session to populate this view.
+              </p>
+            ) : (
+              <table className="usage-history-table">
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left' }}>Period</th>
+                    <th style={{ textAlign: 'right' }}>Sessions</th>
+                    <th style={{ textAlign: 'right' }}>Tokens</th>
+                    <th style={{ textAlign: 'right' }}>Cost</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody>
+                  {rollups.map(r => (
+                    <tr key={r.key} className={r.totalCost === 0 && r.sessionCount === 0 ? 'usage-history-row--empty' : ''}>
+                      <td>{r.label}</td>
+                      <td style={{ textAlign: 'right' }}>{r.sessionCount || ''}</td>
+                      <td style={{ textAlign: 'right' }}>{rowTokens(r) > 0 ? formatTokens(rowTokens(r)) : ''}</td>
+                      <td style={{ textAlign: 'right' }}>{r.totalCost > 0 ? formatCost(r.totalCost) : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
         <div className="dialog-footer">
           <p className="form-hint" style={{ flex: 1, marginTop: 0, marginBottom: 0 }}>
