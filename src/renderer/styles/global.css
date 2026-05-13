@@ -2014,6 +2014,11 @@ body.tether-hide-cursor .xterm-cursor {
   border-bottom-color: var(--accent);
 }
 
+.usage-history-table-wrap {
+  height: 50vh;
+  overflow-y: auto;
+}
+
 .usage-history-table {
   width: 100%;
   border-collapse: collapse;
@@ -2029,6 +2034,9 @@ body.tether-hide-cursor .xterm-cursor {
   color: var(--text-muted);
   padding: 6px 8px;
   border-bottom: 1px solid var(--border-color);
+  background: var(--bg-sidebar);
+  position: sticky;
+  top: 0;
 }
 
 .usage-history-table td {
