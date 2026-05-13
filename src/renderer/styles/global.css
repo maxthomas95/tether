@@ -147,20 +147,29 @@ textarea:focus-visible,
   -webkit-app-region: no-drag;
 }
 
-.menubar-dropdown {
+/* Shared dropdown surface — composed onto .menubar-dropdown,
+ * .context-menu, and .env-editor-presets. Each selector adds its own
+ * position offsets, sizing, z-index, and transform-origin below. */
+.menubar-dropdown,
+.context-menu,
+.env-editor-presets {
   position: absolute;
   top: 100%;
-  left: 0;
-  margin-top: var(--space-0-5);
   background: var(--surface-3);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 4px 0;
+  box-shadow: var(--shadow-dropdown), var(--inner-highlight);
+  animation: dropdown-in var(--motion-fast) var(--ease-out-quint);
+}
+
+.menubar-dropdown {
+  left: 0;
+  margin-top: var(--space-0-5);
+  border-radius: 6px;
   min-width: 220px;
   z-index: 500;
-  box-shadow: var(--shadow-dropdown), var(--inner-highlight);
   transform-origin: top left;
-  animation: dropdown-in var(--motion-fast) var(--ease-out-quint);
 }
 
 .menubar-dropdown-item {
@@ -804,20 +813,12 @@ textarea:focus-visible,
   background: var(--accent);
 }
 
-/* Context menu */
+/* Context menu — see shared dropdown rules near .menubar-dropdown above. */
 .context-menu {
-  position: absolute;
   right: 8px;
-  top: 100%;
-  background: var(--surface-3);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  padding: 4px 0;
   min-width: 120px;
   z-index: 100;
-  box-shadow: var(--shadow-dropdown), var(--inner-highlight);
   transform-origin: top right;
-  animation: dropdown-in var(--motion-fast) var(--ease-out-quint);
 }
 
 .context-menu-item {
@@ -1135,22 +1136,15 @@ textarea:focus-visible,
   position: relative;
 }
 
+/* Env preset popover — see shared dropdown rules near .menubar-dropdown above. */
 .env-editor-presets {
-  position: absolute;
-  top: 100%;
   left: 0;
   margin-top: var(--space-1);
-  background: var(--surface-3);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  padding: 4px 0;
   min-width: 280px;
   z-index: 300;
-  box-shadow: var(--shadow-dropdown), var(--inner-highlight);
   max-height: 200px;
   overflow-y: auto;
   transform-origin: top left;
-  animation: dropdown-in var(--motion-fast) var(--ease-out-quint);
 }
 
 .env-editor-preset-item {
@@ -1374,17 +1368,31 @@ select.form-input {
   transition: var(--hover-transition);
 }
 
-.source-tab::after {
+/* Sliding tab underline — shared between .source-tab and
+ * .usage-history-tab. source-tabs uses the parent strip's border as the
+ * baseline so the underline pulls down by 1px to overlap; usage-history
+ * uses bottom: 0 (the default). */
+.source-tab::after,
+.usage-history-tab::after {
   content: '';
   position: absolute;
   left: 0;
   right: 0;
-  bottom: -1px;
+  bottom: 0;
   height: 2px;
   background: var(--accent);
   transform: scaleX(0);
   transform-origin: center;
   transition: transform var(--motion-base) var(--ease-out-quint);
+}
+
+.source-tab::after {
+  bottom: -1px;
+}
+
+.source-tab--active::after,
+.usage-history-tab--active::after {
+  transform: scaleX(1);
 }
 
 .source-tab:hover {
@@ -1393,10 +1401,6 @@ select.form-input {
 
 .source-tab--active {
   color: var(--text-primary);
-}
-
-.source-tab--active::after {
-  transform: scaleX(1);
 }
 
 /* Repo list (provider browse) */
@@ -2192,18 +2196,9 @@ body.tether-hide-cursor .xterm-cursor {
   margin-bottom: -1px;
 }
 
-.usage-history-tab::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: var(--accent);
-  transform: scaleX(0);
-  transform-origin: center;
-  transition: transform var(--motion-base) var(--ease-out-quint);
-}
+/* Sliding underline lives in the shared .source-tab/.usage-history-tab
+ * ::after block above; default bottom: 0 matches this strip's geometry
+ * so no override is needed here. */
 
 .usage-history-tab:hover {
   color: var(--text-primary);
@@ -2211,10 +2206,6 @@ body.tether-hide-cursor .xterm-cursor {
 
 .usage-history-tab--active {
   color: var(--text-primary);
-}
-
-.usage-history-tab--active::after {
-  transform: scaleX(1);
 }
 
 .usage-history-table-wrap {
