@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import type { SessionInfo, SessionState } from '../../../shared/types';
 import { CliToolBadge } from '../CliToolBadge';
+import { PaneLocationBadge } from './PaneLocationBadge';
 import { onKeyActivate, stopPropagationOnKey } from '../../utils/a11y';
+import type { PaneLocation } from '../../lib/layout-tree';
 
 interface SessionItemProps {
   session: SessionInfo;
@@ -28,6 +30,12 @@ interface SessionItemProps {
    * one. The parent group resolves source vs. target and persists the new order.
    */
   onReorderDrop?: (sourceSessionId: string, targetSessionId: string, position: 'above' | 'below') => void;
+  /** When this session occupies a pane in the active layout, where it is. */
+  paneLocation?: PaneLocation;
+  /** True when the session's pane is currently hidden behind another maximized pane. */
+  paneHidden?: boolean;
+  /** Focus this session's pane (and un-maximize if needed). */
+  onFocusPane?: (paneId: string) => void;
 }
 
 /**
@@ -38,7 +46,7 @@ interface SessionItemProps {
  */
 let activeReorderSource: { id: string; environmentId: string | null; workingDir: string } | null = null;
 
-export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, nested, onDragStart, onDragEnd, onReorderDrop }: SessionItemProps) {
+export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
@@ -207,6 +215,13 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
             <span className="session-path">
               <CliToolBadge session={session} />
               <span className="session-path-text">{abbreviatePath(session.workingDir)}</span>
+              {paneLocation && onFocusPane && (
+                <PaneLocationBadge
+                  location={paneLocation}
+                  hidden={!!paneHidden}
+                  onClick={() => onFocusPane(paneLocation.paneId)}
+                />
+              )}
             </span>
           </>
         )}

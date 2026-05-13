@@ -22,6 +22,8 @@ interface TerminalPaneProps {
   maxPanes: number;
   defaultFontSize: number;
   onFontSizeDelta: (sessionId: string, delta: number) => void;
+  /** Recreate the dead session in this pane with the same params. */
+  onRestartInPane?: (paneId: string, sessionId: string) => void;
 }
 
 export function TerminalPane({
@@ -39,10 +41,12 @@ export function TerminalPane({
   maxPanes,
   defaultFontSize,
   onFontSizeDelta,
+  onRestartInPane,
 }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
   const isPlaceholder = sessionId === null;
+  const isDead = !isPlaceholder && (session?.state === 'dead' || session?.state === 'stopped');
 
   // Mount terminal into container
   useEffect(() => {
@@ -195,6 +199,31 @@ export function TerminalPane({
               className="terminal-pane-xterm"
             />
             <PaneStatusStrip sessionId={session?.claudeSessionId || session?.toolSessionId} />
+            {isDead && sessionId && (
+              <div className="dead-pane-overlay" role="status">
+                <div className="dead-pane-overlay-card">
+                  <div className="dead-pane-overlay-title">Session ended</div>
+                  <div className="dead-pane-overlay-actions">
+                    {onRestartInPane && (
+                      <button
+                        type="button"
+                        className="dead-pane-overlay-btn dead-pane-overlay-btn--primary"
+                        onClick={() => onRestartInPane(paneId, sessionId)}
+                      >
+                        Restart in this pane
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="dead-pane-overlay-btn"
+                      onClick={() => layoutDispatch({ type: 'REMOVE_PANE', paneId })}
+                    >
+                      Close pane
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
         {enablePaneSplitting && isDragging && draggingPaneId !== paneId && (
