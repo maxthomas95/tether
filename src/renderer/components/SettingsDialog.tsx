@@ -13,6 +13,53 @@ import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 /** CLI tools that have definable flags (exclude 'custom' which has no known flags). */
 const FLAG_TOOLS = (['claude', 'codex', 'copilot', 'opencode'] as const) satisfies readonly CliToolId[];
 
+/**
+ * Preset terminal font stacks. Empty value means "use the Tether default"
+ * (Cascadia Code, defined in tokens.css). The dropdown stores the full CSS
+ * font-family string so the value can flow straight to `--font-mono-terminal`
+ * without translation.
+ */
+const TERMINAL_FONT_PRESETS: ReadonlyArray<{ label: string; value: string }> = [
+  { label: 'Default (Cascadia Code)', value: '' },
+  {
+    label: 'JetBrains Mono',
+    value: "'JetBrains Mono Variable', 'JetBrains Mono', 'Cascadia Code', Consolas, monospace",
+  },
+  {
+    label: 'Fira Code',
+    value: "'Fira Code', 'Cascadia Code', Consolas, monospace",
+  },
+  {
+    label: 'Cascadia Code',
+    value: "'Cascadia Code', Consolas, monospace",
+  },
+  {
+    label: 'Consolas',
+    value: "Consolas, 'Courier New', monospace",
+  },
+];
+
+/**
+ * Preset UI font stacks. Default = IBM Plex Sans (Tether's locked identity
+ * face). Empty value resets to the tokens.css default. Atkinson Hyperlegible
+ * and Inter are bundled via fontsource so they work without OS-side install.
+ */
+const UI_FONT_PRESETS: ReadonlyArray<{ label: string; value: string }> = [
+  { label: 'Default (IBM Plex Sans)', value: '' },
+  {
+    label: 'Inter',
+    value: "'Inter', 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif",
+  },
+  {
+    label: 'Atkinson Hyperlegible (high readability)',
+    value: "'Atkinson Hyperlegible', 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif",
+  },
+  {
+    label: 'System default',
+    value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+  },
+];
+
 function compactFlagsPerTool(flags: Partial<Record<CliToolId, string[]>>): Partial<Record<CliToolId, string[]>> {
   const result: Partial<Record<CliToolId, string[]>> = {};
   for (const toolId of FLAG_TOOLS) {
@@ -74,6 +121,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [exportStatus, setExportStatus] = useState<{ kind: 'ok' | 'error'; message: string } | null>(null);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
   const [terminalFontSize, setTerminalFontSize] = useState(14);
+  const [terminalFontFamily, setTerminalFontFamily] = useState<string>('');
+  const [uiFontFamily, setUiFontFamily] = useState<string>('');
   const [loaded, setLoaded] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
 
@@ -131,7 +180,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       window.electronAPI.config.get?.('hideTerminalCursor')?.catch(() => null),
       window.electronAPI.config.get?.('allowHelm')?.catch(() => null),
       window.electronAPI.config.get?.('terminalFontSize')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, hideCursor, helm, fontSize]) => {
+      window.electronAPI.config.get?.('terminalFontFamily')?.catch(() => null),
+      window.electronAPI.config.get?.('uiFontFamily')?.catch(() => null),
+    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, hideCursor, helm, fontSize, fontFamily, uiFont]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -150,6 +201,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       if (Number.isFinite(parsedFontSize) && parsedFontSize >= 8 && parsedFontSize <= 32) {
         setTerminalFontSize(parsedFontSize);
       }
+      setTerminalFontFamily(typeof fontFamily === 'string' ? fontFamily.trim() : '');
+      setUiFontFamily(typeof uiFont === 'string' ? uiFont.trim() : '');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -181,13 +234,15 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     await window.electronAPI.config.set?.('hideTerminalCursor', hideTerminalCursor ? 'true' : 'false');
     await window.electronAPI.config.set?.('allowHelm', allowHelm ? 'true' : 'false');
     await window.electronAPI.config.set?.('terminalFontSize', String(terminalFontSize));
+    await window.electronAPI.config.set?.('terminalFontFamily', terminalFontFamily);
+    await window.electronAPI.config.set?.('uiFontFamily', uiFontFamily);
     window.dispatchEvent(new CustomEvent('tether:settings-changed'));
     for (const toolId of FLAG_TOOLS) {
       await window.electronAPI.config.setDefaultCliFlagsForTool?.(toolId, cliFlagsPerTool[toolId] || []);
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, hideTerminalCursor, allowHelm, terminalFontSize, cliFlagsPerTool, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, hideTerminalCursor, allowHelm, terminalFontSize, terminalFontFamily, uiFontFamily, cliFlagsPerTool, vaultConfig, onClose]);
 
   const handleExportUsage = async (format: UsageExportFormat) => {
     setExportBusy(format);
@@ -502,6 +557,53 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               Base size in pixels (8&ndash;32). Ctrl+wheel on a terminal pane sets a
               per-session override that lasts for the session&rsquo;s lifetime; the reset
               button clears all overrides so panes pick up the default again.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="terminal-font-family-select">
+              Terminal font family
+            </label>
+            <select
+              id="terminal-font-family-select"
+              className="form-input"
+              value={terminalFontFamily}
+              onChange={e => setTerminalFontFamily(e.target.value)}
+            >
+              {TERMINAL_FONT_PRESETS.map(preset => (
+                <option key={preset.label} value={preset.value}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+            <p className="form-hint">
+              Applies to xterm.js panes only. Tether&rsquo;s own UI keeps IBM Plex
+              Sans / JetBrains Mono regardless of this choice. Fonts other than
+              the default rely on the OS having them installed; falls back to
+              Cascadia Code or Consolas if missing.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="ui-font-family-select">
+              UI font family
+            </label>
+            <select
+              id="ui-font-family-select"
+              className="form-input"
+              value={uiFontFamily}
+              onChange={e => setUiFontFamily(e.target.value)}
+            >
+              {UI_FONT_PRESETS.map(preset => (
+                <option key={preset.label} value={preset.value}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+            <p className="form-hint">
+              Affects sidebar, dialogs, and menus. Spacing tokens are tuned for
+              IBM Plex Sans; alternates may pack slightly tighter or looser.
+              Inter and Atkinson Hyperlegible are bundled.
             </p>
           </div>
             </>

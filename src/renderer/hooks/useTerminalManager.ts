@@ -18,9 +18,27 @@ interface PaneEntry {
   container: HTMLDivElement | null;
 }
 
+const FALLBACK_TERMINAL_FONT =
+  "'JetBrains Mono Variable', 'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace";
+
+/**
+ * Read the terminal font stack from the `--font-mono-terminal` CSS variable
+ * (defined in tokens.css). This is the seam that lets a future "Terminal font
+ * family" user setting override only the terminal pane — `--font-mono-ui`
+ * stays locked to the Tether identity face.
+ */
+function getTerminalFontFamily(): string {
+  if (typeof window === 'undefined' || !document.documentElement) {
+    return FALLBACK_TERMINAL_FONT;
+  }
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue('--font-mono-terminal')
+    .trim();
+  return value || FALLBACK_TERMINAL_FONT;
+}
+
 const BASE_TERMINAL_OPTIONS = {
   cursorBlink: true,
-  fontFamily: "'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace",
   fontSize: 14,
   allowProposedApi: true,
 } as const;
@@ -36,7 +54,7 @@ export interface TerminalManagerAPI {
   remove: (sessionId: string) => void;
 }
 
-export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
+export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: string): TerminalManagerAPI {
   const panes = useRef(new Map<PaneId, PaneEntry>());
   const backgroundTerminals = useRef(new Map<string, ManagedTerminal>());
   const themeRef = useRef<ITheme | undefined>(xtermTheme);
@@ -53,8 +71,26 @@ export function useTerminalManager(xtermTheme?: ITheme): TerminalManagerAPI {
     }
   }, [xtermTheme]);
 
+  // Re-read the `--font-mono-terminal` CSS var when the user changes the
+  // terminal font setting. The trigger value isn't used directly — App.tsx
+  // applies the value to the CSS var, and we resolve through getComputedStyle
+  // so the same path runs whether the user picks a preset or clears it.
+  useEffect(() => {
+    const family = getTerminalFontFamily();
+    for (const entry of panes.current.values()) {
+      entry.terminal.options.fontFamily = family;
+    }
+    for (const managed of backgroundTerminals.current.values()) {
+      managed.terminal.options.fontFamily = family;
+    }
+  }, [fontFamilyTrigger]);
+
   const createTerminal = useCallback((sessionId: string): ManagedTerminal => {
-    const terminal = new Terminal({ ...BASE_TERMINAL_OPTIONS, theme: themeRef.current });
+    const terminal = new Terminal({
+      ...BASE_TERMINAL_OPTIONS,
+      fontFamily: getTerminalFontFamily(),
+      theme: themeRef.current,
+    });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
 

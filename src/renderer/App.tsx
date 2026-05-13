@@ -70,6 +70,15 @@ export function App() {
   const [sessionOrderPrefs, setSessionOrderPrefs] = useState<SessionOrderPref[]>([]);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
   const [defaultTerminalFontSize, setDefaultTerminalFontSize] = useState(14);
+  // Empty string = use the CSS var default from tokens.css (Cascadia Code).
+  // Non-empty = user-selected font stack, applied to `--font-mono-terminal` on
+  // <html>, which xterm re-reads on the next theme/font effect tick.
+  const [defaultTerminalFontFamily, setDefaultTerminalFontFamily] = useState<string>('');
+  // Empty string = use the tokens.css default (IBM Plex Sans). Non-empty
+  // overrides `--font-sans` on <html> so the whole UI re-renders in the
+  // chosen face. Spacing tokens were tuned for Plex Sans; very different
+  // faces may pack slightly tight or loose.
+  const [uiFontFamily, setUiFontFamily] = useState<string>('');
   const [editingEnv, setEditingEnv] = useState<EnvironmentInfo | null>(null);
   const [envMenuOpenId, setEnvMenuOpenId] = useState<string | null>(null);
   const envMenuRef = useRef<HTMLDivElement>(null);
@@ -78,7 +87,7 @@ export function App() {
     () => hideTerminalCursor ? withHiddenXtermCursor(xtermTheme) : xtermTheme,
     [hideTerminalCursor, xtermTheme],
   );
-  const termManager = useTerminalManager(effectiveXtermTheme);
+  const termManager = useTerminalManager(effectiveXtermTheme, defaultTerminalFontFamily);
   const { layoutState, layoutDispatch } = useLayoutState();
   const { notifications, notify, dismiss } = useNotifications();
   const notifyError = useCallback((title: string, err: unknown) => {
@@ -112,6 +121,27 @@ export function App() {
     document.body.classList.toggle('tether-hide-cursor', hideTerminalCursor);
     return () => document.body.classList.remove('tether-hide-cursor');
   }, [hideTerminalCursor]);
+
+  // Push the user's terminal font choice into the `--font-mono-terminal` CSS
+  // var so xterm picks it up. Empty value means "use the tokens.css default."
+  useEffect(() => {
+    const trimmed = defaultTerminalFontFamily.trim();
+    if (trimmed) {
+      document.documentElement.style.setProperty('--font-mono-terminal', trimmed);
+    } else {
+      document.documentElement.style.removeProperty('--font-mono-terminal');
+    }
+  }, [defaultTerminalFontFamily]);
+
+  // Same pattern for the UI font (`--font-sans`).
+  useEffect(() => {
+    const trimmed = uiFontFamily.trim();
+    if (trimmed) {
+      document.documentElement.style.setProperty('--font-sans', trimmed);
+    } else {
+      document.documentElement.style.removeProperty('--font-sans');
+    }
+  }, [uiFontFamily]);
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -150,7 +180,9 @@ export function App() {
       window.electronAPI.config.get?.('hideTerminalCursor')?.catch(() => null),
       window.electronAPI.config.get?.('allowHelm')?.catch(() => null),
       window.electronAPI.config.get?.('terminalFontSize')?.catch(() => null),
-    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor, helm, fontSize]) => {
+      window.electronAPI.config.get?.('terminalFontFamily')?.catch(() => null),
+      window.electronAPI.config.get?.('uiFontFamily')?.catch(() => null),
+    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor, helm, fontSize, fontFamily, uiFont]) => {
       if (cancelled) return;
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
@@ -163,6 +195,8 @@ export function App() {
       if (Number.isFinite(parsedFontSize) && parsedFontSize >= 8 && parsedFontSize <= 32) {
         setDefaultTerminalFontSize(parsedFontSize);
       }
+      setDefaultTerminalFontFamily(typeof fontFamily === 'string' ? fontFamily.trim() : '');
+      setUiFontFamily(typeof uiFont === 'string' ? uiFont.trim() : '');
     });
     return () => { cancelled = true; };
   }, [settingsOpen]);
