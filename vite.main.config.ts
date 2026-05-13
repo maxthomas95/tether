@@ -11,6 +11,7 @@ export default defineConfig({
       external: [
         'node-pty',
         'ssh2',
+        'adm-zip',
       ],
     },
   },
