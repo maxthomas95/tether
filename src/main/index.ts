@@ -64,7 +64,7 @@ function openExternalWebUrl(url: string): void {
   try {
     const parsed = new URL(url);
     if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-      void shell.openExternal(url);
+      shell.openExternal(url).catch(() => undefined);
     }
   } catch {
     // Ignore malformed navigation attempts.
