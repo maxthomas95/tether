@@ -177,18 +177,19 @@ export function App() {
     () => collectVisibleSessionIds(layoutState.root, layoutState.maximizedPaneId),
     [layoutState.root, layoutState.maximizedPaneId],
   );
-  // When a session becomes visible while in 'waiting' state, the user has
-  // effectively acknowledged the wait — record it so the bang doesn't re-fire
-  // when they navigate away again (Discord/Slack-style: see-once-then-quiet).
-  // Permission_prompt overrides this in the SessionItem's class decision so
-  // genuine blockers always escalate.
+  // When a session becomes visible while in a needs-attention state
+  // (waiting OR idle), the user has effectively acknowledged the wait —
+  // record it so the bang doesn't re-fire when they navigate away again
+  // (Discord/Slack-style: see-once-then-quiet). Idle is included so a
+  // long-dormant session that fades to grey doesn't escape acknowledgment
+  // — the bang persists until the user actually views.
   useEffect(() => {
     setAcknowledgedWaitingIds(prev => {
       let changed = false;
       const next = new Set(prev);
       for (const id of visibleSessionIds) {
         const s = sessionsRef.current.find(s => s.id === id);
-        if (s?.state === 'waiting' && !next.has(id)) {
+        if ((s?.state === 'waiting' || s?.state === 'idle') && !next.has(id)) {
           next.add(id);
           changed = true;
         }
@@ -423,11 +424,14 @@ export function App() {
     const removeState = window.electronAPI.session.onStateChange((sid, state: SessionState, waitingReason) => {
       setSessions(prev => {
         const old = prev.find(s => s.id === sid);
-        // Any state change drops the prior ack — entering waiting starts a
-        // fresh "needs attention" cycle; leaving waiting clears the entry
-        // so the set doesn't leak. Either way, we want a clean slate next
-        // time waiting comes around.
-        if (old && old.state !== state) {
+        // Only drop the ack when the session leaves the needs-attention
+        // bucket entirely — back to running (new turn), or it dies. The
+        // byte-level waiting→idle transition (30s silence) is purely a
+        // detector reclassification of the same dormant state and shouldn't
+        // re-alarm the user.
+        const wasNeedsAttention = old?.state === 'waiting' || old?.state === 'idle';
+        const isNeedsAttention = state === 'waiting' || state === 'idle';
+        if (wasNeedsAttention && !isNeedsAttention && old && old.state !== state) {
           setAcknowledgedWaitingIds(prevAck => {
             if (!prevAck.has(sid)) return prevAck;
             const next = new Set(prevAck);

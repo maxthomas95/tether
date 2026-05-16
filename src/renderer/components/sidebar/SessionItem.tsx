@@ -336,11 +336,17 @@ function getStatusClass(
       //      the user MUST respond — see-once-then-quiet doesn't apply)
       //   2. invisible AND user hasn't acked this waiting cycle → bang
       //   3. visible OR user already acked → plain amber
-      // Acks reset on every state transition into/out of waiting, so a new
-      // turn produces a fresh bang.
       if (waitingReason === 'permission') return 'waiting-permission';
       if (isVisibleInLayout === false && !bangSuppressed) return 'waiting-permission';
       return 'waiting';
+    case 'idle':
+      // Idle is the byte-level "30s of further silence" reclassification of
+      // a waiting session. If the user never acked the original wait, keep
+      // the bang going — fading to grey would silently hide the unread
+      // alert and the user would never know to come back. Once acked, the
+      // dot proceeds to its normal grey appearance like any quiet session.
+      if (isVisibleInLayout === false && !bangSuppressed) return 'waiting-permission';
+      return 'idle';
     case 'stopped':
     case 'dead':
       return 'dead';
@@ -355,7 +361,7 @@ function getStatusTooltip(
   isVisibleInLayout: boolean | undefined,
   bangSuppressed: boolean | undefined,
 ): string | undefined {
-  if (state !== 'waiting') return undefined;
+  if (state !== 'waiting' && state !== 'idle') return undefined;
   if (waitingReason === 'permission') return 'Waiting on a permission prompt — switch in to respond';
   if (isVisibleInLayout === false && !bangSuppressed) return 'This session is waiting and not currently visible';
   return undefined;
