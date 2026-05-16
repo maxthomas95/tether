@@ -109,3 +109,45 @@
   --sidebar-width: 220px;
   --header-height: 36px;
 }
+
+/* ── Elevation surfaces, per theme ───────────────────────────────────
+ * Sit alongside the theme color tokens that useTheme injects inline.
+ * Keyed by the data-theme attribute on <html>, which useTheme.ts sets
+ * whenever the active theme changes. Latte intentionally collapses
+ * surface-2..-4 to its sidebar tone (decision E in UX_REFRESH).
+ *
+ * surface-1 = terminal/base. surface-2 reserved for in-sidebar cards
+ * (unused today; kept for Phase 3). surface-3 = chrome-dark for
+ * dialogs / dropdowns / menus — shadows + inner-highlight provide the
+ * lift, not luminance. surface-4 floats above primary for toasts.
+ */
+:root[data-theme='mocha'] {
+  --surface-1: #1e1e2e;
+  --surface-2: #1b1b29;
+  --surface-3: #181825;
+  --surface-4: #232334;
+}
+:root[data-theme='macchiato'] {
+  --surface-1: #24273a;
+  --surface-2: #212436;
+  --surface-3: #1e2030;
+  --surface-4: #292c41;
+}
+:root[data-theme='frappe'] {
+  --surface-1: #303446;
+  --surface-2: #2c2f40;
+  --surface-3: #292c3c;
+  --surface-4: #363a4d;
+}
+:root[data-theme='latte'] {
+  --surface-1: #eff1f5;
+  --surface-2: #e6e9ef;
+  --surface-3: #e6e9ef;
+  --surface-4: #e6e9ef;
+}
+:root[data-theme='default-dark'] {
+  --surface-1: #1e1e1e;
+  --surface-2: #1b1b1b;
+  --surface-3: #181818;
+  --surface-4: #252526;
+}

@@ -21,13 +21,6 @@ export interface TetherTheme {
     '--status-dead': string;
     '--btn-primary-text': string;
     '--shadow-opacity': string;
-    // Phase 2 — elevation surfaces. surface-1 sits flush with the terminal
-    // background; -2..-4 progressively lift for rows, dialogs/menus, toasts.
-    // Latte intentionally leaves these flat (decision E in UX_REFRESH).
-    '--surface-1': string;
-    '--surface-2': string;
-    '--surface-3': string;
-    '--surface-4': string;
   };
   titlebar: {
     color: string;      // overlay background (matches sidebar/mantle)
@@ -59,14 +52,6 @@ export const mocha: TetherTheme = {
     '--status-dead': '#f38ba8',
     '--btn-primary-text': '#1e1e2e',
     '--shadow-opacity': '0.5',
-    // surface-1 = terminal/base. surface-2 reserved for in-sidebar cards
-    // (unused today; kept for Phase 3). surface-3 = chrome-dark for
-    // dialogs / dropdowns / menus — shadows + inner-highlight provide
-    // the lift, not luminance. surface-4 floats above primary for toasts.
-    '--surface-1': '#1e1e2e',
-    '--surface-2': '#1b1b29',
-    '--surface-3': '#181825',
-    '--surface-4': '#232334',
   },
   xterm: {
     background: '#1e1e2e',
@@ -117,10 +102,6 @@ export const macchiato: TetherTheme = {
     '--status-dead': '#ed8796',
     '--btn-primary-text': '#24273a',
     '--shadow-opacity': '0.5',
-    '--surface-1': '#24273a',
-    '--surface-2': '#212436',
-    '--surface-3': '#1e2030',
-    '--surface-4': '#292c41',
   },
   xterm: {
     background: '#24273a',
@@ -171,10 +152,6 @@ export const frappe: TetherTheme = {
     '--status-dead': '#e78284',
     '--btn-primary-text': '#303446',
     '--shadow-opacity': '0.5',
-    '--surface-1': '#303446',
-    '--surface-2': '#2c2f40',
-    '--surface-3': '#292c3c',
-    '--surface-4': '#363a4d',
   },
   xterm: {
     background: '#303446',
@@ -225,12 +202,6 @@ export const latte: TetherTheme = {
     '--status-dead': '#d20f39',
     '--btn-primary-text': '#eff1f5',
     '--shadow-opacity': '0.15',
-    // Latte stays flat in Phase 2 (decision E). All surfaces collapse to
-    // existing tokens so light theme renders unchanged.
-    '--surface-1': '#eff1f5',
-    '--surface-2': '#e6e9ef',
-    '--surface-3': '#e6e9ef',
-    '--surface-4': '#e6e9ef',
   },
   xterm: {
     background: '#eff1f5',
@@ -281,10 +252,6 @@ export const defaultDark: TetherTheme = {
     '--status-dead': '#ef4444',
     '--btn-primary-text': '#000000',
     '--shadow-opacity': '0.5',
-    '--surface-1': '#1e1e1e',
-    '--surface-2': '#1b1b1b',
-    '--surface-3': '#181818',
-    '--surface-4': '#252526',
   },
   xterm: {
     background: '#1e1e1e',
