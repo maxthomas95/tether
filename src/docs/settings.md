@@ -29,6 +29,15 @@ The theme applies to the entire app: title bar, sidebar, terminal, dialogs, and 
 
 Tether polls GitHub Releases on a background timer (15 seconds after launch, then daily). Disable here if you're on a locked-down network. Updates are non-blocking — when one is available you'll get a toast pointing to the release page.
 
+### Folders
+
+Two quick-access buttons for support and troubleshooting:
+
+- **Open user data folder** — reveals the directory holding `data.json` (environments, sessions, profiles, git providers, known hosts) and the cached LiteLLM pricing table. This is `%APPDATA%/Tether` on Windows.
+- **Open logs folder** — reveals Tether's runtime log files. Useful when filing a bug or tailing what the app is doing. Pair with **About → Export diagnostics for support** to bundle a scrubbed copy of these for a bug report.
+
+Both buttons hand off to your OS file manager (Explorer on Windows, Finder on macOS, `xdg-open` on Linux).
+
 ## Terminal
 
 ### Default font size

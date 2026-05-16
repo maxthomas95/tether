@@ -557,6 +557,33 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               Automatically check GitHub for new Tether releases when the app starts.
             </p>
           </div>
+
+          {/* Folders */}
+          <div className="form-group" style={{ marginTop: 20 }}>
+            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              Folders
+            </label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                className="form-btn"
+                onClick={() => { void window.electronAPI.diagnostics.openUserDataFolder(); }}
+              >
+                Open user data folder
+              </button>
+              <button
+                className="form-btn"
+                onClick={() => { void window.electronAPI.diagnostics.openLogsFolder(); }}
+              >
+                Open logs folder
+              </button>
+            </div>
+            <p className="form-hint">
+              <strong>User data</strong> holds <code>data.json</code> (environments, sessions, profiles, git
+              providers, known hosts) and the cached LiteLLM pricing table.{' '}
+              <strong>Logs</strong> holds Tether&rsquo;s runtime log files — handy when filing a bug or
+              tailing what the app is doing.
+            </p>
+          </div>
             </>
           )}
 
