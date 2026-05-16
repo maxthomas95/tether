@@ -1213,7 +1213,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
               <button
                 className="form-btn form-btn--primary"
                 disabled={!reposRoot.trim()}
-                onClick={() => { void handleReposNext(); }}
+                onClick={() => { handleReposNext().catch(() => undefined); }}
               >
                 Save & Continue
               </button>
@@ -1226,7 +1226,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
               <button
                 className="form-btn form-btn--primary"
                 disabled={!vaultReadyToSave}
-                onClick={() => { void handleVaultSave(); }}
+                onClick={() => { handleVaultSave().catch(() => undefined); }}
               >
                 Save & Continue
               </button>
@@ -1238,7 +1238,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
               <button
                 className="form-btn form-btn--primary"
                 disabled={!environmentCanContinue || savingEnvironment}
-                onClick={() => { void handleEnvironmentAndCliNext(); }}
+                onClick={() => { handleEnvironmentAndCliNext().catch(() => undefined); }}
               >
                 {savingEnvironment ? 'Saving...' : 'Save & Continue'}
               </button>
@@ -1251,7 +1251,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
               <button
                 className="form-btn form-btn--primary"
                 disabled={!providerRequiredFilled || savingProvider}
-                onClick={() => { void handleProviderSave(); }}
+                onClick={() => { handleProviderSave().catch(() => undefined); }}
               >
                 {savingProvider ? 'Saving...' : 'Save & Test'}
               </button>
