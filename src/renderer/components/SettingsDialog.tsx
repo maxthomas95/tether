@@ -164,6 +164,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [exportStatus, setExportStatus] = useState<{ kind: 'ok' | 'error'; message: string } | null>(null);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
   const [terminalFontSize, setTerminalFontSize] = useState(14);
+  const [terminalScrollback, setTerminalScrollback] = useState(10000);
   const [terminalFontFamily, setTerminalFontFamily] = useState<string>('');
   const [uiFontFamily, setUiFontFamily] = useState<string>('');
   const [loaded, setLoaded] = useState(false);
@@ -228,7 +229,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       window.electronAPI.config.get?.('terminalFontSize')?.catch(() => null),
       window.electronAPI.config.get?.('terminalFontFamily')?.catch(() => null),
       window.electronAPI.config.get?.('uiFontFamily')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, hideCursor, helm, fontSize, fontFamily, uiFont]) => {
+      window.electronAPI.config.get?.('terminalScrollback')?.catch(() => null),
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, hideCursor, helm, fontSize, fontFamily, uiFont, scrollback]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -252,6 +254,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       }
       setTerminalFontFamily(typeof fontFamily === 'string' ? fontFamily.trim() : '');
       setUiFontFamily(typeof uiFont === 'string' ? uiFont.trim() : '');
+      const parsedScrollback = scrollback ? parseInt(scrollback, 10) : NaN;
+      if (Number.isFinite(parsedScrollback)) {
+        setTerminalScrollback(Math.max(100, Math.min(100000, parsedScrollback)));
+      }
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -284,6 +290,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     await window.electronAPI.config.set?.('hideTerminalCursor', hideTerminalCursor ? 'true' : 'false');
     await window.electronAPI.config.set?.('allowHelm', allowHelm ? 'true' : 'false');
     await window.electronAPI.config.set?.('terminalFontSize', String(terminalFontSize));
+    await window.electronAPI.config.set?.('terminalScrollback', String(terminalScrollback));
     await window.electronAPI.config.set?.('terminalFontFamily', terminalFontFamily);
     await window.electronAPI.config.set?.('uiFontFamily', uiFontFamily);
     await window.electronAPI.config.set?.('defaultCliTool', defaultCliTool);
@@ -294,7 +301,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, allowHelm, terminalFontSize, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, allowHelm, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, onClose]);
 
   const handleExportUsage = async (format: UsageExportFormat) => {
     setExportBusy(format);
@@ -638,6 +645,32 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               Base size in pixels (8&ndash;32). Ctrl+wheel on a terminal pane sets a
               per-session override that lasts for the session&rsquo;s lifetime; the reset
               button clears all overrides so panes pick up the default again.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="terminal-scrollback-input">
+              Terminal scrollback buffer
+            </label>
+            <input
+              id="terminal-scrollback-input"
+              className="form-input"
+              type="number"
+              min={100}
+              max={100000}
+              step={100}
+              value={terminalScrollback}
+              onChange={e => {
+                const n = parseInt(e.target.value, 10);
+                if (Number.isFinite(n)) setTerminalScrollback(Math.max(100, Math.min(100000, n)));
+              }}
+              style={{ width: 120 }}
+            />
+            <p className="form-hint">
+              Lines of scrollback kept per pane (100&ndash;100,000; default 10,000).
+              xterm.js&rsquo;s built-in default of 1,000 is exhausted in seconds by
+              agentic CLI output. Larger values keep more history but cost more
+              memory per pane; changes apply immediately to existing panes.
             </p>
           </div>
 

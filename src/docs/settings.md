@@ -44,9 +44,13 @@ Both buttons hand off to your OS file manager (Explorer on Windows, Finder on ma
 
 Sets the default terminal font size for all new panes. Existing panes keep whatever you set them to with **Ctrl+scroll**. The reset shortcut returns a pane to this default.
 
+### Scrollback buffer
+
+Number of lines of output kept per pane (100&ndash;100,000; default 10,000). xterm.js ships with a 1,000-line default, which agentic CLI output exhausts almost immediately — Tether bumps the default to 10k so you can scroll back through a full Claude or Codex run. Larger values keep more history at the cost of memory per pane; the setting applies immediately to existing panes.
+
 ### Terminal behavior
 
-A few terminal-pane toggles (e.g. cursor blink, scrollback length). The hint copy explains the trade-offs per option — most users should leave these at the defaults.
+A few terminal-pane toggles (e.g. cursor visibility, font family). The hint copy explains the trade-offs per option — most users should leave these at the defaults.
 
 ## Sessions
 
