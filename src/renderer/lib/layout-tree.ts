@@ -42,6 +42,36 @@ export function findParent(root: LayoutNode, childId: PaneId): LayoutSplit | nul
   return findParent(root.children[0], childId) || findParent(root.children[1], childId);
 }
 
+/**
+ * Collect every session id currently visible to the user. Honors the
+ * maximize state — a maximized pane hides every other leaf, so only the
+ * maximized pane's session is visible. Used by the sidebar to decide
+ * which sessions deserve a "needs attention" affordance (sessions you
+ * can't see right now should call out when they go to waiting).
+ */
+export function collectVisibleSessionIds(
+  root: LayoutNode | null,
+  maximizedPaneId: PaneId | null,
+): Set<string> {
+  const ids = new Set<string>();
+  if (!root) return ids;
+  if (maximizedPaneId) {
+    const leaf = findLeaf(root, maximizedPaneId);
+    if (leaf?.sessionId) ids.add(leaf.sessionId);
+    return ids;
+  }
+  const walk = (node: LayoutNode): void => {
+    if (node.type === 'leaf') {
+      if (node.sessionId) ids.add(node.sessionId);
+      return;
+    }
+    walk(node.children[0]);
+    walk(node.children[1]);
+  };
+  walk(root);
+  return ids;
+}
+
 export function addPane(
   root: LayoutNode | null,
   targetPaneId: PaneId,

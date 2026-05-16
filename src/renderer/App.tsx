@@ -27,6 +27,7 @@ import { themeList } from './styles/themes';
 import {
   addPane,
   clampMaxPanes,
+  collectVisibleSessionIds,
   generatePaneId,
   findLeaf,
   getLeaves,
@@ -154,6 +155,14 @@ export function App() {
     ? findLeaf(layoutState.root, layoutState.focusedPaneId)
     : null;
   const activeSessionId = focusedLeaf?.sessionId ?? null;
+  // Sessions currently mounted AND visible (maximize hides everything else).
+  // Used by the sidebar to decide which sessions get the amber-with-bang
+  // "needs attention" affordance — sessions you can't see should call out
+  // when they enter waiting state, sessions you're looking at should not.
+  const visibleSessionIds = useMemo(
+    () => collectVisibleSessionIds(layoutState.root, layoutState.maximizedPaneId),
+    [layoutState.root, layoutState.maximizedPaneId],
+  );
   const environmentById = useMemo(() => new Map(environments.map(env => [env.id, env])), [environments]);
 
   // Load profiles on mount
@@ -1369,6 +1378,7 @@ export function App() {
                         environmentId={env.id}
                         sessions={sortSessionsInGroup(env.id, dir, dirSessions)}
                         activeSessionId={activeSessionId}
+                        visibleSessionIds={visibleSessionIds}
                         pinned={repoGroupPrefs.find(p => p.environmentId === env.id && p.workingDir === dir)?.pinned ?? false}
                         onTogglePin={handleTogglePin}
                         onDropRepoGroup={handleDropRepoGroup}

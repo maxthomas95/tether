@@ -8,6 +8,11 @@ import type { PaneLocation } from '../../lib/layout-tree';
 interface SessionItemProps {
   session: SessionInfo;
   isActive: boolean;
+  /** True when the session is mounted in a pane currently visible to the user
+   *  (i.e. mounted AND not hidden behind a maximized pane). When false, a
+   *  session in 'waiting' state gets the amber-with-bang affordance — the
+   *  user can't see the session itself, so the dot has to call out. */
+  isVisibleInLayout?: boolean;
   onClick: () => void;
   onStop: () => void;
   onKill: () => void;
@@ -46,7 +51,7 @@ interface SessionItemProps {
  */
 let activeReorderSource: { id: string; environmentId: string | null; workingDir: string } | null = null;
 
-export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane }: SessionItemProps) {
+export function SessionItem({ session, isActive, isVisibleInLayout, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
@@ -165,10 +170,8 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
       }}
     >
       <span
-        className={`status-dot status-dot--${getStatusClass(session.state, session.waitingReason)}`}
-        title={session.state === 'waiting' && session.waitingReason === 'permission'
-          ? 'Waiting on a permission prompt — switch in to respond'
-          : undefined}
+        className={`status-dot status-dot--${getStatusClass(session.state, session.waitingReason, isVisibleInLayout)}`}
+        title={getStatusTooltip(session.state, session.waitingReason, isVisibleInLayout)}
       />
       <div className="session-info">
         {editing ? (
@@ -312,21 +315,42 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
   );
 }
 
-function getStatusClass(state: SessionState, waitingReason?: 'idle' | 'permission'): string {
+function getStatusClass(
+  state: SessionState,
+  waitingReason: 'idle' | 'permission' | undefined,
+  isVisibleInLayout: boolean | undefined,
+): string {
   switch (state) {
     case 'running':
     case 'starting':
       return 'running';
     case 'waiting':
-      // permission_prompt gets its own class so the dot can grow a `!` glyph
-      // — a calm idle/turn-complete amber stays plain.
-      return waitingReason === 'permission' ? 'waiting-permission' : 'waiting';
+      // Bang the dot when (a) Claude is explicitly blocked on a permission
+      // prompt — always urgent — or (b) the session isn't visible in the
+      // current layout, in which case the user can't see Claude finished
+      // and the dot is the only "come back here" affordance. A waiting
+      // session you ARE looking at stays plain amber: you can already see
+      // the response, no need to escalate.
+      if (waitingReason === 'permission') return 'waiting-permission';
+      if (isVisibleInLayout === false) return 'waiting-permission';
+      return 'waiting';
     case 'stopped':
     case 'dead':
       return 'dead';
     default:
       return 'idle';
   }
+}
+
+function getStatusTooltip(
+  state: SessionState,
+  waitingReason: 'idle' | 'permission' | undefined,
+  isVisibleInLayout: boolean | undefined,
+): string | undefined {
+  if (state !== 'waiting') return undefined;
+  if (waitingReason === 'permission') return 'Waiting on a permission prompt — switch in to respond';
+  if (isVisibleInLayout === false) return 'This session is waiting and not currently visible';
+  return undefined;
 }
 
 function abbreviatePath(p: string): string {
