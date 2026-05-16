@@ -23,6 +23,7 @@ import type {
   HostVerifyRequest,
   SessionExitInfo,
   DiagnosticsExportResult,
+  OpenFolderResult,
   WaitingReason,
 } from '../shared/types';
 
@@ -261,6 +262,8 @@ const api: TetherAPI = {
   },
   diagnostics: {
     export: (): Promise<DiagnosticsExportResult> => ipcRenderer.invoke(IPC.DIAGNOSTICS_EXPORT),
+    openUserDataFolder: (): Promise<OpenFolderResult> => ipcRenderer.invoke(IPC.DIAGNOSTICS_OPEN_USER_DATA_FOLDER),
+    openLogsFolder: (): Promise<OpenFolderResult> => ipcRenderer.invoke(IPC.DIAGNOSTICS_OPEN_LOGS_FOLDER),
   },
   keybindings: {
     get: (): Promise<KeybindingOverrides> => ipcRenderer.invoke(IPC.KEYBINDINGS_GET),

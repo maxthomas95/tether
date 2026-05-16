@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { ipcMain, dialog, shell } from 'electron';
+import { app, ipcMain, dialog, shell } from 'electron';
 import { IPC } from '../../shared/constants';
 import { createLogger } from '../logger';
 import type { HandlerContext } from './helpers';
@@ -80,5 +80,25 @@ export function registerSystemHandlers(ctx: HandlerContext): void {
     });
     if (result.canceled || !result.filePath) return { ok: false, error: 'cancelled' };
     return exportDiagnostics(result.filePath);
+  });
+
+  ipcMain.handle(IPC.DIAGNOSTICS_OPEN_USER_DATA_FOLDER, async () => {
+    const target = app.getPath('userData');
+    const err = await shell.openPath(target);
+    if (err) {
+      log.warn('Failed to open user data folder', { target, error: err });
+      return { ok: false, error: err };
+    }
+    return { ok: true, path: target };
+  });
+
+  ipcMain.handle(IPC.DIAGNOSTICS_OPEN_LOGS_FOLDER, async () => {
+    const target = app.getPath('logs');
+    const err = await shell.openPath(target);
+    if (err) {
+      log.warn('Failed to open logs folder', { target, error: err });
+      return { ok: false, error: err };
+    }
+    return { ok: true, path: target };
   });
 }

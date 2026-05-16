@@ -113,6 +113,8 @@ export const IPC = {
 
   // Diagnostics
   DIAGNOSTICS_EXPORT: 'diagnostics:export',
+  DIAGNOSTICS_OPEN_USER_DATA_FOLDER: 'diagnostics:open-user-data-folder',
+  DIAGNOSTICS_OPEN_LOGS_FOLDER: 'diagnostics:open-logs-folder',
 
   // Main -> Renderer
   USAGE_UPDATED: 'usage:updated',

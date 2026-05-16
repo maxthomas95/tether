@@ -53,7 +53,7 @@ import type { TransportStartOptions } from './types';
 
 function baseConfig(overrides: Partial<SSHConfig> = {}): SSHConfig {
   return {
-    host: '10.0.0.1',
+    host: 'host.example',
     port: 22,
     username: 'me',
     password: 'pw',

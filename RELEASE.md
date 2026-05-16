@@ -2,6 +2,8 @@
 
 This document is the source of truth for how Tether releases are cut. All conventions here are also enforced by `scripts/release.mjs` — running the script is the recommended path; this doc explains what it does and why.
 
+For the additional 1.0 hardening gate, see `docs/1.0_RELEASE_CHECKLIST.md`.
+
 ## Quick start
 
 Cut the next alpha (auto-picks the next number from GitHub releases):

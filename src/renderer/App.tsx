@@ -101,6 +101,7 @@ export function App() {
   const [terminalCursorStyle, setTerminalCursorStyle] = useState<TerminalCursorStyle>('block');
   const [terminalCursorBlink, setTerminalCursorBlink] = useState(true);
   const [defaultTerminalFontSize, setDefaultTerminalFontSize] = useState(14);
+  const [terminalScrollback, setTerminalScrollback] = useState<number>(10000);
   // Empty string = use the CSS var default from tokens.css (Cascadia Code).
   // Non-empty = user-selected font stack, applied to `--font-mono-terminal` on
   // <html>, which xterm re-reads on the next theme/font effect tick.
@@ -125,6 +126,7 @@ export function App() {
     defaultTerminalFontFamily,
     terminalCursorStyle,
     terminalCursorBlink,
+    terminalScrollback,
   );
   const { layoutState, layoutDispatch } = useLayoutState();
   const { notifications, notify, dismiss } = useNotifications();
@@ -260,7 +262,8 @@ export function App() {
       window.electronAPI.config.get?.('uiFontFamily')?.catch(() => null),
       window.electronAPI.config.get?.('terminalCursorStyle')?.catch(() => null),
       window.electronAPI.config.get?.('terminalCursorBlink')?.catch(() => null),
-    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink]) => {
+      window.electronAPI.config.get?.('terminalScrollback')?.catch(() => null),
+    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback]) => {
       if (cancelled) return;
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
@@ -279,6 +282,10 @@ export function App() {
         setTerminalCursorStyle(cursorStyle);
       }
       setTerminalCursorBlink(cursorBlink !== 'false');
+      const parsedScrollback = scrollback ? parseInt(scrollback, 10) : NaN;
+      if (Number.isFinite(parsedScrollback)) {
+        setTerminalScrollback(Math.max(100, Math.min(100000, parsedScrollback)));
+      }
     });
     return () => { cancelled = true; };
   }, [settingsOpen]);
