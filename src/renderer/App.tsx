@@ -43,6 +43,14 @@ import { extractErrorMessage, formatSessionExitMessage } from './utils/errors';
 import { nextDuplicateLabel } from './utils/duplicate-label';
 import type { LayoutNode } from '../shared/layout-types';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, SessionOrderPref, HostVerifyRequest } from '../shared/types';
+import {
+  DEFAULT_KEYBINDINGS,
+  resolveBindings,
+  formatChord,
+  type Chord,
+  type KeybindingAction,
+  type KeybindingOverrides,
+} from '../shared/keybindings';
 import type { MenuDef } from './components/MenuBar';
 import logoSrc from './assets/logo.png';
 
@@ -85,6 +93,8 @@ export function App() {
   const [editingEnv, setEditingEnv] = useState<EnvironmentInfo | null>(null);
   const [envMenuOpenId, setEnvMenuOpenId] = useState<string | null>(null);
   const envMenuRef = useRef<HTMLDivElement>(null);
+  const [keybindingOverrides, setKeybindingOverrides] = useState<KeybindingOverrides>({});
+  const resolvedBindings = useMemo(() => resolveBindings(keybindingOverrides), [keybindingOverrides]);
   const { themeName, setTheme, xtermTheme } = useTheme();
   const effectiveXtermTheme = useMemo(
     () => hideTerminalCursor ? withHiddenXtermCursor(xtermTheme) : xtermTheme,
@@ -170,6 +180,11 @@ export function App() {
   // Load session-within-group order preferences on mount
   useEffect(() => {
     window.electronAPI.sessionOrder.getPrefs().then(setSessionOrderPrefs).catch(() => {});
+  }, []);
+
+  // Load keybinding overrides on mount
+  useEffect(() => {
+    window.electronAPI.keybindings.get().then(setKeybindingOverrides).catch(() => {});
   }, []);
 
   // Load resume-related UI settings
@@ -1040,6 +1055,7 @@ export function App() {
     onToggleSidebar: () => setSidebarVisible(v => !v),
     onStopSession: () => { if (activeSessionId) handleStop(activeSessionId); },
     onOpenSettings: () => setSettingsOpen(true),
+    onShowShortcuts: () => setShortcutsOpen(true),
     onZoomIn: () => setWindowZoom(window.electronAPI.webFrame.getZoomLevel() + 0.5),
     onZoomOut: () => setWindowZoom(window.electronAPI.webFrame.getZoomLevel() - 0.5),
     onZoomReset: () => setWindowZoom(0),
@@ -1092,7 +1108,27 @@ export function App() {
     },
   }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom]);
 
-  useKeyboardShortcuts(shortcutActions);
+  useKeyboardShortcuts(shortcutActions, resolvedBindings);
+
+  const handleKeybindingChange = useCallback((action: KeybindingAction, chord: Chord | null) => {
+    setKeybindingOverrides(prev => {
+      const next: KeybindingOverrides = { ...prev };
+      if (chord === null) {
+        next[action] = null;
+      } else if (chord === DEFAULT_KEYBINDINGS[action]) {
+        delete next[action];
+      } else {
+        next[action] = chord;
+      }
+      window.electronAPI.keybindings.set(next).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const handleResetAllKeybindings = useCallback(() => {
+    setKeybindingOverrides({});
+    window.electronAPI.keybindings.resetAll().catch(() => {});
+  }, []);
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
@@ -1255,10 +1291,10 @@ export function App() {
     {
       label: 'File',
       items: [
-        { label: 'New Session...', shortcut: 'Ctrl+N', onClick: () => setSessionDialogOpen(true) },
+        { label: 'New Session...', shortcut: formatChord(resolvedBindings['session.new']) || undefined, onClick: () => setSessionDialogOpen(true) },
         { label: 'New Environment...', onClick: () => setEnvDialogOpen(true) },
         { separator: true },
-        { label: 'Settings...', shortcut: 'Ctrl+,', onClick: () => setSettingsOpen(true) },
+        { label: 'Settings...', shortcut: formatChord(resolvedBindings['settings.open']) || undefined, onClick: () => setSettingsOpen(true) },
         { separator: true },
         { label: 'Exit', shortcut: 'Alt+F4', onClick: () => window.close() },
       ],
@@ -1266,11 +1302,11 @@ export function App() {
     {
       label: 'Session',
       items: [
-        { label: 'Stop Session', shortcut: 'Ctrl+W', onClick: () => { if (activeSessionId) handleStop(activeSessionId); }, disabled: !isAlive },
+        { label: 'Stop Session', shortcut: formatChord(resolvedBindings['session.stop']) || undefined, onClick: () => { if (activeSessionId) handleStop(activeSessionId); }, disabled: !isAlive },
         { label: 'Duplicate Session', onClick: () => { if (activeSessionId) handleDuplicate(activeSessionId); }, disabled: !activeSession },
         { separator: true },
-        { label: 'Next Pane', shortcut: 'Ctrl+\u2193', onClick: shortcutActions.onNextSession, disabled: !layoutState.root || getLeaves(layoutState.root).length < 2 },
-        { label: 'Previous Pane', shortcut: 'Ctrl+\u2191', onClick: shortcutActions.onPrevSession, disabled: !layoutState.root || getLeaves(layoutState.root).length < 2 },
+        { label: 'Next Pane', shortcut: formatChord(resolvedBindings['session.next']) || undefined, onClick: shortcutActions.onNextSession, disabled: !layoutState.root || getLeaves(layoutState.root).length < 2 },
+        { label: 'Previous Pane', shortcut: formatChord(resolvedBindings['session.prev']) || undefined, onClick: shortcutActions.onPrevSession, disabled: !layoutState.root || getLeaves(layoutState.root).length < 2 },
         { separator: true },
         { label: 'Kill Session', onClick: () => { if (activeSessionId) handleKill(activeSessionId); }, disabled: !isAlive, danger: true },
         { label: 'Remove Session', onClick: () => { if (activeSessionId) handleRemove(activeSessionId); }, disabled: !activeSession, danger: true },
@@ -1279,7 +1315,7 @@ export function App() {
     {
       label: 'View',
       items: [
-        { label: 'Toggle Sidebar', shortcut: 'Ctrl+B', onClick: () => setSidebarVisible(v => !v) },
+        { label: 'Toggle Sidebar', shortcut: formatChord(resolvedBindings['sidebar.toggle']) || undefined, onClick: () => setSidebarVisible(v => !v) },
         { separator: true },
         ...themeList.map(t => ({
           label: t.label,
@@ -1291,7 +1327,7 @@ export function App() {
     {
       label: 'Help',
       items: [
-        { label: 'Keyboard Shortcuts', shortcut: 'Ctrl+/', onClick: () => setShortcutsOpen(true) },
+        { label: 'Keyboard Shortcuts', shortcut: formatChord(resolvedBindings['shortcuts.show']) || undefined, onClick: () => setShortcutsOpen(true) },
         { separator: true },
         { label: 'Documentation', onClick: () => window.electronAPI.docs.open() },
         { separator: true },
@@ -1302,7 +1338,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleKill, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleKill, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings]);
 
   return (
     <div className="app-layout">
@@ -1509,10 +1545,16 @@ export function App() {
         currentTheme={themeName}
         onThemeChange={setTheme}
         onResetSessionFontSizes={handleResetSessionFontSizes}
+        keybindings={resolvedBindings}
+        onKeybindingChange={handleKeybindingChange}
+        onKeybindingsResetAll={handleResetAllKeybindings}
       />
       <KeyboardShortcutsDialog
         isOpen={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
+        bindings={resolvedBindings}
+        onChange={handleKeybindingChange}
+        onResetAll={handleResetAllKeybindings}
       />
       <UsageHistoryDialog
         isOpen={usageHistoryOpen}

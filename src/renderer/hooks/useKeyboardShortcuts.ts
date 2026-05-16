@@ -1,8 +1,14 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
+import {
+  parseKeyEvent,
+  ALL_ACTIONS,
+  type Chord,
+  type KeybindingAction,
+} from '../../shared/keybindings';
 
 export type PaneDirection = 'left' | 'right' | 'up' | 'down';
 
-interface ShortcutActions {
+export interface ShortcutActions {
   onNewSession: () => void;
   onSwitchSession: (index: number) => void;
   onNextSession: () => void;
@@ -10,19 +16,13 @@ interface ShortcutActions {
   onToggleSidebar: () => void;
   onStopSession: () => void;
   onOpenSettings: () => void;
+  onShowShortcuts: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onZoomReset: () => void;
   onFocusPaneDirection: (direction: PaneDirection) => void;
   onSwapPaneDirection: (direction: PaneDirection) => void;
 }
-
-const ARROW_DIRECTIONS: Record<string, PaneDirection> = {
-  ArrowLeft: 'left',
-  ArrowRight: 'right',
-  ArrowUp: 'up',
-  ArrowDown: 'down',
-};
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -32,101 +32,66 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
-export function useKeyboardShortcuts(actions: ShortcutActions) {
+function dispatch(action: KeybindingAction, actions: ShortcutActions): void {
+  switch (action) {
+    case 'session.new': actions.onNewSession(); return;
+    case 'session.stop': actions.onStopSession(); return;
+    case 'sidebar.toggle': actions.onToggleSidebar(); return;
+    case 'settings.open': actions.onOpenSettings(); return;
+    case 'shortcuts.show': actions.onShowShortcuts(); return;
+    case 'session.next': actions.onNextSession(); return;
+    case 'session.prev': actions.onPrevSession(); return;
+    case 'session.switch.1': actions.onSwitchSession(0); return;
+    case 'session.switch.2': actions.onSwitchSession(1); return;
+    case 'session.switch.3': actions.onSwitchSession(2); return;
+    case 'session.switch.4': actions.onSwitchSession(3); return;
+    case 'session.switch.5': actions.onSwitchSession(4); return;
+    case 'session.switch.6': actions.onSwitchSession(5); return;
+    case 'session.switch.7': actions.onSwitchSession(6); return;
+    case 'session.switch.8': actions.onSwitchSession(7); return;
+    case 'session.switch.9': actions.onSwitchSession(8); return;
+    case 'zoom.in': actions.onZoomIn(); return;
+    case 'zoom.out': actions.onZoomOut(); return;
+    case 'zoom.reset': actions.onZoomReset(); return;
+    case 'pane.focus.left': actions.onFocusPaneDirection('left'); return;
+    case 'pane.focus.right': actions.onFocusPaneDirection('right'); return;
+    case 'pane.focus.up': actions.onFocusPaneDirection('up'); return;
+    case 'pane.focus.down': actions.onFocusPaneDirection('down'); return;
+    case 'pane.swap.left': actions.onSwapPaneDirection('left'); return;
+    case 'pane.swap.right': actions.onSwapPaneDirection('right'); return;
+    case 'pane.swap.up': actions.onSwapPaneDirection('up'); return;
+    case 'pane.swap.down': actions.onSwapPaneDirection('down'); return;
+  }
+}
+
+export function useKeyboardShortcuts(
+  actions: ShortcutActions,
+  bindings: Record<KeybindingAction, Chord | null>,
+) {
+  const chordLookup = useMemo(() => {
+    const map = new Map<Chord, KeybindingAction>();
+    for (const action of ALL_ACTIONS) {
+      const chord = bindings[action];
+      if (!chord) continue;
+      map.set(chord.toLowerCase(), action);
+    }
+    return map;
+  }, [bindings]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      const ctrl = e.ctrlKey || e.metaKey;
-
-      if (ctrl && !e.altKey) {
-        // Ctrl+N — new session
-        if (e.key === 'n' && !e.shiftKey) {
-          e.preventDefault();
-          actions.onNewSession();
-          return;
-        }
-
-        // Ctrl+B — toggle sidebar
-        if (e.key === 'b' && !e.shiftKey) {
-          e.preventDefault();
-          actions.onToggleSidebar();
-          return;
-        }
-
-        // Ctrl+W — stop current session
-        if (e.key === 'w' && !e.shiftKey) {
-          e.preventDefault();
-          actions.onStopSession();
-          return;
-        }
-
-        // Ctrl+, — open settings
-        if (e.key === ',') {
-          e.preventDefault();
-          actions.onOpenSettings();
-          return;
-        }
-
-        // Ctrl+= / Ctrl++ — window zoom in
-        if (e.key === '=' || e.key === '+') {
-          e.preventDefault();
-          actions.onZoomIn();
-          return;
-        }
-
-        // Ctrl+- — window zoom out
-        if (e.key === '-') {
-          e.preventDefault();
-          actions.onZoomOut();
-          return;
-        }
-
-        // Ctrl+0 — reset window zoom
-        if (e.key === '0') {
-          e.preventDefault();
-          actions.onZoomReset();
-          return;
-        }
-
-        // Ctrl+1-9 — switch to session by index
-        const num = parseInt(e.key);
-        if (num >= 1 && num <= 9) {
-          e.preventDefault();
-          actions.onSwitchSession(num - 1);
-          return;
-        }
-
-        // Ctrl+ArrowDown — next session
-        if (e.key === 'ArrowDown') {
-          e.preventDefault();
-          actions.onNextSession();
-          return;
-        }
-
-        // Ctrl+ArrowUp — previous session
-        if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          actions.onPrevSession();
-          return;
-        }
-        return;
-      }
-
-      // Alt+Arrow — directional pane focus; Alt+Shift+Arrow — swap with neighbor.
-      // Guarded so non-xterm editable fields (inline rename, dialog inputs) keep native behavior.
-      if (e.altKey && !ctrl) {
-        const direction = ARROW_DIRECTIONS[e.key];
-        if (!direction) return;
-        if (isEditableTarget(e.target)) return;
-        e.preventDefault();
-        if (e.shiftKey) {
-          actions.onSwapPaneDirection(direction);
-        } else {
-          actions.onFocusPaneDirection(direction);
-        }
-      }
+      const chord = parseKeyEvent(e);
+      if (!chord) return;
+      const action = chordLookup.get(chord);
+      if (!action) return;
+      // Arrow-key chords must not hijack native arrow behavior in
+      // non-xterm editable fields (inline rename, dialog inputs).
+      if (chord.includes('arrow') && isEditableTarget(e.target)) return;
+      e.preventDefault();
+      dispatch(action, actions);
     };
 
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [actions]);
+  }, [actions, chordLookup]);
 }

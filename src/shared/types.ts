@@ -1,4 +1,5 @@
 import type { CliToolId } from './cli-tools';
+import type { KeybindingOverrides } from './keybindings';
 
 export type { CliToolId };
 export type SessionState = 'starting' | 'running' | 'waiting' | 'idle' | 'stopped' | 'dead';
@@ -580,6 +581,11 @@ export interface TetherAPI {
   diagnostics: {
     /** Open a save dialog and write a scrubbed bundle of data.json + logs to the chosen path. */
     export(): Promise<DiagnosticsExportResult>;
+  };
+  keybindings: {
+    get(): Promise<KeybindingOverrides>;
+    set(overrides: KeybindingOverrides): Promise<void>;
+    resetAll(): Promise<void>;
   };
 }
 

@@ -5,6 +5,7 @@ import { atomicWriteFileSync, cleanupOrphanTmp } from './atomic-write';
 import { createLogger } from '../logger';
 import type { CliToolId } from '../../shared/cli-tools';
 import type { RepoGroupPref, SessionOrderPref } from '../../shared/types';
+import type { KeybindingAction, Chord } from '../../shared/keybindings';
 
 const log = createLogger('database');
 
@@ -79,6 +80,7 @@ export interface DbData {
   sessionOrderPrefs: SessionOrderPref[];
   usageSummaries: PersistedSessionUsage[];
   knownHosts: KnownHostEntry[];
+  keybindings?: Partial<Record<KeybindingAction, Chord | null>>;
 }
 
 export interface PersistedSessionUsage {
@@ -218,49 +220,79 @@ function normalizeLaunchProfiles(profiles: unknown): LaunchProfileRow[] {
   });
 }
 
+function emptyDbData(): DbData {
+  return {
+    environments: [],
+    sessions: [],
+    launchProfiles: [],
+    config: {},
+    defaultEnvVars: {},
+    defaultCliFlags: [],
+    defaultCliFlagsPerTool: {},
+    savedWorkspace: null,
+    gitProviders: [],
+    repoGroupPrefs: [],
+    sessionOrderPrefs: [],
+    usageSummaries: [],
+    knownHosts: [],
+    keybindings: {},
+  };
+}
+
+function migrateLoadedDb(loaded: Record<string, unknown>): DbData {
+  const envs = ((loaded.environments as Record<string, unknown>[]) || []).map((e) => ({
+    ...e,
+    env_vars: e.env_vars || '{}',
+  })) as EnvironmentRow[];
+
+  // Migrate flat defaultCliFlags -> per-tool storage (all old flags were Claude flags)
+  let perTool: Partial<Record<CliToolId, string[]>> = (loaded.defaultCliFlagsPerTool as Partial<Record<CliToolId, string[]>>) || {};
+  let flatFlags: string[] = (loaded.defaultCliFlags as string[]) || [];
+  if (!loaded.defaultCliFlagsPerTool && flatFlags.length > 0) {
+    perTool = { claude: [...flatFlags] };
+    flatFlags = [];
+  }
+
+  const rawBindings = loaded.keybindings;
+  const keybindings = rawBindings && typeof rawBindings === 'object' && !Array.isArray(rawBindings)
+    ? (rawBindings as DbData['keybindings'])
+    : {};
+
+  return {
+    environments: envs,
+    sessions: (loaded.sessions as SessionRow[]) || [],
+    launchProfiles: normalizeLaunchProfiles(loaded.launchProfiles),
+    config: (loaded.config as Record<string, string>) || {},
+    defaultEnvVars: (loaded.defaultEnvVars as Record<string, string>) || {},
+    defaultCliFlags: flatFlags,
+    defaultCliFlagsPerTool: perTool,
+    savedWorkspace: (loaded.savedWorkspace as SavedWorkspace | null) || null,
+    gitProviders: (loaded.gitProviders as GitProviderRow[]) || [],
+    repoGroupPrefs: (loaded.repoGroupPrefs as RepoGroupPref[]) || [],
+    sessionOrderPrefs: (loaded.sessionOrderPrefs as SessionOrderPref[]) || [],
+    usageSummaries: (loaded.usageSummaries as PersistedSessionUsage[]) || [],
+    knownHosts: (loaded.knownHosts as KnownHostEntry[]) || [],
+    keybindings,
+  };
+}
+
 export function getDb(): DbData {
-  if (!data) {
-    const filePath = getDbPath();
-    const orphanState = cleanupOrphanTmp(filePath);
-    if (orphanState === 'orphan-only') {
-      log.warn('Found orphan data.json.tmp with no data.json — leaving in place; starting from defaults');
-    }
-    if (fs.existsSync(filePath)) {
-      try {
-        const loaded = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        // Backfill missing fields from older data files
-        const envs = (loaded.environments || []).map((e: Record<string, unknown>) => ({
-          ...e,
-          env_vars: e.env_vars || '{}',
-        }));
-        // Migrate flat defaultCliFlags -> per-tool storage (all old flags were Claude flags)
-        let perTool: Partial<Record<CliToolId, string[]>> = loaded.defaultCliFlagsPerTool || {};
-        let flatFlags: string[] = loaded.defaultCliFlags || [];
-        if (!loaded.defaultCliFlagsPerTool && flatFlags.length > 0) {
-          perTool = { claude: [...flatFlags] };
-          flatFlags = [];
-        }
-        data = {
-          environments: envs,
-          sessions: loaded.sessions || [],
-          launchProfiles: normalizeLaunchProfiles(loaded.launchProfiles),
-          config: loaded.config || {},
-          defaultEnvVars: loaded.defaultEnvVars || {},
-          defaultCliFlags: flatFlags,
-          defaultCliFlagsPerTool: perTool,
-          savedWorkspace: loaded.savedWorkspace || null,
-          gitProviders: loaded.gitProviders || [],
-          repoGroupPrefs: loaded.repoGroupPrefs || [],
-          sessionOrderPrefs: loaded.sessionOrderPrefs || [],
-          usageSummaries: loaded.usageSummaries || [],
-          knownHosts: loaded.knownHosts || [],
-        };
-      } catch {
-        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], sessionOrderPrefs: [], usageSummaries: [], knownHosts: [] };
-      }
-    } else {
-      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], sessionOrderPrefs: [], usageSummaries: [], knownHosts: [] };
-    }
+  if (data) return data;
+
+  const filePath = getDbPath();
+  const orphanState = cleanupOrphanTmp(filePath);
+  if (orphanState === 'orphan-only') {
+    log.warn('Found orphan data.json.tmp with no data.json — leaving in place; starting from defaults');
+  }
+  if (!fs.existsSync(filePath)) {
+    data = emptyDbData();
+    return data;
+  }
+  try {
+    const loaded = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Record<string, unknown>;
+    data = migrateLoadedDb(loaded);
+  } catch {
+    data = emptyDbData();
   }
   return data;
 }

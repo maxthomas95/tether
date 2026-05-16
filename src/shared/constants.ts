@@ -104,6 +104,11 @@ export const IPC = {
   KNOWN_HOSTS_LIST: 'known-hosts:list',
   KNOWN_HOSTS_DELETE: 'known-hosts:delete',
 
+  // Keybindings
+  KEYBINDINGS_GET: 'keybindings:get',
+  KEYBINDINGS_SET: 'keybindings:set',
+  KEYBINDINGS_RESET_ALL: 'keybindings:reset-all',
+
   // Diagnostics
   DIAGNOSTICS_EXPORT: 'diagnostics:export',
 
