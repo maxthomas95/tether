@@ -51,6 +51,7 @@ import {
   type KeybindingAction,
   type KeybindingOverrides,
 } from '../shared/keybindings';
+import { getBroadcastSessionIds, pruneBroadcastPaneIds } from './lib/broadcast-targets';
 import type { MenuDef } from './components/MenuBar';
 import logoSrc from './assets/logo.png';
 
@@ -77,6 +78,7 @@ export function App() {
   const [resumePickerFor, setResumePickerFor] = useState<{ sessionId: string; workingDir: string; cliTool: CreateSessionOptions['cliTool']; currentTranscriptId?: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null);
+  const [broadcastPaneIds, setBroadcastPaneIds] = useState<Set<string>>(new Set());
   const [repoGroupPrefs, setRepoGroupPrefs] = useState<RepoGroupPref[]>([]);
   const [sessionOrderPrefs, setSessionOrderPrefs] = useState<SessionOrderPref[]>([]);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
@@ -1136,6 +1138,42 @@ export function App() {
     ? activeSession.state !== 'stopped' && activeSession.state !== 'dead'
     : false;
   const currentLeafCount = getLeafCount(layoutState.root);
+  const broadcastSessionIds = useMemo(
+    () => getBroadcastSessionIds(layoutState.root, broadcastPaneIds, sessions),
+    [layoutState.root, broadcastPaneIds, sessions],
+  );
+  const broadcastActive = broadcastSessionIds.length > 1;
+
+  useEffect(() => {
+    termManager.setBroadcastTargets(broadcastActive ? broadcastSessionIds : []);
+  }, [broadcastActive, broadcastSessionIds, termManager]);
+
+  useEffect(() => {
+    setBroadcastPaneIds(prev => {
+      if (!enablePaneSplitting || currentLeafCount < 2) {
+        return prev.size === 0 ? prev : new Set();
+      }
+
+      const next = pruneBroadcastPaneIds(layoutState.root, prev, sessions);
+      return setsEqual(prev, next) ? prev : next;
+    });
+  }, [currentLeafCount, enablePaneSplitting, layoutState.root, sessions]);
+
+  const handleToggleBroadcastTarget = useCallback((paneId: string) => {
+    setBroadcastPaneIds(prev => {
+      const next = new Set(prev);
+      if (next.has(paneId)) {
+        next.delete(paneId);
+      } else {
+        next.add(paneId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearBroadcastTargets = useCallback(() => {
+    setBroadcastPaneIds(prev => prev.size === 0 ? prev : new Set());
+  }, []);
 
   const paneLocations = useMemo<Map<string, PaneLocation>>(() => {
     const map = new Map<string, PaneLocation>();
@@ -1307,6 +1345,7 @@ export function App() {
         { separator: true },
         { label: 'Next Pane', shortcut: formatChord(resolvedBindings['session.next']) || undefined, onClick: shortcutActions.onNextSession, disabled: !layoutState.root || getLeaves(layoutState.root).length < 2 },
         { label: 'Previous Pane', shortcut: formatChord(resolvedBindings['session.prev']) || undefined, onClick: shortcutActions.onPrevSession, disabled: !layoutState.root || getLeaves(layoutState.root).length < 2 },
+        { label: 'Clear Broadcast Input Targets', onClick: handleClearBroadcastTargets, disabled: broadcastPaneIds.size === 0 },
         { separator: true },
         { label: 'Kill Session', onClick: () => { if (activeSessionId) handleKill(activeSessionId); }, disabled: !isAlive, danger: true },
         { label: 'Remove Session', onClick: () => { if (activeSessionId) handleRemove(activeSessionId); }, disabled: !activeSession, danger: true },
@@ -1338,7 +1377,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleKill, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleKill, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size]);
 
   return (
     <div className="app-layout">
@@ -1508,6 +1547,9 @@ export function App() {
             maxPanes={effectiveMaxPanes}
             defaultFontSize={defaultTerminalFontSize}
             onFontSizeDelta={handleSessionFontSizeChange}
+            broadcastPaneIds={broadcastPaneIds}
+            broadcastActive={broadcastActive}
+            onToggleBroadcastTarget={handleToggleBroadcastTarget}
             onRestartInPane={handleRestartInPane}
           />
         ) : (
@@ -1609,6 +1651,14 @@ function withHiddenXtermCursor(theme: ITheme): ITheme {
     cursor: background,
     cursorAccent: theme.foreground ?? background,
   };
+}
+
+function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
+  if (a.size !== b.size) return false;
+  for (const value of a) {
+    if (!b.has(value)) return false;
+  }
+  return true;
 }
 
 function parseMaxPanes(value: string | null | undefined): number {

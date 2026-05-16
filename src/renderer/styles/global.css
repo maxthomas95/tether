@@ -1955,6 +1955,10 @@ input[type="password"].form-input {
   outline-offset: -1px;
 }
 
+.terminal-pane--broadcast-target .terminal-pane-header {
+  box-shadow: inset 0 -1px 0 var(--status-waiting);
+}
+
 .terminal-pane-header {
   height: 24px;
   background: var(--bg-header);
@@ -1993,6 +1997,16 @@ input[type="password"].form-input {
   transition: opacity 0.1s, color 0.1s;
 }
 
+.terminal-pane-header-btn--broadcast {
+  width: 18px;
+  font-size: var(--text-sm);
+}
+
+.terminal-pane-header-btn--active {
+  opacity: 1;
+  color: var(--status-waiting);
+}
+
 .terminal-pane:hover .terminal-pane-header-btn,
 .terminal-pane-header-btn:focus {
   opacity: 1;
@@ -2000,6 +2014,11 @@ input[type="password"].form-input {
 
 .terminal-pane-header-btn:hover {
   color: var(--text-primary);
+}
+
+.terminal-pane-header-btn--active:hover,
+.terminal-pane-header-btn--active:focus {
+  color: var(--status-waiting);
 }
 
 .terminal-pane-body {
