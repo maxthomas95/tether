@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import logoSrc from '../assets/logo.png';
-import { Wordmark } from './Wordmark';
 import { onKeyActivate } from '../utils/a11y';
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -75,8 +74,8 @@ export function MenuBar({ menus }: MenuBarProps) {
 
   return (
     <div className="menubar" ref={barRef}>
-      <img src={logoSrc} alt="" className="menubar-logo" aria-hidden="true" />
-      <Wordmark className="menubar-wordmark" height={16} title="Tether" />
+      <img src={logoSrc} alt="Tether" className="menubar-logo" />
+      <span className="menubar-title">Tether</span>
       {menus.map((menu, i) => (
         <div
           key={menu.label}

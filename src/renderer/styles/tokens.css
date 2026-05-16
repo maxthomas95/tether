@@ -11,7 +11,7 @@
 
 :root {
   /* ── Font stacks ───────────────────────────────────────────────────
-   * --font-mono-ui   Locked identity face. Menubar wordmark, dialog
+   * --font-mono-ui   Locked identity face. Menubar title, dialog
    *                  titles, section headers, inline code, kbd, env-var
    *                  keys, fingerprints. NOT user-overridable.
    * --font-mono-terminal  Defaults to the same face but is the seam for a

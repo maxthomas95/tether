@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import logoSrc from '../assets/logo.png';
-import { Wordmark } from './Wordmark';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 
 interface AboutDialogProps {
@@ -49,12 +48,8 @@ export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
           <button className="dialog-close" onClick={onClose}>&times;</button>
         </div>
         <div className="dialog-body" style={{ textAlign: 'center', padding: '20px 20px 16px' }}>
-          <img src={logoSrc} alt="" aria-hidden="true" style={{ width: 64, height: 64, marginBottom: 12 }} />
-          <Wordmark
-            height={26}
-            title="Tether"
-            style={{ display: 'block', margin: '0 auto 6px', color: 'var(--text-primary)' }}
-          />
+          <img src={logoSrc} alt="Tether" style={{ width: 64, height: 64, marginBottom: 12 }} />
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Tether</div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
             Version {__APP_VERSION__}
           </div>
