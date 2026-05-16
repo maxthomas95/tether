@@ -16,9 +16,10 @@ import { copilotTranscriptExists } from '../copilot/transcripts';
 import { detectNewCopilotSession, releaseCopilotSessionClaim } from '../copilot/session-watcher';
 import { opencodeTranscriptExists } from '../opencode/transcripts';
 import { detectNewOpencodeSession, releaseOpencodeSessionClaim } from '../opencode/session-watcher';
-import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId, SessionExitInfo } from '../../shared/types';
+import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId, SessionExitInfo, WaitingReason } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
+import { envForSession as hookEnvForSession } from '../cli-config/hook-service';
 import { usageService } from '../usage/usage-service';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { createLogger } from '../logger';
@@ -105,7 +106,7 @@ function buildHelmChildCliArgs(params: Record<string, unknown>): string[] {
 
 export interface SessionCallbacks {
   onData(sessionId: string, data: string): void;
-  onStateChange(sessionId: string, state: SessionState): void;
+  onStateChange(sessionId: string, state: SessionState, waitingReason?: WaitingReason): void;
   onExit(sessionId: string, exitInfo: SessionExitInfo): void;
   /**
    * Fired when non-state session metadata changes (currently: the codex
@@ -141,6 +142,7 @@ export class Session {
   readonly customCliBinary: string | undefined;
   readonly createdAt: string;
   state: SessionState = 'starting';
+  waitingReason: WaitingReason | undefined = undefined;
   transport: SessionTransport | null = null;
   /** Tool-native session id used for resume. */
   toolSessionId: string | null = null;
@@ -191,6 +193,7 @@ export class Session {
       label: this.label,
       workingDir: this.workingDir,
       state: this.state,
+      waitingReason: this.waitingReason,
       createdAt: this.createdAt,
       toolSessionId: this.toolSessionId || undefined,
       claudeSessionId: this.claudeSessionId || undefined,
@@ -289,13 +292,50 @@ class SessionManager {
   private callbacksMap = new Map<string, SessionCallbacks>();
 
   constructor() {
-    statusDetector.onStateChange((sessionId, state) => {
+    statusDetector.onStateChange((sessionId, state, waitingReason) => {
       const session = this.sessions.get(sessionId);
       if (session) {
         session.state = state;
-        this.callbacksMap.get(sessionId)?.onStateChange(sessionId, state);
+        session.waitingReason = state === 'waiting' ? waitingReason : undefined;
+        this.callbacksMap.get(sessionId)?.onStateChange(sessionId, state, session.waitingReason);
       }
     });
+  }
+
+  /**
+   * Bridge entrypoint: a CLI hook fired and the bridge routed it here.
+   * Translates the event type into a detector call. Silently no-ops when
+   * the session id is unknown — the user may have killed the session
+   * between the CLI firing and the helper reaching us, or this could be
+   * a stray hook from a non-Tether process that happens to share the
+   * env var (defense in depth: we filter by known sessions).
+   *
+   * Mapping rationale:
+   *   - permission_prompt + elicitation_dialog → "user must act now". Plan
+   *     mode confirmations and similar input boxes fire elicitation_dialog;
+   *     they're the same UX category as a permission prompt — both block
+   *     Claude until the user clicks something.
+   *   - turn_complete + idle_prompt + elicitation_complete/response → "Claude
+   *     is paused, your turn". The elicitation cycle has ended (user
+   *     responded or it auto-resolved), so we drop back to plain amber.
+   *   - auth_success → informational, no state change.
+   */
+  handleHookEvent(tetherSessionId: string, type: string): void {
+    if (!this.sessions.has(tetherSessionId)) return;
+    if (type === 'permission_prompt' || type === 'elicitation_dialog') {
+      statusDetector.markPermissionWaiting(tetherSessionId);
+      return;
+    }
+    if (
+      type === 'turn_complete' ||
+      type === 'idle_prompt' ||
+      type === 'elicitation_complete' ||
+      type === 'elicitation_response'
+    ) {
+      statusDetector.markTurnComplete(tetherSessionId);
+      return;
+    }
+    // auth_success and any future event types fall through silently.
   }
 
   async createSession(
@@ -380,6 +420,12 @@ class SessionManager {
     let resolvedEnv: Record<string, string>;
     try {
       resolvedEnv = await resolveAll(mergedEnv);
+      // Layer the hook-bridge env on top, AFTER vault resolution. The hook
+      // env is short-lived and process-local — we never want it to traverse
+      // the vault layer (which would log/error on opaque values), and the
+      // user can never override these keys via their own env config.
+      const hookEnv = hookEnvForSession(id);
+      Object.assign(resolvedEnv, hookEnv);
     } catch (err) {
       log.error('Env var resolution failed', { id, error: err instanceof Error ? err.message : String(err) });
       statusDetector.unregister(id);

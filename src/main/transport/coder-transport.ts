@@ -4,20 +4,9 @@
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
 import { createLogger } from '../logger';
 import { loadPty } from './pty-loader';
+import { quotePosixEnvAssignment, quotePosixPathPreservingHome, quotePosixShellArg } from '../../shared/shell-quote';
 
 const log = createLogger('coder-pty');
-
-// POSIX single-quote shell escape: wrap in single quotes and replace any
-// embedded ' with '\''. Handles every metacharacter except `'` itself.
-const shq = (s: string): string => `'${s.replaceAll("'", String.raw`'\''`)}'`;
-
-// Preserve `~` / `~/` expansion by keeping the tilde literal (unquoted) and
-// single-quoting only the remainder of the path.
-const quotePath = (p: string): string => {
-  if (p === '~') return '~';
-  if (p.startsWith('~/')) return '~/' + shq(p.slice(2));
-  return shq(p);
-};
 
 interface IPty {
   pid: number;
@@ -109,14 +98,14 @@ export class CoderTransport implements SessionTransport {
     const binary = options.binaryName || 'claude';
     const envParts = Object.entries(options.env || {})
       .filter(([, v]) => v)
-      .map(([k, v]) => `${k}=${shq(v)}`);
+      .map(([k, v]) => quotePosixEnvAssignment(k, v));
 
     const cliArgs = options.cliArgs?.join(' ') || '';
     // Pass the initialPrompt as a single positional argument to the CLI (same
     // contract SSHTransport uses). Without this, a Helm-dispatched child in a
     // Coder workspace launches `claude` bare and has no idea what the parent
     // asked it to do — the prompt was silently dropped.
-    const promptArg = options.initialPrompt ? ` ${shq(options.initialPrompt)}` : '';
+    const promptArg = options.initialPrompt ? ` ${quotePosixShellArg(options.initialPrompt)}` : '';
     const cliCmd = cliArgs ? `${binary} ${cliArgs}${promptArg}` : `${binary}${promptArg}`;
 
     const baseCmd = envParts.length > 0
@@ -124,8 +113,8 @@ export class CoderTransport implements SessionTransport {
       : cliCmd;
 
     // Shell-escape the subdir so paths with spaces and metacharacters are
-    // safe; quotePath keeps a leading ~ literal so remote shell expands it.
-    const quotedSubDir = subDir ? quotePath(subDir) : '';
+    // safe; quotePosixPathPreservingHome keeps a leading ~ literal so remote shell expands it.
+    const quotedSubDir = subDir ? quotePosixPathPreservingHome(subDir) : '';
     const cdStep = subDir ? `cd ${quotedSubDir}` : '';
 
     // If cloneUrl is set, clone the repo — but skip if the directory already
@@ -133,7 +122,7 @@ export class CoderTransport implements SessionTransport {
     // survives).  Uses `[ -d ... ] || git clone ...` so the chain continues
     // either way: existing dir → no-op success, missing dir → clone.
     const cloneStep = options.cloneUrl && subDir
-      ? `{ [ -d ${quotedSubDir} ] || git clone ${shq(options.cloneUrl)} ${quotedSubDir}; }`
+      ? `{ [ -d ${quotedSubDir} ] || git clone ${quotePosixShellArg(options.cloneUrl)} ${quotedSubDir}; }`
       : '';
 
     const chain = [cloneStep, cdStep, baseCmd].filter(Boolean).join(' && ');

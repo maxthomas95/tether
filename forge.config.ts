@@ -20,7 +20,12 @@ const config: ForgeConfig = {
     // plain directory (not pkg'd into a single .exe) for now — assumes the
     // user has `node` on PATH. If/when we need a fully-standalone build,
     // switch to @yao-pkg/pkg and replace this with the compiled binary.
-    extraResource: ['mcp-servers/tether-helm'],
+    //
+    // `cli-tools/tether-cli-hook` ships the same way: it's invoked by the
+    // CLIs themselves (via `command` in Claude's settings.json and `notify`
+    // in Codex's config.toml), so it has to be a real path on disk — not
+    // a bundled asar entry.
+    extraResource: ['mcp-servers/tether-helm', 'cli-tools/tether-cli-hook'],
   },
   rebuildConfig: {
     // Skip native module rebuild during dev — prebuilt N-API binaries work.

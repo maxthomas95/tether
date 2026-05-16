@@ -5,8 +5,9 @@ import type { TranscriptInfo } from '../../shared/types';
 
 /**
  * Claude Code stores per-conversation JSONL transcripts at
- *   ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl
+ *   <claude-home>/projects/<encoded-cwd>/<sessionId>.jsonl
  *
+ * `<claude-home>` is `$CLAUDE_CONFIG_DIR` when set, otherwise `~/.claude`.
  * The encoded-cwd is the working directory with `\`, `/`, and `:` replaced
  * with `-`. The filename stem is the Claude session UUID.
  */
@@ -16,8 +17,12 @@ export function encodeCwdForClaude(cwd: string): string {
   return cwd.replace(/[\\/:]/g, '-');
 }
 
+export function getClaudeHome(): string {
+  return process.env.CLAUDE_CONFIG_DIR || path.join(app.getPath('home'), '.claude');
+}
+
 export function getClaudeProjectsRoot(): string {
-  return path.join(app.getPath('home'), '.claude', 'projects');
+  return path.join(getClaudeHome(), 'projects');
 }
 
 export function getProjectDir(cwd: string): string {

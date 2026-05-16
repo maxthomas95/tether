@@ -746,6 +746,44 @@ textarea:focus-visible,
   background: var(--status-waiting);
 }
 
+/*
+ * Permission-prompt sub-state: same amber as plain waiting, plus a centered
+ * `!` glyph and a soft halo so a glance across the sidebar surfaces sessions
+ * the user actually has to act on. Pulse cadence is slower than 'running'
+ * (which feels "alive") so it reads as "stuck, get me", not "thinking".
+ */
+.status-dot--waiting-permission {
+  background: var(--status-waiting);
+  position: relative;
+  width: 11px;
+  height: 11px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-waiting) 35%, transparent);
+  animation: waitingPermissionPulse 1.8s ease-in-out infinite;
+}
+
+.status-dot--waiting-permission::after {
+  content: '!';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--bg-primary);
+  font-family: var(--ui-font, inherit);
+}
+
+@keyframes waitingPermissionPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-waiting) 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--status-waiting) 20%, transparent);
+  }
+}
+
 .status-dot--idle {
   background: var(--status-idle);
 }
@@ -2360,6 +2398,64 @@ body.tether-hide-cursor .xterm-cursor {
   border-radius: 4px;
   font-size: var(--text-base);
   margin-bottom: var(--space-3);
+}
+
+.wizard-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  max-width: 420px;
+  margin: var(--space-4) auto 0;
+  text-align: left;
+}
+
+.wizard-overview > div,
+.wizard-nested-form {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.wizard-overview > div {
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.wizard-inline-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.wizard-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.wizard-status-pill--ok {
+  color: var(--status-running);
+  border-color: color-mix(in srgb, var(--status-running) 45%, var(--border-color));
+}
+
+.wizard-cli-status-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+
+.wizard-nested-form {
+  padding: var(--space-3);
+  margin-top: var(--space-2);
 }
 
 /* Usage history dialog */

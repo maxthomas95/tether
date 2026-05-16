@@ -11,6 +11,10 @@ type CliFlagsPerTool = Partial<Record<CliToolId, string[]>>;
 
 type SourceTab = 'local' | 'newfolder' | 'clone' | 'gitea' | 'ado' | 'github';
 
+function isCliToolId(value: string | null): value is CliToolId {
+  return !!value && Object.prototype.hasOwnProperty.call(CLI_TOOL_REGISTRY, value);
+}
+
 interface CoderCreateInlineProps {
   templates: CoderTemplate[];
   loadingTemplates: boolean;
@@ -332,6 +336,12 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     window.electronAPI.gitProvider.list().then(setGitProviders).catch(() => {});
     window.electronAPI.vault.status().then(s => setVaultEnabled(s.loggedIn)).catch(() => {});
     window.electronAPI.config.get?.('allowHelm')?.then(v => setAllowHelm(v === 'true')).catch(() => {});
+    window.electronAPI.config.get?.('defaultCliTool')?.then(value => {
+      if (isCliToolId(value)) setCliTool(value);
+    }).catch(() => {});
+    window.electronAPI.config.get?.('defaultCustomCliBinary')?.then(value => {
+      if (typeof value === 'string') setCustomBinary(value.trim());
+    }).catch(() => {});
   }, [isOpen]);
 
   // Auto-fill default directory when environment changes

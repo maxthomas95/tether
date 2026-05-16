@@ -7,6 +7,7 @@ import type {
   SessionState,
   SessionInfo,
   CliToolId,
+  WaitingReason,
 } from '../../shared/types';
 import { sessionManager, findVaultRefInSession, setHelmChildCallbacks } from '../session/session-manager';
 import { usageService } from '../usage/usage-service';
@@ -26,8 +27,8 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     onData(sessionId: string, data: string) {
       send(IPC.SESSION_DATA, sessionId, data);
     },
-    onStateChange(sessionId: string, state: SessionState) {
-      send(IPC.SESSION_STATE_CHANGE, sessionId, state);
+    onStateChange(sessionId: string, state: SessionState, waitingReason?: WaitingReason) {
+      send(IPC.SESSION_STATE_CHANGE, sessionId, state, waitingReason);
       sessionRepo.updateSessionState(sessionId, state);
     },
     onUpdate(sessionId: string, info: SessionInfo) {

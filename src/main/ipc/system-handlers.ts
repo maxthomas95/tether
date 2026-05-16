@@ -1,9 +1,27 @@
+import { execFile } from 'node:child_process';
 import { ipcMain, dialog, shell } from 'electron';
 import { IPC } from '../../shared/constants';
 import { createLogger } from '../logger';
 import type { HandlerContext } from './helpers';
 
 const log = createLogger('ipc:system');
+const COMMAND_LOOKUP_TIMEOUT_MS = 3_000;
+
+function commandExists(command: string): Promise<boolean> {
+  const trimmed = command.trim();
+  if (!trimmed) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    const executable = process.platform === 'win32' ? 'where.exe' : 'sh';
+    const args = process.platform === 'win32'
+      ? [trimmed]
+      : ['-lc', 'command -v "$1" >/dev/null 2>&1', 'sh', trimmed];
+
+    execFile(executable, args, { timeout: COMMAND_LOOKUP_TIMEOUT_MS }, (err) => {
+      resolve(!err);
+    });
+  });
+}
 
 export function registerSystemHandlers(ctx: HandlerContext): void {
   const { mainWindow } = ctx;
@@ -44,6 +62,11 @@ export function registerSystemHandlers(ctx: HandlerContext): void {
       return;
     }
     await shell.openExternal(url);
+  });
+
+  ipcMain.handle(IPC.SHELL_COMMAND_EXISTS, async (_event, command: string) => {
+    if (typeof command !== 'string' || command.length > 512) return false;
+    return commandExists(command);
   });
 
   // === Diagnostics export ===

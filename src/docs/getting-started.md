@@ -6,11 +6,12 @@ Tether is a desktop session multiplexer for Claude Code, Codex CLI, OpenCode, an
 
 The Setup Wizard runs on first launch and walks you through:
 
-1. **Repos root** — a parent directory Tether uses when cloning new projects and creating folders. You can change this later in Settings → Sessions.
-2. **API keys / env vars** — optional. Stored locally in `data.json` (no secrets in plaintext if you wire up [Vault](vault)).
-3. **First environment** — a Local environment is created automatically; you can add SSH or Coder later from the sidebar.
+1. **Repos root** — a parent directory Tether uses when cloning new projects and creating folders. You can change this later from **New Session**.
+2. **Vault** — optional HashiCorp Vault configuration, login, and plaintext-secret migration.
+3. **Environment and CLI** — Local is ready automatically; you can also add SSH or Coder and choose the default CLI tool for new sessions.
+4. **Git provider** — optional GitHub, Azure DevOps, or Gitea credentials for repo browse, clone, and remote-create.
 
-After the wizard you'll see the sidebar on the left and an empty terminal area on the right.
+The wizard only marks setup complete when you click **Skip Setup**, **Start Using Tether**, or **Create First Session**. Closing it with **Esc** or **X** just dismisses it for this app run.
 
 ## Creating Your First Session
 
@@ -20,7 +21,7 @@ After the wizard you'll see the sidebar on the left and an empty terminal area o
    - **Clone** — clone a repo from GitHub / Azure DevOps / Gitea (see [Git Providers](git-providers))
    - **New folder** — create an empty folder under your repos root, optionally `git init` and provision an empty remote (see [Git Providers](git-providers#new-folder))
 3. Pick an [environment](environments) (Local, SSH, or Coder)
-4. Pick a CLI tool (Claude Code, Codex CLI, OpenCode, or a custom binary)
+4. Pick a CLI tool (Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, or a custom binary)
 5. Optionally set a label, [launch profile](settings#launch-profiles), env vars, or CLI flags
 6. Click **Create**
 

@@ -23,6 +23,7 @@ import type {
   HostVerifyRequest,
   SessionExitInfo,
   DiagnosticsExportResult,
+  WaitingReason,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -45,8 +46,8 @@ const api: TetherAPI = {
       ipcRenderer.on(IPC.SESSION_DATA, h);
       return () => ipcRenderer.removeListener(IPC.SESSION_DATA, h);
     },
-    onStateChange(cb: (id: string, state: SessionState) => void): () => void {
-      const h = (_e: Electron.IpcRendererEvent, id: string, state: SessionState) => cb(id, state);
+    onStateChange(cb: (id: string, state: SessionState, waitingReason?: WaitingReason) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, id: string, state: SessionState, waitingReason?: WaitingReason) => cb(id, state, waitingReason);
       ipcRenderer.on(IPC.SESSION_STATE_CHANGE, h);
       return () => ipcRenderer.removeListener(IPC.SESSION_STATE_CHANGE, h);
     },
@@ -178,6 +179,7 @@ const api: TetherAPI = {
 
   shell: {
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC.SHELL_OPEN_EXTERNAL, url),
+    commandExists: (command: string): Promise<boolean> => ipcRenderer.invoke(IPC.SHELL_COMMAND_EXISTS, command),
   },
 
   webFrame: {
