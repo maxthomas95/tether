@@ -12,6 +12,7 @@ import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 import { KeybindingsEditor } from './KeybindingsEditor';
 import { HelpAnchor } from './HelpAnchor';
 import type { KeybindingAction, Chord } from '../../shared/keybindings';
+import type { TerminalCursorStyle } from '../hooks/useTerminalManager';
 
 /** CLI tools that have definable flags (exclude 'custom' which has no known flags). */
 const FLAG_TOOLS = (['claude', 'codex', 'copilot', 'opencode'] as const) satisfies readonly CliToolId[];
@@ -163,7 +164,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [exportBusy, setExportBusy] = useState<UsageExportFormat | null>(null);
   const [exportStatus, setExportStatus] = useState<{ kind: 'ok' | 'error'; message: string } | null>(null);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
-  const [terminalCursorStyle, setTerminalCursorStyle] = useState<'block' | 'underline' | 'bar'>('block');
+  const [terminalCursorStyle, setTerminalCursorStyle] = useState<TerminalCursorStyle>('block');
   const [terminalCursorBlink, setTerminalCursorBlink] = useState(true);
   const [terminalFontSize, setTerminalFontSize] = useState(14);
   const [terminalFontFamily, setTerminalFontFamily] = useState<string>('');
@@ -598,9 +599,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               id="terminal-cursor-style-select"
               className="form-input"
               value={terminalCursorStyle}
-              onChange={e => setTerminalCursorStyle(e.target.value as 'block' | 'underline' | 'bar')}
+              onChange={e => setTerminalCursorStyle(e.target.value as TerminalCursorStyle)}
               disabled={hideTerminalCursor}
-              style={{ width: 200 }}
             >
               <option value="block">Block</option>
               <option value="underline">Underline</option>

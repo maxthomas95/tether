@@ -20,6 +20,7 @@ import { SetupWizard } from './components/SetupWizard';
 import { Notifications, useNotifications } from './components/Notifications';
 import { ConfirmDialog, useConfirmDialog } from './components/ConfirmDialog';
 import { useTerminalManager } from './hooks/useTerminalManager';
+import type { TerminalCursorStyle } from './hooks/useTerminalManager';
 import { useLayoutState } from './hooks/useLayoutState';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTheme } from './hooks/useTheme';
@@ -97,7 +98,7 @@ export function App() {
   const [repoGroupPrefs, setRepoGroupPrefs] = useState<RepoGroupPref[]>([]);
   const [sessionOrderPrefs, setSessionOrderPrefs] = useState<SessionOrderPref[]>([]);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
-  const [terminalCursorStyle, setTerminalCursorStyle] = useState<'block' | 'underline' | 'bar'>('block');
+  const [terminalCursorStyle, setTerminalCursorStyle] = useState<TerminalCursorStyle>('block');
   const [terminalCursorBlink, setTerminalCursorBlink] = useState(true);
   const [defaultTerminalFontSize, setDefaultTerminalFontSize] = useState(14);
   // Empty string = use the CSS var default from tokens.css (Cascadia Code).
