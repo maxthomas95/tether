@@ -50,7 +50,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Multiple concurrent sessions** with instant switching
 - **Split panes** (experimental) — view multiple sessions side-by-side; drag panes between drop zones to rearrange layouts
 - **Local, SSH, and Coder environments** — node-pty locally, ssh2 for remote, Coder REST API for workspaces
-- **First-run Setup Wizard** — guided configuration for your first environment and CLI tool
+- **First-run Setup Wizard** — guided setup for projects, Vault, environments, CLI defaults, and Git providers
 - **SSH host key verification** — TOFU pinning on first connect, managed known-hosts in settings
 - **Status indicators** — green (running), amber (waiting), gray (idle), red (dead)
 - **Session grouping** — auto-grouped by working directory, collapsible
@@ -58,7 +58,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Env var cascade** — app defaults &rarr; environment &rarr; session overrides, with presets for common Claude Code and Codex CLI vars
 - **Vault integration** — store env vars as `vault://` references; KV v2 with token or OIDC auth, sidebar status pill, and a tree-view picker for browsing existing secrets
 - **Tether-managed worktrees** — create a git worktree at session start, with optional cleanup on session removal
-- **Repo browse + clone-on-session-start** — browse Azure DevOps and Gitea repos and clone them as part of session creation
+- **Repo browse + clone-on-session-start** — browse GitHub, Azure DevOps, and Gitea repos and clone them as part of session creation
 - **Helm** (alpha, opt-in, personal-experimental) — designate a Claude Code session as "helm" so it can dispatch pre-briefed child sessions through the `tether-helm` MCP, including spawning Coder workspaces. Built primarily for the author's own dispatch workflow; off by default behind a two-level gate, not on the 1.0 roadmap
 - **CLI flag management** — app-wide, per-profile, and per-session flags scoped by CLI tool
 - **Usage tracking** (experimental) — optional quota and cost views in the sidebar and per-session panes

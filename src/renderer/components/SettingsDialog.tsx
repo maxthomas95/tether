@@ -15,6 +15,19 @@ import type { KeybindingAction, Chord } from '../../shared/keybindings';
 
 /** CLI tools that have definable flags (exclude 'custom' which has no known flags). */
 const FLAG_TOOLS = (['claude', 'codex', 'copilot', 'opencode'] as const) satisfies readonly CliToolId[];
+const CLI_TOOL_IDS = Object.keys(CLI_TOOL_REGISTRY) as CliToolId[];
+const DEFAULT_PROVIDER_URLS: Partial<Record<GitProviderType, string>> = {
+  github: 'https://api.github.com',
+  ado: 'https://dev.azure.com',
+};
+
+function isCliToolId(value: string | null): value is CliToolId {
+  return !!value && Object.prototype.hasOwnProperty.call(CLI_TOOL_REGISTRY, value);
+}
+
+function defaultProviderUrl(type: GitProviderType): string {
+  return DEFAULT_PROVIDER_URLS[type] || '';
+}
 
 /**
  * Preset terminal font stacks. Empty value means "use the Tether default"
@@ -133,6 +146,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [cliFlagsPerTool, setCliFlagsPerTool] = useState<Partial<Record<CliToolId, string[]>>>({});
   const [flagTool, setFlagTool] = useState<CliToolId>('claude');
   const [customFlag, setCustomFlag] = useState('');
+  const [defaultCliTool, setDefaultCliTool] = useState<CliToolId>('claude');
+  const [defaultCustomCliBinary, setDefaultCustomCliBinary] = useState('');
   const [restoreOnLaunch, setRestoreOnLaunch] = useState(true);
   const [resumePreviousChats, setResumePreviousChats] = useState(true);
   const [showResumeBadge, setShowResumeBadge] = useState(false);
@@ -195,6 +210,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       window.electronAPI.config.getDefaultEnvVars?.()?.catch(() => ({})),
       window.electronAPI.config.get?.('restoreOnLaunch')?.catch(() => null),
       window.electronAPI.config.getDefaultCliFlagsPerTool?.()?.catch(() => ({})),
+      window.electronAPI.config.get?.('defaultCliTool')?.catch(() => null),
+      window.electronAPI.config.get?.('defaultCustomCliBinary')?.catch(() => null),
       window.electronAPI.config.get?.('resumePreviousChats')?.catch(() => null),
       window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
       window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
@@ -209,10 +226,12 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       window.electronAPI.config.get?.('terminalFontSize')?.catch(() => null),
       window.electronAPI.config.get?.('terminalFontFamily')?.catch(() => null),
       window.electronAPI.config.get?.('uiFontFamily')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, hideCursor, helm, fontSize, fontFamily, uiFont]) => {
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, hideCursor, helm, fontSize, fontFamily, uiFont]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
+      setDefaultCliTool(isCliToolId(cliToolSetting) ? cliToolSetting : 'claude');
+      setDefaultCustomCliBinary(typeof customCliBinarySetting === 'string' ? customCliBinarySetting.trim() : '');
       setResumePreviousChats(resumeChats !== 'false');
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
@@ -263,13 +282,15 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     await window.electronAPI.config.set?.('terminalFontSize', String(terminalFontSize));
     await window.electronAPI.config.set?.('terminalFontFamily', terminalFontFamily);
     await window.electronAPI.config.set?.('uiFontFamily', uiFontFamily);
+    await window.electronAPI.config.set?.('defaultCliTool', defaultCliTool);
+    await window.electronAPI.config.set?.('defaultCustomCliBinary', defaultCliTool === 'custom' ? defaultCustomCliBinary.trim() : '');
     window.dispatchEvent(new CustomEvent('tether:settings-changed'));
     for (const toolId of FLAG_TOOLS) {
       await window.electronAPI.config.setDefaultCliFlagsForTool?.(toolId, cliFlagsPerTool[toolId] || []);
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, hideTerminalCursor, allowHelm, terminalFontSize, terminalFontFamily, uiFontFamily, cliFlagsPerTool, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, hideTerminalCursor, allowHelm, terminalFontSize, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, onClose]);
 
   const handleExportUsage = async (format: UsageExportFormat) => {
     setExportBusy(format);
@@ -355,14 +376,14 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     'token',
   );
 
+  const newProviderEffectiveBaseUrl = newProviderUrl.trim() || defaultProviderUrl(newProviderType);
+  const newProviderCanSave = !!newProviderName.trim()
+    && !!newProviderEffectiveBaseUrl
+    && !!newProviderToken.trim()
+    && (newProviderType !== 'ado' || !!newProviderOrg.trim());
+
   const handleAddProvider = async () => {
-    const defaultBaseUrls: Partial<Record<GitProviderType, string>> = {
-      github: 'https://api.github.com',
-      ado: 'https://dev.azure.com',
-    };
-    const defaultBaseUrl = defaultBaseUrls[newProviderType] || '';
-    const effectiveBaseUrl = newProviderUrl.trim() || defaultBaseUrl;
-    if (!newProviderName.trim() || !effectiveBaseUrl || !newProviderToken.trim()) return;
+    if (!newProviderCanSave) return;
     setNewProviderError(null);
     try {
       let tokenToStore = newProviderToken.trim();
@@ -381,7 +402,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       const provider = await window.electronAPI.gitProvider.create({
         name: newProviderName.trim(),
         type: newProviderType,
-        baseUrl: effectiveBaseUrl,
+        baseUrl: newProviderEffectiveBaseUrl,
         organization: newProviderType === 'ado' ? newProviderOrg.trim() : undefined,
         defaultProject: newProviderType === 'ado' && newProviderDefaultProject.trim() ? newProviderDefaultProject.trim() : undefined,
         token: tokenToStore,
@@ -696,6 +717,34 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
           <div className="form-group" style={{ marginTop: 20 }}>
             <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              Default CLI Tool
+            </label>
+            <p className="form-hint" style={{ marginBottom: 8 }}>
+              Preselected when you open the New Session dialog. You can still change it per session.
+            </p>
+            <select
+              className="form-input"
+              value={defaultCliTool}
+              onChange={e => setDefaultCliTool(e.target.value as CliToolId)}
+            >
+              {CLI_TOOL_IDS.map(id => (
+                <option key={id} value={id}>{CLI_TOOL_REGISTRY[id].displayName}</option>
+              ))}
+            </select>
+            {defaultCliTool === 'custom' && (
+              <input
+                className="form-input"
+                value={defaultCustomCliBinary}
+                onChange={e => setDefaultCustomCliBinary(e.target.value)}
+                placeholder="my-agent-cli"
+                spellCheck={false}
+                style={{ marginTop: 8 }}
+              />
+            )}
+          </div>
+
+          <div className="form-group" style={{ marginTop: 20 }}>
+            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Default CLI Flags
             </label>
             <p className="form-hint" style={{ marginBottom: 8 }}>
@@ -959,7 +1008,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               Git Providers
             </label>
             <p className="form-hint" style={{ marginBottom: 12 }}>
-              Connect to Gitea or Azure DevOps to browse and clone repos from the New Session dialog.
+              Connect to GitHub, Azure DevOps, or Gitea to browse and clone repos from the New Session dialog.
             </p>
 
             {gitProviders.length > 0 && (
@@ -1035,13 +1084,12 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                     onChange={e => setNewProviderUrl(e.target.value)}
                     placeholder={
                       newProviderType === 'gitea' ? 'https://gitea.example.com'
-                      : newProviderType === 'github' ? 'https://api.github.com'
-                      : 'https://dev.azure.com'
+                      : `Default: ${defaultProviderUrl(newProviderType)}`
                     }
                   />
                   {newProviderType === 'github' && (
                     <p className="form-hint" style={{ marginTop: 4 }}>
-                      Use https://api.github.com for github.com, or your GHE URL like https://github.example.com/api/v3
+                      Leave blank for github.com, or use your GHE URL like https://github.example.com/api/v3.
                     </p>
                   )}
                 </div>
@@ -1158,11 +1206,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="form-btn form-btn--primary" onClick={handleAddProvider}
-                    disabled={
-                      !newProviderName.trim() ||
-                      !newProviderUrl.trim() ||
-                      !newProviderToken.trim()
-                    }
+                    disabled={!newProviderCanSave}
                   >Save</button>
                   <button className="form-btn" onClick={() => {
                     setShowAddProvider(false);

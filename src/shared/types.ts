@@ -528,6 +528,7 @@ export interface TetherAPI {
   };
   shell: {
     openExternal(url: string): Promise<void>;
+    commandExists(command: string): Promise<boolean>;
   };
   webFrame: {
     getZoomLevel(): number;

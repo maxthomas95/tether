@@ -2,9 +2,9 @@
 
 Open Settings with **Ctrl+,** or from the menu bar under **View**. The dialog has six sections in a left rail:
 
-- [General](#general) — theme, repos root, update checks
+- [General](#general) — theme and update checks
 - [Terminal](#terminal) — font, terminal-pane behavior, scrollback
-- [Sessions](#sessions) — default env vars and per-CLI flag presets, launch profiles
+- [Sessions](#sessions) — default CLI, default env vars, per-CLI flag presets, launch profiles
 - [Shortcuts](#shortcuts) — keyboard shortcut customization
 - [Integrations](#integrations) — Vault, Git providers, SSH known hosts, diagnostics
 - [Usage](#usage) — cost tracking, history dialog, exports, subscription quota
@@ -25,10 +25,6 @@ Tether ships with five built-in themes:
 
 The theme applies to the entire app: title bar, sidebar, terminal, dialogs, and this documentation window.
 
-### Repos root
-
-Parent directory for cloned repos and the **New folder** flow in [New Session](sessions#creating-sessions). Set once during the Setup Wizard; change here later.
-
 ### Update checks
 
 Tether polls GitHub Releases on a background timer (15 seconds after launch, then daily). Disable here if you're on a locked-down network. Updates are non-blocking — when one is available you'll get a toast pointing to the release page.
@@ -44,6 +40,10 @@ Sets the default terminal font size for all new panes. Existing panes keep whate
 A few terminal-pane toggles (e.g. cursor blink, scrollback length). The hint copy explains the trade-offs per option — most users should leave these at the defaults.
 
 ## Sessions
+
+### Default CLI tool
+
+The CLI tool preselected when you open the New Session dialog. Pick Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, or Custom. Custom also stores the binary name/path to prefill in the session form.
 
 ### Default environment variables
 
