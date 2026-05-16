@@ -183,8 +183,21 @@ function buildTetherEntries(helperPath: string): {
   // matchers but the runtime still requires the `hooks` array — bare
   // {type, command} entries fail validation with "Expected array, but
   // received undefined" even though the docs example shows the bare form.
+  //
+  // Notification matcher: docs claim omitting = "match all", but in practice
+  // Claude appears to only fire entries whose matcher field is set. We list
+  // every documented event type explicitly so the match is unambiguous and
+  // future-Claude additions can be appended here as we want them.
+  const NOTIFICATION_MATCHER = [
+    'permission_prompt',
+    'idle_prompt',
+    'auth_success',
+    'elicitation_dialog',
+    'elicitation_complete',
+    'elicitation_response',
+  ].join('|');
   return {
-    notification: { hooks: [{ type: 'command', command: cmd }] },
+    notification: { matcher: NOTIFICATION_MATCHER, hooks: [{ type: 'command', command: cmd }] },
     stop: { hooks: [{ type: 'command', command: cmd }] },
   };
 }
