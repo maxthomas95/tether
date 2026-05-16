@@ -116,12 +116,18 @@ textarea:focus-visible,
   -webkit-app-region: no-drag;
 }
 
-.menubar-title {
-  font-size: var(--text-base);
-  font-weight: 700;
-  letter-spacing: 0.5px;
+.menubar-wordmark {
+  /* Inherits color via currentColor — sits in --text-primary and lifts
+   * to --accent on hover so the wordmark feels alive without becoming a
+   * focus magnet. */
   color: var(--text-primary);
   margin-right: var(--space-3);
+  -webkit-app-region: no-drag;
+  transition: color var(--motion-fast) ease;
+}
+
+.menubar:hover .menubar-wordmark {
+  color: var(--accent);
 }
 
 .menubar-item {
@@ -647,8 +653,43 @@ textarea:focus-visible,
 
 .session-item--active {
   background: var(--bg-active);
-  border-left: 2px solid var(--accent);
-  padding-left: 10px;
+  position: relative;
+  /* No left border here — the ::before knot indicator below replaces it.
+   * Padding stays at the base value so the row width matches inactive
+   * items; the knot floats inside the gutter via absolute positioning. */
+}
+
+/* Knot indicator — small SVG braid that replaces the flat 2px accent
+ * border on active session rows. Rendered via mask-image so the shape
+ * stays a single asset while the fill picks up the theme accent. The
+ * pseudo is decorative; SessionItem already exposes the active state
+ * to assistive tech via aria-current/role. */
+.session-item--active::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 16px;
+  background-color: var(--accent);
+  -webkit-mask-image: var(--knot-indicator-mask);
+  mask-image: var(--knot-indicator-mask);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: 4px 16px;
+  mask-size: 4px 16px;
+  pointer-events: none;
+}
+
+/* Inline SVG of the braid as a data URI. Kept in :root so the same mask
+ * is reusable elsewhere and the SVG markup mirrors
+ * src/renderer/assets/knot-indicator.svg verbatim. The two strands twist
+ * twice; opacity inside the SVG fades the back strand to sell the weave. */
+:root {
+  --knot-indicator-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 16' fill='none' stroke='black' stroke-width='1.1' stroke-linecap='round'><path d='M1 1 C 1 4 3 4 3 8 C 3 12 1 12 1 15' opacity='0.55'/><path d='M3 1 C 3 4 1 4 1 8 C 1 12 3 12 3 15'/></svg>");
 }
 
 .session-info {
@@ -936,9 +977,9 @@ textarea:focus-visible,
   padding-left: 28px;
 }
 
-.session-item--nested.session-item--active {
-  padding-left: 26px;
-}
+/* Nested active rows no longer adjust padding — the knot indicator
+ * (positioned absolutely in the gutter) doesn't push content the way
+ * the old 2px left border did. */
 
 .pane-location-badge {
   display: inline-flex;

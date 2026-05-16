@@ -60,10 +60,12 @@
         user-select: none;
       }
       .tether-boot__title {
-        font-size: 22px;
-        font-weight: 500;
-        letter-spacing: 0.08em;
+        /* Inline SVG sizes itself; height set on the <svg> attribute. */
         color: var(--text-primary, #cdd6f4);
+        line-height: 0;
+      }
+      .tether-boot__title svg {
+        display: block;
       }
       .tether-boot__sub {
         font-size: 12px;
@@ -86,7 +88,24 @@
     <div id="root">
       <div class="tether-boot">
         <div class="tether-boot__spinner"></div>
-        <div class="tether-boot__title">TETHER</div>
+        <div class="tether-boot__title">
+          <!-- Inline wordmark — kept in sync with src/renderer/assets/wordmark.svg
+               and src/renderer/components/Wordmark.tsx. We inline it (rather than
+               <img src=...>) so currentColor inherits from .tether-boot__title and
+               the mark renders before the renderer bundle loads. -->
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 40" height="28" fill="currentColor" role="img" aria-label="Tether">
+            <g font-family="'JetBrains Mono Variable','JetBrains Mono','Cascadia Code','Fira Code',Consolas,monospace" font-weight="600" font-size="32" letter-spacing="1.5" text-anchor="start" dominant-baseline="alphabetic">
+              <text x="0" y="30">te</text>
+              <text x="68" y="30">her</text>
+            </g>
+            <g transform="translate(46 4)" stroke-linejoin="round">
+              <path d="M3 4 C 3 10 17 10 17 16 C 17 22 3 22 3 28" fill="none" stroke="currentColor" stroke-width="3.5" opacity="0.45" />
+              <path d="M17 4 C 17 10 3 10 3 16 C 3 22 17 22 17 28" fill="none" stroke="currentColor" stroke-width="3.5" />
+              <path d="M10 9 l2 1.5 l-2 1.5 l-2 -1.5 z" />
+              <path d="M10 22 l2 1.5 l-2 1.5 l-2 -1.5 z" />
+            </g>
+          </svg>
+        </div>
         <div class="tether-boot__sub">Loading workspace&hellip;</div>
       </div>
     </div>
