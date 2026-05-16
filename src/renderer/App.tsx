@@ -1103,14 +1103,14 @@ export function App() {
 
   const paneLocations = useMemo<Map<string, PaneLocation>>(() => {
     const map = new Map<string, PaneLocation>();
-    if (!layoutState.root) return map;
+    if (!enablePaneSplitting || !layoutState.root) return map;
     for (const leaf of getLeaves(layoutState.root)) {
       if (!leaf.sessionId) continue;
       const loc = getPaneLocationForSession(layoutState.root, leaf.sessionId);
       if (loc) map.set(leaf.sessionId, loc);
     }
     return map;
-  }, [layoutState.root]);
+  }, [layoutState.root, enablePaneSplitting]);
 
   const hiddenPaneIds = useMemo<Set<string>>(() => {
     const set = new Set<string>();
@@ -1127,6 +1127,19 @@ export function App() {
     }
     layoutDispatch({ type: 'SET_FOCUS', paneId });
   }, [layoutState.maximizedPaneId, layoutDispatch]);
+
+  // When pane splitting is turned off, collapse multi-pane or empty layouts
+  // back to the welcome screen. A single non-empty pane is left alone so the
+  // user keeps working in it.
+  useEffect(() => {
+    if (enablePaneSplitting || !layoutState.root) return;
+    const leaves = getLeaves(layoutState.root);
+    const hasEmpty = leaves.some(l => !l.sessionId);
+    if (leaves.length > 1 || hasEmpty) {
+      layoutDispatch({ type: 'SET_ROOT', root: null });
+      layoutDispatch({ type: 'SET_FOCUS', paneId: null });
+    }
+  }, [enablePaneSplitting, layoutState.root, layoutDispatch]);
 
   /**
    * Defensive recovery for a dead session inside a layout: spawn a fresh
