@@ -51,12 +51,14 @@ export interface TerminalManagerAPI {
   fitPane: (paneId: PaneId) => void;
   focusPane: (paneId: PaneId) => void;
   setSessionFontSize: (sessionId: string, fontSize: number) => void;
+  setBroadcastTargets: (sessionIds: readonly string[]) => void;
   remove: (sessionId: string) => void;
 }
 
 export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: string): TerminalManagerAPI {
   const panes = useRef(new Map<PaneId, PaneEntry>());
   const backgroundTerminals = useRef(new Map<string, ManagedTerminal>());
+  const broadcastTargets = useRef(new Set<string>());
   const themeRef = useRef<ITheme | undefined>(xtermTheme);
 
   // Update theme on all existing terminals when it changes
@@ -85,6 +87,22 @@ export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: stri
     }
   }, [fontFamilyTrigger]);
 
+  const sendInput = useCallback((sessionId: string, data: string) => {
+    const targets = broadcastTargets.current;
+    if (targets.size > 1 && targets.has(sessionId)) {
+      for (const targetId of targets) {
+        window.electronAPI.session.sendInput(targetId, data);
+      }
+      return;
+    }
+
+    window.electronAPI.session.sendInput(sessionId, data);
+  }, []);
+
+  const setBroadcastTargets = useCallback((sessionIds: readonly string[]) => {
+    broadcastTargets.current = new Set(sessionIds);
+  }, []);
+
   const createTerminal = useCallback((sessionId: string): ManagedTerminal => {
     const terminal = new Terminal({
       ...BASE_TERMINAL_OPTIONS,
@@ -102,7 +120,7 @@ export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: stri
 
     // Wire up input forwarding
     terminal.onData((data: string) => {
-      window.electronAPI.session.sendInput(sessionId, data);
+      sendInput(sessionId, data);
     });
 
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -111,7 +129,7 @@ export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: stri
       // Shift+Enter → newline without submit
       if (e.key === 'Enter' && e.shiftKey) {
         if (e.type === 'keydown') {
-          window.electronAPI.session.sendInput(sessionId, '\x1b[13;2u');
+          sendInput(sessionId, '\x1b[13;2u');
         }
         return false;
       }
@@ -125,7 +143,7 @@ export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: stri
       // Ctrl+V → paste from clipboard
       if (ctrl && e.key === 'v' && e.type === 'keydown') {
         const text = window.electronAPI.clipboard.readText();
-        if (text) window.electronAPI.session.sendInput(sessionId, text);
+        if (text) sendInput(sessionId, text);
         return false;
       }
 
@@ -139,7 +157,7 @@ export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: stri
     });
 
     return { terminal, fitAddon, linksAddon };
-  }, []);
+  }, [sendInput]);
 
   // Get or create a background terminal for sessions not in any visible pane
   const getOrCreate = useCallback((sessionId: string): ManagedTerminal => {
@@ -342,6 +360,7 @@ export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: stri
     fitPane,
     focusPane,
     setSessionFontSize,
+    setBroadcastTargets,
     remove,
-  }), [getOrCreate, writeData, attachToPane, detachPane, fitPane, focusPane, setSessionFontSize, remove]);
+  }), [getOrCreate, writeData, attachToPane, detachPane, fitPane, focusPane, setSessionFontSize, setBroadcastTargets, remove]);
 }

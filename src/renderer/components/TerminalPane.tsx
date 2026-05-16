@@ -22,6 +22,9 @@ interface TerminalPaneProps {
   maxPanes: number;
   defaultFontSize: number;
   onFontSizeDelta: (sessionId: string, delta: number) => void;
+  isBroadcastTarget: boolean;
+  isBroadcastActive: boolean;
+  onToggleBroadcastTarget: (paneId: string) => void;
   /** Recreate the dead session in this pane with the same params. */
   onRestartInPane?: (paneId: string, sessionId: string) => void;
 }
@@ -41,6 +44,9 @@ export function TerminalPane({
   maxPanes,
   defaultFontSize,
   onFontSizeDelta,
+  isBroadcastTarget,
+  isBroadcastActive,
+  onToggleBroadcastTarget,
   onRestartInPane,
 }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -137,15 +143,30 @@ export function TerminalPane({
     layoutDispatch({ type: 'TOGGLE_MAXIMIZE', paneId });
   }, [paneId, layoutDispatch]);
 
+  const handleBroadcastToggle = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleBroadcastTarget(paneId);
+  }, [paneId, onToggleBroadcastTarget]);
+
   const label = session?.label || 'Session';
   const path = session ? abbreviatePath(session.workingDir) : '';
   const headerLabel = isPlaceholder ? 'Empty pane' : label;
   const headerPath = isPlaceholder ? '' : path;
   const canDragPane = enablePaneSplitting && sessionId !== null;
+  let broadcastTitle = 'Include this pane in broadcast input';
+  if (isBroadcastTarget) {
+    broadcastTitle = isBroadcastActive
+      ? 'Broadcast input is active for this pane'
+      : 'Selected for broadcast input; select another pane to activate';
+  }
 
   return (
     <div
-      className={`terminal-pane ${isFocused && enablePaneSplitting ? 'terminal-pane--focused' : ''}`}
+      className={[
+        'terminal-pane',
+        isFocused && enablePaneSplitting ? 'terminal-pane--focused' : '',
+        isBroadcastTarget ? 'terminal-pane--broadcast-target' : '',
+      ].join(' ')}
       onFocus={handleFocus}
       onMouseDown={handleFocus}
     >
@@ -167,6 +188,18 @@ export function TerminalPane({
         <span className="terminal-pane-header-label">
           {headerLabel}{headerPath ? ` \u00b7 ${headerPath}` : ''}
         </span>
+        {enablePaneSplitting && sessionId && !isDead && (
+          <button
+            type="button"
+            className={`terminal-pane-header-btn terminal-pane-header-btn--broadcast ${isBroadcastTarget ? 'terminal-pane-header-btn--active' : ''}`}
+            onClick={handleBroadcastToggle}
+            title={broadcastTitle}
+            aria-label={broadcastTitle}
+            aria-pressed={isBroadcastTarget}
+          >
+            {'\u21c9'}
+          </button>
+        )}
         <button
           className="terminal-pane-header-btn"
           onClick={handleMaximize}
