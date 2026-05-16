@@ -97,6 +97,8 @@ export function App() {
   const [repoGroupPrefs, setRepoGroupPrefs] = useState<RepoGroupPref[]>([]);
   const [sessionOrderPrefs, setSessionOrderPrefs] = useState<SessionOrderPref[]>([]);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
+  const [terminalCursorStyle, setTerminalCursorStyle] = useState<'block' | 'underline' | 'bar'>('block');
+  const [terminalCursorBlink, setTerminalCursorBlink] = useState(true);
   const [defaultTerminalFontSize, setDefaultTerminalFontSize] = useState(14);
   // Empty string = use the CSS var default from tokens.css (Cascadia Code).
   // Non-empty = user-selected font stack, applied to `--font-mono-terminal` on
@@ -117,7 +119,12 @@ export function App() {
     () => hideTerminalCursor ? withHiddenXtermCursor(xtermTheme) : xtermTheme,
     [hideTerminalCursor, xtermTheme],
   );
-  const termManager = useTerminalManager(effectiveXtermTheme, defaultTerminalFontFamily);
+  const termManager = useTerminalManager(
+    effectiveXtermTheme,
+    defaultTerminalFontFamily,
+    terminalCursorStyle,
+    terminalCursorBlink,
+  );
   const { layoutState, layoutDispatch } = useLayoutState();
   const { notifications, notify, dismiss } = useNotifications();
   const notifyError = useCallback((title: string, err: unknown) => {
@@ -250,7 +257,9 @@ export function App() {
       window.electronAPI.config.get?.('terminalFontSize')?.catch(() => null),
       window.electronAPI.config.get?.('terminalFontFamily')?.catch(() => null),
       window.electronAPI.config.get?.('uiFontFamily')?.catch(() => null),
-    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor, helm, fontSize, fontFamily, uiFont]) => {
+      window.electronAPI.config.get?.('terminalCursorStyle')?.catch(() => null),
+      window.electronAPI.config.get?.('terminalCursorBlink')?.catch(() => null),
+    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink]) => {
       if (cancelled) return;
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
@@ -265,6 +274,10 @@ export function App() {
       }
       setDefaultTerminalFontFamily(typeof fontFamily === 'string' ? fontFamily.trim() : '');
       setUiFontFamily(typeof uiFont === 'string' ? uiFont.trim() : '');
+      if (cursorStyle === 'block' || cursorStyle === 'underline' || cursorStyle === 'bar') {
+        setTerminalCursorStyle(cursorStyle);
+      }
+      setTerminalCursorBlink(cursorBlink !== 'false');
     });
     return () => { cancelled = true; };
   }, [settingsOpen]);

@@ -39,6 +39,10 @@ Sets the default terminal font size for all new panes. Existing panes keep whate
 
 A few terminal-pane toggles (e.g. cursor blink, scrollback length). The hint copy explains the trade-offs per option — most users should leave these at the defaults.
 
+### Cursor shape & blink
+
+When the xterm.js cursor is visible, pick its shape (block / underline / bar) and whether it blinks. Both controls are disabled while **Hide terminal cursor** is on, since shape and blink have no effect on a hidden cursor.
+
 ## Sessions
 
 ### Default CLI tool

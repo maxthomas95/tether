@@ -163,6 +163,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [exportBusy, setExportBusy] = useState<UsageExportFormat | null>(null);
   const [exportStatus, setExportStatus] = useState<{ kind: 'ok' | 'error'; message: string } | null>(null);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
+  const [terminalCursorStyle, setTerminalCursorStyle] = useState<'block' | 'underline' | 'bar'>('block');
+  const [terminalCursorBlink, setTerminalCursorBlink] = useState(true);
   const [terminalFontSize, setTerminalFontSize] = useState(14);
   const [terminalFontFamily, setTerminalFontFamily] = useState<string>('');
   const [uiFontFamily, setUiFontFamily] = useState<string>('');
@@ -228,7 +230,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       window.electronAPI.config.get?.('terminalFontSize')?.catch(() => null),
       window.electronAPI.config.get?.('terminalFontFamily')?.catch(() => null),
       window.electronAPI.config.get?.('uiFontFamily')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, hideCursor, helm, fontSize, fontFamily, uiFont]) => {
+      window.electronAPI.config.get?.('terminalCursorStyle')?.catch(() => null),
+      window.electronAPI.config.get?.('terminalCursorBlink')?.catch(() => null),
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -252,6 +256,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       }
       setTerminalFontFamily(typeof fontFamily === 'string' ? fontFamily.trim() : '');
       setUiFontFamily(typeof uiFont === 'string' ? uiFont.trim() : '');
+      if (cursorStyle === 'block' || cursorStyle === 'underline' || cursorStyle === 'bar') {
+        setTerminalCursorStyle(cursorStyle);
+      }
+      setTerminalCursorBlink(cursorBlink !== 'false');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -282,6 +290,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     await window.electronAPI.config.set?.('globalUsageEnabled', globalUsageEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('cliToolBreakdownEnabled', cliToolBreakdownEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('hideTerminalCursor', hideTerminalCursor ? 'true' : 'false');
+    await window.electronAPI.config.set?.('terminalCursorStyle', terminalCursorStyle);
+    await window.electronAPI.config.set?.('terminalCursorBlink', terminalCursorBlink ? 'true' : 'false');
     await window.electronAPI.config.set?.('allowHelm', allowHelm ? 'true' : 'false');
     await window.electronAPI.config.set?.('terminalFontSize', String(terminalFontSize));
     await window.electronAPI.config.set?.('terminalFontFamily', terminalFontFamily);
@@ -294,7 +304,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, allowHelm, terminalFontSize, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, terminalFontSize, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, onClose]);
 
   const handleExportUsage = async (format: UsageExportFormat) => {
     setExportBusy(format);
@@ -577,6 +587,44 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               their own input indicator, so the xterm cursor often reads as a redundant
               second cursor that bounces around during thinking animations.
               Turn this off if you use plain shells, vim, or htop in Tether.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="terminal-cursor-style-select">
+              Cursor shape
+            </label>
+            <select
+              id="terminal-cursor-style-select"
+              className="form-input"
+              value={terminalCursorStyle}
+              onChange={e => setTerminalCursorStyle(e.target.value as 'block' | 'underline' | 'bar')}
+              disabled={hideTerminalCursor}
+              style={{ width: 200 }}
+            >
+              <option value="block">Block</option>
+              <option value="underline">Underline</option>
+              <option value="bar">Bar</option>
+            </select>
+            <p className="form-hint">
+              Shape of the xterm.js cursor when visible. Has no effect while
+              &ldquo;Hide terminal cursor&rdquo; is on.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={terminalCursorBlink}
+                onChange={e => setTerminalCursorBlink(e.target.checked)}
+                disabled={hideTerminalCursor}
+              />
+              Blink terminal cursor
+            </label>
+            <p className="form-hint">
+              Blink the xterm.js cursor when visible. Has no effect while
+              &ldquo;Hide terminal cursor&rdquo; is on.
             </p>
           </div>
 

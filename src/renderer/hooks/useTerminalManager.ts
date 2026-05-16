@@ -37,8 +37,9 @@ function getTerminalFontFamily(): string {
   return value || FALLBACK_TERMINAL_FONT;
 }
 
+export type TerminalCursorStyle = 'block' | 'underline' | 'bar';
+
 const BASE_TERMINAL_OPTIONS = {
-  cursorBlink: true,
   fontSize: 14,
   allowProposedApi: true,
 } as const;
@@ -55,11 +56,18 @@ export interface TerminalManagerAPI {
   remove: (sessionId: string) => void;
 }
 
-export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: string): TerminalManagerAPI {
+export function useTerminalManager(
+  xtermTheme?: ITheme,
+  fontFamilyTrigger?: string,
+  cursorStyle: TerminalCursorStyle = 'block',
+  cursorBlink: boolean = true,
+): TerminalManagerAPI {
   const panes = useRef(new Map<PaneId, PaneEntry>());
   const backgroundTerminals = useRef(new Map<string, ManagedTerminal>());
   const broadcastTargets = useRef(new Set<string>());
   const themeRef = useRef<ITheme | undefined>(xtermTheme);
+  const cursorStyleRef = useRef<TerminalCursorStyle>(cursorStyle);
+  const cursorBlinkRef = useRef<boolean>(cursorBlink);
 
   // Update theme on all existing terminals when it changes
   useEffect(() => {
@@ -87,6 +95,21 @@ export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: stri
     }
   }, [fontFamilyTrigger]);
 
+  // Propagate cursor shape + blink to every live terminal when the user
+  // changes the setting. Mirrors the theme/font-family pattern above.
+  useEffect(() => {
+    cursorStyleRef.current = cursorStyle;
+    cursorBlinkRef.current = cursorBlink;
+    for (const entry of panes.current.values()) {
+      entry.terminal.options.cursorStyle = cursorStyle;
+      entry.terminal.options.cursorBlink = cursorBlink;
+    }
+    for (const managed of backgroundTerminals.current.values()) {
+      managed.terminal.options.cursorStyle = cursorStyle;
+      managed.terminal.options.cursorBlink = cursorBlink;
+    }
+  }, [cursorStyle, cursorBlink]);
+
   const sendInput = useCallback((sessionId: string, data: string) => {
     const targets = broadcastTargets.current;
     if (targets.size > 1 && targets.has(sessionId)) {
@@ -106,6 +129,8 @@ export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: stri
   const createTerminal = useCallback((sessionId: string): ManagedTerminal => {
     const terminal = new Terminal({
       ...BASE_TERMINAL_OPTIONS,
+      cursorStyle: cursorStyleRef.current,
+      cursorBlink: cursorBlinkRef.current,
       fontFamily: getTerminalFontFamily(),
       theme: themeRef.current,
     });
