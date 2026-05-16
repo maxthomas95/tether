@@ -273,7 +273,6 @@ textarea:focus-visible,
 .shortcuts-table--editable .shortcuts-action {
   color: var(--text-primary);
   width: auto;
-  white-space: nowrap;
   padding-right: 12px;
 }
 
