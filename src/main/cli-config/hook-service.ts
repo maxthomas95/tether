@@ -1,0 +1,135 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { app } from 'electron';
+import { createHookBridge, type HookBridgeHandle } from './hook-bridge';
+import { installClaudeHooks, uninstallClaudeHooks } from './claude-settings-overlay';
+import { sessionManager } from '../session/session-manager';
+import { getDb } from '../db/database';
+import { createLogger } from '../logger';
+
+const log = createLogger('hook-service');
+
+/**
+ * Coordinator for the CLI-hook integration's lifetime. Owns the bridge
+ * socket and the settings-file overlays; brokers per-session env vars.
+ *
+ * Lifecycle model A′:
+ *   - `start()` at app `ready`: boot bridge → scrub-and-install overlays.
+ *   - `stop()` at `before-quit`: uninstall overlays → dispose bridge.
+ *   - Crash recovery: install-at-boot's scrub clears any prior-run orphans
+ *     before laying fresh entries down. Net effect of a crashed shutdown
+ *     is a one-launch delay before overlays are clean.
+ *
+ * Honors the `cliHooksEnabled` config bit (defaults to true). When false,
+ * `start()` still runs the orphan-scrub pass (defense in depth — a user
+ * who toggles the feature off should not be left with our entries on disk)
+ * but does not lay fresh ones, and `envForSession()` returns an empty
+ * record so spawned CLIs run without `TETHER_HOOK_*` in env. The helper
+ * already exits 0 when those vars are missing, so unwired sessions degrade
+ * to byte-level detection without errors.
+ */
+
+let bridge: HookBridgeHandle | null = null;
+let installed = false;
+
+function helperPath(): string {
+  // Packaged: shipped under <resources>/tether-cli-hook/ via Forge's
+  // extraResource list. Dev: read from repo at cli-tools/tether-cli-hook/.
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'tether-cli-hook', 'index.js');
+  }
+  // __dirname during dev is `.vite/build/`. Climb to repo root.
+  return path.resolve(__dirname, '..', '..', 'cli-tools', 'tether-cli-hook', 'index.js');
+}
+
+function isEnabled(): boolean {
+  // Default-on: missing key counts as enabled. Users opt OUT via Settings.
+  return getDb().config?.cliHooksEnabled !== 'false';
+}
+
+export async function startHookService(): Promise<void> {
+  const helper = helperPath();
+  if (!fs.existsSync(helper)) {
+    log.warn('Hook helper not found — CLI hooks disabled this session', { helper });
+    return;
+  }
+
+  // Always run the orphan-scrub even if the feature is off; it's a no-op
+  // for files that don't contain our sentinel and clears the previous
+  // run's entries if the user just toggled the feature off.
+  try {
+    await uninstallClaudeHooks({ helperPath: helper });
+  } catch (err) {
+    log.warn('Boot-time orphan scrub failed', { error: err instanceof Error ? err.message : String(err) });
+  }
+
+  if (!isEnabled()) {
+    log.info('CLI hooks disabled by user setting — skipping bridge + install');
+    return;
+  }
+
+  try {
+    bridge = await createHookBridge((event) => {
+      sessionManager.handleHookEvent(event.tetherSessionId, event.type);
+    });
+  } catch (err) {
+    log.warn('Hook bridge failed to start — falling back to byte-level only', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    bridge = null;
+    return;
+  }
+
+  try {
+    await installClaudeHooks({ helperPath: helper });
+    installed = true;
+  } catch (err) {
+    log.warn('Claude hook install failed — leaving bridge running for any pre-installed entries', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    installed = false;
+  }
+}
+
+export async function stopHookService(): Promise<void> {
+  if (installed) {
+    try {
+      await uninstallClaudeHooks({ helperPath: helperPath() });
+    } catch (err) {
+      log.warn('Claude hook uninstall failed during shutdown', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    installed = false;
+  }
+  if (bridge) {
+    try { await bridge.dispose(); }
+    catch (err) { log.warn('Bridge dispose failed', { error: err instanceof Error ? err.message : String(err) }); }
+    bridge = null;
+  }
+}
+
+/**
+ * Build the per-session env subset that lets the helper find the bridge
+ * and tag its event with the right Tether session id. Returns `{}` if
+ * the bridge isn't running (either disabled or boot failed) so the env
+ * spread on the caller side is a no-op.
+ */
+export function envForSession(tetherSessionId: string): Record<string, string> {
+  if (!bridge) return {};
+  return {
+    TETHER_HOOK_SOCKET: bridge.socketPath,
+    TETHER_HOOK_TOKEN: bridge.token,
+    TETHER_SESSION_ID: tetherSessionId,
+  };
+}
+
+/**
+ * For tests and Settings UI: report whether the bridge is currently
+ * accepting events. Doesn't reflect overlay-install status — that can be
+ * false even when the bridge is up (e.g. if settings.json failed to
+ * parse).
+ */
+export function isHookServiceActive(): boolean {
+  return bridge !== null;
+}

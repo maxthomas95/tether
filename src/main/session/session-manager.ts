@@ -19,6 +19,7 @@ import { detectNewOpencodeSession, releaseOpencodeSessionClaim } from '../openco
 import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId, SessionExitInfo, WaitingReason } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
+import { envForSession as hookEnvForSession } from '../cli-config/hook-service';
 import { usageService } from '../usage/usage-service';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { createLogger } from '../logger';
@@ -404,6 +405,12 @@ class SessionManager {
     let resolvedEnv: Record<string, string>;
     try {
       resolvedEnv = await resolveAll(mergedEnv);
+      // Layer the hook-bridge env on top, AFTER vault resolution. The hook
+      // env is short-lived and process-local — we never want it to traverse
+      // the vault layer (which would log/error on opaque values), and the
+      // user can never override these keys via their own env config.
+      const hookEnv = hookEnvForSession(id);
+      Object.assign(resolvedEnv, hookEnv);
     } catch (err) {
       log.error('Env var resolution failed', { id, error: err instanceof Error ? err.message : String(err) });
       statusDetector.unregister(id);
