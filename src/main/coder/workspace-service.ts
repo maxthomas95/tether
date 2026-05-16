@@ -35,6 +35,14 @@ function stripAnsi(s: string): string {
  * to `coder` on PATH when the env has no explicit `binaryPath`.
  */
 export function resolveCoderBinary(environmentId: string): string {
+  const cfg = resolveCoderEnvironmentConfig(environmentId);
+  if (typeof cfg.binaryPath === 'string' && cfg.binaryPath.trim()) {
+    return cfg.binaryPath.trim();
+  }
+  return 'coder';
+}
+
+function resolveCoderEnvironmentConfig(environmentId: string): Record<string, unknown> {
   const env = getEnvironment(environmentId);
   if (!env) {
     throw new Error(
@@ -48,12 +56,13 @@ export function resolveCoderBinary(environmentId: string): string {
     );
   }
   try {
-    const cfg = JSON.parse(env.config) as Record<string, unknown>;
-    if (typeof cfg.binaryPath === 'string' && cfg.binaryPath.trim()) {
-      return cfg.binaryPath.trim();
-    }
+    return JSON.parse(env.config) as Record<string, unknown>;
   } catch { /* use default */ }
-  return 'coder';
+  return {};
+}
+
+function allowInsecureCoderTls(environmentId: string): boolean {
+  return resolveCoderEnvironmentConfig(environmentId).allowInsecureTls === true;
 }
 
 /**
@@ -200,6 +209,23 @@ function parseCoderTemplateParamsBody(body: string): CoderTemplateParam[] {
     .filter((p): p is CoderTemplateParam => p !== null);
 }
 
+export function redactCoderCreateArgsForLog(args: string[]): string[] {
+  const redacted: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    redacted.push(args[i]);
+    if (args[i] !== '--parameter' || i + 1 >= args.length) continue;
+    i += 1;
+    const raw = args[i];
+    const eq = raw.indexOf('=');
+    redacted.push(eq >= 0 ? `${raw.slice(0, eq)}=[redacted]` : '[redacted]');
+  }
+  return redacted;
+}
+
+function buildCommandForLog(binaryPath: string, args: string[]): string {
+  return [binaryPath, ...redactCoderCreateArgsForLog(args)].join(' ');
+}
+
 /**
  * Fetch the rich parameters for a template version — the set of knobs a caller
  * must supply (or accept defaults for) when creating a workspace. Previously
@@ -211,6 +237,7 @@ export async function getCoderTemplateParams(
   templateVersionId: string,
 ): Promise<CoderTemplateParam[]> {
   const binaryPath = resolveCoderBinary(environmentId);
+  const allowInsecureTls = allowInsecureCoderTls(environmentId);
   const { url, token } = await getCoderAuth(binaryPath);
 
   const https = await import('node:https');
@@ -239,14 +266,15 @@ export async function getCoderTemplateParams(
       });
     };
 
-    const req = mod.get(endpoint.href, {
+    const requestOptions: import('node:https').RequestOptions = {
       headers: { 'Coder-Session-Token': token },
       timeout: 10_000,
-      // Internal Coder deployments often use certs signed by a private CA
-      // that Node doesn't trust. The coder CLI handles this via the system
-      // store; we mirror that trust here for this authenticated request.
-      rejectUnauthorized: false,
-    }, handleResponse);
+    };
+    if (endpoint.protocol === 'https:' && allowInsecureTls) {
+      requestOptions.rejectUnauthorized = false;
+    }
+
+    const req = mod.get(endpoint.href, requestOptions, handleResponse);
     req.on('error', (err: Error) => reject(new Error('Coder API request failed: ' + err.message)));
   });
 }
@@ -313,8 +341,8 @@ export async function createCoderWorkspace(
     ...Object.entries(mergedParameters).flatMap(([name, value]) => ['--parameter', `${name}=${value}`]),
   ];
 
-  const cmd = `${binaryPath} ${args.join(' ')}`;
-  log.info('coder create via PTY', { bin: binaryPath, args });
+  const commandForLog = buildCommandForLog(binaryPath, args);
+  log.info('coder create via PTY', { bin: binaryPath, args: redactCoderCreateArgsForLog(args) });
 
   // Pre-flight: if the user configured an absolute binaryPath, verify it
   // exists before handing the string to node-pty. Node-pty's spawn can throw
@@ -346,9 +374,9 @@ export async function createCoderWorkspace(
       // Tether tried to run and where it searched.
       const rawMsg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
       const pathExcerpt = (process.env.PATH || '').split(/[;:]/).slice(0, 20).join(path.delimiter);
-      log.error('coder create spawn failed', { error: rawMsg, command: cmd, pathExcerpt });
+      log.error('coder create spawn failed', { error: rawMsg, command: commandForLog, pathExcerpt });
       reject(new Error(
-        `coder create spawn failed: ${rawMsg || '<empty error>'} | cmd: ${cmd} | ` +
+        `coder create spawn failed: ${rawMsg || '<empty error>'} | cmd: ${commandForLog} | ` +
         `Likely cause: "${binaryPath}" is not on the Electron main process PATH. ` +
         `Set an absolute binaryPath on the Coder environment or add coder to PATH before launching Tether.`,
       ));
@@ -382,7 +410,7 @@ export async function createCoderWorkspace(
         ? `Detected unsupplied parameters: ${missing.join(', ')}.`
         : `Could not identify the specific parameter from the prompt text.`;
       log.error('coder create blocked on interactive prompt', {
-        command: cmd,
+        command: commandForLog,
         promptLine: clean,
         detectedParams: [...promptedParams],
         suppliedParams: suppliedNames,
@@ -391,7 +419,7 @@ export async function createCoderWorkspace(
         `coder create is waiting on an interactive parameter prompt ("${clean}"). ` +
         `${missingHint} Call get_coder_template_params with the template's activeVersionId ` +
         `to list required parameters, then pass them via the "parameters" map on ` +
-        `create_coder_workspace. | cmd: ${cmd}`,
+        `create_coder_workspace. | cmd: ${commandForLog}`,
       );
     };
 
@@ -432,12 +460,12 @@ export async function createCoderWorkspace(
         const tail = lines.slice(-8).join(' | ');
         const parts = [`coder create failed (exit ${exitCode})`];
         if (errLine) parts.push(`: ${errLine}`);
-        parts.push(` | cmd: ${cmd}`);
+        parts.push(` | cmd: ${commandForLog}`);
         if (tail && tail !== errLine) parts.push(` | tail: ${tail}`);
         const msg = parts.join('').slice(0, 4000);
         log.error('coder create failed', {
           exitCode,
-          command: cmd,
+          command: commandForLog,
           errLine,
           output: cleaned.slice(-2000),
         });

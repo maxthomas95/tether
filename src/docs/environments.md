@@ -35,9 +35,10 @@ Prerequisites:
 - You are logged in: run `coder login <deployment-url>` once in a terminal
 - At least one running workspace exists, **or** a template you can create one from
 
-Coder environments only need one setting:
+Coder environments have these settings:
 
 - **Coder CLI Path** — defaults to `coder`. Override only if the binary isn't on your PATH.
+- **Allow insecure TLS for Coder API lookup** — off by default. Enable only for self-signed internal deployments whose template-parameter API cannot be verified by Node's trust store.
 
 When you create a session in a Coder environment, the New Session dialog calls `coder list --output json` and shows your workspaces in a dropdown. You can also click **Create new workspace** to pick a template, fill in its parameters, and provision a workspace — progress streams into the dialog as the build runs. Once the workspace is running, Tether spawns `coder ssh <workspace>` and launches the selected CLI inside it.
 

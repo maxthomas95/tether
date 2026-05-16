@@ -45,6 +45,15 @@ describe('LocalTransport', () => {
     expect(args).toEqual(['--permission-mode', 'plan', '--model', 'sonnet']);
   });
 
+  it('preserves equals-form args that contain spaces', async () => {
+    platform.set('linux');
+    await new LocalTransport().start(baseOptions({
+      cliArgs: ['--mcp-config=C:\\Users\\Max Thomas\\AppData\\config.json'],
+    }));
+    const [, args] = ptySpawnSpy.mock.calls[0];
+    expect(args).toEqual(['--mcp-config=C:\\Users\\Max Thomas\\AppData\\config.json']);
+  });
+
   it('appends initialPrompt as a single un-tokenized arg', async () => {
     platform.set('linux');
     await new LocalTransport().start(baseOptions({

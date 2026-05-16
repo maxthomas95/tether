@@ -10,7 +10,6 @@ import {
   DEFAULT_KEYBINDINGS,
   ALL_ACTIONS,
   RESERVED_CHORDS,
-  type KeybindingAction,
   type Chord,
 } from './keybindings';
 

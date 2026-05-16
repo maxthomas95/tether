@@ -287,7 +287,7 @@ async function createTransport(environmentId?: string): Promise<SessionTransport
   return new LocalTransport();
 }
 
-class SessionManager {
+export class SessionManager {
   private sessions = new Map<string, Session>();
   private callbacksMap = new Map<string, SessionCallbacks>();
 
@@ -597,21 +597,33 @@ class SessionManager {
       session.toolSessionId = toolSessionId || null;
     }
 
-    await transport.start({
-      workingDir: opts.workingDir,
-      env: resolvedEnv,
-      cols: 80,
-      rows: 24,
-      cliArgs: resolvedCliArgs.length > 0 ? resolvedCliArgs : undefined,
-      cliTool,
-      binaryName,
-      toolSessionId,
-      resumeToolSessionId: resumeId,
-      claudeSessionId: cliTool === 'claude' ? toolSessionId : undefined,
-      resumeClaudeSessionId: cliTool === 'claude' ? resumeId : undefined,
-      cloneUrl: opts.cloneUrl,
-      initialPrompt: opts.initialPrompt,
-    });
+    try {
+      await transport.start({
+        workingDir: opts.workingDir,
+        env: resolvedEnv,
+        cols: 80,
+        rows: 24,
+        cliArgs: resolvedCliArgs.length > 0 ? resolvedCliArgs : undefined,
+        cliTool,
+        binaryName,
+        toolSessionId,
+        resumeToolSessionId: resumeId,
+        claudeSessionId: cliTool === 'claude' ? toolSessionId : undefined,
+        resumeClaudeSessionId: cliTool === 'claude' ? resumeId : undefined,
+        cloneUrl: opts.cloneUrl,
+        initialPrompt: opts.initialPrompt,
+      });
+    } catch (err) {
+      log.error('Transport start failed', { id, error: err instanceof Error ? err.message : String(err) });
+      statusDetector.unregister(id);
+      session.helmIntegration?.cleanup();
+      session.helmIntegration = null;
+      session.transport = null;
+      transport.dispose();
+      this.sessions.delete(id);
+      this.callbacksMap.delete(id);
+      throw err;
+    }
 
     // Codex doesn't accept a pre-assigned session id — it mints one and writes
     // it to a new jsonl under ~/.codex/sessions. Watch for that file so we can

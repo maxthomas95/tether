@@ -4,7 +4,7 @@
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
 import { createLogger } from '../logger';
 import { loadPty } from './pty-loader';
-import { quotePosixEnvAssignment, quotePosixPathPreservingHome, quotePosixShellArg } from '../../shared/shell-quote';
+import { buildEnvAssignments, buildRemoteCliCommand, quotePosixShellArg, quoteRemotePath } from './posix-shell';
 
 const log = createLogger('coder-pty');
 
@@ -40,8 +40,7 @@ export class CoderTransport implements SessionTransport {
     const pty = loadPty();
 
     // workingDir holds the workspace name, optionally with a subdirectory
-    // inside the workspace separated by `::`. The subdir is cd'd into before
-    // launching claude so cloned-repo sessions open in the repo dir.
+    // inside the workspace separated by `::`.
     const raw = options.workingDir.trim();
     if (!raw) {
       throw new Error('CoderTransport: workspace name (workingDir) is required');
@@ -50,10 +49,21 @@ export class CoderTransport implements SessionTransport {
     const workspaceName = sepIdx >= 0 ? raw.slice(0, sepIdx) : raw;
     const subDir = sepIdx >= 0 ? raw.slice(sepIdx + 2) : '';
 
+    const envParts = buildEnvAssignments(options.env || {});
+    const cliCmd = buildRemoteCliCommand(options);
+    const baseCmd = envParts.length > 0
+      ? `env ${envParts.join(' ')} ${cliCmd}`
+      : cliCmd;
+    const quotedSubDir = subDir ? quoteRemotePath(subDir) : '';
+    const cdStep = subDir ? `cd ${quotedSubDir}` : '';
+    const cloneStep = options.cloneUrl && subDir
+      ? `{ [ -d ${quotedSubDir} ] || git clone ${quotePosixShellArg(options.cloneUrl)} ${quotedSubDir}; }`
+      : '';
+    const chain = [cloneStep, cdStep, baseCmd].filter(Boolean).join(' && ');
+    const cmd = `${chain}\n`;
+
     // On Windows, node-pty's CreateProcess call doesn't resolve PATHEXT, so
-    // bare names like "coder" (which is really "coder.cmd" or "coder.exe")
-    // fail with "File not found". Wrap in cmd.exe /c to let the shell do the
-    // resolution — same pattern LocalTransport uses for `claude`.
+    // bare names like "coder" need a cmd.exe wrapper.
     const shell = process.platform === 'win32' ? 'cmd.exe' : this.binaryPath;
     const spawnArgs = process.platform === 'win32'
       ? ['/c', this.binaryPath, 'ssh', workspaceName]
@@ -65,8 +75,6 @@ export class CoderTransport implements SessionTransport {
       name: 'xterm-256color',
       cols: options.cols,
       rows: options.rows,
-      // cwd of the local spawn is irrelevant — coder ssh drops us into the
-      // workspace's default directory inside the container.
       cwd: process.cwd(),
       env: {
         ...process.env,
@@ -92,45 +100,7 @@ export class CoderTransport implements SessionTransport {
       }
     });
 
-    // Build the CLI launch command to run inside the remote workspace shell.
-    // Uses the same env-escaping pattern as SSHTransport so env vars are injected
-    // without touching shell history.
-    const binary = options.binaryName || 'claude';
-    const envParts = Object.entries(options.env || {})
-      .filter(([, v]) => v)
-      .map(([k, v]) => quotePosixEnvAssignment(k, v));
-
-    const cliArgs = options.cliArgs?.join(' ') || '';
-    // Pass the initialPrompt as a single positional argument to the CLI (same
-    // contract SSHTransport uses). Without this, a Helm-dispatched child in a
-    // Coder workspace launches `claude` bare and has no idea what the parent
-    // asked it to do — the prompt was silently dropped.
-    const promptArg = options.initialPrompt ? ` ${quotePosixShellArg(options.initialPrompt)}` : '';
-    const cliCmd = cliArgs ? `${binary} ${cliArgs}${promptArg}` : `${binary}${promptArg}`;
-
-    const baseCmd = envParts.length > 0
-      ? `env ${envParts.join(' ')} ${cliCmd}`
-      : cliCmd;
-
-    // Shell-escape the subdir so paths with spaces and metacharacters are
-    // safe; quotePosixPathPreservingHome keeps a leading ~ literal so remote shell expands it.
-    const quotedSubDir = subDir ? quotePosixPathPreservingHome(subDir) : '';
-    const cdStep = subDir ? `cd ${quotedSubDir}` : '';
-
-    // If cloneUrl is set, clone the repo — but skip if the directory already
-    // exists (workspace restarts rerun startup scripts and the previous clone
-    // survives).  Uses `[ -d ... ] || git clone ...` so the chain continues
-    // either way: existing dir → no-op success, missing dir → clone.
-    const cloneStep = options.cloneUrl && subDir
-      ? `{ [ -d ${quotedSubDir} ] || git clone ${quotePosixShellArg(options.cloneUrl)} ${quotedSubDir}; }`
-      : '';
-
-    const chain = [cloneStep, cdStep, baseCmd].filter(Boolean).join(' && ');
-    const cmd = `${chain}\n`;
-
-    // Write optimistically — node-pty buffers until the remote shell is ready.
-    // The `coder ssh` handshake output flows through onData so the user sees
-    // connection progress in xterm.js.
+    // Write optimistically; node-pty buffers until the remote shell is ready.
     this.ptyProcess.write(cmd);
   }
 

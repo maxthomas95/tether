@@ -6,6 +6,7 @@
 export type ShellPlatform = 'win32' | 'posix';
 
 const POSIX_SINGLE_QUOTE_ESCAPE = String.raw`'\''`;
+const POSIX_ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function assertNoNul(value: string, label: string): void {
   if (value.includes('\0')) {
@@ -26,8 +27,8 @@ export function quotePosixShellArg(value: string): string {
 export function quotePosixEnvAssignment(name: string, value: string): string {
   assertNoNul(name, 'Environment variable name');
   assertNoNul(value, 'Environment variable value');
-  if (name.includes('=')) {
-    throw new Error('Environment variable names cannot contain "="');
+  if (!POSIX_ENV_NAME_RE.test(name)) {
+    throw new Error(`Invalid environment variable name: ${name}; names must match ${POSIX_ENV_NAME_RE} and cannot contain "="`);
   }
   return quotePosixShellArg(`${name}=${value}`);
 }

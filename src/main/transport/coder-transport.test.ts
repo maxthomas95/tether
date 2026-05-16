@@ -74,6 +74,15 @@ describe('CoderTransport', () => {
     expect(writes).toContain(`'TRICKY=it'\\''s $weird'`);
   });
 
+  it('rejects invalid env names before spawning coder ssh', async () => {
+    platform.set('linux');
+    await expect(new CoderTransport().start(baseOptions({
+      workingDir: 'ws',
+      env: { 'BAD-NAME': 'x' },
+    }))).rejects.toThrow(/Invalid environment variable name/);
+    expect(ptySpawnSpy).not.toHaveBeenCalled();
+  });
+
   it('issues a guarded git clone when cloneUrl + subdir set, skipping if dir exists', async () => {
     platform.set('linux');
     await new CoderTransport().start(baseOptions({
@@ -91,7 +100,7 @@ describe('CoderTransport', () => {
       initialPrompt: 'fix it pls',
     }));
     const writes = ptyHarness.current!.write.mock.calls.map((c) => c[0]).join('');
-    expect(writes).toContain("claude 'fix it pls'");
+    expect(writes).toContain("'claude' 'fix it pls'");
   });
 
   it('fans onData / onExit and dispose clears callbacks', async () => {
