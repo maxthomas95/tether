@@ -180,9 +180,12 @@ All adapters implement a common interface (detailed in [Transport Design](TRANSP
 |---|---|---|
 | Bytes flowing | Any data received in last 3s | `running` |
 | Input prompt | Output pause + last bytes match prompt patterns | `waiting` |
+| Hook event (Claude) | `Notification`/`Stop` hook fires via `cli-config/hook-bridge.ts` token-authed local socket | `waiting` (with `waitingReason: 'permission'`) / `idle` |
 | Extended silence | No data for 30s+ | `idle` |
 | PTY exit event | `pty.onExit` / SSH channel close | `stopped` or `dead` |
 | Error output | Exit code != 0 | `dead` |
+
+**CLI hook overlay (Claude only, Phase 1 — local sessions).** `src/main/cli-config/claude-settings-overlay.ts` writes a sentinel-scoped block into the user's `~/.claude/settings.json` so Claude Code's Notification/Stop hooks call a bundled stdlib-only Node helper (`tether-cli-hook`, shipped as a Forge `extraResource`). The helper posts to a token-authed local socket; `hook-bridge.ts` plumbs the events into the status detector. The overlay is additive, scrubbed on clean shutdown, and recovered on next boot after a crash. Codex `notify`, the `cliHooksEnabled` settings toggle, and SSH/Coder remote installation are deferred follow-ups (Phase 1b).
 
 **Important:** The detector does NOT attempt to parse ANSI escape sequences or understand Claude Code's UI structure. It operates on timing and byte-level patterns only. This makes it resilient to Claude Code UI changes across versions.
 
@@ -190,7 +193,7 @@ All adapters implement a common interface (detailed in [Transport Design](TRANSP
 
 ### IPC Design
 
-The IPC surface has grown to ~67 channels across these families (see `src/main/ipc/handlers.ts` for the full registry):
+The IPC surface has grown to ~88 channels across these families, split since 0.4.3-beta.4 into per-domain modules under `src/main/ipc/` (`session-handlers`, `env-handlers`, `config-handlers`, `vault-handlers`, `usage-handlers`, `git-handlers`, `coder-handlers`, `ssh-handlers`, `profile-handlers`, `keybindings-handlers`, `dialog-handlers`, `system-handlers`). `handlers.ts` is now a thin dispatcher:
 
 **Sessions:** `session:create`, `session:list`, `session:stop`, `session:kill`, `session:rename`, `session:remove`, plus per-session usage queries
 
