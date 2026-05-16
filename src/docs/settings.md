@@ -52,6 +52,10 @@ Number of lines of output kept per pane (100&ndash;100,000; default 10,000). xte
 
 A few terminal-pane toggles (e.g. cursor visibility, font family). The hint copy explains the trade-offs per option — most users should leave these at the defaults.
 
+### Cursor shape & blink
+
+When the xterm.js cursor is visible, pick its shape (block / underline / bar) and whether it blinks. Both controls are disabled while **Hide terminal cursor** is on, since shape and blink have no effect on a hidden cursor.
+
 ## Sessions
 
 ### Default CLI tool

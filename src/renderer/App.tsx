@@ -20,6 +20,7 @@ import { SetupWizard } from './components/SetupWizard';
 import { Notifications, useNotifications } from './components/Notifications';
 import { ConfirmDialog, useConfirmDialog } from './components/ConfirmDialog';
 import { useTerminalManager } from './hooks/useTerminalManager';
+import type { TerminalCursorStyle } from './hooks/useTerminalManager';
 import { useLayoutState } from './hooks/useLayoutState';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTheme } from './hooks/useTheme';
@@ -97,6 +98,8 @@ export function App() {
   const [repoGroupPrefs, setRepoGroupPrefs] = useState<RepoGroupPref[]>([]);
   const [sessionOrderPrefs, setSessionOrderPrefs] = useState<SessionOrderPref[]>([]);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
+  const [terminalCursorStyle, setTerminalCursorStyle] = useState<TerminalCursorStyle>('block');
+  const [terminalCursorBlink, setTerminalCursorBlink] = useState(true);
   const [defaultTerminalFontSize, setDefaultTerminalFontSize] = useState(14);
   const [terminalScrollback, setTerminalScrollback] = useState<number>(10000);
   // Empty string = use the CSS var default from tokens.css (Cascadia Code).
@@ -123,7 +126,13 @@ export function App() {
     () => hideTerminalCursor ? withHiddenXtermCursor(xtermTheme) : xtermTheme,
     [hideTerminalCursor, xtermTheme],
   );
-  const termManager = useTerminalManager(effectiveXtermTheme, defaultTerminalFontFamily, terminalScrollback);
+  const termManager = useTerminalManager(
+    effectiveXtermTheme,
+    defaultTerminalFontFamily,
+    terminalCursorStyle,
+    terminalCursorBlink,
+    terminalScrollback,
+  );
   const { layoutState, layoutDispatch } = useLayoutState();
   const { notifications, notify, dismiss } = useNotifications();
   const notifyError = useCallback((title: string, err: unknown) => {
@@ -256,8 +265,10 @@ export function App() {
       window.electronAPI.config.get?.('terminalFontSize')?.catch(() => null),
       window.electronAPI.config.get?.('terminalFontFamily')?.catch(() => null),
       window.electronAPI.config.get?.('uiFontFamily')?.catch(() => null),
+      window.electronAPI.config.get?.('terminalCursorStyle')?.catch(() => null),
+      window.electronAPI.config.get?.('terminalCursorBlink')?.catch(() => null),
       window.electronAPI.config.get?.('terminalScrollback')?.catch(() => null),
-    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor, helm, fontSize, fontFamily, uiFont, scrollback]) => {
+    ]).then(([badge, picker, splitting, maxPaneValue, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback]) => {
       if (cancelled) return;
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
@@ -272,6 +283,10 @@ export function App() {
       }
       setDefaultTerminalFontFamily(typeof fontFamily === 'string' ? fontFamily.trim() : '');
       setUiFontFamily(typeof uiFont === 'string' ? uiFont.trim() : '');
+      if (cursorStyle === 'block' || cursorStyle === 'underline' || cursorStyle === 'bar') {
+        setTerminalCursorStyle(cursorStyle);
+      }
+      setTerminalCursorBlink(cursorBlink !== 'false');
       const parsedScrollback = scrollback ? parseInt(scrollback, 10) : NaN;
       if (Number.isFinite(parsedScrollback)) {
         setTerminalScrollback(Math.max(100, Math.min(100000, parsedScrollback)));
