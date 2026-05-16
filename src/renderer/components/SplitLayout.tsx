@@ -19,6 +19,9 @@ interface SplitLayoutProps {
   maxPanes: number;
   defaultFontSize: number;
   onFontSizeDelta: (sessionId: string, delta: number) => void;
+  broadcastPaneIds: ReadonlySet<string>;
+  broadcastActive: boolean;
+  onToggleBroadcastTarget: (paneId: string) => void;
   onRestartInPane?: (paneId: string, sessionId: string) => void;
 }
 
@@ -37,6 +40,9 @@ export function SplitLayout({
   maxPanes,
   defaultFontSize,
   onFontSizeDelta,
+  broadcastPaneIds,
+  broadcastActive,
+  onToggleBroadcastTarget,
   onRestartInPane,
 }: SplitLayoutProps) {
   if (node.type === 'leaf') {
@@ -57,6 +63,9 @@ export function SplitLayout({
         maxPanes={maxPanes}
         defaultFontSize={defaultFontSize}
         onFontSizeDelta={onFontSizeDelta}
+        isBroadcastTarget={broadcastPaneIds.has(node.id)}
+        isBroadcastActive={broadcastActive}
+        onToggleBroadcastTarget={onToggleBroadcastTarget}
         onRestartInPane={onRestartInPane}
       />
     );
@@ -78,6 +87,9 @@ export function SplitLayout({
       maxPanes={maxPanes}
       defaultFontSize={defaultFontSize}
       onFontSizeDelta={onFontSizeDelta}
+      broadcastPaneIds={broadcastPaneIds}
+      broadcastActive={broadcastActive}
+      onToggleBroadcastTarget={onToggleBroadcastTarget}
       onRestartInPane={onRestartInPane}
     />
   );
@@ -98,6 +110,9 @@ interface SplitContainerProps {
   maxPanes: number;
   defaultFontSize: number;
   onFontSizeDelta: (sessionId: string, delta: number) => void;
+  broadcastPaneIds: ReadonlySet<string>;
+  broadcastActive: boolean;
+  onToggleBroadcastTarget: (paneId: string) => void;
   onRestartInPane?: (paneId: string, sessionId: string) => void;
 }
 
@@ -116,6 +131,9 @@ function SplitContainer({
   maxPanes,
   defaultFontSize,
   onFontSizeDelta,
+  broadcastPaneIds,
+  broadcastActive,
+  onToggleBroadcastTarget,
   onRestartInPane,
 }: SplitContainerProps) {
   const [first, second] = node.children;
@@ -143,6 +161,9 @@ function SplitContainer({
           maxPanes={maxPanes}
           defaultFontSize={defaultFontSize}
           onFontSizeDelta={onFontSizeDelta}
+          broadcastPaneIds={broadcastPaneIds}
+          broadcastActive={broadcastActive}
+          onToggleBroadcastTarget={onToggleBroadcastTarget}
           onRestartInPane={onRestartInPane}
         />
       </div>
@@ -166,6 +187,9 @@ function SplitContainer({
           maxPanes={maxPanes}
           defaultFontSize={defaultFontSize}
           onFontSizeDelta={onFontSizeDelta}
+          broadcastPaneIds={broadcastPaneIds}
+          broadcastActive={broadcastActive}
+          onToggleBroadcastTarget={onToggleBroadcastTarget}
           onRestartInPane={onRestartInPane}
         />
       </div>
