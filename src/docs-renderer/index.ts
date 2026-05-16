@@ -6,6 +6,10 @@ import sessionsMd from '../docs/sessions.md?raw';
 import environmentsMd from '../docs/environments.md?raw';
 import keyboardShortcutsMd from '../docs/keyboard-shortcuts.md?raw';
 import settingsMd from '../docs/settings.md?raw';
+import vaultMd from '../docs/vault.md?raw';
+import gitProvidersMd from '../docs/git-providers.md?raw';
+import usageQuotaMd from '../docs/usage-quota.md?raw';
+import helmMd from '../docs/helm.md?raw';
 
 // Self-hosted fonts — same identity as the main renderer (Phase 1 UX refresh).
 import '@fontsource/ibm-plex-sans/400.css';
@@ -28,6 +32,31 @@ const EXTENDED_THEMES: Record<string, {
   'default-dark': { hover: '#2a2d2e', active: '#37373d', header: '#3c3c3c', textSecondary: '#999999' },
 };
 
+// Slugify heading text into a stable anchor id matching what dialog (?) icons
+// pass to `tetherAPI.docs.open({ anchor })`. Mirrors GitHub-flavored anchors:
+// lowercase, spaces → hyphens, strip everything except [a-z0-9-_].
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/<[^>]+>/g, '')          // strip any inline HTML from marked
+    .replace(/&[a-z]+;/g, '')         // strip entity refs
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9\-_]/g, '');
+}
+
+const headingRenderer = new marked.Renderer();
+headingRenderer.heading = ({ tokens, depth }) => {
+  const text = headingRenderer.parser.parseInline(tokens);
+  const plain = tokens.map(t => ('text' in t ? t.text : '')).join('');
+  const id = slugify(plain);
+  return `<h${depth} id="${id}">${text}</h${depth}>\n`;
+};
+
+function renderMarkdown(src: string): string {
+  return marked.parse(src, { renderer: headingRenderer }) as string;
+}
+
 interface DocPage {
   id: string;
   title: string;
@@ -35,14 +64,19 @@ interface DocPage {
 }
 
 const pages: DocPage[] = [
-  { id: 'getting-started', title: 'Getting Started', html: marked.parse(gettingStartedMd) as string },
-  { id: 'sessions',        title: 'Sessions',        html: marked.parse(sessionsMd) as string },
-  { id: 'environments',    title: 'Environments',    html: marked.parse(environmentsMd) as string },
-  { id: 'keyboard-shortcuts', title: 'Keyboard Shortcuts', html: marked.parse(keyboardShortcutsMd) as string },
-  { id: 'settings',        title: 'Settings',        html: marked.parse(settingsMd) as string },
+  { id: 'getting-started',    title: 'Getting Started',    html: renderMarkdown(gettingStartedMd) },
+  { id: 'sessions',           title: 'Sessions',           html: renderMarkdown(sessionsMd) },
+  { id: 'environments',       title: 'Environments',       html: renderMarkdown(environmentsMd) },
+  { id: 'vault',              title: 'Vault',              html: renderMarkdown(vaultMd) },
+  { id: 'git-providers',      title: 'Git Providers',      html: renderMarkdown(gitProvidersMd) },
+  { id: 'usage-quota',        title: 'Usage & Quota',      html: renderMarkdown(usageQuotaMd) },
+  { id: 'helm',               title: 'Helm',               html: renderMarkdown(helmMd) },
+  { id: 'keyboard-shortcuts', title: 'Keyboard Shortcuts', html: renderMarkdown(keyboardShortcutsMd) },
+  { id: 'settings',           title: 'Settings',           html: renderMarkdown(settingsMd) },
 ];
 
 let currentPage = pages[0];
+let pendingAnchor: string | null = null;
 
 function applyTheme(themeName: string): void {
   const loader: LoaderTheme = LOADER_THEMES[themeName] || LOADER_THEMES.mocha;
@@ -61,11 +95,31 @@ function applyTheme(themeName: string): void {
   s.setProperty('--text-secondary', ext.textSecondary);
 }
 
-function navigateTo(pageId: string): void {
+function navigateTo(pageId: string, anchor?: string): void {
   const page = pages.find(p => p.id === pageId);
-  if (page) {
-    currentPage = page;
-    render();
+  if (!page) return;
+  currentPage = page;
+  pendingAnchor = anchor ?? null;
+  render();
+}
+
+function scrollToPendingAnchor(): void {
+  const main = document.querySelector<HTMLElement>('.docs-main');
+  if (!main) return;
+
+  if (!pendingAnchor) {
+    main.scrollTop = 0;
+    return;
+  }
+
+  const target = document.getElementById(pendingAnchor);
+  pendingAnchor = null;
+  if (target) {
+    target.scrollIntoView({ block: 'start', behavior: 'auto' });
+    target.classList.add('docs-anchor-flash');
+    setTimeout(() => target.classList.remove('docs-anchor-flash'), 1200);
+  } else {
+    main.scrollTop = 0;
   }
 }
 
@@ -97,28 +151,50 @@ function render(): void {
     });
   });
 
-  // Handle internal doc links (e.g., [Sessions](sessions))
+  // Handle internal doc links (e.g., [Sessions](sessions), [Vault](vault#oidc))
   root.querySelectorAll<HTMLAnchorElement>('.docs-article a').forEach(el => {
     const href = el.getAttribute('href');
-    if (href && !href.startsWith('http') && !href.startsWith('#')) {
-      el.addEventListener('click', (e) => {
-        e.preventDefault();
-        navigateTo(href);
-      });
-    }
+    if (!href || href.startsWith('http')) return;
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (href.startsWith('#')) {
+        // Anchor within the current page
+        pendingAnchor = href.slice(1);
+        scrollToPendingAnchor();
+        return;
+      }
+      const [page, anchor] = href.split('#');
+      navigateTo(page, anchor);
+    });
   });
 
-  // Scroll content to top on page change
-  const main = root.querySelector('.docs-main');
-  if (main) main.scrollTop = 0;
+  scrollToPendingAnchor();
 }
+
+// Parse the initial URL for a deep-link target
+const initialParams = new URLSearchParams(window.location.search);
+const initialPage = initialParams.get('page');
+const initialAnchor = initialParams.get('anchor');
+if (initialPage && pages.some(p => p.id === initialPage)) {
+  currentPage = pages.find(p => p.id === initialPage)!;
+}
+if (initialAnchor) pendingAnchor = initialAnchor;
 
 // Initial render
 render();
 
-// Theme sync: listen for changes from the main window
+// Theme sync + runtime navigate (when the docs window is already open
+// and another (?) icon is clicked in the main window).
 if (window.docsAPI) {
   window.docsAPI.onThemeChanged((themeName: string) => {
     applyTheme(themeName);
+  });
+  window.docsAPI.onNavigate((target) => {
+    if (target.page) {
+      navigateTo(target.page, target.anchor);
+    } else if (target.anchor) {
+      pendingAnchor = target.anchor;
+      scrollToPendingAnchor();
+    }
   });
 }

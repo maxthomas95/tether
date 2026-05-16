@@ -1,53 +1,77 @@
 # Getting Started
 
-Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provides a single unified interface to manage multiple agent CLI sessions across local, SSH, and containerized environments -- preserving the exact native terminal experience.
+Tether is a desktop session multiplexer for Claude Code, Codex CLI, OpenCode, and any custom shell binary. It gives you one window to drive many agent sessions across local, SSH, and Coder workspace environments — preserving the exact native terminal experience by piping the raw PTY straight into xterm.js.
 
 ## First Launch
 
-When you first open Tether, you'll see the sidebar on the left and an empty terminal area on the right. A default "Local" environment is created automatically for running sessions on your machine.
+The Setup Wizard runs on first launch and walks you through:
+
+1. **Repos root** — a parent directory Tether uses when cloning new projects and creating folders. You can change this later in Settings → Sessions.
+2. **API keys / env vars** — optional. Stored locally in `data.json` (no secrets in plaintext if you wire up [Vault](vault)).
+3. **First environment** — a Local environment is created automatically; you can add SSH or Coder later from the sidebar.
+
+After the wizard you'll see the sidebar on the left and an empty terminal area on the right.
 
 ## Creating Your First Session
 
 1. Click **+ New session** in the sidebar, or press **Ctrl+N**
-2. Select an environment (Local is the default)
-3. Choose a working directory -- this is where the selected CLI will start
-4. Pick Claude Code, Codex CLI, OpenCode, or a custom binary
-5. Optionally set a label, environment variables, or CLI flags
+2. Choose how to start:
+   - **Existing folder** — browse to or paste a working directory
+   - **Clone** — clone a repo from GitHub / Azure DevOps / Gitea (see [Git Providers](git-providers))
+   - **New folder** — create an empty folder under your repos root, optionally `git init` and provision an empty remote (see [Git Providers](git-providers#new-folder))
+3. Pick an [environment](environments) (Local, SSH, or Coder)
+4. Pick a CLI tool (Claude Code, Codex CLI, OpenCode, or a custom binary)
+5. Optionally set a label, [launch profile](settings#launch-profiles), env vars, or CLI flags
 6. Click **Create**
 
-The session will launch and you'll see the CLI terminal appear in the main panel.
+The session launches in a new pane and the CLI takes over from there.
 
 ## The Interface
 
 ### Sidebar
 
-The left sidebar shows all your sessions, grouped by environment. Each session displays:
+The left sidebar groups sessions by environment and then by working directory. Each session row shows:
 
-- A **status dot** indicating its current state (green = running, amber = waiting for input, gray = idle, red = dead)
-- The session **label** (auto-generated from the directory name, or custom)
-- The **working directory**
+- A **status dot** — green (running), amber (waiting on you), gray (idle), red (dead / stopped)
+- The **label** (auto-named from the directory, or rename inline by double-clicking)
+- A **pane badge** when the session is currently mounted in a split pane
 
-You can collapse environment groups, resize the sidebar by dragging its edge (180-400px), or hide it entirely with **Ctrl+B**.
+Drag sessions to reorder them inside a group. Right-click a group header for **bulk actions** (Kill all, Restart all, Clear all). Right-click a session for per-session actions (Stop, Kill, Duplicate, Remove, Helm enable). Collapse groups with the chevron. Resize the sidebar by dragging its edge (180–400px) or hide it with **Ctrl+B**.
+
+Footers along the bottom of the sidebar show:
+
+- [Vault](vault) auth and expiry status
+- Today's [cost and 7-day usage sparkline](usage-quota#global-usage-footer)
+- [Subscription quota](usage-quota#quota-tracking) status (if you've enabled it)
 
 ### Terminal Panel
 
-The main area displays the active session's terminal. This is a real terminal emulator (xterm.js) -- the same one used by VS Code. CLI output flows through byte-for-byte, untouched. What you see is exactly what the tool produces.
+The main area displays the active session. It's a real terminal emulator (xterm.js — the same one VS Code uses). Output flows through byte-for-byte; Tether does not parse or rewrite what the CLI prints. State detection is a passive side-channel.
 
-Click a session in the sidebar to switch to it. You can also use **Ctrl+1** through **Ctrl+9** to switch by position, or **Ctrl+ArrowUp/Down** to move between sessions.
+- Click a session in the sidebar to switch to it
+- **Ctrl+1** through **Ctrl+9** — switch by position
+- **Ctrl+ArrowDown** / **Ctrl+ArrowUp** — next / previous session
+- **Ctrl+scroll** on the terminal — change terminal font size
+- **Ctrl+=** / **Ctrl+-** — zoom the whole window (UI + terminal together)
+- **Ctrl-click** any printed URL — opens in your system browser
 
 ### Split Panes
 
-You can view multiple sessions side-by-side by dragging a session from the sidebar and dropping it onto the edge of the terminal area. Drop zones appear as you drag:
+Drag a session from the sidebar onto the edge of the terminal area to view two or more side-by-side. Drop zones light up as you drag:
 
-- **Left/Right** -- creates a horizontal split
-- **Top/Bottom** -- creates a vertical split
-- **Center** -- replaces the current pane
+- **Left / Right** — horizontal split
+- **Top / Bottom** — vertical split
+- **Center** — replace the current pane
 
-To remove a split, close or move the session out of the pane.
+Once split, use **Alt+Arrow** to focus the neighboring pane (un-maximizing if needed) and **Alt+Shift+Arrow** to swap the focused pane's session with its neighbor. If a session inside a pane dies, an in-pane overlay offers **Restart in this pane** or **Close pane** so the layout survives.
 
 ## Next Steps
 
-- [Sessions](sessions) -- learn about session lifecycle, states, and management
-- [Environments](environments) -- set up SSH and remote environments
-- [Keyboard Shortcuts](keyboard-shortcuts) -- full shortcut reference
-- [Settings](settings) -- configure themes, environment variables, and CLI flags
+- [Sessions](sessions) — lifecycle, states, multi-CLI, bulk actions
+- [Environments](environments) — Local / SSH / Coder setup
+- [Git Providers](git-providers) — GitHub / Azure DevOps / Gitea cloning and remote-create
+- [Vault](vault) — HashiCorp Vault for secrets
+- [Usage & Quota](usage-quota) — cost tracking, history, subscription quota
+- [Helm](helm) — opt-in MCP dispatcher (experimental)
+- [Keyboard Shortcuts](keyboard-shortcuts) — full shortcut reference (now user-remappable)
+- [Settings](settings) — themes, env vars, CLI flags, keybindings, integrations

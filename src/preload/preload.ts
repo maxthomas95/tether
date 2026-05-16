@@ -146,7 +146,8 @@ const api: TetherAPI = {
   },
 
   docs: {
-    open: (): Promise<void> => ipcRenderer.invoke(IPC.DOCS_OPEN),
+    open: (target?: { page?: string; anchor?: string }): Promise<void> =>
+      ipcRenderer.invoke(IPC.DOCS_OPEN, target),
   },
 
   coder: {

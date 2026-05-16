@@ -281,3 +281,16 @@ html, body {
   border: none;
   border-top: 1px solid var(--border-color);
 }
+
+/* --- Anchor flash (deep-link target highlight) ---
+   When the docs window opens scrolled to a specific heading via a (?) icon,
+   briefly highlight the target so users can see where they landed. */
+
+.docs-article .docs-anchor-flash {
+  animation: docs-anchor-flash 1.2s ease-out;
+}
+
+@keyframes docs-anchor-flash {
+  0%   { background: var(--bg-active); }
+  100% { background: transparent; }
+}

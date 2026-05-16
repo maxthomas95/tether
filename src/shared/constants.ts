@@ -79,6 +79,7 @@ export const IPC = {
   // Docs
   DOCS_OPEN: 'docs:open',
   DOCS_THEME_CHANGED: 'docs:theme-changed',
+  DOCS_NAVIGATE: 'docs:navigate',
 
   // Quota
   QUOTA_GET: 'quota:get',

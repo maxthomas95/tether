@@ -512,7 +512,7 @@ export interface TetherAPI {
     onCloneProgress(cb: (info: CloneProgressInfo) => void): () => void;
   };
   docs: {
-    open(): Promise<void>;
+    open(target?: { page?: string; anchor?: string }): Promise<void>;
   };
   coder: {
     listWorkspaces(environmentId: string): Promise<CoderWorkspace[]>;
