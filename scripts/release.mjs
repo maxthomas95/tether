@@ -244,13 +244,34 @@ function phaseVersion(targetVersion) {
   log(`Phase 3/12: version → ${targetVersion}`);
   const pkgPath = join(REPO_ROOT, 'package.json');
   const pkg = readJSON(pkgPath);
-  if (pkg.version === targetVersion) {
+  if (pkg.version !== targetVersion) {
+    pkg.version = targetVersion;
+    if (!DRY_RUN) writeJSON(pkgPath, pkg);
+    ok(`bumped package.json to ${targetVersion}`);
+  } else {
     ok(`package.json already at ${targetVersion}`);
-    return;
   }
-  pkg.version = targetVersion;
-  if (!DRY_RUN) writeJSON(pkgPath, pkg);
-  ok(`bumped package.json to ${targetVersion}`);
+
+  // Patch only the top two "version" fields in package-lock.json (root +
+  // packages[""]). A JSON round-trip would normalize CRLF→LF on Windows
+  // and reformat thousands of unrelated lines, so do a targeted text
+  // replacement instead.
+  const lockPath = join(REPO_ROOT, 'package-lock.json');
+  const lockOriginal = readFileSync(lockPath, 'utf8');
+  let versionMatches = 0;
+  const lockPatched = lockOriginal.replace(/"version": "[^"]*"/g, (match) => {
+    versionMatches += 1;
+    return versionMatches <= 2 ? `"version": "${targetVersion}"` : match;
+  });
+  if (versionMatches < 2) {
+    die('package-lock.json: expected at least 2 "version" fields (root + packages[""])');
+  }
+  if (lockPatched !== lockOriginal) {
+    if (!DRY_RUN) writeFileSync(lockPath, lockPatched);
+    ok(`bumped package-lock.json to ${targetVersion}`);
+  } else {
+    ok(`package-lock.json already at ${targetVersion}`);
+  }
 }
 
 // LiteLLM publishes pricing for hundreds of models in a single JSON file
@@ -386,9 +407,9 @@ function phaseChangelog(version, prereleaseTag) {
 function phaseCommitPush(version, prereleaseTag, branch) {
   log(`Phase 6/12: commit + push release branch`);
 
-  const releaseFileDiff = sh('git diff --name-only HEAD -- package.json CHANGELOG.md src/main/usage/litellm-prices.json');
+  const releaseFileDiff = sh('git diff --name-only HEAD -- package.json package-lock.json CHANGELOG.md src/main/usage/litellm-prices.json');
   if (releaseFileDiff) {
-    sh('git add package.json CHANGELOG.md src/main/usage/litellm-prices.json', { mutating: true });
+    sh('git add package.json package-lock.json CHANGELOG.md src/main/usage/litellm-prices.json', { mutating: true });
     const msg = `Release v${version}-${prereleaseTag}`;
     sh(`git commit -m "${msg}"`, { mutating: true });
     ok(`committed bump to ${branch}`);
