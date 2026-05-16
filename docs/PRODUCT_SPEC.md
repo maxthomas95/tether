@@ -1,6 +1,6 @@
 # Product Spec — Tether
 
-> **Note:** This document was the original product spec written before implementation. As of v0.3.x, all SF-01 through SF-23 stories are implemented, plus several originally-future items (SF-30 Coder, SF-31 workspace persistence, SF-33 transcript browsing for resume). Tether also now supports Codex CLI as a first-class peer, OpenCode and custom binaries as raw PTY sessions, Vault-backed env vars, and per-session usage/cost tracking. Stories are annotated with their status below.
+> **Note:** This document was the original product spec written before implementation. As of v0.5.x, all SF-01 through SF-23 stories are implemented, plus several originally-future items (SF-30 Coder, SF-31 workspace persistence, SF-33 transcript browsing for resume). Tether also now supports Codex CLI and GitHub Copilot CLI as first-class peers, OpenCode and custom binaries as raw PTY sessions, Vault-backed env vars, per-session and rolled-up usage/cost tracking with per-environment attribution, pane splitting with broadcast input, and user-remappable keyboard shortcuts. Stories are annotated with their status below.
 
 ## Vision
 
@@ -51,8 +51,8 @@ As a developer, I want to see a colored indicator on each session in the sidebar
 **SF-12: Group sessions by environment** — DONE (grouped by working directory, not environment type)
 As a developer, I want my sessions organized by environment in the sidebar. All local sessions together, all sessions on VM-A together, all Coder workspace sessions together. I can collapse/expand groups.
 
-**SF-13: Label and reorder sessions** — PARTIAL (labeling done via inline rename; drag reorder not yet implemented)
-As a developer, I want to give sessions a short label ("NKP OIDC fix", "VoidCode GPU pipeline") so I can identify them at a glance. I want to drag sessions to reorder within their group.
+**SF-13: Label and reorder sessions** — DONE
+As a developer, I want to give sessions a short label ("NKP OIDC fix", "VoidCode GPU pipeline") so I can identify them at a glance. Inline rename works in the sidebar; drag-to-reorder within a group shipped in 0.4.2-beta.3.
 
 **SF-14: Quick-switch with keyboard** — DONE
 As a developer, I want to press a hotkey (e.g., `Cmd+1` through `Cmd+9`, or `Cmd+↑/↓`) to jump between sessions without touching the mouse.

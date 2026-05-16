@@ -1,6 +1,6 @@
 # MVP Scope — Tether
 
-> **Note:** This document was the original MVP plan. As of v0.3.x, all MVP milestones (M1-M5) are complete and most post-MVP items have shipped: SSH adapter (with TOFU/known-hosts verification), Coder workspace adapter, environment management, session grouping, workspace persistence, Claude/Codex session resume, multi-CLI support (Claude/Codex/OpenCode/Custom), Vault-backed env vars, usage/cost tracking, pane splitting, and auto-update. Items below are annotated with their current status.
+> **Note:** This document was the original MVP plan. As of v0.5.x, all MVP milestones (M1-M5) are complete and most post-MVP items have shipped: SSH adapter (with TOFU/known-hosts verification), Coder workspace adapter, environment management, session grouping with drag-reorder + bulk actions, workspace persistence, Claude/Codex/Copilot resume picker, multi-CLI support (Claude/Codex/Copilot/OpenCode/Custom), Vault-backed env vars, usage/cost tracking with rollups and per-environment attribution, pane splitting with broadcast input, user-remappable keyboard shortcuts, and auto-update. Items below are annotated with their current status.
 
 ## MVP Definition
 
@@ -72,8 +72,8 @@ No export functionality yet.
 ### Multi-Model Quick Switch
 No in-place model switching. To change models, stop the session and start a new one.
 
-### Drag-and-Drop Reorder
-Sessions are ordered by creation time. Manual reorder is post-MVP polish.
+### ~~Drag-and-Drop Reorder~~ — DONE (0.4.2-beta.3)
+Drag-to-reorder within a repo group landed in `RepoGroup.tsx` / `SessionItem.tsx`.
 
 ## MVP Milestones
 
@@ -117,7 +117,7 @@ Sessions are ordered by creation time. Manual reorder is post-MVP polish.
 3. ~~**Session Resume**~~ — DONE for Claude/Codex transcript resume (0.2.x); live PTY reconnect across app restart still future
 4. **Desktop Notifications** — alert when background session transitions to "waiting"
 5. ~~**Container Adapter**~~ — DONE (Coder workspaces, 0.2.x)
-6. **Drag-and-Drop** — reorder sessions and environment groups
+6. ~~**Drag-and-Drop**~~ — DONE for sessions within a repo group (0.4.2-beta.3); environment-group reordering still pending
 7. **Transcript Export** — save session output to file
 8. **Multi-Model Switch** — in-place model change with session resume
 

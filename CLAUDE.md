@@ -4,7 +4,7 @@
 
 Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provides a single unified interface to manage multiple agentic CLI sessions across local, SSH, and Coder workspace environments — preserving the exact native terminal experience via raw PTY piping into xterm.js.
 
-**Status:** Active development. Currently `0.3.1` (with `0.3.0-beta.1` as the most recent feature release). Local, SSH, and Coder transports working; multi-CLI support (Claude/Codex/OpenCode/Custom); Vault-backed env vars; usage and quota tracking; pane splitting; auto-update; SSH host key verification.
+**Status:** Active development — in the 1.0 polish push. Currently `0.5.0-beta.1`. Local, SSH, and Coder transports working; multi-CLI support (Claude/Codex/Copilot/OpenCode/Custom); Vault-backed env vars; usage tracking with daily/weekly/monthly rollups, per-CLI and per-environment attribution, and CSV/JSON export; pane splitting with keyboard-driven focus/swap and broadcast input; auto-update; SSH host key verification; user-remappable keyboard shortcuts; Claude Notification/Stop hook-driven waiting/idle detection (Phase 1).
 
 ## Core Principle
 
@@ -21,8 +21,8 @@ Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provid
 - **Secrets:** HashiCorp Vault integration (KV v2) for env var refs
 - **State:** JSON file persistence (`{userData}/data.json`) — SQLite planned but deferred due to native module ABI issues
 - **IPC:** Electron IPC (commands + event channels for PTY data streaming)
-- **Themes:** Catppuccin (Mocha, Macchiato, Frappe, Latte) + Default Dark
-- **CLI tools registry:** Claude Code, Codex CLI, OpenCode, Custom — selected per session via `src/shared/cli-tools.ts`
+- **Themes:** Catppuccin (Mocha, Macchiato, Frappe, Latte) + Default Dark + Tether (house rope/canvas/brass palette)
+- **CLI tools registry:** Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, Custom — selected per session via `src/shared/cli-tools.ts`
 
 ## Architecture
 

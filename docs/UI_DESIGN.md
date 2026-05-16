@@ -170,30 +170,44 @@ The three-mode auth UI (Subscription/API Key/OpenRouter) described in the origin
 
 ## Settings Dialog — IMPLEMENTED (differs from spec)
 
-Implemented as a modal dialog (`SettingsDialog.tsx`), not a full panel. The actual sections:
+Implemented as a modal dialog (`SettingsDialog.tsx`) with a VS Code-style left rail. Sections: **General · Terminal · Sessions · Integrations · Usage**.
 
-**Theme**
-- Dropdown with 5 options: Mocha (default), Macchiato, Frappe, Latte, Default Dark
-- Theme changes apply immediately and persist across restarts
-- Syncs xterm.js terminal colors and titlebar overlay
+**General**
+- Theme dropdown with 6 options: Mocha (default), Macchiato, Frappe, Latte, Tether (house rope/canvas/brass), Default Dark — applied immediately, persisted, synced to xterm.js palette and titlebar overlay
+- Restore sessions on launch, resume previous chats, show resume badge, enable resume picker
+- Auto-update check on launch toggle
+- Open data folder / open logs folder buttons (`shell.openPath(app.getPath('userData' | 'logs'))`)
+- UI font family override
 
-**Restore Sessions on Launch**
-- Toggle to enable/disable workspace save/restore
+**Terminal**
+- Default terminal font size + reset per-session font overrides
+- Terminal font family override (xterm.js only — UI mono stays on branded face per `UX_REFRESH.md` §1)
+- Terminal scrollback buffer size (100–100,000 lines; default 10,000)
+- Hide terminal cursor, cursor shape (block/underline/bar), cursor blink
 
-**Default Environment Variables**
-- `EnvVarEditor` component for app-wide env vars
-- These are inherited by all sessions unless overridden
+**Sessions**
+- Helm opt-in (global "Allow Helm" — see `HELM_DESIGN.md`)
+- Pane splitting toggle + max panes
+- Keyboard shortcut rebinding (with reserved-chord warn list for `Ctrl+C` etc.)
+- Default CLI flags per tool, launch profiles, default env vars
 
-**Default CLI Flags**
-- Quick-add presets: `--dangerously-skip-permissions`, `--verbose`, `--no-telemetry`
-- Custom flag input
-- Applied to all sessions unless overridden
+**Integrations**
+- Git providers (GitHub, Azure DevOps, Gitea)
+- SSH known hosts
+- Vault config
 
-**Not yet implemented from original spec:** terminal font/cursor settings, scrollback config, keyboard shortcut rebinding.
+**Usage**
+- Subscription quota / per-session strip / global usage toggles
+- Per-CLI tool breakdown toggle
+- Export usage history as CSV / JSON
+
+All sections have `(?)` deep-link icons that open the in-app docs at the relevant heading via the `openDocs({ page, anchor })` IPC.
 
 ## Keyboard Shortcuts
 
 ### App-Level (always active) — as implemented in `useKeyboardShortcuts.ts`
+
+All app-level shortcuts are user-remappable from Settings → Sessions → Keyboard shortcuts (shipped in 0.5.0-beta.1). Defaults:
 
 | Shortcut | Action |
 |---|---|
@@ -201,10 +215,13 @@ Implemented as a modal dialog (`SettingsDialog.tsx`), not a full panel. The actu
 | `Ctrl+W` | Stop current session |
 | `Ctrl+B` | Toggle sidebar |
 | `Ctrl+1..9` | Switch to session 1-9 |
-| `Ctrl+↑` | Previous session |
-| `Ctrl+↓` | Next session |
+| `Ctrl+↑` / `Ctrl+↓` | Previous / next session |
+| `Alt+←/→/↑/↓` | Focus the neighboring pane (un-maximizes first if needed) |
+| `Alt+Shift+←/→/↑/↓` | Swap the focused pane's session with its neighbor |
+| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Window zoom in / out / reset (UI + terminal together) |
+| `Ctrl+scroll` (on a pane) | Per-pane terminal font size |
 
-**Not yet implemented:** `Ctrl+Shift+W` (force kill), `Ctrl+,` (settings), `Ctrl+Tab` (last active toggle).
+Reserved chords like `Ctrl+C` surface a warning in the rebind UI to prevent accidental clobbering. Broadcast input is enabled per pane via the pane header (not bound by default) — see `SessionItem.tsx` and the pane status strip.
 
 ### Terminal-Level (when terminal is focused) — as implemented in `useTerminalManager.ts`
 

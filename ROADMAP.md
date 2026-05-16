@@ -92,16 +92,4 @@ These are deferred on purpose. We'll revisit when 1.0 has soaked.
 
 ## Done
 
-_Tracked here briefly until the next release; archived to `CHANGELOG.md` after that._
-
-- [done] Multi-CLI tool support (Claude, Codex, Copilot, OpenCode, Custom)
-- [done] Coder workspace transport
-- [done] Vault integration (KV v2, OIDC, picker, sidebar pill, preflight)
-- [done] Tether-managed worktrees
-- [done] Helm v0 / v0.5 (opt-in MCP dispatch, Coder workspace tools, packaging)
-- [done] SSH host key verification (TOFU + known-hosts)
-- [done] Auto-update via GitHub Releases
-- [done] Per-session and global usage / cost views
-- [done] Subscription quota tracking
-- [done] First-run Setup Wizard
-- [done] Clickable URLs in the terminal — ctrl-click pasted/printed links to open in the system browser via `@xterm/addon-web-links` and `shell.openExternal`.
+_Tracked here briefly until the next release; archived to `CHANGELOG.md` after that. Cleared on 2026-05-16 — all prior items are captured in CHANGELOG entries 0.2.x–0.5.0-beta.1._
