@@ -34,12 +34,12 @@ const EXTENDED_THEMES: Record<string, {
 
 // Slugify heading text into a stable anchor id matching what dialog (?) icons
 // pass to `tetherAPI.docs.open({ anchor })`. Mirrors GitHub-flavored anchors:
-// lowercase, spaces → hyphens, strip everything except [a-z0-9-_].
+// lowercase, spaces → hyphens, then a character whitelist as the final pass.
+// The whitelist is what makes this safe — any HTML or entity refs that survive
+// upstream extraction are dropped before the slug is used as an id attribute.
 function slugify(text: string): string {
   return text
     .toLowerCase()
-    .replace(/<[^>]+>/g, '')          // strip any inline HTML from marked
-    .replace(/&[a-z]+;/g, '')         // strip entity refs
     .trim()
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9\-_]/g, '');
