@@ -273,6 +273,8 @@ textarea:focus-visible,
 .shortcuts-table--editable .shortcuts-action {
   color: var(--text-primary);
   width: auto;
+  white-space: nowrap;
+  padding-right: 12px;
 }
 
 .shortcuts-table--editable .shortcuts-key {
@@ -1320,7 +1322,7 @@ textarea:focus-visible,
 
 /* Wider dialog variant */
 .dialog--wide {
-  width: 560px;
+  width: 640px;
 }
 
 /* Settings dialog (left-rail nav + content) */
