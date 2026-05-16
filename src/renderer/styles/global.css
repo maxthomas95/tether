@@ -882,8 +882,8 @@ textarea:focus-visible,
   letter-spacing: 0.02em;
 }
 
-.welcome-diagram__anchor {
-  opacity: 0.92;
+.welcome-diagram__logo {
+  opacity: 0.95;
 }
 
 .welcome-diagram__pulse {
