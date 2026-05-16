@@ -43,6 +43,23 @@ const BASE_TERMINAL_OPTIONS = {
   allowProposedApi: true,
 } as const;
 
+/**
+ * Scrollback buffer size constants. xterm.js's built-in default is 1000 lines,
+ * which agent sessions blow past almost instantly. Tether's default is 10k.
+ * The setting is exposed in Settings → Terminal and persisted via
+ * `config.set('terminalScrollback', String(n))`.
+ */
+export const DEFAULT_SCROLLBACK = 10000;
+export const MIN_SCROLLBACK = 100;
+export const MAX_SCROLLBACK = 100000;
+
+export function clampScrollback(value: number | undefined | null): number {
+  if (value === undefined || value === null || !Number.isFinite(value)) {
+    return DEFAULT_SCROLLBACK;
+  }
+  return Math.max(MIN_SCROLLBACK, Math.min(MAX_SCROLLBACK, Math.floor(value)));
+}
+
 export interface TerminalManagerAPI {
   getOrCreate: (sessionId: string) => ManagedTerminal;
   writeData: (sessionId: string, data: string) => void;
@@ -55,11 +72,16 @@ export interface TerminalManagerAPI {
   remove: (sessionId: string) => void;
 }
 
-export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: string): TerminalManagerAPI {
+export function useTerminalManager(
+  xtermTheme?: ITheme,
+  fontFamilyTrigger?: string,
+  scrollback?: number,
+): TerminalManagerAPI {
   const panes = useRef(new Map<PaneId, PaneEntry>());
   const backgroundTerminals = useRef(new Map<string, ManagedTerminal>());
   const broadcastTargets = useRef(new Set<string>());
   const themeRef = useRef<ITheme | undefined>(xtermTheme);
+  const scrollbackRef = useRef<number>(clampScrollback(scrollback));
 
   // Update theme on all existing terminals when it changes
   useEffect(() => {
@@ -87,6 +109,20 @@ export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: stri
     }
   }, [fontFamilyTrigger]);
 
+  // Push scrollback changes to all live terminals so the setting takes effect
+  // without requiring the user to recreate panes. xterm.js trims the existing
+  // buffer if you shrink the value, so we clamp before assignment.
+  useEffect(() => {
+    const next = clampScrollback(scrollback);
+    scrollbackRef.current = next;
+    for (const entry of panes.current.values()) {
+      entry.terminal.options.scrollback = next;
+    }
+    for (const managed of backgroundTerminals.current.values()) {
+      managed.terminal.options.scrollback = next;
+    }
+  }, [scrollback]);
+
   const sendInput = useCallback((sessionId: string, data: string) => {
     const targets = broadcastTargets.current;
     if (targets.size > 1 && targets.has(sessionId)) {
@@ -107,6 +143,7 @@ export function useTerminalManager(xtermTheme?: ITheme, fontFamilyTrigger?: stri
     const terminal = new Terminal({
       ...BASE_TERMINAL_OPTIONS,
       fontFamily: getTerminalFontFamily(),
+      scrollback: scrollbackRef.current,
       theme: themeRef.current,
     });
     const fitAddon = new FitAddon();
