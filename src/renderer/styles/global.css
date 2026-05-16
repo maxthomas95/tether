@@ -147,18 +147,29 @@ textarea:focus-visible,
   -webkit-app-region: no-drag;
 }
 
-.menubar-dropdown {
+/* Shared dropdown surface — composed onto .menubar-dropdown,
+ * .context-menu, and .env-editor-presets. Each selector adds its own
+ * position offsets, sizing, z-index, and transform-origin below. */
+.menubar-dropdown,
+.context-menu,
+.env-editor-presets {
   position: absolute;
   top: 100%;
+  background: var(--surface-3);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 0;
+  box-shadow: var(--shadow-dropdown), var(--inner-highlight);
+  animation: dropdown-in var(--motion-fast) var(--ease-out-quint);
+}
+
+.menubar-dropdown {
   left: 0;
   margin-top: var(--space-0-5);
-  background: var(--bg-header);
-  border: 1px solid var(--border-color);
   border-radius: 6px;
-  padding: 4px 0;
   min-width: 220px;
   z-index: 500;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  transform-origin: top left;
 }
 
 .menubar-dropdown-item {
@@ -363,6 +374,9 @@ textarea:focus-visible,
   opacity: 0.4;
   border-radius: 1px;
   min-height: 2px;
+  transform-origin: bottom;
+  animation: spark-bar-grow var(--motion-base) var(--ease-out-quint) backwards;
+  animation-delay: calc(var(--bar-index, 0) * 40ms);
 }
 
 .global-usage-spark-bar--today {
@@ -584,7 +598,7 @@ textarea:focus-visible,
 
 .status-dot--running {
   background: var(--status-running);
-  animation: pulse 2s ease-in-out infinite;
+  animation: pulse 2.4s ease-in-out infinite;
 }
 
 .status-dot--waiting {
@@ -648,6 +662,11 @@ textarea:focus-visible,
 /* Repo sub-groups (auto-grouped by working directory) */
 .repo-group {
   margin-bottom: var(--space-0-5);
+  /* Stagger groups on first render. backwards keeps the from-state visible
+   * until each group's delay elapses so we don't get a flash before the
+   * animation starts. --stagger-index is set by App.tsx per-group. */
+  animation: repo-group-in var(--motion-base) var(--ease-out-quint) backwards;
+  animation-delay: calc(var(--stagger-index, 0) * 50ms);
 }
 
 .repo-group-header {
@@ -794,18 +813,12 @@ textarea:focus-visible,
   background: var(--accent);
 }
 
-/* Context menu */
+/* Context menu — see shared dropdown rules near .menubar-dropdown above. */
 .context-menu {
-  position: absolute;
   right: 8px;
-  top: 100%;
-  background: var(--bg-header);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  padding: 4px 0;
   min-width: 120px;
   z-index: 100;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transform-origin: top right;
 }
 
 .context-menu-item {
@@ -885,15 +898,17 @@ textarea:focus-visible,
   align-items: center;
   justify-content: center;
   z-index: 200;
+  animation: dialog-overlay-in var(--motion-base) var(--ease-out-quint);
 }
 
 .dialog {
-  background: var(--bg-sidebar);
+  background: var(--surface-3);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   width: 480px;
   max-width: 90vw;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-dialog), var(--inner-highlight);
+  animation: dialog-in var(--motion-base) var(--ease-out-quint);
 }
 
 .dialog-header {
@@ -1121,20 +1136,15 @@ textarea:focus-visible,
   position: relative;
 }
 
+/* Env preset popover — see shared dropdown rules near .menubar-dropdown above. */
 .env-editor-presets {
-  position: absolute;
-  top: 100%;
   left: 0;
   margin-top: var(--space-1);
-  background: var(--bg-header);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  padding: 4px 0;
   min-width: 280px;
   z-index: 300;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   max-height: 200px;
   overflow-y: auto;
+  transform-origin: top left;
 }
 
 .env-editor-preset-item {
@@ -1348,14 +1358,41 @@ select.form-input {
 }
 
 .source-tab {
+  position: relative;
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
   color: var(--text-secondary);
   font-size: var(--text-base);
   padding: 6px 14px;
   cursor: pointer;
   transition: var(--hover-transition);
+}
+
+/* Sliding tab underline — shared between .source-tab and
+ * .usage-history-tab. source-tabs uses the parent strip's border as the
+ * baseline so the underline pulls down by 1px to overlap; usage-history
+ * uses bottom: 0 (the default). */
+.source-tab::after,
+.usage-history-tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform var(--motion-base) var(--ease-out-quint);
+}
+
+.source-tab::after {
+  bottom: -1px;
+}
+
+.source-tab--active::after,
+.usage-history-tab--active::after {
+  transform: scaleX(1);
 }
 
 .source-tab:hover {
@@ -1364,7 +1401,6 @@ select.form-input {
 
 .source-tab--active {
   color: var(--text-primary);
-  border-bottom-color: var(--accent);
 }
 
 /* Repo list (provider browse) */
@@ -1580,14 +1616,14 @@ input[type="password"].form-input {
   align-items: flex-start;
   gap: var(--space-2);
   padding: 10px 12px;
-  background: var(--bg-header);
+  background: var(--surface-4);
   border: 1px solid var(--border-color);
   border-left-width: 3px;
   border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, var(--shadow-opacity));
+  box-shadow: var(--shadow-toast), var(--inner-highlight);
   color: var(--text-primary);
   pointer-events: auto;
-  animation: notification-in 0.18s ease-out;
+  animation: notification-in var(--motion-base) var(--ease-out-quint);
 }
 
 .notification--error {
@@ -1661,6 +1697,36 @@ input[type="password"].form-input {
 @keyframes notification-in {
   from { opacity: 0; transform: translateX(8px); }
   to { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Phase 2 enter animations ───────────────────────────────────────
+ * Dialog overlay fades; the dialog itself drifts up 4px and fades in.
+ * Dropdowns scale slightly from their anchored origin so they read as
+ * unfolding from the trigger, not popping in from nowhere.
+ */
+@keyframes dialog-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes dropdown-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes repo-group-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spark-bar-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
 }
 
 /* === Split-pane layout === */
@@ -1796,11 +1862,11 @@ input[type="password"].form-input {
 }
 
 .dead-pane-overlay-card {
-  background: var(--bg-secondary);
+  background: var(--surface-3);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 12px 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-toast), var(--inner-highlight);
   pointer-events: auto;
   display: flex;
   flex-direction: column;
@@ -2120,15 +2186,19 @@ body.tether-hide-cursor .xterm-cursor {
 }
 
 .usage-history-tab {
+  position: relative;
   background: transparent;
   border: none;
   color: var(--text-secondary);
   padding: var(--space-1-5) var(--space-3);
   font-size: var(--text-sm);
   cursor: pointer;
-  border-bottom: 2px solid transparent;
   margin-bottom: -1px;
 }
+
+/* Sliding underline lives in the shared .source-tab/.usage-history-tab
+ * ::after block above; default bottom: 0 matches this strip's geometry
+ * so no override is needed here. */
 
 .usage-history-tab:hover {
   color: var(--text-primary);
@@ -2136,7 +2206,6 @@ body.tether-hide-cursor .xterm-cursor {
 
 .usage-history-tab--active {
   color: var(--text-primary);
-  border-bottom-color: var(--accent);
 }
 
 .usage-history-table-wrap {
@@ -2176,4 +2245,21 @@ body.tether-hide-cursor .xterm-cursor {
 
 .usage-history-row--empty td {
   color: var(--text-muted);
+}
+
+/* ── Reduced motion ────────────────────────────────────────────────
+ * Honour OS-level prefers-reduced-motion by collapsing every
+ * animation and transition. Goes last so it overrides everything
+ * above. Status pulse, dialog enters, dropdown scales, stagger,
+ * sparkline grow, sliding tab underline — all of it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

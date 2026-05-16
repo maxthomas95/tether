@@ -147,7 +147,7 @@ export function GlobalUsageFooter({ onOpenHistory, environments }: GlobalUsageFo
               <div
                 key={i}
                 className={`global-usage-spark-bar ${isToday ? 'global-usage-spark-bar--today' : ''}`}
-                style={{ height: `${heightPct}%` }}
+                style={{ height: `${heightPct}%`, '--bar-index': i } as React.CSSProperties}
               />
             );
           })}

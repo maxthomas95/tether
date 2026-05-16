@@ -6,9 +6,12 @@ export function useTheme() {
   const [themeName, setThemeNameState] = useState(DEFAULT_THEME);
   const themeRef = useRef<TetherTheme>(getTheme(DEFAULT_THEME));
 
-  // Apply CSS variables to document root + update titlebar overlay
+  // Apply CSS variables to document root + update titlebar overlay.
+  // The data-theme attribute is the seam for surface tokens defined in
+  // tokens.css; everything else is injected inline below.
   const applyTheme = useCallback((theme: TetherTheme) => {
     const root = document.documentElement;
+    root.dataset.theme = theme.name;
     for (const [prop, value] of Object.entries(theme.css)) {
       root.style.setProperty(prop, value);
     }
