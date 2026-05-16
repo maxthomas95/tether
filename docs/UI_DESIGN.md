@@ -243,8 +243,8 @@ Each theme defines background, text, accent, sidebar, and terminal ANSI palette 
 - Direction: rope, canvas, brass — slightly warmer than Mocha, with deeper surface differentiation so dialogs and dropdowns float more obviously above the terminal plane.
 - Base shifts hue from Mocha's cool blue-purple (`#1e1e2e`) to a parchment-tinted dark (`#1f1c18`); sidebar `#1a1714`; header `#2c2723`. Surface tokens (`--surface-1..4`) widen the gap so `--shadow-opacity` of `0.65` reads cleanly.
 - Accent is copper/brass `#c68a5c` instead of Mocha's lavender — single hex, used everywhere the lavender would have been (focus rings, primary buttons, knot indicator on active sessions).
-- Status colors keep the project's canonical hexes: green `#22c55e`, amber `#eab308`, gray `#807565` (warm-shaded idle), red `#ef4444`.
-- xterm 16-color palette is tuned to harmonize with the warmer base — desaturated blues, sage cyans, brass-tinted yellow — rather than copying Mocha's block.
+- Status colors keep the project's canonical hexes: green `#22c55e`, amber `#eab308`, gray `#6b7280`, red `#ef4444` — no theme drift.
+- xterm 16-color palette is tuned to harmonize with the warmer base — desaturated blues, slightly cool cyan (separated from sage green for cleaner `git diff` reads), brass-tinted yellow — rather than copying Mocha's block. Selection background uses a copper-tinted overlay (`#c68a5c4d`) for clear contrast against the canvas base.
 
 **Status colors** are defined per-theme as CSS variables, following the original spec values for the default themes:
 - Green: running (alive, working)
