@@ -30,7 +30,9 @@ export type HookEventType =
   | 'idle_prompt'
   | 'turn_complete'
   | 'auth_success'
-  | 'elicitation_dialog';
+  | 'elicitation_dialog'
+  | 'elicitation_complete'
+  | 'elicitation_response';
 
 export interface HookEvent {
   tetherSessionId: string;

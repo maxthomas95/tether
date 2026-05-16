@@ -309,18 +309,33 @@ class SessionManager {
    * between the CLI firing and the helper reaching us, or this could be
    * a stray hook from a non-Tether process that happens to share the
    * env var (defense in depth: we filter by known sessions).
+   *
+   * Mapping rationale:
+   *   - permission_prompt + elicitation_dialog → "user must act now". Plan
+   *     mode confirmations and similar input boxes fire elicitation_dialog;
+   *     they're the same UX category as a permission prompt — both block
+   *     Claude until the user clicks something.
+   *   - turn_complete + idle_prompt + elicitation_complete/response → "Claude
+   *     is paused, your turn". The elicitation cycle has ended (user
+   *     responded or it auto-resolved), so we drop back to plain amber.
+   *   - auth_success → informational, no state change.
    */
   handleHookEvent(tetherSessionId: string, type: string): void {
     if (!this.sessions.has(tetherSessionId)) return;
-    if (type === 'permission_prompt') {
+    if (type === 'permission_prompt' || type === 'elicitation_dialog') {
       statusDetector.markPermissionWaiting(tetherSessionId);
       return;
     }
-    if (type === 'turn_complete' || type === 'idle_prompt') {
+    if (
+      type === 'turn_complete' ||
+      type === 'idle_prompt' ||
+      type === 'elicitation_complete' ||
+      type === 'elicitation_response'
+    ) {
       statusDetector.markTurnComplete(tetherSessionId);
       return;
     }
-    // auth_success, elicitation_dialog, etc. — informational only for now.
+    // auth_success and any future event types fall through silently.
   }
 
   async createSession(
