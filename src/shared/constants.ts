@@ -98,6 +98,7 @@ export const IPC = {
 
   // Shell
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
+  SHELL_COMMAND_EXISTS: 'shell:command-exists',
 
   // SSH known hosts
   SSH_HOST_VERIFY_REQUEST: 'ssh:host-verify-request',

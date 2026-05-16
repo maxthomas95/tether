@@ -1028,8 +1028,15 @@ export function App() {
 
   const handleSetupWizardClose = useCallback(() => {
     setSetupWizardOpen(false);
-    window.electronAPI.config.set('setupComplete', 'true');
   }, []);
+
+  const handleSetupWizardComplete = useCallback((opts?: { openNewSession?: boolean }) => {
+    setSetupWizardOpen(false);
+    void window.electronAPI.config.set('setupComplete', 'true').catch(err => {
+      notifyError('Failed to save setup status', err);
+    });
+    if (opts?.openNewSession) setSessionDialogOpen(true);
+  }, [notifyError]);
 
   // Window zoom: persist whatever level is set so the next launch matches.
   const setWindowZoom = useCallback((level: number) => {
@@ -1621,7 +1628,14 @@ export function App() {
           setHostVerifyRequest(null);
         }}
       />
-      <SetupWizard isOpen={setupWizardOpen} onClose={handleSetupWizardClose} />
+      <SetupWizard
+        isOpen={setupWizardOpen}
+        onClose={handleSetupWizardClose}
+        onComplete={handleSetupWizardComplete}
+        onEnvironmentCreated={env => {
+          setEnvironments(prev => prev.some(existing => existing.id === env.id) ? prev : [...prev, env]);
+        }}
+      />
       {resumePickerFor && (
         <ResumeChatDialog
           isOpen={true}

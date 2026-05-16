@@ -178,6 +178,7 @@ const api: TetherAPI = {
 
   shell: {
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC.SHELL_OPEN_EXTERNAL, url),
+    commandExists: (command: string): Promise<boolean> => ipcRenderer.invoke(IPC.SHELL_COMMAND_EXISTS, command),
   },
 
   webFrame: {

@@ -69,7 +69,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Status indicators** — green (running), amber (waiting), gray (idle), red (dead) — passive PTY tap, no ANSI parsing
 - **Workspace persistence** — sessions save on quit and restore on launch; writes are atomic (tmp → fsync → rename)
 - **Resume previous chats** — pick up a prior Claude Code, Codex CLI, OpenCode, or Copilot CLI transcript on session create
-- **First-run Setup Wizard** — guided configuration for your first environment and CLI tool
+- **First-run Setup Wizard** — guided setup for projects, Vault, environments, CLI defaults, and Git providers
 
 ### Environments
 
