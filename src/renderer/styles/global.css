@@ -986,6 +986,10 @@ textarea:focus-visible,
   border-radius: 8px;
   width: 480px;
   max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   box-shadow: var(--shadow-dialog), var(--inner-highlight);
   animation: dialog-in var(--motion-base) var(--ease-out-quint);
 }
@@ -1015,6 +1019,9 @@ textarea:focus-visible,
 
 .dialog-body {
   padding: 0 20px 16px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .dialog-footer {

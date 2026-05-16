@@ -9,6 +9,8 @@ import { suggestVaultPath, VAULT_REF_PREFIX } from '../utils/vault-path';
 const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
 import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo, UsageExportFormat } from '../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
+import { KeybindingsEditor } from './KeybindingsEditor';
+import type { KeybindingAction, Chord } from '../../shared/keybindings';
 
 /** CLI tools that have definable flags (exclude 'custom' which has no known flags). */
 const FLAG_TOOLS = (['claude', 'codex', 'copilot', 'opencode'] as const) satisfies readonly CliToolId[];
@@ -83,12 +85,13 @@ function formatExpiry(expiresAt?: string): string {
   return `in ${Math.round(hours / 24)}d`;
 }
 
-type SettingsSection = 'general' | 'terminal' | 'sessions' | 'integrations' | 'usage';
+type SettingsSection = 'general' | 'terminal' | 'sessions' | 'shortcuts' | 'integrations' | 'usage';
 
 const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
   { id: 'general', label: 'General' },
   { id: 'terminal', label: 'Terminal' },
   { id: 'sessions', label: 'Sessions' },
+  { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'usage', label: 'Usage' },
 ];
@@ -99,9 +102,12 @@ interface SettingsDialogProps {
   currentTheme: string;
   onThemeChange: (name: string) => void;
   onResetSessionFontSizes: () => void;
+  keybindings: Record<KeybindingAction, Chord | null>;
+  onKeybindingChange: (action: KeybindingAction, chord: Chord | null) => void;
+  onKeybindingsResetAll: () => void;
 }
 
-export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, onResetSessionFontSizes }: SettingsDialogProps) {
+export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, onResetSessionFontSizes, keybindings, onKeybindingChange, onKeybindingsResetAll }: SettingsDialogProps) {
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [cliFlagsPerTool, setCliFlagsPerTool] = useState<Partial<Record<CliToolId, string[]>>>({});
   const [flagTool, setFlagTool] = useState<CliToolId>('claude');
@@ -896,6 +902,25 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               Applied to all sessions. Environments and sessions can override individual values.
             </p>
             {loaded && <EnvVarEditor vars={envVars} onChange={setEnvVars} vaultEnabled={vaultStatus.enabled} />}
+          </div>
+            </>
+          )}
+
+          {activeSection === 'shortcuts' && (
+            <>
+          <div className="form-group">
+            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              Keyboard Shortcuts
+            </label>
+            <p className="form-hint" style={{ marginBottom: 12 }}>
+              Click <strong>Record</strong> on a row to capture a new chord, then press the key combination. Esc cancels. Reserved chords (⚠) still bind but may conflict with terminal or OS behavior.
+            </p>
+            <KeybindingsEditor bindings={keybindings} onChange={onKeybindingChange} />
+            <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="form-btn" onClick={onKeybindingsResetAll} type="button">
+                Reset all to defaults
+              </button>
+            </div>
           </div>
             </>
           )}

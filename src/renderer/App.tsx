@@ -1532,6 +1532,9 @@ export function App() {
         currentTheme={themeName}
         onThemeChange={setTheme}
         onResetSessionFontSizes={handleResetSessionFontSizes}
+        keybindings={resolvedBindings}
+        onKeybindingChange={handleKeybindingChange}
+        onKeybindingsResetAll={handleResetAllKeybindings}
       />
       <KeyboardShortcutsDialog
         isOpen={shortcutsOpen}
