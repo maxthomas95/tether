@@ -29,6 +29,7 @@ const EXTENDED_THEMES: Record<string, {
   macchiato:      { hover: '#494d64', active: '#5b6078', header: '#363a4f', textSecondary: '#b8c0e0' },
   frappe:         { hover: '#51576d', active: '#626880', header: '#414559', textSecondary: '#b5bfe2' },
   latte:          { hover: '#bcc0cc', active: '#acb0be', header: '#ccd0da', textSecondary: '#5c5f77' },
+  tether:         { hover: '#3a342d', active: '#4a4239', header: '#2c2723', textSecondary: '#c9bfae' },
   'default-dark': { hover: '#2a2d2e', active: '#37373d', header: '#3c3c3c', textSecondary: '#999999' },
 };
 

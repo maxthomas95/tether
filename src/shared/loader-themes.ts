@@ -48,6 +48,14 @@ export const LOADER_THEMES: Record<string, LoaderTheme> = {
     accent: '#7287fd',
     border: '#ccd0da',
   },
+  tether: {
+    bg: '#1f1c18',
+    sidebar: '#1a1714',
+    text: '#ece4d4',
+    muted: '#807565',
+    accent: '#c68a5c',
+    border: '#3a342d',
+  },
   'default-dark': {
     bg: '#1e1e1e',
     sidebar: '#252526',

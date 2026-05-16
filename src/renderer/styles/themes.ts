@@ -229,6 +229,60 @@ export const latte: TetherTheme = {
   },
 };
 
+// ── Tether (rope / canvas / brass) ──────────────────────────────────
+// Phase 3 identity theme. Warmer base than Mocha (canvas-tinted darks
+// instead of cool blue-purple), deeper shadows, and a copper/brass
+// accent that leans into the anchor metaphor. Selectable from Settings
+// but not the default — Mocha remains canonical (decision C).
+export const tether: TetherTheme = {
+  name: 'tether',
+  label: 'Tether',
+  isDark: true,
+  titlebar: { color: '#1a1714', symbolColor: '#ece4d4' },
+  css: {
+    '--bg-primary': '#1f1c18',
+    '--bg-sidebar': '#1a1714',
+    '--bg-header': '#2c2723',
+    '--bg-hover': '#3a342d',
+    '--bg-active': '#4a4239',
+    '--text-primary': '#ece4d4',
+    '--text-secondary': '#c9bfae',
+    '--text-muted': '#807565',
+    '--border-color': '#3a342d',
+    '--accent': '#c68a5c',
+    '--status-running': '#22c55e',
+    '--status-waiting': '#eab308',
+    '--status-idle': '#6b7280',
+    '--status-dead': '#ef4444',
+    '--btn-primary-text': '#1f1c18',
+    '--shadow-opacity': '0.65',
+  },
+  xterm: {
+    background: '#1f1c18',
+    foreground: '#ece4d4',
+    cursor: '#c68a5c',
+    cursorAccent: '#1f1c18',
+    selectionBackground: '#c68a5c4d',
+    selectionForeground: '#ece4d4',
+    black: '#3a342d',
+    red: '#e87b6e',
+    green: '#a8c97a',
+    yellow: '#e0bd6d',
+    blue: '#7da7c2',
+    magenta: '#d29ab4',
+    cyan: '#7ec0bd',
+    white: '#c9bfae',
+    brightBlack: '#4a4239',
+    brightRed: '#f0908a',
+    brightGreen: '#bcd991',
+    brightYellow: '#ecc985',
+    brightBlue: '#95b9d1',
+    brightMagenta: '#dcaec3',
+    brightCyan: '#9ad2c5',
+    brightWhite: '#ece4d4',
+  },
+};
+
 // ── Default Dark (original Tether theme) ────────────────────────────
 export const defaultDark: TetherTheme = {
   name: 'default-dark',
@@ -268,10 +322,11 @@ export const themes: Record<string, TetherTheme> = {
   macchiato,
   frappe,
   latte,
+  tether,
   'default-dark': defaultDark,
 };
 
-export const themeList: TetherTheme[] = [mocha, macchiato, frappe, latte, defaultDark];
+export const themeList: TetherTheme[] = [mocha, macchiato, frappe, latte, tether, defaultDark];
 
 export const DEFAULT_THEME = 'mocha';
 

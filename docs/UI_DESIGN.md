@@ -227,15 +227,24 @@ All other keystrokes pass through to Claude Code untouched:
 
 ### Color Palette — IMPLEMENTED (with theming system)
 
-Tether uses a full theming system with CSS variables (`src/renderer/styles/themes.ts`). Five themes are available:
+Tether uses a full theming system with CSS variables (`src/renderer/styles/themes.ts`). Six themes are available:
 
 1. **Mocha** (default) — Catppuccin Mocha (dark)
 2. **Macchiato** — Catppuccin Macchiato (dark)
 3. **Frappe** ��� Catppuccin Frappe (dark)
 4. **Latte** — Catppuccin Latte (light)
-5. **Default Dark** — original dark theme
+5. **Tether** — house palette: rope/canvas/brass (dark)
+6. **Default Dark** — original dark theme
 
 Each theme defines background, text, accent, sidebar, and terminal ANSI palette colors. Theme selection persists via config and syncs to the titlebar overlay.
+
+**Tether (house palette).** Capstone of the Phase 3 identity pass and the showcase for the Phase 2 depth system. Lives alongside Mocha, not as default (per UX_REFRESH decision C); promotion to default is a Phase 4 contingency once it has been used in anger.
+
+- Direction: rope, canvas, brass — slightly warmer than Mocha, with deeper surface differentiation so dialogs and dropdowns float more obviously above the terminal plane.
+- Base shifts hue from Mocha's cool blue-purple (`#1e1e2e`) to a parchment-tinted dark (`#1f1c18`); sidebar `#1a1714`; header `#2c2723`. Surface tokens (`--surface-1..4`) widen the gap so `--shadow-opacity` of `0.65` reads cleanly.
+- Accent is copper/brass `#c68a5c` instead of Mocha's lavender — single hex, used everywhere the lavender would have been (focus rings, primary buttons, knot indicator on active sessions).
+- Status colors keep the project's canonical hexes: green `#22c55e`, amber `#eab308`, gray `#6b7280`, red `#ef4444` — no theme drift.
+- xterm 16-color palette is tuned to harmonize with the warmer base — desaturated blues, slightly cool cyan (separated from sage green for cleaner `git diff` reads), brass-tinted yellow — rather than copying Mocha's block. Selection background uses a copper-tinted overlay (`#c68a5c4d`) for clear contrast against the canvas base.
 
 **Status colors** are defined per-theme as CSS variables, following the original spec values for the default themes:
 - Green: running (alive, working)
