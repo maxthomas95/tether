@@ -1,4 +1,5 @@
-import type { DailyUsage } from '../../shared/types';
+import type { DailyUsage, DailyCliToolUsage } from '../../shared/types';
+import type { CliToolId } from '../../shared/cli-tools';
 
 export interface RollupRow {
   /** Stable key — ISO date for daily, ISO date of Monday for weekly, YYYY-MM for monthly. */
@@ -15,6 +16,12 @@ export interface RollupRow {
   cacheCreationTokens: number;
   cacheReadTokens: number;
   sessionCount: number;
+  /**
+   * Per-CLI-tool breakdown summed across every day contributing to this row.
+   * Sorted by totalCost desc, tie-break on cliTool asc. Omitted (undefined)
+   * when no contributing day had a `byCliTool` field.
+   */
+  byCliTool?: DailyCliToolUsage[];
 }
 
 export type WindowKind = 'today' | '7d' | '30d' | 'all';
@@ -67,13 +74,47 @@ function emptyRow(key: string, label: string, startDate: string, endDate: string
   };
 }
 
-function addInto(target: RollupRow, source: DailyUsage): void {
+function addInto(target: RollupRow, source: DailyUsage, toolAcc?: Map<CliToolId, DailyCliToolUsage>): void {
   target.totalCost += source.totalCost;
   target.inputTokens += source.inputTokens;
   target.outputTokens += source.outputTokens;
   target.cacheCreationTokens += source.cacheCreationTokens;
   target.cacheReadTokens += source.cacheReadTokens;
   target.sessionCount += source.sessionCount;
+  if (toolAcc && source.byCliTool) {
+    for (const t of source.byCliTool) {
+      let row = toolAcc.get(t.cliTool);
+      if (!row) {
+        row = {
+          cliTool: t.cliTool,
+          totalCost: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          sessionCount: 0,
+        };
+        toolAcc.set(t.cliTool, row);
+      }
+      row.totalCost += t.totalCost;
+      row.inputTokens += t.inputTokens;
+      row.outputTokens += t.outputTokens;
+      row.cacheCreationTokens += t.cacheCreationTokens;
+      row.cacheReadTokens += t.cacheReadTokens;
+      row.sessionCount += t.sessionCount;
+    }
+  }
+}
+
+/** Sort + attach the accumulated per-tool map onto a row. No-op if empty. */
+function finalizeByCliTool(target: RollupRow, toolAcc: Map<CliToolId, DailyCliToolUsage>): void {
+  if (toolAcc.size === 0) return;
+  const rows = Array.from(toolAcc.values());
+  rows.sort((a, b) => {
+    if (a.totalCost !== b.totalCost) return b.totalCost - a.totalCost;
+    return a.cliTool.localeCompare(b.cliTool);
+  });
+  target.byCliTool = rows;
 }
 
 /** Last `days` daily rows, most recent first, missing days filled with zeros. */
@@ -86,7 +127,11 @@ export function dailyRollups(daily: ReadonlyArray<DailyUsage>, days: number, tod
     const key = toISODate(d);
     const row = emptyRow(key, formatDayLabel(d), key, key);
     const src = map.get(key);
-    if (src) addInto(row, src);
+    if (src) {
+      const toolAcc = new Map<CliToolId, DailyCliToolUsage>();
+      addInto(row, src, toolAcc);
+      finalizeByCliTool(row, toolAcc);
+    }
     out.push(row);
   }
   return out;
@@ -104,10 +149,12 @@ export function weeklyRollups(daily: ReadonlyArray<DailyUsage>, weeks: number, t
     const startKey = toISODate(start);
     const endKey = toISODate(end);
     const row = emptyRow(startKey, `Week of ${formatDayLabel(start)}`, startKey, endKey);
+    const toolAcc = new Map<CliToolId, DailyCliToolUsage>();
     for (let i = 0; i < 7; i++) {
       const src = map.get(toISODate(addUTCDays(start, i)));
-      if (src) addInto(row, src);
+      if (src) addInto(row, src, toolAcc);
     }
+    finalizeByCliTool(row, toolAcc);
     out.push(row);
   }
   return out;
@@ -126,10 +173,12 @@ export function monthlyRollups(daily: ReadonlyArray<DailyUsage>, months: number,
     const endKey = toISODate(end);
     const key = `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, '0')}`;
     const row = emptyRow(key, formatMonthLabel(start), startKey, endKey);
+    const toolAcc = new Map<CliToolId, DailyCliToolUsage>();
     for (let d = start; d.getUTCMonth() === start.getUTCMonth(); d = addUTCDays(d, 1)) {
       const src = map.get(toISODate(d));
-      if (src) addInto(row, src);
+      if (src) addInto(row, src, toolAcc);
     }
+    finalizeByCliTool(row, toolAcc);
     out.push(row);
   }
   return out;

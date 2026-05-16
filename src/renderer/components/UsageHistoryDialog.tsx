@@ -1,7 +1,9 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { onKeyActivate, stopPropagationOnKey } from '../utils/a11y';
 import { useUsage } from '../hooks/useUsage';
 import { dailyRollups, weeklyRollups, monthlyRollups, windowSummary, type RollupRow, type WindowKind } from '../utils/usage-rollups';
+import { CLI_TOOL_REGISTRY, type CliToolId } from '../../shared/cli-tools';
+import type { DailyCliToolUsage } from '../../shared/types';
 
 interface UsageHistoryDialogProps {
   isOpen: boolean;
@@ -34,6 +36,14 @@ function rowTokens(row: RollupRow): number {
   return row.inputTokens + row.outputTokens + row.cacheCreationTokens + row.cacheReadTokens;
 }
 
+function toolTokens(t: DailyCliToolUsage): number {
+  return t.inputTokens + t.outputTokens + t.cacheCreationTokens + t.cacheReadTokens;
+}
+
+function cliToolName(id: CliToolId): string {
+  return CLI_TOOL_REGISTRY[id]?.displayName ?? id;
+}
+
 interface TileProps {
   label: string;
   cost: number;
@@ -56,6 +66,15 @@ function Tile({ label, cost, tokens, sessions }: TileProps) {
 export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps) {
   const { usage } = useUsage();
   const [view, setView] = useState<ViewMode>('daily');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = useCallback((key: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
 
   const summaries: Record<WindowKind, { totalCost: number; totalTokens: number; sessionCount: number }> = useMemo(() => {
     const daily = usage?.daily ?? [];
@@ -140,14 +159,53 @@ export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps)
                   </tr>
                 </thead>
                 <tbody>
-                  {rollups.map(r => (
-                    <tr key={r.key} className={r.totalCost === 0 && r.sessionCount === 0 ? 'usage-history-row--empty' : ''}>
-                      <td>{r.label}</td>
-                      <td style={{ textAlign: 'right' }}>{r.sessionCount || ''}</td>
-                      <td style={{ textAlign: 'right' }}>{rowTokens(r) > 0 ? formatTokens(rowTokens(r)) : ''}</td>
-                      <td style={{ textAlign: 'right' }}>{r.totalCost > 0 ? formatCost(r.totalCost) : ''}</td>
-                    </tr>
-                  ))}
+                  {rollups.map(r => {
+                    const isEmpty = r.totalCost === 0 && r.sessionCount === 0;
+                    const tools = r.byCliTool ?? [];
+                    const expandable = !isEmpty && tools.length > 0;
+                    const isOpen = expandable && expanded.has(r.key);
+                    const rowClass = [
+                      isEmpty ? 'usage-history-row--empty' : '',
+                      expandable ? 'usage-history-row--expandable' : '',
+                      isOpen ? 'usage-history-row--open' : '',
+                    ].filter(Boolean).join(' ');
+                    return (
+                      <React.Fragment key={r.key}>
+                        <tr
+                          className={rowClass}
+                          {...(expandable ? {
+                            onClick: () => toggleExpanded(r.key),
+                            onKeyDown: onKeyActivate(() => toggleExpanded(r.key)),
+                            role: 'button',
+                            tabIndex: 0,
+                            'aria-expanded': isOpen,
+                          } : {})}
+                        >
+                          <td>
+                            {expandable && (
+                              <span className="usage-history-chevron" aria-hidden="true">
+                                {isOpen ? '▼' : '▶'}
+                              </span>
+                            )}
+                            <span className="usage-history-period-label">{r.label}</span>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>{r.sessionCount || ''}</td>
+                          <td style={{ textAlign: 'right' }}>{rowTokens(r) > 0 ? formatTokens(rowTokens(r)) : ''}</td>
+                          <td style={{ textAlign: 'right' }}>{r.totalCost > 0 ? formatCost(r.totalCost) : ''}</td>
+                        </tr>
+                        {isOpen && tools.map(t => (
+                          <tr key={`${r.key}::${t.cliTool}`} className="usage-history-row--sub">
+                            <td>
+                              <span className="usage-history-sub-label">{cliToolName(t.cliTool)}</span>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>{t.sessionCount || ''}</td>
+                            <td style={{ textAlign: 'right' }}>{toolTokens(t) > 0 ? formatTokens(toolTokens(t)) : ''}</td>
+                            <td style={{ textAlign: 'right' }}>{t.totalCost > 0 ? formatCost(t.totalCost) : ''}</td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

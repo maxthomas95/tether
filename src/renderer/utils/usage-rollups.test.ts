@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { dailyRollups, weeklyRollups, monthlyRollups, windowSummary } from './usage-rollups';
-import type { DailyUsage } from '../../shared/types';
+import type { DailyUsage, DailyCliToolUsage } from '../../shared/types';
+import type { CliToolId } from '../../shared/cli-tools';
+
+function mkToolRow(cliTool: CliToolId, totalCost: number, sessionCount = 1, tokens = 100): DailyCliToolUsage {
+  return {
+    cliTool,
+    totalCost,
+    inputTokens: tokens,
+    outputTokens: tokens,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    sessionCount,
+  };
+}
 
 // Saturday in UTC. dayOfWeekMon0 = 5 → that week's Monday is May 4 2026.
 const TODAY = new Date(Date.UTC(2026, 4, 9));
@@ -159,5 +172,97 @@ describe('windowSummary', () => {
   it('returns zero summary for empty daily input', () => {
     const summary = windowSummary([], '7d', 0, TODAY);
     expect(summary).toEqual({ totalCost: 0, totalTokens: 0, sessionCount: 0 });
+  });
+});
+
+describe('rollups: byCliTool propagation', () => {
+  it('daily passthrough copies the underlying byCliTool onto the row', () => {
+    const daily: DailyUsage[] = [
+      {
+        ...mkDay('2026-05-08', 3, 2),
+        byCliTool: [mkToolRow('claude', 2, 1, 200), mkToolRow('codex', 1, 1, 100)],
+      },
+    ];
+    const rows = dailyRollups(daily, 3, TODAY);
+    // rows[0] = today (May 9) is empty, rows[1] = May 8 carries the breakdown.
+    expect(rows[0].byCliTool).toBeUndefined();
+    expect(rows[1].byCliTool).toHaveLength(2);
+    expect(rows[1].byCliTool?.[0]).toMatchObject({ cliTool: 'claude', totalCost: 2 });
+    expect(rows[1].byCliTool?.[1]).toMatchObject({ cliTool: 'codex', totalCost: 1 });
+  });
+
+  it('daily row stays undefined when source day has no byCliTool', () => {
+    const [, row] = dailyRollups([mkDay('2026-05-08', 3, 2)], 3, TODAY);
+    expect(row.totalCost).toBeCloseTo(3);
+    expect(row.byCliTool).toBeUndefined();
+  });
+
+  it('weekly merges overlapping tools across days additively', () => {
+    const daily: DailyUsage[] = [
+      {
+        ...mkDay('2026-05-04', 2, 1),
+        byCliTool: [mkToolRow('claude', 2, 1, 100)],
+      },
+      {
+        ...mkDay('2026-05-05', 3, 2),
+        byCliTool: [mkToolRow('claude', 2, 1, 50), mkToolRow('codex', 1, 1, 80)],
+      },
+    ];
+    const [thisWeek] = weeklyRollups(daily, 1, TODAY);
+    expect(thisWeek.byCliTool).toHaveLength(2);
+    // claude: 2 + 2 = 4, 2 sessions; sorts first by cost
+    expect(thisWeek.byCliTool?.[0]).toMatchObject({ cliTool: 'claude', totalCost: 4, sessionCount: 2 });
+    expect(thisWeek.byCliTool?.[1]).toMatchObject({ cliTool: 'codex', totalCost: 1, sessionCount: 1 });
+  });
+
+  it('monthly merges disjoint tools across days', () => {
+    const daily: DailyUsage[] = [
+      {
+        ...mkDay('2026-05-01', 4, 1),
+        byCliTool: [mkToolRow('opencode', 4, 1)],
+      },
+      {
+        ...mkDay('2026-05-15', 6, 1),
+        byCliTool: [mkToolRow('copilot', 6, 1)],
+      },
+    ];
+    const [may] = monthlyRollups(daily, 1, TODAY);
+    expect(may.byCliTool).toHaveLength(2);
+    // copilot (6) before opencode (4)
+    expect(may.byCliTool?.[0]).toMatchObject({ cliTool: 'copilot', totalCost: 6 });
+    expect(may.byCliTool?.[1]).toMatchObject({ cliTool: 'opencode', totalCost: 4 });
+  });
+
+  it('weekly handles a mix of days with and without byCliTool', () => {
+    const daily: DailyUsage[] = [
+      mkDay('2026-05-04', 1, 1), // no byCliTool
+      {
+        ...mkDay('2026-05-05', 2, 1),
+        byCliTool: [mkToolRow('claude', 2, 1)],
+      },
+    ];
+    const [thisWeek] = weeklyRollups(daily, 1, TODAY);
+    expect(thisWeek.totalCost).toBeCloseTo(3);
+    // Only the May 5 portion contributes to the breakdown.
+    expect(thisWeek.byCliTool).toHaveLength(1);
+    expect(thisWeek.byCliTool?.[0]).toMatchObject({ cliTool: 'claude', totalCost: 2 });
+  });
+
+  it('monthly with all-missing byCliTool leaves the field undefined', () => {
+    const daily: DailyUsage[] = [mkDay('2026-05-01', 1), mkDay('2026-05-02', 2)];
+    const [may] = monthlyRollups(daily, 1, TODAY);
+    expect(may.totalCost).toBeCloseTo(3);
+    expect(may.byCliTool).toBeUndefined();
+  });
+
+  it('breaks tool ties on cliTool asc when costs are equal', () => {
+    const daily: DailyUsage[] = [
+      {
+        ...mkDay('2026-05-08', 4, 2),
+        byCliTool: [mkToolRow('codex', 2, 1), mkToolRow('claude', 2, 1)],
+      },
+    ];
+    const [, row] = dailyRollups(daily, 2, TODAY);
+    expect(row.byCliTool?.map(r => r.cliTool)).toEqual(['claude', 'codex']);
   });
 });

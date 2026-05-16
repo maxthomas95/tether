@@ -7,7 +7,8 @@ import { parseCodexJsonl } from './codex-jsonl-parser';
 import { readCrushSessions } from '../opencode/usage-reader';
 import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
 import { aggregateByEnvironment } from './env-aggregator';
-import type { SessionUsage, UsageModelBreakdown, UsageInfo, DailyUsage, CliToolId } from '../../shared/types';
+import { aggregateByCliTool } from './cli-tool-aggregator';
+import type { SessionUsage, UsageModelBreakdown, UsageInfo, DailyUsage, DailyCliToolUsage, CliToolId } from '../../shared/types';
 
 const log = createLogger('usage');
 
@@ -422,6 +423,7 @@ class UsageService {
       sessions,
       daily: this.buildDailyRollups(),
       byEnvironment: aggregateByEnvironment(allUsage),
+      byCliTool: aggregateByCliTool(allUsage),
       totalCost,
       lastUpdated: new Date().toISOString(),
     };
@@ -608,6 +610,10 @@ class UsageService {
 
   private buildDailyRollups(): DailyUsage[] {
     const dayMap = new Map<string, DailyUsage>();
+    // Side-channel map of per-day → per-tool buckets. Stored separately so the
+    // existing DailyUsage day object stays clean during accumulation; merged
+    // into each day's `byCliTool` in the finalize pass.
+    const dayToolMap = new Map<string, Map<CliToolId, DailyCliToolUsage>>();
 
     for (const tracked of this.tracked.values()) {
       const u = tracked.usage;
@@ -631,6 +637,47 @@ class UsageService {
       day.totalCost += u.totalCost;
       day.sessionCount++;
       dayMap.set(date, day);
+
+      let toolMap = dayToolMap.get(date);
+      if (!toolMap) {
+        toolMap = new Map();
+        dayToolMap.set(date, toolMap);
+      }
+      let toolRow = toolMap.get(u.cliTool);
+      if (!toolRow) {
+        toolRow = {
+          cliTool: u.cliTool,
+          totalCost: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          sessionCount: 0,
+        };
+        toolMap.set(u.cliTool, toolRow);
+      }
+      toolRow.totalCost += u.totalCost;
+      toolRow.inputTokens += u.inputTokens;
+      toolRow.outputTokens += u.outputTokens;
+      toolRow.cacheCreationTokens += u.cacheCreationTokens;
+      toolRow.cacheReadTokens += u.cacheReadTokens;
+      toolRow.sessionCount += 1;
+    }
+
+    // Attach per-tool breakdowns, sorted by cost desc, tie-break on cliTool
+    // asc to match the aggregator's stable ordering. Drop all-zero tool rows.
+    for (const [date, day] of dayMap) {
+      const toolMap = dayToolMap.get(date);
+      if (!toolMap) continue;
+      const rows = Array.from(toolMap.values()).filter(
+        r => r.totalCost > 0 || r.inputTokens > 0 || r.outputTokens > 0
+          || r.cacheCreationTokens > 0 || r.cacheReadTokens > 0 || r.sessionCount > 0,
+      );
+      rows.sort((a, b) => {
+        if (a.totalCost !== b.totalCost) return b.totalCost - a.totalCost;
+        return a.cliTool.localeCompare(b.cliTool);
+      });
+      if (rows.length > 0) day.byCliTool = rows;
     }
 
     return Array.from(dayMap.values()).sort((a, b) => b.date.localeCompare(a.date));
