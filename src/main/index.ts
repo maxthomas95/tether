@@ -43,9 +43,23 @@ function createDocsWindow(): void {
   const savedThemeName = db.config.theme || DEFAULT_LOADER_THEME;
   const loaderTheme = getLoaderTheme(savedThemeName);
 
+  // Center the docs window on the same monitor as the main window so it
+  // doesn't get dropped on an unrelated display in multi-monitor setups.
+  const DOCS_W = 900;
+  const DOCS_H = 700;
+  const mainBounds = mainWindow?.getBounds();
+  const position = mainBounds
+    ? {
+        x: Math.round(mainBounds.x + (mainBounds.width - DOCS_W) / 2),
+        y: Math.round(mainBounds.y + (mainBounds.height - DOCS_H) / 2),
+      }
+    : {};
+
   docsWindow = new BrowserWindow({
-    width: 900,
-    height: 700,
+    width: DOCS_W,
+    height: DOCS_H,
+    ...position,
+    parent: mainWindow ?? undefined,
     minWidth: 500,
     minHeight: 400,
     title: 'Tether Documentation',
