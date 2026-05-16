@@ -114,14 +114,23 @@ export async function stopHookService(): Promise<void> {
  * and tag its event with the right Tether session id. Returns `{}` if
  * the bridge isn't running (either disabled or boot failed) so the env
  * spread on the caller side is a no-op.
+ *
+ * In dev mode (or whenever TETHER_DEBUG_HOOKS=1 is set in Tether's own
+ * env) we also wire TETHER_HOOK_LOG_PATH so the helper appends an
+ * invocation trace to a file. Helps diagnose "the hook never fires" /
+ * "the helper silently degrades" without any user-visible change.
  */
 export function envForSession(tetherSessionId: string): Record<string, string> {
   if (!bridge) return {};
-  return {
+  const env: Record<string, string> = {
     TETHER_HOOK_SOCKET: bridge.socketPath,
     TETHER_HOOK_TOKEN: bridge.token,
     TETHER_SESSION_ID: tetherSessionId,
   };
+  if (!app.isPackaged || process.env.TETHER_DEBUG_HOOKS === '1') {
+    env.TETHER_HOOK_LOG_PATH = path.join(app.getPath('userData'), 'logs', 'hook-helper.log');
+  }
+  return env;
 }
 
 /**

@@ -24,20 +24,44 @@
 'use strict';
 
 const net = require('node:net');
+const fs = require('node:fs');
 
 const SOCKET = process.env.TETHER_HOOK_SOCKET;
 const TOKEN = process.env.TETHER_HOOK_TOKEN;
 const SESSION_ID = process.env.TETHER_SESSION_ID;
+const DEBUG_LOG = process.env.TETHER_HOOK_LOG_PATH;
+
+// Best-effort one-line trace per invocation, controlled by an env var Tether
+// sets in dev mode. Helps debug "the hook never fires" / "the helper
+// silently degrades" cases without polluting Claude's terminal stderr.
+function dbg(msg, extra) {
+  if (!DEBUG_LOG) return;
+  try {
+    const line = JSON.stringify({
+      t: new Date().toISOString(),
+      pid: process.pid,
+      sid: SESSION_ID || null,
+      mode: process.argv[2] || null,
+      msg,
+      ...(extra || {}),
+    }) + '\n';
+    fs.appendFileSync(DEBUG_LOG, line);
+  } catch { /* never fail the hook because logging failed */ }
+}
+
+dbg('invoked', { hasSocket: !!SOCKET, hasToken: !!TOKEN, hasSessionId: !!SESSION_ID });
 
 // Bridge unreachable or env not wired → silently exit 0. The byte-level
 // detector remains as a fallback, so a missing hook signal degrades to
 // the previous behavior rather than breaking the user's session.
 if (!SOCKET || !TOKEN || !SESSION_ID) {
+  dbg('exit-no-env');
   process.exit(0);
 }
 
 const mode = process.argv[2];
 if (mode !== '--claude' && mode !== '--codex') {
+  dbg('exit-bad-mode');
   process.exit(0);
 }
 
@@ -85,21 +109,34 @@ async function main() {
 
   let payload;
   try { payload = JSON.parse(payloadText); }
-  catch { process.exit(0); }
-  if (!payload || typeof payload !== 'object') process.exit(0);
+  catch { dbg('exit-bad-json', { rawLen: payloadText.length }); process.exit(0); }
+  if (!payload || typeof payload !== 'object') { dbg('exit-payload-not-object'); process.exit(0); }
 
   const type = source === 'claude' ? classifyClaude(payload) : classifyCodex(payload);
-  if (!type) process.exit(0);
+  if (!type) {
+    dbg('exit-unclassified', {
+      hookEventName: payload.hook_event_name,
+      notificationType: payload.notification_type,
+      codexType: payload.type,
+    });
+    process.exit(0);
+  }
+  dbg('classified', { type });
 
   // Connect, auth, send, exit. Hard 1s timeout on the whole round-trip —
   // if the bridge is down, we don't want to hang Claude's hook pipeline.
   const sock = net.connect(SOCKET);
-  const timer = setTimeout(() => { sock.destroy(); process.exit(0); }, 1000);
+  const timer = setTimeout(() => {
+    dbg('exit-timeout');
+    sock.destroy();
+    process.exit(0);
+  }, 1000);
 
   let buffer = '';
   let authed = false;
 
   sock.on('connect', () => {
+    dbg('connected');
     sock.write(JSON.stringify({ id: 'auth', method: 'authenticate', token: TOKEN }) + '\n');
   });
   sock.on('data', (chunk) => {
@@ -114,6 +151,7 @@ async function main() {
       if (!authed) {
         if (frame && frame.result && frame.result.ok) {
           authed = true;
+          dbg('authed');
           sock.write(JSON.stringify({
             id: 'evt',
             method: 'event',
@@ -123,18 +161,24 @@ async function main() {
             payload,
           }) + '\n');
         } else {
+          dbg('exit-auth-failed', { frame });
           sock.destroy();
           clearTimeout(timer);
           process.exit(0);
         }
       } else {
+        dbg('exit-event-acked', { result: frame && frame.result });
         sock.destroy();
         clearTimeout(timer);
         process.exit(0);
       }
     }
   });
-  sock.on('error', () => { clearTimeout(timer); process.exit(0); });
+  sock.on('error', (err) => {
+    dbg('exit-socket-error', { err: err && err.message });
+    clearTimeout(timer);
+    process.exit(0);
+  });
   sock.on('close', () => { clearTimeout(timer); process.exit(0); });
 }
 

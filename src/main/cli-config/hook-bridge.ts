@@ -87,6 +87,7 @@ export async function createHookBridge(onEvent: HookEventHandler): Promise<HookB
   const server = net.createServer();
 
   server.on('connection', (socket) => {
+    log.info('Hook bridge: client connected');
     let authed = false;
     let buffer = '';
     // Hard cap on un-authenticated bytes — defends against a co-resident
@@ -155,6 +156,7 @@ export async function createHookBridge(onEvent: HookEventHandler): Promise<HookB
         : undefined;
       try {
         onEvent({ tetherSessionId, type: type as HookEventType, source, payload });
+        log.info('Hook bridge: event delivered', { tetherSessionId, type, source });
         writeFrame({ id, result: { ok: true } });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
