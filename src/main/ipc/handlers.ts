@@ -11,6 +11,7 @@ import { registerVaultHandlers } from './vault-handlers';
 import { registerSystemHandlers } from './system-handlers';
 import { registerUsageHandlers } from './usage-handlers';
 import { registerSshHandlers } from './ssh-handlers';
+import { registerKeybindingsHandlers } from './keybindings-handlers';
 
 /**
  * Wire up every IPC handler against the renderer window. The actual handler
@@ -37,4 +38,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerVaultHandlers(ctx);
   registerSystemHandlers(ctx);
   registerUsageHandlers(ctx);
+  registerKeybindingsHandlers(ctx);
 }

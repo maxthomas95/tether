@@ -265,6 +265,85 @@ textarea:focus-visible,
   color: var(--text-secondary);
 }
 
+.shortcuts-table--editable td {
+  padding: 8px 6px;
+  vertical-align: middle;
+}
+
+.shortcuts-table--editable .shortcuts-action {
+  color: var(--text-primary);
+  width: auto;
+}
+
+.shortcuts-table--editable .shortcuts-key {
+  width: auto;
+  min-width: 160px;
+}
+
+.shortcuts-group-header td {
+  padding-top: 14px;
+  padding-bottom: 4px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.shortcut-chord-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shortcut-recording {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px dashed var(--accent);
+  border-radius: 3px;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono-ui);
+}
+
+.shortcut-unbound {
+  color: var(--text-secondary);
+  font-style: italic;
+  font-size: var(--text-sm);
+}
+
+.shortcut-reserved {
+  color: var(--status-waiting, #EAB308);
+  cursor: help;
+  font-size: var(--text-base);
+  line-height: 1;
+}
+
+.shortcut-conflict {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  background: color-mix(in srgb, var(--danger, #EF4444) 18%, transparent);
+  border: 1px solid var(--danger, #EF4444);
+  border-radius: 10px;
+  color: var(--danger, #EF4444);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.shortcut-actions-cell {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.shortcut-btn {
+  padding: 3px 10px;
+  font-size: var(--text-sm);
+}
+
 /* ── App body (sidebar + terminal, below menubar) ── */
 .app-body {
   display: flex;

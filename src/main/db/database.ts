@@ -5,6 +5,7 @@ import { atomicWriteFileSync, cleanupOrphanTmp } from './atomic-write';
 import { createLogger } from '../logger';
 import type { CliToolId } from '../../shared/cli-tools';
 import type { RepoGroupPref, SessionOrderPref } from '../../shared/types';
+import type { KeybindingAction, Chord } from '../../shared/keybindings';
 
 const log = createLogger('database');
 
@@ -79,6 +80,7 @@ export interface DbData {
   sessionOrderPrefs: SessionOrderPref[];
   usageSummaries: PersistedSessionUsage[];
   knownHosts: KnownHostEntry[];
+  keybindings?: Partial<Record<KeybindingAction, Chord | null>>;
 }
 
 export interface PersistedSessionUsage {
@@ -254,12 +256,13 @@ export function getDb(): DbData {
           sessionOrderPrefs: loaded.sessionOrderPrefs || [],
           usageSummaries: loaded.usageSummaries || [],
           knownHosts: loaded.knownHosts || [],
+          keybindings: loaded.keybindings && typeof loaded.keybindings === 'object' ? loaded.keybindings : {},
         };
       } catch {
-        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], sessionOrderPrefs: [], usageSummaries: [], knownHosts: [] };
+        data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], sessionOrderPrefs: [], usageSummaries: [], knownHosts: [], keybindings: {} };
       }
     } else {
-      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], sessionOrderPrefs: [], usageSummaries: [], knownHosts: [] };
+      data = { environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [], defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], sessionOrderPrefs: [], usageSummaries: [], knownHosts: [], keybindings: {} };
     }
   }
   return data;

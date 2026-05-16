@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, clipboard, webFrame } from 'electron';
 import { IPC } from '../shared/constants';
+import type { KeybindingOverrides } from '../shared/keybindings';
 import type {
   CreateSessionOptions, SessionInfo, SessionState,
   CreateEnvironmentOptions, EnvironmentInfo,
@@ -257,6 +258,11 @@ const api: TetherAPI = {
   },
   diagnostics: {
     export: (): Promise<DiagnosticsExportResult> => ipcRenderer.invoke(IPC.DIAGNOSTICS_EXPORT),
+  },
+  keybindings: {
+    get: (): Promise<KeybindingOverrides> => ipcRenderer.invoke(IPC.KEYBINDINGS_GET),
+    set: (overrides: KeybindingOverrides): Promise<void> => ipcRenderer.invoke(IPC.KEYBINDINGS_SET, overrides),
+    resetAll: (): Promise<void> => ipcRenderer.invoke(IPC.KEYBINDINGS_RESET_ALL),
   },
 };
 
