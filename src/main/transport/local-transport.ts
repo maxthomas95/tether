@@ -4,6 +4,7 @@ import type { SessionTransport, TransportStartOptions, TransportExitInfo } from 
 import { createLogger } from '../logger';
 import { buildCliArgsForTool } from '../../shared/cli-tools';
 import { loadPty } from './pty-loader';
+import { tokenizeCliArgEntries } from './cli-args';
 
 const log = createLogger('local-pty');
 
@@ -40,7 +41,7 @@ export class LocalTransport implements SessionTransport {
     // Tokenize each entry on whitespace so multi-token flags stored as one string
     // (e.g. "--permission-mode plan") become separate process args. The SSH transport
     // gets this for free via shell-join; we replicate it here for parity.
-    const tokenizedArgs = cliArgs.flatMap(a => a.split(/\s+/).filter(Boolean));
+    const tokenizedArgs = tokenizeCliArgEntries(cliArgs);
 
     // Append the initial prompt (if any) as a single un-tokenized positional arg
     // so multi-word briefs reach the CLI as one argv entry rather than N.

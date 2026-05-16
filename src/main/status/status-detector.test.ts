@@ -92,6 +92,25 @@ describe('StatusDetector', () => {
       expect(detector.getState('s1')).toBe(expected);
       expect(stateChanges).toContainEqual({ sessionId: 's1', state: expected });
     });
+
+    it('does not let a pending debounce overwrite exited state', () => {
+      detector.register('s1');
+      detector.feedData('s1', 'output');
+      detector.markExited('s1', 1);
+
+      vi.advanceTimersByTime(60000);
+
+      expect(detector.getState('s1')).toBe('dead');
+      expect(stateChanges).not.toContainEqual({ sessionId: 's1', state: 'running' });
+    });
+
+    it('ignores data that arrives after exit', () => {
+      detector.register('s1');
+      detector.markExited('s1', 0);
+      feed('s1', 'late output');
+
+      expect(detector.getState('s1')).toBe('stopped');
+    });
   });
 
   it('cleans up timers on unregister', () => {

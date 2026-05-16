@@ -76,6 +76,9 @@ export class StatusDetector {
   feedData(sessionId: string, data: string): void {
     capture(sessionId, data);
 
+    const state = this.states.get(sessionId);
+    if (!state || state === 'stopped' || state === 'dead') return;
+
     // Maintain a rolling buffer so OSC sequences split across chunks still match.
     const prevBuffer = this.buffers.get(sessionId) || '';
     const combined = prevBuffer + data;
@@ -121,6 +124,9 @@ export class StatusDetector {
 
   // Called when PTY exits
   markExited(sessionId: string, exitCode: number): void {
+    if (!this.states.has(sessionId)) return;
+    this.clearSessionTimers(sessionId);
+    this.buffers.delete(sessionId);
     const state: SessionState = exitCode === 0 ? 'stopped' : 'dead';
     this.setState(sessionId, state); // No debounce for exit
   }
@@ -200,6 +206,12 @@ export class StatusDetector {
       clearTimeout(t);
       map.delete(sessionId);
     }
+  }
+
+  private clearSessionTimers(sessionId: string): void {
+    this.clearTimer(this.waitingTimers, sessionId);
+    this.clearTimer(this.idleTimers, sessionId);
+    this.clearTimer(this.debounceTimers, sessionId);
   }
 
   dispose(): void {

@@ -3,7 +3,7 @@ import type { SessionTransport, TransportStartOptions, TransportExitInfo } from 
 import { createLogger } from '../logger';
 import { verifyHost } from '../ssh/host-verifier';
 import { loadSsh2 } from './ssh2-loader';
-import { quotePosixEnvAssignment, quotePosixPathPreservingHome, quotePosixShellArg } from '../../shared/shell-quote';
+import { buildEnvAssignments, buildRemoteCliCommand, quoteRemotePath } from './posix-shell';
 
 const log = createLogger('ssh');
 
@@ -210,7 +210,7 @@ export class SSHTransport implements SessionTransport {
       } else if (this.sshConfig.privateKeyPath) {
         try {
           connectConfig.privateKey = fs.readFileSync(this.sshConfig.privateKeyPath);
-        } catch (err) {
+        } catch {
           reject(new Error(`Failed to read SSH key: ${this.sshConfig.privateKeyPath}`));
           return;
         }
@@ -234,27 +234,24 @@ export class SSHTransport implements SessionTransport {
             this.stream = stream;
             this._connected = true;
 
-            // Build the command: inject env vars via `env` (avoids shell history)
-            // then cd to the working directory and launch the CLI tool
-            const binary = options.binaryName || 'claude';
-            const envParts = Object.entries(options.env)
-              .filter(([, v]) => v)
-              .map(([k, v]) => quotePosixEnvAssignment(k, v));
-
-            const cliArgs = options.cliArgs?.join(' ') || '';
-            // Single-quote wrap + escape embedded quotes so multi-word prompts
-            // and shell metachars reach the CLI as one positional arg.
-            const promptArg = options.initialPrompt
-              ? ` ${quotePosixShellArg(options.initialPrompt)}`
-              : '';
-            const cliCmd = (cliArgs ? `${binary} ${cliArgs}` : binary) + promptArg;
-            const workingDir = quotePosixPathPreservingHome(options.workingDir);
-
+            // Build the command as argv/env tokens rather than shell text.
+            // The PTY still receives one shell line, but user-controlled values
+            // are quoted before they cross that boundary.
             let cmd: string;
-            if (envParts.length > 0) {
-              cmd = `cd ${workingDir} && env ${envParts.join(' ')} ${cliCmd}\n`;
-            } else {
-              cmd = `cd ${workingDir} && ${cliCmd}\n`;
+            try {
+              const envParts = buildEnvAssignments(options.env);
+              const cliCmd = buildRemoteCliCommand(options);
+              const launchCmd = envParts.length > 0
+                ? `env ${envParts.join(' ')} ${cliCmd}`
+                : cliCmd;
+              cmd = `cd ${quoteRemotePath(options.workingDir)} && ${launchCmd}\n`;
+            } catch (buildErr) {
+              this._connected = false;
+              this.stream = null;
+              (stream as NodeJS.ReadWriteStream & { destroy?: () => void }).destroy?.();
+              this.client?.end();
+              reject(buildErr instanceof Error ? buildErr : new Error(String(buildErr)));
+              return;
             }
 
             // Wire up data flow. Use StringDecoder so multi-byte UTF-8 glyphs

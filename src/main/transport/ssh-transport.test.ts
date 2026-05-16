@@ -10,6 +10,7 @@ const ssh2Harness = vi.hoisted(() => {
   class FakeStream extends EventEmitter {
     write = vi.fn();
     setWindow = vi.fn();
+    destroy = vi.fn();
     emitData(buf: Buffer | string) {
       this.emit('data', typeof buf === 'string' ? Buffer.from(buf, 'utf-8') : buf);
     }
@@ -182,7 +183,7 @@ describe('SSHTransport', () => {
     const writes = stream.write.mock.calls.map((c) => c[0]).join('');
     expect(writes).toContain("cd '/srv/app'");
     expect(writes).toContain("env 'FOO=bar'");
-    expect(writes).toContain('claude --model sonnet');
+    expect(writes).toContain(`'claude' '--model' 'sonnet'`);
     expect(writes).toContain(`'what'\\''s up'`);
   });
 
@@ -194,6 +195,41 @@ describe('SSHTransport', () => {
 
     const writes = stream.write.mock.calls.map((c) => c[0]).join('');
     expect(writes).toContain("cd ~/'repo with spaces'");
+  });
+
+  it('shell-quotes launch values with metacharacters', async () => {
+    const t = new SSHTransport(baseConfig());
+    const { stream } = await startConnected(t, baseOptions({
+      workingDir: '/srv/app dir; rm -rf /',
+      env: {
+        FOO: 'bar; $(touch x)',
+        QUOTE: "it's ok",
+      },
+      cliArgs: ['--flag', 'value;rm'],
+      initialPrompt: 'review $(whoami)',
+      binaryName: 'custom cli',
+    }));
+
+    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    expect(writes).toContain(`cd '/srv/app dir; rm -rf /'`);
+    expect(writes).toContain(`'FOO=bar; $(touch x)'`);
+    expect(writes).toContain(`'QUOTE=it'\\''s ok'`);
+    expect(writes).toContain(`'custom cli' '--flag' 'value;rm' 'review $(whoami)'`);
+  });
+
+  it('rejects invalid env names before sending the launch command', async () => {
+    const t = new SSHTransport(baseConfig());
+    const start = t.start(baseOptions({
+      env: { 'BAD-NAME': 'x' },
+    }));
+    const client = ssh2Harness.current!;
+    client.emit('ready');
+    const stream = new ssh2Harness.FakeStream();
+    client.lastShellCb!(undefined, stream);
+
+    await expect(start).rejects.toThrow(/Invalid environment variable name/);
+    expect(stream.destroy).toHaveBeenCalled();
+    expect(client.end).toHaveBeenCalled();
   });
 
   it('write delegates to the stream when started', async () => {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'node:path';
 import squirrelStartup from 'electron-squirrel-startup';
 import { registerIpcHandlers } from './ipc/handlers';
@@ -45,6 +45,42 @@ function buildDocsQuery(themeName: string, target?: DocsOpenTarget): string {
   if (target?.page) parts.push(`page=${encodeURIComponent(target.page)}`);
   if (target?.anchor) parts.push(`anchor=${encodeURIComponent(target.anchor)}`);
   return parts.join('&');
+}
+
+function isAllowedAppNavigation(url: string, htmlFile: string, devServerUrl?: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (devServerUrl) {
+      const dev = new URL(devServerUrl);
+      return parsed.origin === dev.origin;
+    }
+    return parsed.protocol === 'file:' && decodeURIComponent(parsed.pathname).replace(/\\/g, '/').endsWith(`/${htmlFile}`);
+  } catch {
+    return false;
+  }
+}
+
+function openExternalWebUrl(url: string): void {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      void shell.openExternal(url);
+    }
+  } catch {
+    // Ignore malformed navigation attempts.
+  }
+}
+
+function hardenNavigation(win: BrowserWindow, htmlFile: string, devServerUrl?: string): void {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    openExternalWebUrl(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    if (isAllowedAppNavigation(url, htmlFile, devServerUrl)) return;
+    event.preventDefault();
+    openExternalWebUrl(url);
+  });
 }
 
 function createDocsWindow(target?: DocsOpenTarget): void {
@@ -96,7 +132,7 @@ function createDocsWindow(target?: DocsOpenTarget): void {
     },
   });
 
-  docsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  hardenNavigation(docsWindow, 'docs-window.html', DOCS_WINDOW_VITE_DEV_SERVER_URL);
 
   docsWindow.once('ready-to-show', () => {
     docsWindow?.show();
@@ -153,7 +189,7 @@ const createWindow = () => {
     },
   });
 
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  hardenNavigation(mainWindow, 'index.html', MAIN_WINDOW_VITE_DEV_SERVER_URL);
 
   // Wait until the renderer has painted its first frame (which includes
   // the inline boot loader in index.html) before showing the window.

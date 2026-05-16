@@ -31,6 +31,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
   const [defaultDir, setDefaultDir] = useState('~');
   const [useSudo, setUseSudo] = useState(false);
   const [coderBinary, setCoderBinary] = useState('coder');
+  const [coderAllowInsecureTls, setCoderAllowInsecureTls] = useState(false);
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [vaultConnected, setVaultConnected] = useState(false);
   const [vaultMount, setVaultMount] = useState('secret');
@@ -66,6 +67,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
       }
     } else if (editing.type === 'coder') {
       setCoderBinary((cfg.binaryPath as string) || 'coder');
+      setCoderAllowInsecureTls(cfg.allowInsecureTls === true);
     }
   }, [isOpen, editing]);
 
@@ -136,6 +138,9 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
       }
     } else if (type === 'coder') {
       config.binaryPath = coderBinary.trim() || 'coder';
+      if (coderAllowInsecureTls) {
+        config.allowInsecureTls = true;
+      }
     }
 
     if (editing && onUpdate) {
@@ -152,7 +157,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
     setName(''); setHost(''); setPort('22'); setUsername('');
     setKeyPath(''); setPassword(''); setAuthMethod('agent'); setDefaultDir('~'); setEnvVars({});
     setStoreInVault(false); setVaultPath(''); setCreateError(null); setCreating(false); setUseSudo(false);
-    setCoderBinary('coder');
+    setCoderBinary('coder'); setCoderAllowInsecureTls(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -382,6 +387,19 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
                   Path to the `coder` binary. Leave as `coder` if it's on your PATH.
                   Tether uses `coder ssh &lt;workspace&gt;` to connect, so you must be
                   logged in via `coder login` before creating sessions.
+                </span>
+              </div>
+              <div className="form-group">
+                <label className="form-radio-label">
+                  <input
+                    type="checkbox"
+                    checked={coderAllowInsecureTls}
+                    onChange={e => setCoderAllowInsecureTls(e.target.checked)}
+                  />
+                  Allow insecure TLS for Coder API lookup
+                </label>
+                <span className="form-hint">
+                  Only use this for self-signed internal Coder deployments. Session SSH still uses the Coder CLI.
                 </span>
               </div>
             </>

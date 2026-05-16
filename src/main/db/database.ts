@@ -168,6 +168,23 @@ function getDbPath(): string {
   return dbPath;
 }
 
+function moveCorruptDbAside(filePath: string, err: unknown): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  let backupPath = path.join(path.dirname(filePath), `data.json.corrupt-${stamp}`);
+  let suffix = 1;
+  while (fs.existsSync(backupPath)) {
+    backupPath = path.join(path.dirname(filePath), `data.json.corrupt-${stamp}-${suffix}`);
+    suffix += 1;
+  }
+  fs.renameSync(filePath, backupPath);
+  log.error('Failed to load data.json; moved corrupt file aside', {
+    filePath,
+    backupPath,
+    error: err instanceof Error ? err.message : String(err),
+  });
+  return backupPath;
+}
+
 function parseStringArrayJson(value: unknown): string[] {
   try {
     const parsed = typeof value === 'string' ? JSON.parse(value) : value;
@@ -291,7 +308,17 @@ export function getDb(): DbData {
   try {
     const loaded = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Record<string, unknown>;
     data = migrateLoadedDb(loaded);
-  } catch {
+  } catch (err) {
+    try {
+      moveCorruptDbAside(filePath, err);
+    } catch (backupErr) {
+      log.error('Failed to load data.json and could not preserve corrupt file', {
+        filePath,
+        loadError: err instanceof Error ? err.message : String(err),
+        backupError: backupErr instanceof Error ? backupErr.message : String(backupErr),
+      });
+      throw err;
+    }
     data = emptyDbData();
   }
   return data;
