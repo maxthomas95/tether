@@ -167,9 +167,22 @@ function scrubTetherEntries(settings: SettingsShape): boolean {
  * Render the absolute path to the helper as a JSON-safe `command` string.
  * Quoted so spaces in the path (Windows user dirs) survive shell parsing,
  * with embedded `"` escaped per POSIX/CMD conventions.
+ *
+ * `helperPath` is internally derived (`app.getPath` in packaged builds,
+ * `path.resolve(__dirname, …)` in dev) and never reaches us from user
+ * input — there is no shell-injection vector here.
+ *
+ * We deliberately do NOT escape backslashes: cmd.exe treats `\` inside
+ * double-quoted strings as a literal, so escaping `C:\foo` → `C:\\foo`
+ * would cause cmd.exe to pass literal `\\` through to node and break
+ * every Windows path. The static analyzer flags the partial escape
+ * (NOSONAR / lgtm suppressions below) but a "complete" escape here
+ * would corrupt functionality on the platform we ship on today.
  */
+// NOSONAR(typescript:S5852)
 function helperCommand(helperPath: string, cliFlag: '--claude' | '--codex'): string {
-  const safe = helperPath.replace(/"/g, '\\"');
+  // lgtm[js/incomplete-sanitization]
+  const safe = helperPath.replace(/"/g, '\\"'); // NOSONAR
   return `node "${safe}" ${cliFlag}`;
 }
 
