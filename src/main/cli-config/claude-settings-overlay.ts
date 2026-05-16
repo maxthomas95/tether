@@ -175,14 +175,17 @@ function helperCommand(helperPath: string, cliFlag: '--claude' | '--codex'): str
 
 function buildTetherEntries(helperPath: string): {
   notification: NotificationGroup;
-  stop: CommandHook;
+  stop: StopEntryGroup;
 } {
   const cmd = helperCommand(helperPath, '--claude');
+  // Both Notification and Stop entries take the same wrapper shape:
+  // { matcher?: string; hooks: [{ type, command }] }. Stop doesn't accept
+  // matchers but the runtime still requires the `hooks` array — bare
+  // {type, command} entries fail validation with "Expected array, but
+  // received undefined" even though the docs example shows the bare form.
   return {
-    // Match-all on Notification means we receive every notification_type
-    // and classify in the helper (permission_prompt vs idle_prompt vs ...).
     notification: { hooks: [{ type: 'command', command: cmd }] },
-    stop: { type: 'command', command: cmd },
+    stop: { hooks: [{ type: 'command', command: cmd }] },
   };
 }
 

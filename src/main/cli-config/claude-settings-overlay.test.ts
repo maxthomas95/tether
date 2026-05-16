@@ -46,13 +46,27 @@ describe('Claude settings overlay', () => {
     expect(JSON.stringify(s)).toContain('tether-cli-hook');
   });
 
+  it('writes Stop entries with the {hooks: [...]} wrapper Claude requires', async () => {
+    // Regression: a bare {type, command} Stop entry triggers Claude's
+    // settings parser to reject the entire file with
+    //   `hooks > Stop > N > hooks: Expected array, but received undefined`
+    // Even though Stop doesn't accept matchers, the runtime still requires
+    // the `hooks` array — the docs example showing the bare shape is wrong.
+    const { settingsPath } = makeCtx();
+    await installClaudeHooks({ helperPath: HELPER, settingsPath });
+    const s = readSettings(settingsPath) as { hooks: { Stop: Array<Record<string, unknown>> } };
+    expect(s.hooks.Stop).toHaveLength(1);
+    expect(Array.isArray(s.hooks.Stop[0].hooks)).toBe(true);
+    expect((s.hooks.Stop[0].hooks as Array<{ command: string }>)[0].command).toContain('tether-cli-hook');
+  });
+
   it('preserves the user\'s existing hooks and unrelated keys', async () => {
     const { settingsPath } = makeCtx();
     fs.writeFileSync(settingsPath, JSON.stringify({
       model: 'sonnet',
       hooks: {
         Notification: [{ hooks: [{ type: 'command', command: '/usr/bin/their-notify' }] }],
-        Stop: [{ type: 'command', command: '/usr/bin/their-stop' }],
+        Stop: [{ hooks: [{ type: 'command', command: '/usr/bin/their-stop' }] }],
         UserPromptSubmit: [{ type: 'command', command: '/usr/bin/audit' }],
       },
     }));
@@ -63,7 +77,7 @@ describe('Claude settings overlay', () => {
       model: string;
       hooks: {
         Notification: Array<{ hooks: Array<{ command: string }> }>;
-        Stop: Array<{ command: string }>;
+        Stop: Array<{ hooks: Array<{ command: string }> }>;
         UserPromptSubmit: Array<{ command: string }>;
       };
     };
@@ -71,8 +85,9 @@ describe('Claude settings overlay', () => {
     // Original notify + ours
     expect(s.hooks.Notification.flatMap(g => g.hooks)).toHaveLength(2);
     expect(s.hooks.Notification[0].hooks[0].command).toBe('/usr/bin/their-notify');
-    // Original stop + ours
-    expect(s.hooks.Stop.map(e => e.command)).toContain('/usr/bin/their-stop');
+    // Original stop + ours, both wrapped
+    expect(s.hooks.Stop.flatMap(g => g.hooks)).toHaveLength(2);
+    expect(s.hooks.Stop[0].hooks[0].command).toBe('/usr/bin/their-stop');
     // Unrelated UserPromptSubmit untouched
     expect(s.hooks.UserPromptSubmit[0].command).toBe('/usr/bin/audit');
   });
@@ -87,7 +102,11 @@ describe('Claude settings overlay', () => {
     expect(s.hooks.Stop).toHaveLength(1);
   });
 
-  it('uninstall removes our entries but leaves the user\'s', async () => {
+  it('uninstall removes our entries but leaves the user\'s (including legacy bare Stop)', async () => {
+    // The user's existing Stop entry is the legacy bare {type, command}
+    // shape — pre-runtime-validation Tether installs (and the docs
+    // example) used this. Scrub must not delete it just because the
+    // shape isn't ours; it must only delete entries with our sentinel.
     const { settingsPath } = makeCtx();
     fs.writeFileSync(settingsPath, JSON.stringify({
       hooks: {
@@ -100,14 +119,20 @@ describe('Claude settings overlay', () => {
     await uninstallClaudeHooks({ helperPath: HELPER, settingsPath });
 
     const s = readSettings(settingsPath) as {
-      hooks: { Notification?: Array<{ hooks: Array<{ command: string }> }>; Stop?: Array<{ command: string }> };
+      hooks: {
+        Notification?: Array<{ hooks: Array<{ command: string }> }>;
+        Stop?: Array<{ command?: string; hooks?: Array<{ command: string }> }>;
+      };
     };
     const allNotif = s.hooks.Notification?.flatMap(g => g.hooks) ?? [];
-    const allStop = s.hooks.Stop ?? [];
+    // Stop entries can be bare or wrapped — flatten both shapes for the assertion.
+    const allStopCommands: string[] = (s.hooks.Stop ?? []).flatMap(e =>
+      typeof e.command === 'string' ? [e.command] : (e.hooks ?? []).map(h => h.command));
     expect(allNotif.every(h => !h.command.includes('tether-cli-hook'))).toBe(true);
-    expect(allStop.every(e => !e.command.includes('tether-cli-hook'))).toBe(true);
+    expect(allStopCommands.every(c => !c.includes('tether-cli-hook'))).toBe(true);
     expect(allNotif).toHaveLength(1);
-    expect(allStop).toHaveLength(1);
+    expect(allStopCommands).toHaveLength(1);
+    expect(allStopCommands[0]).toBe('/usr/bin/their-stop');
   });
 
   it('uninstall on a settings file containing only Tether entries removes the hooks key entirely', async () => {
@@ -138,14 +163,16 @@ describe('Claude settings overlay', () => {
     await installClaudeHooks({ helperPath: HELPER, settingsPath });
 
     const s = readSettings(settingsPath) as {
-      hooks: { Notification: Array<{ hooks: Array<{ command: string }> }>; Stop: Array<{ command: string }> };
+      hooks: { Notification: Array<{ hooks: Array<{ command: string }> }>; Stop: Array<{ hooks: Array<{ command: string }> }> };
     };
-    // Exactly one Tether entry on each side — orphans scrubbed.
+    // Exactly one Tether entry on each side — bare-shape orphan AND the
+    // wrapped-shape orphan both got scrubbed; fresh install added our
+    // wrapped entry.
     expect(s.hooks.Notification.flatMap(g => g.hooks)).toHaveLength(1);
-    expect(s.hooks.Stop).toHaveLength(1);
-    // And it points at the current helper, not the stale paths.
+    expect(s.hooks.Stop.flatMap(g => g.hooks)).toHaveLength(1);
+    // And both point at the current helper, not the stale paths.
     expect(s.hooks.Notification[0].hooks[0].command).toContain('Program Files');
-    expect(s.hooks.Stop[0].command).toContain('Program Files');
+    expect(s.hooks.Stop[0].hooks[0].command).toContain('Program Files');
   });
 
   it('refuses to overwrite an unparseable settings.json', async () => {
