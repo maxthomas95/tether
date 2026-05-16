@@ -13,6 +13,11 @@ interface SessionItemProps {
    *  session in 'waiting' state gets the amber-with-bang affordance — the
    *  user can't see the session itself, so the dot has to call out. */
   isVisibleInLayout?: boolean;
+  /** True when the user has already acknowledged this session's current
+   *  waiting cycle by viewing it. Suppresses the bang even when the session
+   *  is invisible (Slack/Discord style: see-once-then-quiet). Permission
+   *  prompts override this — those always bang. */
+  bangSuppressed?: boolean;
   onClick: () => void;
   onStop: () => void;
   onKill: () => void;
@@ -51,7 +56,7 @@ interface SessionItemProps {
  */
 let activeReorderSource: { id: string; environmentId: string | null; workingDir: string } | null = null;
 
-export function SessionItem({ session, isActive, isVisibleInLayout, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane }: SessionItemProps) {
+export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppressed, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
@@ -170,8 +175,8 @@ export function SessionItem({ session, isActive, isVisibleInLayout, onClick, onS
       }}
     >
       <span
-        className={`status-dot status-dot--${getStatusClass(session.state, session.waitingReason, isVisibleInLayout)}`}
-        title={getStatusTooltip(session.state, session.waitingReason, isVisibleInLayout)}
+        className={`status-dot status-dot--${getStatusClass(session.state, session.waitingReason, isVisibleInLayout, bangSuppressed)}`}
+        title={getStatusTooltip(session.state, session.waitingReason, isVisibleInLayout, bangSuppressed)}
       />
       <div className="session-info">
         {editing ? (
@@ -319,20 +324,22 @@ function getStatusClass(
   state: SessionState,
   waitingReason: 'idle' | 'permission' | undefined,
   isVisibleInLayout: boolean | undefined,
+  bangSuppressed: boolean | undefined,
 ): string {
   switch (state) {
     case 'running':
     case 'starting':
       return 'running';
     case 'waiting':
-      // Bang the dot when (a) Claude is explicitly blocked on a permission
-      // prompt — always urgent — or (b) the session isn't visible in the
-      // current layout, in which case the user can't see Claude finished
-      // and the dot is the only "come back here" affordance. A waiting
-      // session you ARE looking at stays plain amber: you can already see
-      // the response, no need to escalate.
+      // Bang priority:
+      //   1. permission_prompt → always bang (Claude is genuinely blocked,
+      //      the user MUST respond — see-once-then-quiet doesn't apply)
+      //   2. invisible AND user hasn't acked this waiting cycle → bang
+      //   3. visible OR user already acked → plain amber
+      // Acks reset on every state transition into/out of waiting, so a new
+      // turn produces a fresh bang.
       if (waitingReason === 'permission') return 'waiting-permission';
-      if (isVisibleInLayout === false) return 'waiting-permission';
+      if (isVisibleInLayout === false && !bangSuppressed) return 'waiting-permission';
       return 'waiting';
     case 'stopped':
     case 'dead':
@@ -346,10 +353,11 @@ function getStatusTooltip(
   state: SessionState,
   waitingReason: 'idle' | 'permission' | undefined,
   isVisibleInLayout: boolean | undefined,
+  bangSuppressed: boolean | undefined,
 ): string | undefined {
   if (state !== 'waiting') return undefined;
   if (waitingReason === 'permission') return 'Waiting on a permission prompt — switch in to respond';
-  if (isVisibleInLayout === false) return 'This session is waiting and not currently visible';
+  if (isVisibleInLayout === false && !bangSuppressed) return 'This session is waiting and not currently visible';
   return undefined;
 }
 
