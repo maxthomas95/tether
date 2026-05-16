@@ -164,7 +164,12 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
         onReorderDrop(sourceId, session.id, pos);
       }}
     >
-      <span className={`status-dot status-dot--${getStatusClass(session.state)}`} />
+      <span
+        className={`status-dot status-dot--${getStatusClass(session.state, session.waitingReason)}`}
+        title={session.state === 'waiting' && session.waitingReason === 'permission'
+          ? 'Waiting on a permission prompt — switch in to respond'
+          : undefined}
+      />
       <div className="session-info">
         {editing ? (
           <input
@@ -307,13 +312,15 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
   );
 }
 
-function getStatusClass(state: SessionState): string {
+function getStatusClass(state: SessionState, waitingReason?: 'idle' | 'permission'): string {
   switch (state) {
     case 'running':
     case 'starting':
       return 'running';
     case 'waiting':
-      return 'waiting';
+      // permission_prompt gets its own class so the dot can grow a `!` glyph
+      // — a calm idle/turn-complete amber stays plain.
+      return waitingReason === 'permission' ? 'waiting-permission' : 'waiting';
     case 'stopped':
     case 'dead':
       return 'dead';

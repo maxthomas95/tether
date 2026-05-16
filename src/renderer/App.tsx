@@ -373,8 +373,8 @@ export function App() {
     const removeData = window.electronAPI.session.onData((sid, data) => {
       termManager.writeData(sid, data);
     });
-    const removeState = window.electronAPI.session.onStateChange((sid, state: SessionState) => {
-      setSessions(prev => prev.map(s => s.id === sid ? { ...s, state } : s));
+    const removeState = window.electronAPI.session.onStateChange((sid, state: SessionState, waitingReason) => {
+      setSessions(prev => prev.map(s => s.id === sid ? { ...s, state, waitingReason } : s));
     });
     const removeExit = globalThis.electronAPI.session.onExited((sid, exitInfo) => {
       const managed = termManager.getOrCreate(sid);

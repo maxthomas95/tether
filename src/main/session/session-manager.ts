@@ -16,7 +16,7 @@ import { copilotTranscriptExists } from '../copilot/transcripts';
 import { detectNewCopilotSession, releaseCopilotSessionClaim } from '../copilot/session-watcher';
 import { opencodeTranscriptExists } from '../opencode/transcripts';
 import { detectNewOpencodeSession, releaseOpencodeSessionClaim } from '../opencode/session-watcher';
-import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId, SessionExitInfo } from '../../shared/types';
+import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId, SessionExitInfo, WaitingReason } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
 import { usageService } from '../usage/usage-service';
@@ -105,7 +105,7 @@ function buildHelmChildCliArgs(params: Record<string, unknown>): string[] {
 
 export interface SessionCallbacks {
   onData(sessionId: string, data: string): void;
-  onStateChange(sessionId: string, state: SessionState): void;
+  onStateChange(sessionId: string, state: SessionState, waitingReason?: WaitingReason): void;
   onExit(sessionId: string, exitInfo: SessionExitInfo): void;
   /**
    * Fired when non-state session metadata changes (currently: the codex
@@ -141,6 +141,7 @@ export class Session {
   readonly customCliBinary: string | undefined;
   readonly createdAt: string;
   state: SessionState = 'starting';
+  waitingReason: WaitingReason | undefined = undefined;
   transport: SessionTransport | null = null;
   /** Tool-native session id used for resume. */
   toolSessionId: string | null = null;
@@ -191,6 +192,7 @@ export class Session {
       label: this.label,
       workingDir: this.workingDir,
       state: this.state,
+      waitingReason: this.waitingReason,
       createdAt: this.createdAt,
       toolSessionId: this.toolSessionId || undefined,
       claudeSessionId: this.claudeSessionId || undefined,
@@ -289,13 +291,35 @@ class SessionManager {
   private callbacksMap = new Map<string, SessionCallbacks>();
 
   constructor() {
-    statusDetector.onStateChange((sessionId, state) => {
+    statusDetector.onStateChange((sessionId, state, waitingReason) => {
       const session = this.sessions.get(sessionId);
       if (session) {
         session.state = state;
-        this.callbacksMap.get(sessionId)?.onStateChange(sessionId, state);
+        session.waitingReason = state === 'waiting' ? waitingReason : undefined;
+        this.callbacksMap.get(sessionId)?.onStateChange(sessionId, state, session.waitingReason);
       }
     });
+  }
+
+  /**
+   * Bridge entrypoint: a CLI hook fired and the bridge routed it here.
+   * Translates the event type into a detector call. Silently no-ops when
+   * the session id is unknown — the user may have killed the session
+   * between the CLI firing and the helper reaching us, or this could be
+   * a stray hook from a non-Tether process that happens to share the
+   * env var (defense in depth: we filter by known sessions).
+   */
+  handleHookEvent(tetherSessionId: string, type: string): void {
+    if (!this.sessions.has(tetherSessionId)) return;
+    if (type === 'permission_prompt') {
+      statusDetector.markPermissionWaiting(tetherSessionId);
+      return;
+    }
+    if (type === 'turn_complete' || type === 'idle_prompt') {
+      statusDetector.markTurnComplete(tetherSessionId);
+      return;
+    }
+    // auth_success, elicitation_dialog, etc. — informational only for now.
   }
 
   async createSession(
