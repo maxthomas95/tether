@@ -713,6 +713,44 @@ textarea:focus-visible,
   background: var(--status-waiting);
 }
 
+/*
+ * Permission-prompt sub-state: same amber as plain waiting, plus a centered
+ * `!` glyph and a soft halo so a glance across the sidebar surfaces sessions
+ * the user actually has to act on. Pulse cadence is slower than 'running'
+ * (which feels "alive") so it reads as "stuck, get me", not "thinking".
+ */
+.status-dot--waiting-permission {
+  background: var(--status-waiting);
+  position: relative;
+  width: 11px;
+  height: 11px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-waiting) 35%, transparent);
+  animation: waitingPermissionPulse 1.8s ease-in-out infinite;
+}
+
+.status-dot--waiting-permission::after {
+  content: '!';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--bg-primary);
+  font-family: var(--ui-font, inherit);
+}
+
+@keyframes waitingPermissionPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-waiting) 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--status-waiting) 20%, transparent);
+  }
+}
+
 .status-dot--idle {
   background: var(--status-idle);
 }

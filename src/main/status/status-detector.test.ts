@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { StatusDetector } from './status-detector';
+import type { WaitingReason } from '../../shared/types';
 
 const ESC = '\x1b';
 const BEL = '\x07';
 
 describe('StatusDetector', () => {
   let detector: StatusDetector;
-  let stateChanges: Array<{ sessionId: string; state: string }>;
+  let stateChanges: Array<{ sessionId: string; state: string; reason?: WaitingReason }>;
 
   // Tick past the 500ms transition debounce.
   const settle = () => vi.advanceTimersByTime(500);
@@ -27,8 +28,8 @@ describe('StatusDetector', () => {
     vi.useFakeTimers();
     detector = new StatusDetector();
     stateChanges = [];
-    detector.onStateChange((sessionId, state) => {
-      stateChanges.push({ sessionId, state });
+    detector.onStateChange((sessionId, state, reason) => {
+      stateChanges.push({ sessionId, state, reason });
     });
   });
 
@@ -156,5 +157,69 @@ describe('StatusDetector', () => {
     // After dispose, states should be cleared — getState falls back to 'starting'
     expect(detector.getState('s1')).toBe('starting');
     expect(detector.getState('s2')).toBe('starting');
+  });
+
+  describe('hook event integration', () => {
+    it('markPermissionWaiting flips to waiting+permission immediately (no debounce)', () => {
+      start('s1', 'output');
+      stateChanges.length = 0;
+      detector.markPermissionWaiting('s1');
+      // No settle() — the hook path bypasses debounce because permission
+      // prompts need to surface to the user right away.
+      expect(detector.getState('s1')).toBe('waiting');
+      expect(detector.getWaitingReason('s1')).toBe('permission');
+      expect(stateChanges).toEqual([{ sessionId: 's1', state: 'waiting', reason: 'permission' }]);
+    });
+
+    it('markTurnComplete flips to waiting+idle and clears any pending fallback', () => {
+      start('s1', 'output');
+      stateChanges.length = 0;
+      detector.markTurnComplete('s1');
+      expect(detector.getState('s1')).toBe('waiting');
+      expect(detector.getWaitingReason('s1')).toBe('idle');
+      // Even if we tick forward a long way, the existing silence-fallback
+      // timer was cleared so we don't double-fire transitions.
+      vi.advanceTimersByTime(60000);
+      const waitingTransitions = stateChanges.filter(c => c.state === 'waiting');
+      expect(waitingTransitions).toHaveLength(1);
+    });
+
+    it('clears waitingReason when data resumes', () => {
+      start('s1', 'output');
+      detector.markPermissionWaiting('s1');
+      expect(detector.getWaitingReason('s1')).toBe('permission');
+      feed('s1', 'more data');
+      expect(detector.getState('s1')).toBe('running');
+      expect(detector.getWaitingReason('s1')).toBeUndefined();
+    });
+
+    it('byte-level waiting transition sets reason=idle, not permission', () => {
+      detector.register('s1');
+      detector.feedData('s1', 'output');
+      vi.advanceTimersByTime(500); // settle running
+      vi.advanceTimersByTime(3000); // hit WAITING_TIMEOUT
+      vi.advanceTimersByTime(500); // settle waiting
+      expect(detector.getState('s1')).toBe('waiting');
+      expect(detector.getWaitingReason('s1')).toBe('idle');
+    });
+
+    it('hook methods are no-ops for unknown sessions', () => {
+      detector.markPermissionWaiting('does-not-exist');
+      detector.markTurnComplete('does-not-exist');
+      expect(stateChanges).toHaveLength(0);
+    });
+
+    it('upgrades waiting+idle to waiting+permission when a permission_prompt arrives mid-wait', () => {
+      // Simulate the realistic sequence: byte-level inference flipped us to
+      // waiting+idle first, then Claude fires the permission_prompt hook.
+      detector.register('s1');
+      detector.feedData('s1', 'output');
+      vi.advanceTimersByTime(500);
+      vi.advanceTimersByTime(3500); // waiting+idle
+      stateChanges.length = 0;
+      detector.markPermissionWaiting('s1');
+      expect(detector.getWaitingReason('s1')).toBe('permission');
+      expect(stateChanges).toEqual([{ sessionId: 's1', state: 'waiting', reason: 'permission' }]);
+    });
   });
 });

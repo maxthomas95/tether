@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
-import type { CliToolId, SessionState } from '../../shared/types';
+import type { CliToolId, SessionState, WaitingReason } from '../../shared/types';
 
 // Opt-in raw PTY byte capture for debugging the OSC tap. Set TETHER_PTY_CAPTURE=1
 // before launching Tether to dump every PTY chunk per session to
@@ -45,14 +45,15 @@ const OSC_NOTIFICATION_RE = new RegExp(
 
 export class StatusDetector {
   private readonly states = new Map<string, SessionState>();
+  private readonly waitingReasons = new Map<string, WaitingReason>();
   private readonly buffers = new Map<string, string>();
   private readonly cliTools = new Map<string, CliToolId>();
   private readonly waitingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private callback: ((sessionId: string, state: SessionState) => void) | null = null;
+  private callback: ((sessionId: string, state: SessionState, reason?: WaitingReason) => void) | null = null;
 
-  onStateChange(callback: (sessionId: string, state: SessionState) => void): void {
+  onStateChange(callback: (sessionId: string, state: SessionState, reason?: WaitingReason) => void): void {
     this.callback = callback;
   }
 
@@ -63,6 +64,7 @@ export class StatusDetector {
 
   unregister(sessionId: string): void {
     this.states.delete(sessionId);
+    this.waitingReasons.delete(sessionId);
     this.cliTools.delete(sessionId);
     this.buffers.delete(sessionId);
     this.clearTimer(this.waitingTimers, sessionId);
@@ -123,8 +125,40 @@ export class StatusDetector {
     this.setState(sessionId, state); // No debounce for exit
   }
 
+  /**
+   * Hook signal: the CLI is blocked on a permission prompt. Wins over any
+   * pending byte-level inference — we flip to waiting+permission immediately
+   * and bypass debounce because the user needs to see this fast. Clears any
+   * pending idle-fallback timer so we don't drop to plain idle behind it.
+   */
+  markPermissionWaiting(sessionId: string): void {
+    if (!this.states.has(sessionId)) return;
+    this.clearTimer(this.waitingTimers, sessionId);
+    this.clearTimer(this.idleTimers, sessionId);
+    this.clearTimer(this.debounceTimers, sessionId);
+    this.setState(sessionId, 'waiting', 'permission');
+  }
+
+  /**
+   * Hook signal: Claude/Codex says the turn is over (Stop hook, Codex
+   * agent-turn-complete, or Notification.idle_prompt). Flip to waiting+idle
+   * — the existing byte-level fallback would have gotten here eventually, we
+   * just don't have to wait for silence.
+   */
+  markTurnComplete(sessionId: string): void {
+    if (!this.states.has(sessionId)) return;
+    this.clearTimer(this.waitingTimers, sessionId);
+    this.clearTimer(this.idleTimers, sessionId);
+    this.clearTimer(this.debounceTimers, sessionId);
+    this.setState(sessionId, 'waiting', 'idle');
+  }
+
   getState(sessionId: string): SessionState {
     return this.states.get(sessionId) || 'starting';
+  }
+
+  getWaitingReason(sessionId: string): WaitingReason | undefined {
+    return this.waitingReasons.get(sessionId);
   }
 
   private transition(sessionId: string, newState: SessionState): void {
@@ -134,16 +168,27 @@ export class StatusDetector {
     // Debounce to prevent flicker
     this.clearTimer(this.debounceTimers, sessionId);
     this.debounceTimers.set(sessionId, setTimeout(() => {
-      this.setState(sessionId, newState);
+      // Byte-level inference never claims a reason — fall back to 'idle'
+      // when transitioning into waiting via this path, leaving the field
+      // unset for any other state.
+      const reason: WaitingReason | undefined = newState === 'waiting' ? 'idle' : undefined;
+      this.setState(sessionId, newState, reason);
       this.debounceTimers.delete(sessionId);
     }, DEBOUNCE_MS));
   }
 
-  private setState(sessionId: string, state: SessionState): void {
+  private setState(sessionId: string, state: SessionState, reason?: WaitingReason): void {
     const prev = this.states.get(sessionId);
-    if (prev === state) return;
+    const prevReason = this.waitingReasons.get(sessionId);
+    // Only emit when something actually changed.
+    if (prev === state && prevReason === reason) return;
     this.states.set(sessionId, state);
-    this.callback?.(sessionId, state);
+    if (state === 'waiting' && reason) {
+      this.waitingReasons.set(sessionId, reason);
+    } else {
+      this.waitingReasons.delete(sessionId);
+    }
+    this.callback?.(sessionId, state, this.waitingReasons.get(sessionId));
   }
 
   private clearTimer(
@@ -163,6 +208,7 @@ export class StatusDetector {
       map.clear();
     }
     this.states.clear();
+    this.waitingReasons.clear();
     this.buffers.clear();
     this.cliTools.clear();
   }

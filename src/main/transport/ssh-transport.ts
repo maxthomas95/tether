@@ -3,6 +3,7 @@ import type { SessionTransport, TransportStartOptions, TransportExitInfo } from 
 import { createLogger } from '../logger';
 import { verifyHost } from '../ssh/host-verifier';
 import { loadSsh2 } from './ssh2-loader';
+import { quotePosixEnvAssignment, quotePosixPathPreservingHome, quotePosixShellArg } from '../../shared/shell-quote';
 
 const log = createLogger('ssh');
 
@@ -238,21 +239,22 @@ export class SSHTransport implements SessionTransport {
             const binary = options.binaryName || 'claude';
             const envParts = Object.entries(options.env)
               .filter(([, v]) => v)
-              .map(([k, v]) => `${k}=${v.replace(/'/g, "'\\''")}`);
+              .map(([k, v]) => quotePosixEnvAssignment(k, v));
 
             const cliArgs = options.cliArgs?.join(' ') || '';
             // Single-quote wrap + escape embedded quotes so multi-word prompts
             // and shell metachars reach the CLI as one positional arg.
             const promptArg = options.initialPrompt
-              ? ` '${options.initialPrompt.replace(/'/g, "'\\''")}'`
+              ? ` ${quotePosixShellArg(options.initialPrompt)}`
               : '';
             const cliCmd = (cliArgs ? `${binary} ${cliArgs}` : binary) + promptArg;
+            const workingDir = quotePosixPathPreservingHome(options.workingDir);
 
             let cmd: string;
             if (envParts.length > 0) {
-              cmd = `cd ${options.workingDir} && env ${envParts.join(' ')} ${cliCmd}\n`;
+              cmd = `cd ${workingDir} && env ${envParts.join(' ')} ${cliCmd}\n`;
             } else {
-              cmd = `cd ${options.workingDir} && ${cliCmd}\n`;
+              cmd = `cd ${workingDir} && ${cliCmd}\n`;
             }
 
             // Wire up data flow. Use StringDecoder so multi-byte UTF-8 glyphs

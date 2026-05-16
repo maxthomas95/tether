@@ -9,6 +9,14 @@ interface RepoGroupProps {
   environmentId: string;
   sessions: SessionInfo[];
   activeSessionId: string | null;
+  /** Set of session ids currently visible in some pane (i.e. mounted and not
+   *  hidden behind a maximize). Sessions outside this set get the
+   *  amber-with-bang affordance when they enter waiting state. */
+  visibleSessionIds?: Set<string>;
+  /** Sessions whose current waiting cycle the user has already acknowledged
+   *  (by viewing). These do NOT bang even if invisible — Slack-style
+   *  see-once-then-quiet. Permission prompts override this in the dot logic. */
+  bangSuppressedIds?: Set<string>;
   pinned: boolean;
   onTogglePin: (environmentId: string, workingDir: string) => void;
   onDropRepoGroup: (environmentId: string, sourceDir: string, targetDir: string, position: 'above' | 'below') => void;
@@ -51,6 +59,8 @@ export function RepoGroup({
   environmentId,
   sessions,
   activeSessionId,
+  visibleSessionIds,
+  bangSuppressedIds,
   pinned,
   onTogglePin,
   onDropRepoGroup,
@@ -288,6 +298,8 @@ export function RepoGroup({
             key={session.id}
             session={session}
             isActive={session.id === activeSessionId}
+            isVisibleInLayout={visibleSessionIds?.has(session.id) ?? false}
+            bangSuppressed={bangSuppressedIds?.has(session.id) ?? false}
             onClick={() => onSelectSession(session.id)}
             onStop={() => onStop(session.id)}
             onKill={() => onKill(session.id)}

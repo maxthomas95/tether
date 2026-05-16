@@ -3,6 +3,14 @@ import type { KeybindingOverrides } from './keybindings';
 
 export type { CliToolId };
 export type SessionState = 'starting' | 'running' | 'waiting' | 'idle' | 'stopped' | 'dead';
+/**
+ * Sub-state for `state === 'waiting'`. `'permission'` indicates the CLI is
+ * blocked on a permission prompt (driven by Claude's `Notification` hook
+ * with notification_type=permission_prompt). `'idle'` covers turn-complete,
+ * idle nudge, and the byte-level silence fallback. Undefined when state
+ * isn't `'waiting'`.
+ */
+export type WaitingReason = 'idle' | 'permission';
 export type EnvironmentType = 'local' | 'ssh' | 'coder';
 export type GitProviderType = 'gitea' | 'ado' | 'github';
 
@@ -159,6 +167,8 @@ export interface SessionInfo {
   label: string;
   workingDir: string;
   state: SessionState;
+  /** Discriminator for `state === 'waiting'`. See WaitingReason for details. */
+  waitingReason?: WaitingReason;
   pid?: number;
   createdAt: string;
   /** Tool-native session id used for resume on the next launch. */
@@ -440,7 +450,7 @@ export interface TetherAPI {
     sendInput(sessionId: string, data: string): void;
     resize(sessionId: string, cols: number, rows: number): void;
     onData(callback: (sessionId: string, data: string) => void): () => void;
-    onStateChange(callback: (sessionId: string, state: SessionState) => void): () => void;
+    onStateChange(callback: (sessionId: string, state: SessionState, waitingReason?: WaitingReason) => void): () => void;
     onExited(callback: (sessionId: string, exitInfo: SessionExitInfo) => void): () => void;
     onUpdated(callback: (sessionId: string, info: SessionInfo) => void): () => void;
     /**

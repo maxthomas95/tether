@@ -8,6 +8,16 @@ import type { PaneLocation } from '../../lib/layout-tree';
 interface SessionItemProps {
   session: SessionInfo;
   isActive: boolean;
+  /** True when the session is mounted in a pane currently visible to the user
+   *  (i.e. mounted AND not hidden behind a maximized pane). When false, a
+   *  session in 'waiting' state gets the amber-with-bang affordance — the
+   *  user can't see the session itself, so the dot has to call out. */
+  isVisibleInLayout?: boolean;
+  /** True when the user has already acknowledged this session's current
+   *  waiting cycle by viewing it. Suppresses the bang even when the session
+   *  is invisible (Slack/Discord style: see-once-then-quiet). Permission
+   *  prompts override this — those always bang. */
+  bangSuppressed?: boolean;
   onClick: () => void;
   onStop: () => void;
   onKill: () => void;
@@ -46,7 +56,7 @@ interface SessionItemProps {
  */
 let activeReorderSource: { id: string; environmentId: string | null; workingDir: string } | null = null;
 
-export function SessionItem({ session, isActive, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane }: SessionItemProps) {
+export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppressed, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
@@ -164,7 +174,10 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
         onReorderDrop(sourceId, session.id, pos);
       }}
     >
-      <span className={`status-dot status-dot--${getStatusClass(session.state)}`} />
+      <span
+        className={`status-dot status-dot--${getStatusClass(session.state, session.waitingReason, isVisibleInLayout, bangSuppressed)}`}
+        title={getStatusTooltip(session.state, session.waitingReason, isVisibleInLayout, bangSuppressed)}
+      />
       <div className="session-info">
         {editing ? (
           <input
@@ -307,19 +320,51 @@ export function SessionItem({ session, isActive, onClick, onStop, onKill, onRena
   );
 }
 
-function getStatusClass(state: SessionState): string {
+function getStatusClass(
+  state: SessionState,
+  waitingReason: 'idle' | 'permission' | undefined,
+  isVisibleInLayout: boolean | undefined,
+  bangSuppressed: boolean | undefined,
+): string {
   switch (state) {
     case 'running':
     case 'starting':
       return 'running';
     case 'waiting':
+      // Bang priority:
+      //   1. permission_prompt → always bang (Claude is genuinely blocked,
+      //      the user MUST respond — see-once-then-quiet doesn't apply)
+      //   2. invisible AND user hasn't acked this waiting cycle → bang
+      //   3. visible OR user already acked → plain amber
+      if (waitingReason === 'permission') return 'waiting-permission';
+      if (isVisibleInLayout === false && !bangSuppressed) return 'waiting-permission';
       return 'waiting';
+    case 'idle':
+      // Idle is the byte-level "30s of further silence" reclassification of
+      // a waiting session. If the user never acked the original wait, keep
+      // the bang going — fading to grey would silently hide the unread
+      // alert and the user would never know to come back. Once acked, the
+      // dot proceeds to its normal grey appearance like any quiet session.
+      if (isVisibleInLayout === false && !bangSuppressed) return 'waiting-permission';
+      return 'idle';
     case 'stopped':
     case 'dead':
       return 'dead';
     default:
       return 'idle';
   }
+}
+
+function getStatusTooltip(
+  state: SessionState,
+  waitingReason: 'idle' | 'permission' | undefined,
+  isVisibleInLayout: boolean | undefined,
+  bangSuppressed: boolean | undefined,
+): string | undefined {
+  if (state !== 'waiting' && state !== 'idle') return undefined;
+  if (waitingReason === 'permission') return 'Waiting on a permission prompt — switch in to respond';
+  if (isVisibleInLayout === false && !bangSuppressed) return 'This session is waiting and not currently visible';
+  return undefined;
 }
 
 function abbreviatePath(p: string): string {

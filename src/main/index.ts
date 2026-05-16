@@ -10,6 +10,7 @@ import { refreshPricesInBackground } from './usage/pricing-fetcher';
 import { getDb, closeDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
 import { markAllRunningAsStopped } from './db/session-repo';
+import { startHookService, stopHookService } from './cli-config/hook-service';
 import { getLoaderTheme, DEFAULT_LOADER_THEME } from '../shared/loader-themes';
 import { IPC } from '../shared/constants';
 import { createLogger, closeLogger } from './logger';
@@ -27,6 +28,7 @@ if (squirrelStartup) {
 
 let mainWindow: BrowserWindow | null = null;
 let docsWindow: BrowserWindow | null = null;
+let hookShutdownDone = false;
 
 /** Returns the docs BrowserWindow if open, for theme-change forwarding. */
 export function getDocsWindow(): BrowserWindow | null {
@@ -240,6 +242,12 @@ if (!gotTheLock) {
     // Background refresh — never awaited, never blocks startup. Failures
     // are logged inside the fetcher and leave the cache untouched.
     refreshPricesInBackground();
+    // Boot CLI hook bridge + install settings overlays. Never awaited —
+    // session creation degrades to byte-level if this hasn't completed
+    // yet (envForSession returns {} until the bridge is up).
+    startHookService().catch((err) => {
+      log.warn('startHookService threw', { error: err instanceof Error ? err.message : String(err) });
+    });
     createWindow();
   });
 
@@ -255,8 +263,26 @@ if (!gotTheLock) {
     }
   });
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
     log.info('App shutting down');
+    // Hook teardown is async (uninstall settings.json mutation) but
+    // before-quit is synchronous. Best-effort: preventDefault long enough
+    // for the uninstall + bridge dispose, then re-quit. Capped so a hung
+    // file write doesn't trap the user in the app.
+    if (!hookShutdownDone) {
+      event.preventDefault();
+      const timer = setTimeout(() => {
+        log.warn('Hook shutdown exceeded 2s — proceeding with quit anyway');
+        hookShutdownDone = true;
+        app.quit();
+      }, 2000);
+      stopHookService().finally(() => {
+        clearTimeout(timer);
+        hookShutdownDone = true;
+        app.quit();
+      });
+      return;
+    }
     usageService.dispose();
     quotaService.dispose();
     sessionManager.dispose();

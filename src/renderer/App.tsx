@@ -27,6 +27,7 @@ import { themeList } from './styles/themes';
 import {
   addPane,
   clampMaxPanes,
+  collectVisibleSessionIds,
   generatePaneId,
   findLeaf,
   getAdjacentPane,
@@ -63,6 +64,20 @@ export function App() {
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  /**
+   * Sessions whose current waiting cycle the user has already acknowledged
+   * by viewing. Used to suppress the amber-with-bang affordance once the
+   * user has SEEN that the session is waiting — going away again shouldn't
+   * re-fire the alert until something new happens (next state transition
+   * back into waiting). Permission prompts override this and always bang.
+   *
+   * Lifecycle:
+   *   - state transition INTO 'waiting'  → remove id  (un-acknowledge — new wait)
+   *   - state transition OUT OF 'waiting' → remove id  (no-op for ack purposes,
+   *     but keeps the set tidy)
+   *   - session enters visibleSessionIds while waiting → add id  (user saw it)
+   */
+  const [acknowledgedWaitingIds, setAcknowledgedWaitingIds] = useState<Set<string>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState(220);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -167,6 +182,39 @@ export function App() {
     ? findLeaf(layoutState.root, layoutState.focusedPaneId)
     : null;
   const activeSessionId = focusedLeaf?.sessionId ?? null;
+  // Sessions currently mounted AND visible (maximize hides everything else).
+  // Used by the sidebar to decide which sessions get the amber-with-bang
+  // "needs attention" affordance — sessions you can't see should call out
+  // when they enter waiting state, sessions you're looking at should not.
+  const visibleSessionIds = useMemo(
+    () => collectVisibleSessionIds(layoutState.root, layoutState.maximizedPaneId),
+    [layoutState.root, layoutState.maximizedPaneId],
+  );
+  // When a session becomes visible while in a needs-attention state
+  // (waiting OR idle), the user has effectively acknowledged the wait —
+  // record it so the bang doesn't re-fire when they navigate away again
+  // (Discord/Slack-style: see-once-then-quiet). Idle is included so a
+  // long-dormant session that fades to grey doesn't escape acknowledgment
+  // — the bang persists until the user actually views.
+  useEffect(() => {
+    setAcknowledgedWaitingIds(prev => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of visibleSessionIds) {
+        const s = sessionsRef.current.find(s => s.id === id);
+        if ((s?.state === 'waiting' || s?.state === 'idle') && !next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [visibleSessionIds, sessions]);
+
+  // Pre-compute which sessions are currently bang-suppressed so the SessionItem
+  // doesn't have to re-derive it. A session is suppressed when the user has
+  // already acknowledged its current waiting cycle.
+  const bangSuppressedIds = acknowledgedWaitingIds;
   const environmentById = useMemo(() => new Map(environments.map(env => [env.id, env])), [environments]);
 
   // Load profiles on mount
@@ -391,8 +439,26 @@ export function App() {
     const removeData = window.electronAPI.session.onData((sid, data) => {
       termManager.writeData(sid, data);
     });
-    const removeState = window.electronAPI.session.onStateChange((sid, state: SessionState) => {
-      setSessions(prev => prev.map(s => s.id === sid ? { ...s, state } : s));
+    const removeState = window.electronAPI.session.onStateChange((sid, state: SessionState, waitingReason) => {
+      setSessions(prev => {
+        const old = prev.find(s => s.id === sid);
+        // Only drop the ack when the session leaves the needs-attention
+        // bucket entirely — back to running (new turn), or it dies. The
+        // byte-level waiting→idle transition (30s silence) is purely a
+        // detector reclassification of the same dormant state and shouldn't
+        // re-alarm the user.
+        const wasNeedsAttention = old?.state === 'waiting' || old?.state === 'idle';
+        const isNeedsAttention = state === 'waiting' || state === 'idle';
+        if (wasNeedsAttention && !isNeedsAttention && old && old.state !== state) {
+          setAcknowledgedWaitingIds(prevAck => {
+            if (!prevAck.has(sid)) return prevAck;
+            const next = new Set(prevAck);
+            next.delete(sid);
+            return next;
+          });
+        }
+        return prev.map(s => s.id === sid ? { ...s, state, waitingReason } : s);
+      });
     });
     const removeExit = globalThis.electronAPI.session.onExited((sid, exitInfo) => {
       const managed = termManager.getOrCreate(sid);
@@ -1487,6 +1553,8 @@ export function App() {
                         environmentId={env.id}
                         sessions={sortSessionsInGroup(env.id, dir, dirSessions)}
                         activeSessionId={activeSessionId}
+                        visibleSessionIds={visibleSessionIds}
+                        bangSuppressedIds={bangSuppressedIds}
                         pinned={repoGroupPrefs.find(p => p.environmentId === env.id && p.workingDir === dir)?.pinned ?? false}
                         onTogglePin={handleTogglePin}
                         onDropRepoGroup={handleDropRepoGroup}

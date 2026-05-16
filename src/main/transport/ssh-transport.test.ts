@@ -180,10 +180,20 @@ describe('SSHTransport', () => {
 
     // Final write is the launch command
     const writes = stream.write.mock.calls.map((c) => c[0]).join('');
-    expect(writes).toContain('cd /srv/app');
-    expect(writes).toContain('env FOO=bar');
+    expect(writes).toContain("cd '/srv/app'");
+    expect(writes).toContain("env 'FOO=bar'");
     expect(writes).toContain('claude --model sonnet');
     expect(writes).toContain(`'what'\\''s up'`);
+  });
+
+  it('preserves leading tilde expansion in the remote working directory', async () => {
+    const t = new SSHTransport(baseConfig());
+    const { stream } = await startConnected(t, baseOptions({
+      workingDir: '~/repo with spaces',
+    }));
+
+    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    expect(writes).toContain("cd ~/'repo with spaces'");
   });
 
   it('write delegates to the stream when started', async () => {
