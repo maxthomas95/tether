@@ -230,9 +230,11 @@ interface NewSessionDialogProps {
   profiles: LaunchProfileInfo[];
   onClose: () => void;
   onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean) => void;
+  /** Optional environment to preselect when the dialog opens. Used by the welcome pane CTAs. */
+  initialEnvId?: string;
 }
 
-export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate }: NewSessionDialogProps) {
+export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate, initialEnvId }: NewSessionDialogProps) {
   const [envId, setEnvId] = useState<string>('');
   const [directory, setDirectory] = useState('');
   const [label, setLabel] = useState('');
@@ -355,10 +357,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
 
   // Set default env when dialog opens
   useEffect(() => {
-    if (isOpen && environments.length > 0 && !envId) {
+    if (!isOpen) return;
+    if (initialEnvId && environments.some(e => e.id === initialEnvId)) {
+      setEnvId(initialEnvId);
+    } else if (environments.length > 0 && !envId) {
       setEnvId(environments[0].id);
     }
-  }, [isOpen, environments, envId]);
+  }, [isOpen, environments, envId, initialEnvId]);
 
   // Pre-select default profile when dialog opens
   useEffect(() => {
