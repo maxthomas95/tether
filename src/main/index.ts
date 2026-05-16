@@ -33,9 +33,24 @@ export function getDocsWindow(): BrowserWindow | null {
   return docsWindow;
 }
 
-function createDocsWindow(): void {
+interface DocsOpenTarget {
+  page?: string;
+  anchor?: string;
+}
+
+function buildDocsQuery(themeName: string, target?: DocsOpenTarget): string {
+  const parts = [`theme=${encodeURIComponent(themeName)}`];
+  if (target?.page) parts.push(`page=${encodeURIComponent(target.page)}`);
+  if (target?.anchor) parts.push(`anchor=${encodeURIComponent(target.anchor)}`);
+  return parts.join('&');
+}
+
+function createDocsWindow(target?: DocsOpenTarget): void {
   if (docsWindow && !docsWindow.isDestroyed()) {
     docsWindow.focus();
+    if (target?.page || target?.anchor) {
+      docsWindow.webContents.send(IPC.DOCS_NAVIGATE, target);
+    }
     return;
   }
 
@@ -85,14 +100,14 @@ function createDocsWindow(): void {
     docsWindow?.show();
   });
 
-  const themeQuery = `theme=${encodeURIComponent(savedThemeName)}`;
+  const docsQuery = buildDocsQuery(savedThemeName, target);
   if (DOCS_WINDOW_VITE_DEV_SERVER_URL) {
     const sep = DOCS_WINDOW_VITE_DEV_SERVER_URL.includes('?') ? '&' : '?';
-    docsWindow.loadURL(`${DOCS_WINDOW_VITE_DEV_SERVER_URL}/docs-window.html${sep}${themeQuery}`);
+    docsWindow.loadURL(`${DOCS_WINDOW_VITE_DEV_SERVER_URL}/docs-window.html${sep}${docsQuery}`);
   } else {
     docsWindow.loadFile(
       path.join(__dirname, `../renderer/${DOCS_WINDOW_VITE_NAME}/docs-window.html`),
-      { search: themeQuery },
+      { search: docsQuery },
     );
   }
 
@@ -179,7 +194,7 @@ const createWindow = () => {
 
   registerIpcHandlers(mainWindow);
 
-  ipcMain.handle(IPC.DOCS_OPEN, () => createDocsWindow());
+  ipcMain.handle(IPC.DOCS_OPEN, (_e, target?: DocsOpenTarget) => createDocsWindow(target));
 
   // Pass the saved theme name to the renderer via the URL so the inline
   // boot loader can apply matching colors before any JS runs.

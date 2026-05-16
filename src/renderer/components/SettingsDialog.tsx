@@ -10,6 +10,7 @@ const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
 import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo, UsageExportFormat } from '../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 import { KeybindingsEditor } from './KeybindingsEditor';
+import { HelpAnchor } from './HelpAnchor';
 import type { KeybindingAction, Chord } from '../../shared/keybindings';
 
 /** CLI tools that have definable flags (exclude 'custom' which has no known flags). */
@@ -95,6 +96,26 @@ const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
   { id: 'integrations', label: 'Integrations' },
   { id: 'usage', label: 'Usage' },
 ];
+
+/** Per-section docs deep-link target, used by the (?) help icon. */
+const SECTION_HELP: Record<SettingsSection, { title: string; anchor: string }> = {
+  general:      { title: 'General',      anchor: 'general' },
+  terminal:     { title: 'Terminal',     anchor: 'terminal' },
+  sessions:     { title: 'Sessions',     anchor: 'sessions' },
+  shortcuts:    { title: 'Shortcuts',    anchor: 'shortcuts' },
+  integrations: { title: 'Integrations', anchor: 'integrations' },
+  usage:        { title: 'Usage',        anchor: 'usage' },
+};
+
+function SectionHeader({ section }: Readonly<{ section: SettingsSection }>) {
+  const meta = SECTION_HELP[section];
+  return (
+    <div className="settings-section-header">
+      <span className="settings-section-header-title">{meta.title}</span>
+      <HelpAnchor page="settings" anchor={meta.anchor} label={meta.title} />
+    </div>
+  );
+}
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -423,6 +444,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
           {activeSection === 'general' && (
             <>
+          <SectionHeader section="general" />
           <div className="form-group">
             <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Theme
@@ -515,6 +537,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
           {activeSection === 'terminal' && (
             <>
+          <SectionHeader section="terminal" />
           <div className="form-group">
             <label className="form-radio-label">
               <input
@@ -617,6 +640,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
           {activeSection === 'sessions' && (
             <>
+          <SectionHeader section="sessions" />
           <div className="form-group">
             <label className="form-radio-label">
               <input
@@ -907,6 +931,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
           )}
 
           {activeSection === 'shortcuts' && (
+            <>
+            <SectionHeader section="shortcuts" />
             <div className="form-group">
               <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
                 Keyboard Shortcuts
@@ -921,10 +947,12 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                 </button>
               </div>
             </div>
+            </>
           )}
 
           {activeSection === 'integrations' && (
             <>
+          <SectionHeader section="integrations" />
           {/* Git Providers */}
           <div className="form-group">
             <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
@@ -1307,6 +1335,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
           {activeSection === 'usage' && (
             <>
+          <SectionHeader section="usage" />
           {/* Quota display */}
           <div className="form-group">
             <label className="form-label settings-section-label" style={{ fontSize: 14, marginBottom: 8 }}>

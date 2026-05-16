@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
+import { HelpAnchor } from '../HelpAnchor';
 import { VaultPickerDialog } from '../VaultPickerDialog';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import type { EnvironmentType } from '../../../shared/types';
@@ -164,6 +165,12 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
       <div className="dialog" role="dialog" aria-modal="true" onKeyDown={handleKeyDown}>
         <div className="dialog-header">
           <span>{editing ? 'Edit Environment' : 'New Environment'}</span>
+          <HelpAnchor
+            page="environments"
+            anchor={type === 'ssh' ? 'ssh' : type === 'coder' ? 'coder' : 'local'}
+            label={type === 'ssh' ? 'SSH environments' : type === 'coder' ? 'Coder environments' : 'Local environment'}
+            className="dialog-header-help"
+          />
           <button className="dialog-close" onClick={onClose}>&times;</button>
         </div>
         <div className="dialog-body">

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
+import { HelpAnchor } from '../HelpAnchor';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, AdoProjectInfo, CoderWorkspace, CoderTemplate, CoderTemplateParam, CreateCoderWorkspaceOptions, CliToolId } from '../../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
@@ -908,6 +909,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       <div className={dialogClass} role="dialog" aria-modal="true" onKeyDown={handleKeyDown}>
         <div className="dialog-header">
           <span>New session</span>
+          <HelpAnchor page="sessions" anchor="creating-sessions" label="Creating sessions" className="dialog-header-help" />
           <button className="dialog-close" onClick={resetAndClose}>&times;</button>
         </div>
         <div className="dialog-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
