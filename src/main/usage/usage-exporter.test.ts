@@ -36,6 +36,8 @@ function makeUsageInfo(sessions: EnrichedSession[], overrides: Partial<UsageInfo
   return {
     sessions: map,
     daily: [],
+    byEnvironment: [],
+    byCliTool: [],
     totalCost,
     lastUpdated: '2026-05-09T10:00:00.000Z',
     ...overrides,

@@ -348,6 +348,23 @@ export interface EnvironmentUsage {
   totalTokens: number;
 }
 
+export interface CliToolUsage {
+  cliTool: CliToolId;
+  totalCost: number;
+  sessionCount: number;
+  totalTokens: number;
+}
+
+export interface DailyCliToolUsage {
+  cliTool: CliToolId;
+  totalCost: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  sessionCount: number;
+}
+
 export interface DailyUsage {
   date: string;
   inputTokens: number;
@@ -356,6 +373,11 @@ export interface DailyUsage {
   cacheReadTokens: number;
   totalCost: number;
   sessionCount: number;
+  /**
+   * Per-CLI-tool breakdown for this day. Optional for back-compat with any
+   * persisted UsageInfo snapshots that predate this field.
+   */
+  byCliTool?: DailyCliToolUsage[];
 }
 
 export interface UsageInfo {
@@ -363,6 +385,8 @@ export interface UsageInfo {
   daily: DailyUsage[];
   /** Per-environment cost rollup, sorted by totalCost desc. Includes the null-id "Unattributed" bucket if any. */
   byEnvironment: EnvironmentUsage[];
+  /** Per-CLI-tool cost rollup, sorted by totalCost desc. Every session has a cliTool, so no null bucket. */
+  byCliTool: CliToolUsage[];
   totalCost: number;
   lastUpdated: string | null;
 }

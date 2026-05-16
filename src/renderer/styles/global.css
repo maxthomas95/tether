@@ -450,6 +450,39 @@ textarea:focus-visible,
   margin-top: 3px;
 }
 
+.global-usage-row--breakdown {
+  height: auto;
+  min-height: 14px;
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.global-usage-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.global-usage-breakdown-item {
+  white-space: nowrap;
+}
+
+.global-usage-breakdown-name {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.global-usage-breakdown-sep {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
 .global-usage-label {
   font-size: var(--text-2xs);
   font-weight: 600;
@@ -2529,6 +2562,50 @@ body.tether-hide-cursor .xterm-cursor {
 
 .usage-history-row--empty td {
   color: var(--text-muted);
+}
+
+.usage-history-row--expandable {
+  cursor: pointer;
+}
+
+.usage-history-row--expandable:hover td {
+  background: var(--bg-hover);
+}
+
+.usage-history-row--expandable:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.usage-history-chevron {
+  display: inline-block;
+  width: 12px;
+  margin-right: 6px;
+  color: var(--text-muted);
+  font-size: 0.75em;
+  user-select: none;
+  transition: color var(--motion-base) var(--ease-out-quint);
+}
+
+.usage-history-row--open .usage-history-chevron {
+  color: var(--text-secondary);
+}
+
+.usage-history-period-label {
+  vertical-align: middle;
+}
+
+.usage-history-row--sub td {
+  color: var(--text-secondary);
+  font-size: 0.92em;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.usage-history-sub-label {
+  display: inline-block;
+  padding-left: 24px;
+  color: var(--text-secondary);
 }
 
 /* ── Reduced motion ────────────────────────────────────────────────

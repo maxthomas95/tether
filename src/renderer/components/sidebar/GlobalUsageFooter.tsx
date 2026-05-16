@@ -1,6 +1,8 @@
 import React from 'react';
 import { useUsage } from '../../hooks/useUsage';
-import type { DailyUsage, EnvironmentInfo, EnvironmentUsage } from '../../../shared/types';
+import type { CliToolUsage, DailyUsage, EnvironmentInfo, EnvironmentUsage } from '../../../shared/types';
+import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
+import type { CliToolId } from '../../../shared/cli-tools';
 
 function formatCost(cost: number): string {
   if (cost === 0) return '$0';
@@ -73,8 +75,55 @@ function formatEnvRow(row: EnvironmentUsage, envMap: Map<string, string>): strin
   return `  ${name.padEnd(16, ' ').slice(0, 16)} ${formatCost(row.totalCost).padStart(8, ' ')}  (${row.sessionCount} ${row.sessionCount === 1 ? 'session' : 'sessions'})`;
 }
 
+/** Resolve a CLI tool id to a human-friendly display name. */
+function cliToolName(id: CliToolId): string {
+  return CLI_TOOL_REGISTRY[id]?.displayName ?? id;
+}
+
+/** Format a single per-CLI-tool tooltip row. */
+function formatCliToolRow(row: CliToolUsage): string {
+  const name = cliToolName(row.cliTool);
+  const sessions = `${row.sessionCount} ${row.sessionCount === 1 ? 'session' : 'sessions'}`;
+  return `  ${name.padEnd(16, ' ').slice(0, 16)} ${formatCost(row.totalCost).padStart(8, ' ')}  (${sessions}, ${formatTokens(row.totalTokens)} tokens)`;
+}
+
+interface CliToolTodaySplit {
+  cliTool: CliToolId;
+  cost: number;
+  tokens: number;
+}
+
+/**
+ * Per-tool spend for "today" (UTC date matches `today`). We walk the raw
+ * session rows because the daily aggregate is collapsed across tools.
+ * Sessions with no `lastMessageAt` (never had activity) are skipped.
+ */
+function computeTodayByCliTool(
+  sessions: Record<string, import('../../../shared/types').SessionUsage>,
+  today: string,
+): CliToolTodaySplit[] {
+  const buckets = new Map<CliToolId, CliToolTodaySplit>();
+  for (const s of Object.values(sessions)) {
+    if (!s.lastMessageAt) continue;
+    if (s.lastMessageAt.slice(0, 10) !== today) continue;
+    let row = buckets.get(s.cliTool);
+    if (!row) {
+      row = { cliTool: s.cliTool, cost: 0, tokens: 0 };
+      buckets.set(s.cliTool, row);
+    }
+    row.cost += s.totalCost;
+    row.tokens += s.inputTokens + s.outputTokens + s.cacheCreationTokens + s.cacheReadTokens;
+  }
+  const out = Array.from(buckets.values());
+  out.sort((a, b) => {
+    if (a.cost !== b.cost) return b.cost - a.cost;
+    return a.cliTool.localeCompare(b.cliTool);
+  });
+  return out;
+}
+
 export function GlobalUsageFooter({ onOpenHistory, environments }: GlobalUsageFooterProps = {}) {
-  const { usage, enabled } = useUsage();
+  const { usage, enabled, cliToolBreakdownEnabled } = useUsage();
 
   if (!enabled || !usage) return null;
 
@@ -110,6 +159,27 @@ export function GlobalUsageFooter({ onOpenHistory, environments }: GlobalUsageFo
     if (envRows.length > ENV_MAX_ROWS) envLines.push(`  …and ${envRows.length - ENV_MAX_ROWS} more`);
   }
 
+  // Per-CLI-tool all-time breakdown. Mirrors the env section. Gated on the
+  // `cliToolBreakdownEnabled` setting (default off).
+  const cliToolRows = usage.byCliTool ?? [];
+  const CLI_MAX_ROWS = 6;
+  const cliToolLines: string[] = [];
+  if (cliToolBreakdownEnabled && cliToolRows.length > 0) {
+    cliToolLines.push('', 'By CLI tool (all-time):');
+    for (const r of cliToolRows.slice(0, CLI_MAX_ROWS)) cliToolLines.push(formatCliToolRow(r));
+    if (cliToolRows.length > CLI_MAX_ROWS) cliToolLines.push(`  …and ${cliToolRows.length - CLI_MAX_ROWS} more`);
+  }
+
+  // Today-by-CLI split. Derived from raw sessions (not the daily aggregate)
+  // because the daily rollup is collapsed across tools. Only surfaces when
+  // the per-tool breakdown setting is on AND 2+ tools had activity today.
+  const todayByCliTool = cliToolBreakdownEnabled
+    ? computeTodayByCliTool(usage.sessions, today)
+    : [];
+  const showTodayByCliTool =
+    cliToolBreakdownEnabled
+    && todayByCliTool.filter(r => r.cost > 0 || r.tokens > 0).length >= 2;
+
   const tooltip = [
     `Today:    ${formatCost(todayData.totalCost)}  (${todayData.sessionCount} sessions)`,
     `7 days:   ${formatCost(week.cost)}  (${week.sessions} sessions, ${formatTokens(week.tokens)} tokens)`,
@@ -119,6 +189,7 @@ export function GlobalUsageFooter({ onOpenHistory, environments }: GlobalUsageFo
     'Last 7 days:',
     dayList,
     ...envLines,
+    ...cliToolLines,
     '',
     '(API-equivalent cost — your subscription covers this usage)',
   ].join('\n');
@@ -137,6 +208,24 @@ export function GlobalUsageFooter({ onOpenHistory, environments }: GlobalUsageFo
         <span className="global-usage-label">Today</span>
         <span className="global-usage-value">{formatCost(todayData.totalCost)}</span>
       </div>
+      {showTodayByCliTool && (
+        <div className="global-usage-row global-usage-row--breakdown">
+          <span className="global-usage-breakdown">
+            {todayByCliTool.map((r, i) => (
+              <React.Fragment key={r.cliTool}>
+                {i > 0 && <span className="global-usage-breakdown-sep">·</span>}
+                <span className="global-usage-breakdown-item">
+                  <span className="global-usage-breakdown-name">{cliToolName(r.cliTool)}</span>
+                  {' '}
+                  {formatCost(r.cost)}
+                  {' · '}
+                  {formatTokens(r.tokens)}
+                </span>
+              </React.Fragment>
+            ))}
+          </span>
+        </div>
+      )}
       <div className="global-usage-row">
         <span className="global-usage-label">7d</span>
         <div className="global-usage-sparkline">

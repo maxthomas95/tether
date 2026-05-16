@@ -159,6 +159,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [quotaEnabled, setQuotaEnabled] = useState(true);
   const [usageStripEnabled, setUsageStripEnabled] = useState(true);
   const [globalUsageEnabled, setGlobalUsageEnabled] = useState(true);
+  const [cliToolBreakdownEnabled, setCliToolBreakdownEnabled] = useState(false);
   const [exportBusy, setExportBusy] = useState<UsageExportFormat | null>(null);
   const [exportStatus, setExportStatus] = useState<{ kind: 'ok' | 'error'; message: string } | null>(null);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
@@ -221,12 +222,13 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       window.electronAPI.config.get?.('quotaEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('usageStripEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('globalUsageEnabled')?.catch(() => null),
+      window.electronAPI.config.get?.('cliToolBreakdownEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('hideTerminalCursor')?.catch(() => null),
       window.electronAPI.config.get?.('allowHelm')?.catch(() => null),
       window.electronAPI.config.get?.('terminalFontSize')?.catch(() => null),
       window.electronAPI.config.get?.('terminalFontFamily')?.catch(() => null),
       window.electronAPI.config.get?.('uiFontFamily')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, hideCursor, helm, fontSize, fontFamily, uiFont]) => {
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, hideCursor, helm, fontSize, fontFamily, uiFont]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -241,6 +243,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       setQuotaEnabled(quota !== 'false');
       setUsageStripEnabled(usageStrip !== 'false');
       setGlobalUsageEnabled(globalUsage !== 'false');
+      setCliToolBreakdownEnabled(cliBreakdown === 'true');
       setHideTerminalCursor(hideCursor !== 'false');
       setAllowHelm(helm === 'true');
       const parsedFontSize = fontSize ? parseInt(fontSize, 10) : NaN;
@@ -277,6 +280,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     await window.electronAPI.quota.setEnabled(quotaEnabled);
     await window.electronAPI.config.set?.('usageStripEnabled', usageStripEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('globalUsageEnabled', globalUsageEnabled ? 'true' : 'false');
+    await window.electronAPI.config.set?.('cliToolBreakdownEnabled', cliToolBreakdownEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('hideTerminalCursor', hideTerminalCursor ? 'true' : 'false');
     await window.electronAPI.config.set?.('allowHelm', allowHelm ? 'true' : 'false');
     await window.electronAPI.config.set?.('terminalFontSize', String(terminalFontSize));
@@ -290,7 +294,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, hideTerminalCursor, allowHelm, terminalFontSize, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, allowHelm, terminalFontSize, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, onClose]);
 
   const handleExportUsage = async (format: UsageExportFormat) => {
     setExportBusy(format);
@@ -1418,6 +1422,18 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             </label>
             <p className="form-hint">
               Display today's total cost and a 7-day sparkline above the quota footer. Hover for a full breakdown including monthly and all-time totals.
+            </p>
+            <label className="form-radio-label" style={{ marginTop: 8 }}>
+              <input
+                type="checkbox"
+                checked={cliToolBreakdownEnabled}
+                onChange={e => setCliToolBreakdownEnabled(e.target.checked)}
+                disabled={!globalUsageEnabled}
+              />
+              Show per-CLI tool breakdown in usage footer
+            </label>
+            <p className="form-hint">
+              Splits today's spend by CLI tool (Claude, Codex, etc.) and adds a per-tool section to the footer tooltip.
             </p>
           </div>
 
