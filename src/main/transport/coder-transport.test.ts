@@ -70,8 +70,8 @@ describe('CoderTransport', () => {
       env: { TRICKY: "it's $weird" },
     }));
     const writes = ptyHarness.current!.write.mock.calls.map((c) => c[0]).join('');
-    // Each ' inside the value becomes '\''
-    expect(writes).toContain(`TRICKY='it'\\''s $weird'`);
+    // The whole NAME=value pair is one argv word to env(1).
+    expect(writes).toContain(`'TRICKY=it'\\''s $weird'`);
   });
 
   it('issues a guarded git clone when cloneUrl + subdir set, skipping if dir exists', async () => {
