@@ -314,10 +314,34 @@ textarea:focus-visible,
 }
 
 .shortcut-reserved {
+  position: relative;
   color: var(--status-waiting, #EAB308);
   cursor: help;
   font-size: var(--text-base);
   line-height: 1;
+  outline: none;
+}
+
+.shortcut-reserved:hover::after,
+.shortcut-reserved:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-3, var(--bg-sidebar));
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: nowrap;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: var(--shadow-dropdown, 0 4px 12px rgba(0, 0, 0, 0.4));
 }
 
 .shortcut-conflict {

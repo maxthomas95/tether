@@ -92,7 +92,12 @@ export function KeybindingsEditor({ bindings, onChange }: KeybindingsEditorProps
             <span className="shortcut-chord-cell">
               <kbd>{formatChord(chord)}</kbd>
               {reservedReason && (
-                <span className="shortcut-reserved" title={`Reserved: ${reservedReason}`} aria-label={`Reserved: ${reservedReason}`}>⚠</span>
+                <span
+                  className="shortcut-reserved"
+                  data-tooltip={`Reserved: ${reservedReason}`}
+                  aria-label={`Reserved: ${reservedReason}`}
+                  tabIndex={0}
+                >⚠</span>
               )}
             </span>
           ) : (
