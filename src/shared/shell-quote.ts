@@ -5,6 +5,8 @@
 
 export type ShellPlatform = 'win32' | 'posix';
 
+const POSIX_SINGLE_QUOTE_ESCAPE = String.raw`'\''`;
+
 function assertNoNul(value: string, label: string): void {
   if (value.includes('\0')) {
     throw new Error(`${label} cannot contain NUL bytes`);
@@ -16,7 +18,7 @@ export function quotePosixShellArg(value: string): string {
 
   let out = "'";
   for (const ch of value) {
-    out += ch === "'" ? "'\\''" : ch;
+    out += ch === "'" ? POSIX_SINGLE_QUOTE_ESCAPE : ch;
   }
   return out + "'";
 }

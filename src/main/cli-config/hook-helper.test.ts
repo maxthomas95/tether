@@ -145,8 +145,8 @@ describe('tether-cli-hook helper (end-to-end against the bridge)', () => {
     // Point the helper at a path that doesn't exist. Should time out quickly
     // (helper has a 1s cap) without faulting.
     const fakeSocket = process.platform === 'win32'
-      ? '\\\\.\\pipe\\tether-hooks-nonexistent-test'
-      : '/tmp/tether-hooks-nonexistent-test.sock';
+      ? String.raw`\\.\pipe\tether-hooks-nonexistent-test`
+      : path.join(process.cwd(), 'tether-hooks-nonexistent-test.sock');
     const result = await runHelper({
       socket: fakeSocket,
       token: 'irrelevant',
