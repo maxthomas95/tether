@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.5.0-beta.1] — 2026-05-16
+
+A big push toward 1.0. UX refresh phases 2 and 3 land (surface depth, motion pass, welcome-pane redesign, wordmark + knot active-session indicator). Keyboard shortcuts are now fully user-remappable. New broadcast input fans keystrokes across N panes; Alt+Arrow / Alt+Shift+Arrow drive pane focus and swap from the keyboard. Claude Notification/Stop hooks replace cadence-only waiting heuristics. Usage breaks down per CLI tool. Plus a refreshed setup wizard, configurable cursor and scrollback, and a hardened build chain with a clean audit posture.
+
+### New Features
+- **User-remappable keyboard shortcuts** — full rebind UI with reserved-chord warnings (#104)
+- **Broadcast input to N panes** — pane-header broadcast buttons fan keystrokes to every selected pane (#107)
+- **Keyboard-driven pane focus + swap** — Alt+Arrow focuses neighboring panes, Alt+Shift+Arrow swaps the focused pane's session with its neighbor (#100)
+- **Claude Notification/Stop hooks** — smarter waiting/idle detection via Claude Code hooks instead of cadence-only heuristics (#109)
+- **Per-CLI tool breakdown** in the global usage footer and history dialog (#112)
+- **Refreshed first-run setup wizard** (#111)
+- **Welcome pane redesign** — UX refresh phase 3 (#122)
+- **Tether wordmark and knot active-session indicator** (#120)
+- **User-configurable cursor shape and blink** (#119)
+- **User-configurable terminal scrollback buffer** (#118)
+- **Open data folder / open logs folder** buttons in settings (#117)
+- **UI/terminal font settings** backed by a new design-tokens layer (#98)
+- **Pane-location badge per session** plus defensive dead-pane recovery overlay with restart-in-place (#97)
+
+### Bug Fixes
+- **Ctrl/Cmd+Click required** to open terminal links — prevents accidental navigation from selection clicks (#99)
+- **Documentation window** now opens on the same monitor as the main window (#102)
+- **Layout cleanup** when splitting is disabled — orphan panes are pruned (#105)
+- **1.0 readiness hardening** — transport startup, TLS defaults, redaction, corrupt data recovery, navigation guards, status detector cleanup, ESLint restoration (#113)
+
+### Improvements
+- **UX refresh phase 2** — surface depth + motion pass across dialogs, sidebar, and pane chrome (#101)
+- **Refreshed in-app docs** with (?) deep-link icons across dialogs (#106)
+- **README refresh** for 1.0 framing (#108)
+
+### Security
+- **Forge build-chain low finding cleared** via `make-fetch-happen` 12.0.0 override (#124)
+- **Hardened 1.0 release build chain** — `vite` 6.x patched line, `tar` 7.x override, `tmp` 0.2.x override; runtime and dev audits both clean (#114)
+
+### Internal
+- Release script prefers `gh` auth token, falls back to PAT file (#96)
+- SSH transport startup handlers flattened (#123)
+- Sonar critical void findings handled (#121)
+- Hardcoded SSH host IP removed from tests (#115)
+- Package-lock version drift fix and roadmap sync (#110)
+- Copilot CLI cost tracking marked blocked on upstream (#103)
+- 1.0 release checklist added under `docs/` (#114)
+
+---
+
 ## [0.4.3-beta.4] — 2026-05-12
 
 Usage tracking goes deep this release: clickable footer expands into daily/weekly/monthly rollups, every dollar is now attributed per-environment, history is exportable as CSV/JSON, and Codex CLI costs are tracked from JSONL alongside Claude. Plus a settings dialog overhaul, a diagnostics export to help triage support issues, and a handful of layout/sidebar fixes.
