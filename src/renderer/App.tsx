@@ -54,7 +54,7 @@ import {
 } from '../shared/keybindings';
 import { getBroadcastSessionIds, pruneBroadcastPaneIds } from './lib/broadcast-targets';
 import type { MenuDef } from './components/MenuBar';
-import logoSrc from './assets/logo.png';
+import { WelcomePane } from './components/WelcomePane';
 
 export function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -108,6 +108,11 @@ export function App() {
   // faces may pack slightly tight or loose.
   const [uiFontFamily, setUiFontFamily] = useState<string>('');
   const [editingEnv, setEditingEnv] = useState<EnvironmentInfo | null>(null);
+  // Welcome-pane CTA preselection: when the user clicks a CTA, we either
+  // open NewSession with an env preselected, or open NewEnvironment with a
+  // type preselected. Cleared whenever the relevant dialog closes.
+  const [welcomeInitialEnvId, setWelcomeInitialEnvId] = useState<string | undefined>(undefined);
+  const [welcomeInitialEnvType, setWelcomeInitialEnvType] = useState<EnvironmentType | undefined>(undefined);
   const [envMenuOpenId, setEnvMenuOpenId] = useState<string | null>(null);
   const envMenuRef = useRef<HTMLDivElement>(null);
   const [keybindingOverrides, setKeybindingOverrides] = useState<KeybindingOverrides>({});
@@ -1124,6 +1129,33 @@ export function App() {
     setSessions(prev => prev.map(s => s.fontSize === undefined ? s : { ...s, fontSize: undefined }));
   }, []);
 
+  // Welcome-pane CTA handlers (adaptive: jump to NewSession if an env of the
+  // requested type already exists, else open NewEnvironment with the type
+  // preselected so the user sets it up first). See docs/UX_REFRESH.md §5.
+  const openWelcomeCta = useCallback((type: EnvironmentType) => {
+    const existing = environments.find(e => e.type === type);
+    if (existing) {
+      setWelcomeInitialEnvId(existing.id);
+      setWelcomeInitialEnvType(undefined);
+      setSessionDialogOpen(true);
+    } else {
+      setWelcomeInitialEnvId(undefined);
+      setWelcomeInitialEnvType(type);
+      setEditingEnv(null);
+      setEnvDialogOpen(true);
+    }
+  }, [environments]);
+  const handleWelcomeNewLocal = useCallback(() => openWelcomeCta('local'), [openWelcomeCta]);
+  const handleWelcomeConnectSsh = useCallback(() => openWelcomeCta('ssh'), [openWelcomeCta]);
+  const handleWelcomeOpenCoder = useCallback(() => openWelcomeCta('coder'), [openWelcomeCta]);
+  // Resume link: NewSessionDialog supports picking a transcript to resume
+  // during creation; that's the closest first-class entry point today.
+  const handleWelcomeResume = useCallback(() => {
+    setWelcomeInitialEnvId(undefined);
+    setWelcomeInitialEnvType(undefined);
+    setSessionDialogOpen(true);
+  }, []);
+
   // Keyboard shortcuts
   const shortcutActions = useMemo(() => ({
     onNewSession: () => setSessionDialogOpen(true),
@@ -1629,11 +1661,14 @@ export function App() {
           />
         ) : (
           <div className="terminal-container">
-            <div className="terminal-placeholder">
-              <img src={logoSrc} alt="Tether" className="welcome-logo" />
-              <p>Welcome to Tether</p>
-              <p className="terminal-placeholder-sub">Create a new session or drag one here to start</p>
-            </div>
+            <WelcomePane
+              environments={environments}
+              enableResumePicker={enableResumePicker}
+              onNewLocalSession={handleWelcomeNewLocal}
+              onConnectSsh={handleWelcomeConnectSsh}
+              onOpenCoder={handleWelcomeOpenCoder}
+              onResume={handleWelcomeResume}
+            />
           </div>
         )}
       </main>
@@ -1643,15 +1678,17 @@ export function App() {
         isOpen={sessionDialogOpen}
         environments={environments}
         profiles={profiles}
-        onClose={() => setSessionDialogOpen(false)}
+        initialEnvId={welcomeInitialEnvId}
+        onClose={() => { setSessionDialogOpen(false); setWelcomeInitialEnvId(undefined); }}
         onCreate={handleCreateSession}
       />
       <NewEnvironmentDialog
         isOpen={envDialogOpen}
-        onClose={() => { setEnvDialogOpen(false); setEditingEnv(null); }}
+        onClose={() => { setEnvDialogOpen(false); setEditingEnv(null); setWelcomeInitialEnvType(undefined); }}
         onCreate={handleCreateEnvironment}
         editing={editingEnv}
         onUpdate={handleUpdateEnvironment}
+        initialType={welcomeInitialEnvType}
       />
       <SettingsDialog
         isOpen={settingsOpen}

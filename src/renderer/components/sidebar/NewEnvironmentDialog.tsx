@@ -15,9 +15,11 @@ interface NewEnvironmentDialogProps {
   /** When set, the dialog opens in edit mode with pre-filled values. */
   editing?: { id: string; name: string; type: EnvironmentType; config: Record<string, unknown>; envVars: Record<string, string> } | null;
   onUpdate?: (id: string, name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => void;
+  /** Optional environment type to preselect on open (creation mode only). Used by welcome-pane CTAs. */
+  initialType?: EnvironmentType;
 }
 
-export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpdate }: NewEnvironmentDialogProps) {
+export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpdate, initialType }: NewEnvironmentDialogProps) {
   const [name, setName] = useState('');
   const [type, setType] = useState<EnvironmentType>('ssh');
   const [host, setHost] = useState('');
@@ -79,6 +81,13 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
     }).catch(() => setVaultConnected(false));
     window.electronAPI.vault.getConfig().then(c => { if (c.mount) setVaultMount(c.mount); }).catch(() => {});
   }, [isOpen]);
+
+  // Preselect environment type when caller (e.g. welcome pane) requests it.
+  // Honor only on open and only in creation mode — `editing` always wins.
+  useEffect(() => {
+    if (!isOpen || editing) return;
+    if (initialType) setType(initialType);
+  }, [isOpen, editing, initialType]);
 
   useEscapeKey(onClose, isOpen);
 

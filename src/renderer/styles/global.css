@@ -815,27 +815,204 @@ textarea:focus-visible,
   padding: var(--space-1);
 }
 
-.terminal-placeholder {
+/* ── Welcome / empty-state pane ────────────────────────────────────────
+ * Shown when the layout is empty. Tether-metaphor diagram + three CTAs
+ * replace the previous logo+text placeholder. See docs/UX_REFRESH.md §5.
+ */
+.welcome-pane {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: var(--space-6);
   height: 100%;
-  color: var(--text-secondary);
-  font-size: var(--text-lg);
-  gap: var(--space-2);
+  padding: var(--space-7) var(--space-6);
+  overflow-y: auto;
+  color: var(--text-primary);
 }
 
-.welcome-logo {
-  width: 80px;
-  height: 80px;
-  margin-bottom: var(--space-2);
-  opacity: 0.85;
+.welcome-pane__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
 }
 
-.terminal-placeholder-sub {
+.welcome-pane__title {
+  margin: 0;
+  font-family: var(--font-mono-ui);
+  font-size: var(--text-xl);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+
+.welcome-pane__subtitle {
+  margin: 0;
+  max-width: 44ch;
   font-size: var(--text-base);
   color: var(--text-muted);
+}
+
+.welcome-diagram {
+  width: 320px;
+  max-width: 100%;
+  height: 200px;
+  color: var(--accent);
+  margin-bottom: var(--space-2);
+}
+
+.welcome-diagram__lines {
+  opacity: 0.32;
+}
+
+.welcome-diagram__node circle {
+  fill: var(--bg-primary);
+  stroke: currentColor;
+  stroke-width: 1.25;
+  opacity: 0.9;
+}
+
+.welcome-diagram__node-label {
+  font-family: var(--font-mono-ui);
+  font-size: 11px;
+  font-weight: 600;
+  fill: currentColor;
+  letter-spacing: 0.02em;
+}
+
+.welcome-diagram__anchor {
+  opacity: 0.92;
+}
+
+.welcome-diagram__pulse {
+  opacity: 0;
+}
+.welcome-diagram__pulse--left {
+  animation: welcome-pulse-left 3.6s var(--ease-out-quint) infinite;
+  animation-delay: 0s;
+}
+.welcome-diagram__pulse--mid {
+  animation: welcome-pulse-mid 3.6s var(--ease-out-quint) infinite;
+  animation-delay: 1.2s;
+}
+.welcome-diagram__pulse--right {
+  animation: welcome-pulse-right 3.6s var(--ease-out-quint) infinite;
+  animation-delay: 2.4s;
+}
+
+@keyframes welcome-pulse-left {
+  0%   { opacity: 0; transform: translate(60px, 46px); }
+  10%  { opacity: 0.95; }
+  85%  { opacity: 0.95; }
+  100% { opacity: 0; transform: translate(160px, 148px); }
+}
+@keyframes welcome-pulse-mid {
+  0%   { opacity: 0; transform: translate(160px, 38px); }
+  10%  { opacity: 0.95; }
+  85%  { opacity: 0.95; }
+  100% { opacity: 0; transform: translate(160px, 148px); }
+}
+@keyframes welcome-pulse-right {
+  0%   { opacity: 0; transform: translate(260px, 46px); }
+  10%  { opacity: 0.95; }
+  85%  { opacity: 0.95; }
+  100% { opacity: 0; transform: translate(160px, 148px); }
+}
+
+.welcome-pane__cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 220px));
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 720px;
+}
+
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: var(--inner-highlight);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    transform var(--motion-fast) var(--ease-out-quint),
+    box-shadow var(--motion-fast) var(--ease-out-quint);
+}
+.welcome-card:hover {
+  background: var(--surface-3);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--inner-highlight), var(--shadow-dropdown);
+}
+.welcome-card:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--inner-highlight);
+}
+.welcome-card:active {
+  transform: translateY(0);
+}
+
+.welcome-card__kind {
+  font-family: var(--font-mono-ui);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.welcome-card__title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.welcome-card__desc {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.welcome-pane__resume-link {
+  background: none;
+  border: none;
+  padding: var(--space-1-5) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: var(--hover-transition);
+}
+.welcome-pane__resume-link:hover {
+  color: var(--accent);
+  background: var(--surface-2);
+}
+.welcome-pane__resume-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-diagram__pulse {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+  .welcome-card {
+    transition: var(--hover-transition);
+  }
+  .welcome-card:hover {
+    transform: none;
+  }
 }
 
 /* Repo sub-groups (auto-grouped by working directory) */
