@@ -145,6 +145,12 @@
   --surface-3: #e6e9ef;
   --surface-4: #e6e9ef;
 }
+:root[data-theme='tether'] {
+  --surface-1: #1f1c18;
+  --surface-2: #1c1915;
+  --surface-3: #181511;
+  --surface-4: #272320;
+}
 :root[data-theme='default-dark'] {
   --surface-1: #1e1e1e;
   --surface-2: #1b1b1b;
