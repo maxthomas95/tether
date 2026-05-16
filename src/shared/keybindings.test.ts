@@ -203,7 +203,8 @@ describe('findConflicts', () => {
     const conflicts = findConflicts(bindings);
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0].chord).toBe('ctrl+n');
-    expect(conflicts[0].actions.sort()).toEqual<KeybindingAction[]>(['session.new', 'session.stop'].sort() as KeybindingAction[]);
+    const cmp = (a: string, b: string) => a.localeCompare(b);
+    expect([...conflicts[0].actions].sort(cmp)).toEqual(['session.new', 'session.stop']);
   });
 
   it('ignores null (unbound) entries', () => {

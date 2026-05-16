@@ -239,7 +239,7 @@ export function normalizeChord(input: string): Chord {
   if (trimmed.length === 1) {
     parts = [trimmed];
   } else {
-    parts = trimmed.split(/\s*\+\s*/).filter(p => p.length > 0);
+    parts = trimmed.split('+').map(p => p.trim()).filter(p => p.length > 0);
     if (parts.length === 0) parts = [trimmed];
   }
 
@@ -328,14 +328,19 @@ export function resolveBindings(
 ): Record<KeybindingAction, Chord | null> {
   const result = {} as Record<KeybindingAction, Chord | null>;
   for (const action of ALL_ACTIONS) {
-    if (overrides && Object.prototype.hasOwnProperty.call(overrides, action)) {
-      const v = overrides[action];
-      result[action] = v === null ? null : (typeof v === 'string' ? v : DEFAULT_KEYBINDINGS[action]);
+    if (overrides && Object.hasOwn(overrides, action)) {
+      result[action] = resolveOverride(overrides[action], action);
     } else {
       result[action] = DEFAULT_KEYBINDINGS[action];
     }
   }
   return result;
+}
+
+function resolveOverride(value: Chord | null | undefined, action: KeybindingAction): Chord | null {
+  if (value === null) return null;
+  if (typeof value === 'string') return value;
+  return DEFAULT_KEYBINDINGS[action];
 }
 
 export function findConflicts(

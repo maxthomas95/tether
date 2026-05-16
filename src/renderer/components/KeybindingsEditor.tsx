@@ -25,7 +25,7 @@ function isPureUnmodifiedLetter(chord: Chord): boolean {
   return chord.length === 1 && /^[a-z0-9]$/i.test(chord);
 }
 
-export function KeybindingsEditor({ bindings, onChange }: KeybindingsEditorProps) {
+export function KeybindingsEditor({ bindings, onChange }: Readonly<KeybindingsEditorProps>) {
   const [recording, setRecording] = useState<KeybindingAction | null>(null);
 
   useEffect(() => {
@@ -49,8 +49,8 @@ export function KeybindingsEditor({ bindings, onChange }: KeybindingsEditorProps
       setRecording(null);
     };
 
-    window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
+    globalThis.addEventListener('keydown', handler, true);
+    return () => globalThis.removeEventListener('keydown', handler, true);
   }, [recording, onChange]);
 
   const conflicts = useMemo(() => findConflicts(bindings), [bindings]);
@@ -82,27 +82,33 @@ export function KeybindingsEditor({ bindings, onChange }: KeybindingsEditorProps
     const conflictWith = conflictByAction.get(action);
     const reservedReason = getReservedReason(chord);
 
+    const renderChord = () => {
+      if (isRecording) {
+        return <span className="shortcut-recording">Press a key… (Esc to cancel)</span>;
+      }
+      if (chord) {
+        return (
+          <span className="shortcut-chord-cell">
+            <kbd>{formatChord(chord)}</kbd>
+            {reservedReason && (
+              <button
+                type="button"
+                className="shortcut-reserved"
+                data-tooltip={`Reserved: ${reservedReason}`}
+                aria-label={`Reserved: ${reservedReason}`}
+              >⚠</button>
+            )}
+          </span>
+        );
+      }
+      return <span className="shortcut-unbound">— unbound —</span>;
+    };
+
     return (
       <tr key={action}>
         <td className="shortcuts-action">{ACTION_LABELS[action]}</td>
         <td className="shortcuts-key">
-          {isRecording ? (
-            <span className="shortcut-recording">Press a key… (Esc to cancel)</span>
-          ) : chord ? (
-            <span className="shortcut-chord-cell">
-              <kbd>{formatChord(chord)}</kbd>
-              {reservedReason && (
-                <span
-                  className="shortcut-reserved"
-                  data-tooltip={`Reserved: ${reservedReason}`}
-                  aria-label={`Reserved: ${reservedReason}`}
-                  tabIndex={0}
-                >⚠</span>
-              )}
-            </span>
-          ) : (
-            <span className="shortcut-unbound">— unbound —</span>
-          )}
+          {renderChord()}
           {conflictWith && conflictWith.length > 0 && !isRecording && (
             <div className="shortcut-conflict">
               Conflicts with: {conflictWith.map(a => ACTION_LABELS[a]).join(', ')}

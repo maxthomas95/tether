@@ -107,7 +107,7 @@ interface SettingsDialogProps {
   onKeybindingsResetAll: () => void;
 }
 
-export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, onResetSessionFontSizes, keybindings, onKeybindingChange, onKeybindingsResetAll }: SettingsDialogProps) {
+export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, onResetSessionFontSizes, keybindings, onKeybindingChange, onKeybindingsResetAll }: Readonly<SettingsDialogProps>) {
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [cliFlagsPerTool, setCliFlagsPerTool] = useState<Partial<Record<CliToolId, string[]>>>({});
   const [flagTool, setFlagTool] = useState<CliToolId>('claude');
@@ -907,22 +907,20 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
           )}
 
           {activeSection === 'shortcuts' && (
-            <>
-          <div className="form-group">
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
-              Keyboard Shortcuts
-            </label>
-            <p className="form-hint" style={{ marginBottom: 12 }}>
-              Click <strong>Record</strong> on a row to capture a new chord, then press the key combination. Esc cancels. Reserved chords (⚠) still bind but may conflict with terminal or OS behavior.
-            </p>
-            <KeybindingsEditor bindings={keybindings} onChange={onKeybindingChange} />
-            <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="form-btn" onClick={onKeybindingsResetAll} type="button">
-                Reset all to defaults
-              </button>
+            <div className="form-group">
+              <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+                Keyboard Shortcuts
+              </div>
+              <p className="form-hint" style={{ marginBottom: 12 }}>
+                Click <strong>Record</strong> on a row to capture a new chord, then press the key combination. Esc cancels. Reserved chords (⚠) still bind but may conflict with terminal or OS behavior.
+              </p>
+              <KeybindingsEditor bindings={keybindings} onChange={onKeybindingChange} />
+              <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                <button className="form-btn" onClick={onKeybindingsResetAll} type="button">
+                  Reset all to defaults
+                </button>
+              </div>
             </div>
-          </div>
-            </>
           )}
 
           {activeSection === 'integrations' && (

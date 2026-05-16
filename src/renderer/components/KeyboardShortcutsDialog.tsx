@@ -10,7 +10,7 @@ interface KeyboardShortcutsDialogProps {
   onResetAll: () => void;
 }
 
-export function KeyboardShortcutsDialog({ isOpen, onClose, bindings, onChange, onResetAll }: KeyboardShortcutsDialogProps) {
+export function KeyboardShortcutsDialog({ isOpen, onClose, bindings, onChange, onResetAll }: Readonly<KeyboardShortcutsDialogProps>) {
   if (!isOpen) return null;
 
   return (
