@@ -1,4 +1,5 @@
 import type { EnvironmentInfo } from '../../shared/types';
+import logoUrl from '../assets/logo.png';
 
 interface WelcomePaneProps {
   environments: EnvironmentInfo[];
@@ -104,9 +105,27 @@ function WelcomeDiagram() {
       <Node cx={160} cy={38} label="S" />
       <Node cx={260} cy={46} label="C" />
 
-      {/* Central anchor — the tether */}
-      <Anchor cx={160} cy={148} />
+      {/* Central logo — the tether */}
+      <Logo cx={160} cy={148} />
     </svg>
+  );
+}
+
+function Logo({ cx, cy }: { cx: number; cy: number }) {
+  // Tether mark — the gradient PNG drops in here as the focal point.
+  // Sized ~44 units against the 320×200 viewBox so it has presence
+  // against the monochrome nodes/lines.
+  const size = 44;
+  return (
+    <image
+      className="welcome-diagram__logo"
+      href={logoUrl}
+      x={cx - size / 2}
+      y={cy - size / 2}
+      width={size}
+      height={size}
+      preserveAspectRatio="xMidYMid meet"
+    />
   );
 }
 
@@ -121,29 +140,3 @@ function Node({ cx, cy, label }: { cx: number; cy: number; label: string }) {
   );
 }
 
-function Anchor({ cx, cy }: { cx: number; cy: number }) {
-  // Maritime anchor outline — top ring, vertical shank, curved flukes.
-  // Sized to ~28px tall against the 320×200 viewBox.
-  return (
-    <g
-      className="welcome-diagram__anchor"
-      transform={`translate(${cx} ${cy})`}
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      fill="none"
-    >
-      {/* Top ring */}
-      <circle cx="0" cy="-14" r="3.5" />
-      {/* Crossbar (stock) */}
-      <line x1="-7" y1="-7" x2="7" y2="-7" />
-      {/* Shank */}
-      <line x1="0" y1="-10.5" x2="0" y2="9" />
-      {/* Curved flukes */}
-      <path d="M -10 6 Q -10 14 0 14 Q 10 14 10 6" />
-      {/* Center grounding dot */}
-      <circle cx="0" cy="9" r="1.4" fill="currentColor" stroke="none" />
-    </g>
-  );
-}
