@@ -34,6 +34,19 @@ Grab the latest release from [GitHub Releases](https://github.com/maxthomas95/te
 
 > Windows only for now. Linux and macOS support planned.
 
+## What's new
+
+We're in the **1.0 polish push**. Recent releases (0.4.x) tightened the daily-driver UX rather than adding new surface area:
+
+- **Customizable keyboard shortcuts** — every binding is remappable in Settings, with a reserved-chord warn list for conflicts
+- **Pane keyboard navigation** — `Alt+Arrow` to focus a neighboring pane, `Alt+Shift+Arrow` to swap; in-pane recovery overlay when a session dies
+- **Daily-driver UX** — drag-reorder sessions, bulk group actions, ctrl-click URLs, `Ctrl+scroll` per-pane font, `Ctrl+=/-` window zoom
+- **Repo bootstrapping** — start a new project end-to-end from New Session: create a folder, `git init`, and provision an empty repo on GitHub / Gitea / Azure DevOps
+- **Usage history** — clickable global footer expands into Daily / Weekly / Monthly rollups with per-environment attribution and CSV / JSON export
+- **In-app documentation** — refreshed `src/docs/*.md` pages with `(?)` deep-link icons in dialogs that jump straight to the relevant section
+
+See the [Changelog](CHANGELOG.md) for the full release history and the [Roadmap](ROADMAP.md) for what's still on the way to 1.0.
+
 ## Why?
 
 Agent CLIs are powerful, but managing multiple sessions across environments is painful:
@@ -47,31 +60,60 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 
 ## Features
 
-- **Multiple concurrent sessions** with instant switching
-- **Split panes** (experimental) — view multiple sessions side-by-side; drag panes between drop zones to rearrange layouts
-- **Local, SSH, and Coder environments** — node-pty locally, ssh2 for remote, Coder REST API for workspaces
+### Sessions
+
+- **Multiple concurrent sessions** with instant switching — click in the sidebar, or `Ctrl+1`–`Ctrl+9`
+- **Session grouping** by environment and working directory; collapsible groups, **drag-reorder** inside a group
+- **Bulk group actions** — Kill all / Restart all / Clear all per repo group from a right-click menu
+- **Split panes** *(experimental)* — drag from the sidebar into drop zones to view sessions side-by-side; keyboard-driven focus (`Alt+Arrow`) and swap (`Alt+Shift+Arrow`); in-pane recovery overlay when a session dies
+- **Status indicators** — green (running), amber (waiting), gray (idle), red (dead) — passive PTY tap, no ANSI parsing
+- **Workspace persistence** — sessions save on quit and restore on launch; writes are atomic (tmp → fsync → rename)
+- **Resume previous chats** — pick up a prior Claude Code, Codex CLI, OpenCode, or Copilot CLI transcript on session create
 - **First-run Setup Wizard** — guided configuration for your first environment and CLI tool
-- **SSH host key verification** — TOFU pinning on first connect, managed known-hosts in settings
-- **Status indicators** — green (running), amber (waiting), gray (idle), red (dead)
-- **Session grouping** — auto-grouped by working directory, collapsible
-- **Environment management** — preconfigured environments with per-env settings
-- **Env var cascade** — app defaults &rarr; environment &rarr; session overrides, with presets for common Claude Code and Codex CLI vars
-- **Vault integration** — store env vars as `vault://` references; KV v2 with token or OIDC auth, sidebar status pill, and a tree-view picker for browsing existing secrets
-- **Tether-managed worktrees** — create a git worktree at session start, with optional cleanup on session removal
-- **Repo browse + clone-on-session-start** — browse Azure DevOps and Gitea repos and clone them as part of session creation
-- **Helm** (alpha, opt-in, personal-experimental) — designate a Claude Code session as "helm" so it can dispatch pre-briefed child sessions through the `tether-helm` MCP, including spawning Coder workspaces. Built primarily for the author's own dispatch workflow; off by default behind a two-level gate, not on the 1.0 roadmap
-- **CLI flag management** — app-wide, per-profile, and per-session flags scoped by CLI tool
-- **Usage tracking** (experimental) — optional quota and cost views in the sidebar and per-session panes
-- **Other CLI tools** — also supports Codex CLI, GitHub Copilot CLI, OpenCode, and custom binaries (see below)
-- **Workspace persistence** — sessions save on quit, restore on launch
-- **Resume previous chats** — pick up where Claude Code or Codex CLI left off
-- **Auto-update** — checks GitHub Releases and notifies on new versions
-- **Catppuccin themes** — Mocha, Macchiato, Frappe, Latte, plus Default Dark
-- **Keyboard shortcuts** — `Ctrl+N` new, `Ctrl+1-9` switch, `Ctrl+B` toggle sidebar, `Ctrl+W` stop
+
+### Environments
+
+- **Local, SSH, and Coder** — `node-pty` locally, `ssh2` for remote, Coder REST + `coder ssh` PTY for workspaces (including creating new workspaces from templates with parameter forms and live build progress)
+- **SSH host key verification** — TOFU pinning on first connect, managed known-hosts in Settings
+- **Env var cascade** — app defaults → environment → launch profile → session overrides, with presets for common Claude / Codex / Copilot vars
+- **Launch profiles** — named env-var + CLI-flag presets for quick-switching between configurations
+- **CLI flag management** — scoped per CLI tool (Claude, Codex, OpenCode, Copilot, Custom)
+
+### Repo bootstrapping
+
+- **Browse + clone** from GitHub, Azure DevOps, and Gitea inside the New Session dialog
+- **New folder mode** — create an empty folder under your repos root, optionally `git init` and provision a matching empty remote on GitHub / ADO / Gitea, all in one dialog
+- **Tether-managed worktrees** — create a git worktree at session start with optional cleanup on session removal
+
+### Cost & quota
+
+- **Usage tracking** for Claude Code, Codex CLI, and OpenCode — per-session and global, computed from the CLI's own transcripts using a vendored [LiteLLM](https://github.com/BerriAI/litellm) pricing table
+- **Usage history dialog** — Daily / Weekly / Monthly rollups with per-environment cost attribution
+- **CSV / JSON export** of usage history for offline analysis
+- **Subscription quota tracking** *(optional)* — surface your Anthropic / OpenAI quota in the sidebar footer
+
+### Secrets
+
+- **Vault integration** — store env vars as `vault://` references resolved at session start; KV v2 with token or OIDC auth, sidebar status pill with expiry warnings, and a tree-view picker for browsing existing secrets
+- **Plaintext → Vault migration** — Settings has a one-click sweep that copies plaintext env-var values into Vault and rewrites the local config to references
+
+### Interface
+
+- **Customizable keyboard shortcuts** — every binding remappable in Settings, with a reserved-chord warn list for conflicts like `Ctrl+C`
+- **Window zoom** — `Ctrl+=` / `Ctrl+-` / `Ctrl+0` zoom UI + terminal together; `Ctrl+scroll` resizes just one pane's terminal font
+- **Clickable URLs** — `Ctrl+click` any printed link to open in the system browser
+- **In-app documentation** with `(?)` deep-link icons that jump from dialogs straight to the relevant docs section
+- **Catppuccin themes** — Mocha, Macchiato, Frappe, Latte, plus Default Dark — applied everywhere including the title bar and docs window
+
+### Operations
+
+- **Auto-update** — polls GitHub Releases and notifies on new versions; toggle off in Settings if you're on a locked-down network
+- **Diagnostics export** — one-click bundle of scrubbed `data.json` (SSH passwords, tokens, sensitive env-var values redacted) plus rotated logs, for triaging support issues
+- **Helm** *(opt-in, personal-experimental)* — designate a session as "helm" so it can dispatch pre-briefed child sessions through the `tether-helm` MCP, including spawning Coder workspaces. Off by default behind a two-level gate. Not on the 1.0 roadmap.
 
 > Features marked **experimental** are already useful, but may still have bugs, rough edges, or missing behavior. We label them clearly and keep iterating until they are stable.
 
-### Other CLI tools
+### Supported CLI tools
 
 Tether is a dumb-pipe PTY multiplexer for interactive coding CLIs. You can select a CLI tool per session:
 
@@ -126,13 +168,16 @@ The auto-update check and pricing refresh are the only "always-on" outbound call
 
 ## Documentation
 
+User-facing docs ship inside Tether — open the Documentation window from the View menu, or click any `(?)` icon in a dialog to deep-link straight to the relevant section. Source markdown is in [`src/docs/`](src/docs/) (Getting Started, Sessions, Environments, Vault, Git Providers, Usage & Quota, Helm, Keyboard Shortcuts, Settings).
+
+Contributor / design docs:
+
 | | |
 |---|---|
 | [Architecture](docs/ARCHITECTURE.md) | System design, component diagram, IPC, data schema |
 | [Transport Design](docs/TRANSPORT_DESIGN.md) | Transport interface, Local/SSH adapter specs, data flow |
 | [UI Design](docs/UI_DESIGN.md) | Layout, sidebar, terminal panel, interaction model |
 | [Product Spec](docs/PRODUCT_SPEC.md) | Vision, user stories, feature requirements |
-| [MVP Scope](docs/MVP_SCOPE.md) | Original MVP definition and milestones |
 | [Roadmap](ROADMAP.md) | Pre-1.0 polish plan and post-1.0 plans |
 | [Changelog](CHANGELOG.md) | Release history |
 
