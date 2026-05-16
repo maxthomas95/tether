@@ -452,6 +452,14 @@ export interface DiagnosticsExportResult {
   error?: string;
 }
 
+export interface OpenFolderResult {
+  ok: boolean;
+  /** Absolute path of the folder that was opened (or attempted) — useful for showing in the UI. */
+  path?: string;
+  /** Error string returned by `shell.openPath` when ok is false. */
+  error?: string;
+}
+
 export interface CreateEnvironmentOptions {
   name: string;
   type: EnvironmentType;
@@ -616,6 +624,10 @@ export interface TetherAPI {
   diagnostics: {
     /** Open a save dialog and write a scrubbed bundle of data.json + logs to the chosen path. */
     export(): Promise<DiagnosticsExportResult>;
+    /** Reveal the user data folder (where `data.json` and other config live) in the OS file manager. */
+    openUserDataFolder(): Promise<OpenFolderResult>;
+    /** Reveal the Electron logs folder in the OS file manager. */
+    openLogsFolder(): Promise<OpenFolderResult>;
   };
   keybindings: {
     get(): Promise<KeybindingOverrides>;
