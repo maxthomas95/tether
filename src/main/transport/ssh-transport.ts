@@ -26,6 +26,8 @@ const lastNonEmptyLine = (text: string): string =>
   text.split('\n').filter(l => l.trim()).pop()?.trim() || '';
 
 type SetupState = 'waitShell' | 'waitPassword' | 'waitElevated' | 'waitEchoOff';
+type SshClient = InstanceType<typeof import('ssh2').Client>;
+type SshConnectConfig = Parameters<SshClient['connect']>[0];
 
 interface SshSessionSetupOptions {
   stream: NodeJS.ReadWriteStream;
@@ -151,7 +153,7 @@ class SshSessionSetup {
 }
 
 export class SSHTransport implements SessionTransport {
-  private client: InstanceType<typeof import('ssh2').Client> | null = null;
+  private client: SshClient | null = null;
   private stream: NodeJS.ReadWriteStream | null = null;
   private dataCallbacks: Array<(data: string) => void> = [];
   private exitCallbacks: Array<(info: TransportExitInfo) => void> = [];
@@ -171,152 +173,206 @@ export class SSHTransport implements SessionTransport {
 
   async start(options: TransportStartOptions): Promise<void> {
     const { Client } = loadSsh2();
-    const fs = require('node:fs');
 
     this.client = new Client();
 
     log.info('Connecting SSH', { host: this.sshConfig.host, port: this.sshConfig.port, username: this.sshConfig.username });
     return new Promise<void>((resolve, reject) => {
-      const connectConfig: Record<string, unknown> = {
-        host: this.sshConfig.host,
-        port: this.sshConfig.port || 22,
-        username: this.sshConfig.username,
-        keepaliveInterval: 10000,
-        keepaliveCountMax: 3,
-        readyTimeout: 15000,
-        hostHash: 'sha256',
-        hostVerifier: (key: string | Buffer, callback: (accept: boolean) => void) => {
-          // With hostHash set, ssh2 hands us a hex string. Normalize to lowercase
-          // so we compare deterministically with stored hashes.
-          const keyHash = (typeof key === 'string' ? key : key.toString('hex')).toLowerCase();
-          verifyHost(this.sshConfig.host, this.sshConfig.port || 22, keyHash, this.sshConfig.username)
-            .then((result) => {
-              if (!result.trust && result.reason) {
-                this.verifyError = result.reason;
-              }
-              callback(result.trust);
-            })
-            .catch((err: Error) => {
-              this.verifyError = err.message || 'Host key verification failed';
-              callback(false);
-            });
-        },
-      };
-
-      // Authentication: agent, private key, or password
-      if (this.sshConfig.useAgent) {
-        // Windows OpenSSH agent
-        connectConfig.agent = process.env.SSH_AUTH_SOCK || '\\\\.\\pipe\\openssh-ssh-agent';
-      } else if (this.sshConfig.privateKeyPath) {
-        try {
-          connectConfig.privateKey = fs.readFileSync(this.sshConfig.privateKeyPath);
-        } catch {
-          reject(new Error(`Failed to read SSH key: ${this.sshConfig.privateKeyPath}`));
-          return;
-        }
-      } else if (this.sshConfig.password) {
-        connectConfig.password = this.sshConfig.password;
+      let connectConfig: SshConnectConfig;
+      try {
+        connectConfig = this.buildConnectConfig();
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(String(err)));
+        return;
       }
 
-      this.client!.on('ready', () => {
-        this.client!.shell(
-          {
-            term: 'xterm-256color',
-            cols: options.cols,
-            rows: options.rows,
-          } as Record<string, unknown>,
-          (err: Error | undefined, stream: NodeJS.ReadWriteStream) => {
-            if (err) {
-              reject(err);
-              return;
-            }
-
-            this.stream = stream;
-            this._connected = true;
-
-            // Build the command as argv/env tokens rather than shell text.
-            // The PTY still receives one shell line, but user-controlled values
-            // are quoted before they cross that boundary.
-            let cmd: string;
-            try {
-              const envParts = buildEnvAssignments(options.env);
-              const cliCmd = buildRemoteCliCommand(options);
-              const launchCmd = envParts.length > 0
-                ? `env ${envParts.join(' ')} ${cliCmd}`
-                : cliCmd;
-              cmd = `cd ${quoteRemotePath(options.workingDir)} && ${launchCmd}\n`;
-            } catch (buildErr) {
-              this._connected = false;
-              this.stream = null;
-              (stream as NodeJS.ReadWriteStream & { destroy?: () => void }).destroy?.();
-              this.client?.end();
-              reject(buildErr instanceof Error ? buildErr : new Error(String(buildErr)));
-              return;
-            }
-
-            // Wire up data flow. Use StringDecoder so multi-byte UTF-8 glyphs
-            // (TUI box-drawing, spinners, emoji) that straddle SSH packet
-            // boundaries don't decode to U+FFFD and corrupt cursor math.
-            const decoder = new StringDecoder('utf8');
-            stream.on('data', (data: Buffer) => {
-              const str = decoder.write(data);
-              if (!str) return;
-              for (const cb of this.dataCallbacks) {
-                cb(str);
-              }
-            });
-
-            stream.on('close', () => {
-              this._connected = false;
-              this.stream = null;
-              const info: TransportExitInfo = { exitCode: 0 };
-              for (const cb of this.exitCallbacks) {
-                cb(info);
-              }
-            });
-
-            const setup = new SshSessionSetup({
-              stream,
-              cmd,
-              useSudo: this.sshConfig.useSudo === true,
-              password: this.sshConfig.password,
-              host: this.sshConfig.host,
-              resolve,
-              reject,
-            });
-            stream.on('data', (data: Buffer) => setup.handleData(data));
-          },
-        );
-      });
-
-      this.client!.on('error', (err: Error) => {
-        // If we already captured a clearer reason in the host verifier,
-        // surface that to the user instead of the generic ssh2 error.
-        const message = this.verifyError || err.message;
-        log.error('SSH connection error', { host: this.sshConfig.host, error: message });
-        this._connected = false;
-        if (this.stream) {
-          const info: TransportExitInfo = { exitCode: 1, signal: message };
-          for (const cb of this.exitCallbacks) {
-            cb(info);
-          }
-        } else {
-          reject(new Error(message));
-        }
-      });
-
-      this.client!.on('close', () => {
-        if (this._connected) {
-          this._connected = false;
-          const info: TransportExitInfo = { exitCode: 1, signal: 'SSH connection closed' };
-          for (const cb of this.exitCallbacks) {
-            cb(info);
-          }
-        }
-      });
-
-      this.client!.connect(connectConfig as Parameters<InstanceType<typeof import('ssh2').Client>['connect']>[0]);
+      this.client!.on('ready', () => this.openShell(options, resolve, reject));
+      this.client!.on('error', (err: Error) => this.handleClientError(err, reject));
+      this.client!.on('close', () => this.handleClientClose());
+      this.client!.connect(connectConfig);
     });
+  }
+
+  private buildConnectConfig(): SshConnectConfig {
+    const fs = require('node:fs');
+    const connectConfig: Record<string, unknown> = {
+      host: this.sshConfig.host,
+      port: this.sshConfig.port || 22,
+      username: this.sshConfig.username,
+      keepaliveInterval: 10000,
+      keepaliveCountMax: 3,
+      readyTimeout: 15000,
+      hostHash: 'sha256',
+      hostVerifier: (key: string | Buffer, callback: (accept: boolean) => void) => this.verifyHostKey(key, callback),
+    };
+
+    this.applyAuthentication(connectConfig, fs);
+    return connectConfig as SshConnectConfig;
+  }
+
+  private verifyHostKey(key: string | Buffer, callback: (accept: boolean) => void): void {
+    // With hostHash set, ssh2 hands us a hex string. Normalize to lowercase
+    // so we compare deterministically with stored hashes.
+    const keyHash = (typeof key === 'string' ? key : key.toString('hex')).toLowerCase();
+    verifyHost(this.sshConfig.host, this.sshConfig.port || 22, keyHash, this.sshConfig.username)
+      .then((result) => {
+        if (!result.trust && result.reason) {
+          this.verifyError = result.reason;
+        }
+        callback(result.trust);
+      })
+      .catch((err: Error) => {
+        this.verifyError = err.message || 'Host key verification failed';
+        callback(false);
+      });
+  }
+
+  private applyAuthentication(connectConfig: Record<string, unknown>, fs: typeof import('node:fs')): void {
+    if (this.sshConfig.useAgent) {
+      // Windows OpenSSH agent
+      connectConfig.agent = process.env.SSH_AUTH_SOCK || '\\\\.\\pipe\\openssh-ssh-agent';
+    } else if (this.sshConfig.privateKeyPath) {
+      try {
+        connectConfig.privateKey = fs.readFileSync(this.sshConfig.privateKeyPath);
+      } catch {
+        throw new Error(`Failed to read SSH key: ${this.sshConfig.privateKeyPath}`);
+      }
+    } else if (this.sshConfig.password) {
+      connectConfig.password = this.sshConfig.password;
+    }
+  }
+
+  private openShell(
+    options: TransportStartOptions,
+    resolve: () => void,
+    reject: (err: Error) => void,
+  ): void {
+    this.client!.shell(
+      {
+        term: 'xterm-256color',
+        cols: options.cols,
+        rows: options.rows,
+      } as Record<string, unknown>,
+      (err: Error | undefined, stream: NodeJS.ReadWriteStream) => {
+        this.handleShellResult(err, stream, options, resolve, reject);
+      },
+    );
+  }
+
+  private handleShellResult(
+    err: Error | undefined,
+    stream: NodeJS.ReadWriteStream,
+    options: TransportStartOptions,
+    resolve: () => void,
+    reject: (err: Error) => void,
+  ): void {
+    if (err) {
+      reject(err);
+      return;
+    }
+
+    this.stream = stream;
+    this._connected = true;
+
+    let cmd: string;
+    try {
+      cmd = this.buildLaunchCommand(options);
+    } catch (buildErr) {
+      this.failShellStartup(stream, buildErr, reject);
+      return;
+    }
+
+    this.attachStreamHandlers(stream);
+    this.attachSessionSetup(stream, cmd, resolve, reject);
+  }
+
+  private buildLaunchCommand(options: TransportStartOptions): string {
+    // Build the command as argv/env tokens rather than shell text.
+    // The PTY still receives one shell line, but user-controlled values
+    // are quoted before they cross that boundary.
+    const envParts = buildEnvAssignments(options.env);
+    const cliCmd = buildRemoteCliCommand(options);
+    const launchCmd = envParts.length > 0
+      ? `env ${envParts.join(' ')} ${cliCmd}`
+      : cliCmd;
+    return `cd ${quoteRemotePath(options.workingDir)} && ${launchCmd}\n`;
+  }
+
+  private failShellStartup(
+    stream: NodeJS.ReadWriteStream,
+    buildErr: unknown,
+    reject: (err: Error) => void,
+  ): void {
+    this._connected = false;
+    this.stream = null;
+    (stream as NodeJS.ReadWriteStream & { destroy?: () => void }).destroy?.();
+    this.client?.end();
+    reject(buildErr instanceof Error ? buildErr : new Error(String(buildErr)));
+  }
+
+  private attachStreamHandlers(stream: NodeJS.ReadWriteStream): void {
+    // Use StringDecoder so multi-byte UTF-8 glyphs that straddle SSH packet
+    // boundaries don't decode to U+FFFD and corrupt cursor math.
+    const decoder = new StringDecoder('utf8');
+    stream.on('data', (data: Buffer) => this.forwardDecodedData(decoder, data));
+    stream.on('close', () => this.handleStreamClose());
+  }
+
+  private forwardDecodedData(decoder: StringDecoder, data: Buffer): void {
+    const str = decoder.write(data);
+    if (!str) return;
+    for (const cb of this.dataCallbacks) {
+      cb(str);
+    }
+  }
+
+  private handleStreamClose(): void {
+    this._connected = false;
+    this.stream = null;
+    this.emitExit({ exitCode: 0 });
+  }
+
+  private attachSessionSetup(
+    stream: NodeJS.ReadWriteStream,
+    cmd: string,
+    resolve: () => void,
+    reject: (err: Error) => void,
+  ): void {
+    const setup = new SshSessionSetup({
+      stream,
+      cmd,
+      useSudo: this.sshConfig.useSudo === true,
+      password: this.sshConfig.password,
+      host: this.sshConfig.host,
+      resolve,
+      reject,
+    });
+    stream.on('data', (data: Buffer) => setup.handleData(data));
+  }
+
+  private handleClientError(err: Error, reject: (err: Error) => void): void {
+    // If we already captured a clearer reason in the host verifier,
+    // surface that to the user instead of the generic ssh2 error.
+    const message = this.verifyError || err.message;
+    log.error('SSH connection error', { host: this.sshConfig.host, error: message });
+    this._connected = false;
+    if (this.stream) {
+      this.emitExit({ exitCode: 1, signal: message });
+    } else {
+      reject(new Error(message));
+    }
+  }
+
+  private handleClientClose(): void {
+    if (!this._connected) return;
+    this._connected = false;
+    this.emitExit({ exitCode: 1, signal: 'SSH connection closed' });
+  }
+
+  private emitExit(info: TransportExitInfo): void {
+    for (const cb of this.exitCallbacks) {
+      cb(info);
+    }
   }
 
   write(data: string): void {
