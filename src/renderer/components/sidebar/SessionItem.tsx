@@ -32,6 +32,8 @@ interface SessionItemProps {
   allowHelm?: boolean;
   /** Called when the user toggles Helm on this session. */
   onToggleHelm?: (enabled: boolean) => void;
+  /** When provided, render the "Mute notifications" / "Unmute notifications" context-menu toggle. */
+  onToggleNotificationsMuted?: (muted: boolean) => void;
   nested?: boolean;
   onDragStart?: (sessionId: string) => void;
   onDragEnd?: () => void;
@@ -56,7 +58,7 @@ interface SessionItemProps {
  */
 let activeReorderSource: { id: string; environmentId: string | null; workingDir: string } | null = null;
 
-export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppressed, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane }: SessionItemProps) {
+export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppressed, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, onToggleNotificationsMuted, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
@@ -281,6 +283,18 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
               title={session.helmEnabled ? 'Restart session to unwire the Helm MCP' : 'Restart session to wire the Helm MCP'}
             >
               {session.helmEnabled ? 'Disable Helm' : 'Enable Helm'}
+            </div>
+          )}
+          {onToggleNotificationsMuted && (
+            <div
+              className="context-menu-item"
+              role="menuitem"
+              tabIndex={0}
+              onClick={() => { setShowMenu(false); onToggleNotificationsMuted(!session.notificationsMuted); }}
+              onKeyDown={onKeyActivate(() => { setShowMenu(false); onToggleNotificationsMuted(!session.notificationsMuted); })}
+              title={session.notificationsMuted ? 'Re-enable desktop notifications for this session' : 'Stop showing desktop notifications for this session'}
+            >
+              {session.notificationsMuted ? 'Unmute notifications' : 'Mute notifications'}
             </div>
           )}
           {isAlive && (

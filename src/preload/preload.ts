@@ -25,6 +25,7 @@ import type {
   DiagnosticsExportResult,
   OpenFolderResult,
   WaitingReason,
+  NotificationPrefs,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -269,6 +270,17 @@ const api: TetherAPI = {
     get: (): Promise<KeybindingOverrides> => ipcRenderer.invoke(IPC.KEYBINDINGS_GET),
     set: (overrides: KeybindingOverrides): Promise<void> => ipcRenderer.invoke(IPC.KEYBINDINGS_SET, overrides),
     resetAll: (): Promise<void> => ipcRenderer.invoke(IPC.KEYBINDINGS_RESET_ALL),
+  },
+  notifications: {
+    getPrefs: (): Promise<NotificationPrefs> => ipcRenderer.invoke(IPC.NOTIFICATIONS_GET_PREFS),
+    setPrefs: (prefs: NotificationPrefs): Promise<void> => ipcRenderer.invoke(IPC.NOTIFICATIONS_SET_PREFS, prefs),
+    setSessionMuted: (sessionId: string, muted: boolean): Promise<void> =>
+      ipcRenderer.invoke(IPC.SESSION_SET_NOTIFICATIONS_MUTED, sessionId, muted),
+    onSessionSelect(cb: (sessionId: string) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, sessionId: string) => cb(sessionId);
+      ipcRenderer.on(IPC.NOTIFICATION_SESSION_SELECT, h);
+      return () => ipcRenderer.removeListener(IPC.NOTIFICATION_SESSION_SELECT, h);
+    },
   },
 };
 
