@@ -39,6 +39,7 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 - [done] Audit `src/renderer/components/Notifications.tsx` — wire up real error paths or remove
 - [done] Toast on session spawn failure, transport errors, Vault auth issues, update-check failures
 - [done] Keep CHANGELOG known-issues list honest (the "errors only in DevTools" note from 0.3.0 is stale either way)
+- [done] **Desktop notifications on session state change** — Electron `Notification` API surface in `src/main/notifications/notification-service.ts`, subscribed to detector transitions and exit codes. Defaults-on for waiting / idle / unexpected-exit / bell, with focus suppression (BrowserWindow.isFocused) and a per-session "Mute notifications" toggle in the sidebar context menu. Bell detection is a single-byte BEL scan inside the existing detector tap (no ANSI parsing), coalesced to once per 2s. Settings → Notifications surfaces all five toggles. Click → focuses the window and selects the session via a new `NOTIFICATION_SESSION_SELECT` IPC channel.
 
 ### 4. Daily-driver UX
 

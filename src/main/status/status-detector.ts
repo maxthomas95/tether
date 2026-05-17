@@ -32,6 +32,7 @@ const WAITING_TIMEOUT = 3000;   // No data for 3s → assume waiting (fallback f
 const IDLE_TIMEOUT = 30000;     // No data for 30s → idle
 const DEBOUNCE_MS = 500;        // Debounce state transitions
 const BUFFER_MAX = 4096;        // Per-session rolling byte buffer for OSC matching
+const BELL_COALESCE_MS = 2000;  // Suppress bell notifications fired in this window
 
 // OSC sequences that AI CLIs (notably Claude Code) emit at end-of-turn.
 //   ESC ] 9 ; <text> BEL          — desktop notification
@@ -51,10 +52,28 @@ export class StatusDetector {
   private readonly waitingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * Last time we surfaced a bell for this session. Used to coalesce rapid
+   * BEL spam (some CLIs ring on every error) into one notification per
+   * window so the OS doesn't queue a wall of toasts.
+   */
+  private readonly lastBellAt = new Map<string, number>();
   private callback: ((sessionId: string, state: SessionState, reason?: WaitingReason) => void) | null = null;
+  private bellCallback: ((sessionId: string) => void) | null = null;
 
   onStateChange(callback: (sessionId: string, state: SessionState, reason?: WaitingReason) => void): void {
     this.callback = callback;
+  }
+
+  /**
+   * Subscribe to bell events. The detector scans each PTY chunk for the
+   * ASCII BEL byte (0x07) and fires this callback at most once per
+   * `BELL_COALESCE_MS` window per session — terminal applications often
+   * ring on every error byte, so we'd flood the OS notification center
+   * without coalescing.
+   */
+  onBell(callback: (sessionId: string) => void): void {
+    this.bellCallback = callback;
   }
 
   register(sessionId: string, cliTool: CliToolId = 'claude'): void {
@@ -67,6 +86,7 @@ export class StatusDetector {
     this.waitingReasons.delete(sessionId);
     this.cliTools.delete(sessionId);
     this.buffers.delete(sessionId);
+    this.lastBellAt.delete(sessionId);
     this.clearTimer(this.waitingTimers, sessionId);
     this.clearTimer(this.idleTimers, sessionId);
     this.clearTimer(this.debounceTimers, sessionId);
@@ -78,6 +98,20 @@ export class StatusDetector {
 
     const state = this.states.get(sessionId);
     if (!state || state === 'stopped' || state === 'dead') return;
+
+    // Bell side-channel: a single indexOf scan, no parsing. We don't strip
+    // the byte (xterm.js will render/handle it on its own) — we only sniff
+    // it so the notification service can decide whether to surface a toast.
+    // Coalesced to one fire per BELL_COALESCE_MS to defang BEL-spamming CLIs.
+    if (this.bellCallback && data.indexOf(BEL) !== -1) {
+      const now = Date.now();
+      const last = this.lastBellAt.get(sessionId) ?? 0;
+      if (now - last >= BELL_COALESCE_MS) {
+        this.lastBellAt.set(sessionId, now);
+        try { this.bellCallback(sessionId); }
+        catch { /* swallow — bell is a notification, never a critical path */ }
+      }
+    }
 
     // Maintain a rolling buffer so OSC sequences split across chunks still match.
     const prevBuffer = this.buffers.get(sessionId) || '';
@@ -223,6 +257,7 @@ export class StatusDetector {
     this.waitingReasons.clear();
     this.buffers.clear();
     this.cliTools.clear();
+    this.lastBellAt.clear();
   }
 }
 

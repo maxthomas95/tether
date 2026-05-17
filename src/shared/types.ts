@@ -196,7 +196,41 @@ export interface SessionInfo {
    * not persisted in the session row, falls back to the global default at next launch.
    */
   fontSize?: number;
+  /**
+   * When true, this session is opted out of desktop notifications regardless
+   * of the global prefs. Set via the session row's context-menu "Mute
+   * notifications" toggle. Runtime-only — sessions are recreated on app
+   * restart, so mute defaults to off for fresh sessions.
+   */
+  notificationsMuted?: boolean;
 }
+
+/**
+ * User preferences for desktop notifications on session state transitions.
+ * All defaults are on except for whatever the user explicitly disables; the
+ * service computes effective firing as
+ * `prefs[transition] && !focusedAndSuppressed && !session.notificationsMuted`.
+ */
+export interface NotificationPrefs {
+  /** Fire when a session enters `waiting` (turn complete / awaiting input). */
+  onWaiting: boolean;
+  /** Fire when a session enters `idle` (silence past the idle timeout). */
+  onIdle: boolean;
+  /** Fire when a session exits with a non-zero code or otherwise errors. */
+  onError: boolean;
+  /** Fire when a session emits an ASCII BEL byte (\x07). */
+  onBell: boolean;
+  /** When true, suppress notifications while the main window is focused. */
+  suppressWhenFocused: boolean;
+}
+
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
+  onWaiting: true,
+  onIdle: true,
+  onError: true,
+  onBell: true,
+  suppressWhenFocused: true,
+};
 
 export interface CreateSessionOptions {
   workingDir: string;
@@ -633,6 +667,16 @@ export interface TetherAPI {
     get(): Promise<KeybindingOverrides>;
     set(overrides: KeybindingOverrides): Promise<void>;
     resetAll(): Promise<void>;
+  };
+  notifications: {
+    getPrefs(): Promise<NotificationPrefs>;
+    setPrefs(prefs: NotificationPrefs): Promise<void>;
+    setSessionMuted(sessionId: string, muted: boolean): Promise<void>;
+    /**
+     * Fires when the user clicks a desktop notification. Renderer should
+     * focus the corresponding session (and un-maximize its pane if needed).
+     */
+    onSessionSelect(cb: (sessionId: string) => void): () => void;
   };
 }
 

@@ -11,6 +11,7 @@ import { getDb, closeDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
 import { markAllRunningAsStopped } from './db/session-repo';
 import { startHookService, stopHookService } from './cli-config/hook-service';
+import { createNotificationService, readPrefsFromConfig } from './notifications/notification-service';
 import { getLoaderTheme, DEFAULT_LOADER_THEME } from '../shared/loader-themes';
 import { IPC } from '../shared/constants';
 import { createLogger, closeLogger } from './logger';
@@ -231,6 +232,21 @@ const createWindow = () => {
   });
 
   registerIpcHandlers(mainWindow);
+
+  // Wire desktop notifications. Lives next to the IPC layer because the
+  // click handler needs to push back to the renderer via webContents.send.
+  // Re-reads prefs from the JSON config on every fire so changes from the
+  // Settings dialog take effect without a restart.
+  const notifier = createNotificationService({
+    getWindow: () => mainWindow,
+    getPrefs: () => readPrefsFromConfig(getDb().config),
+    onSessionSelect: (sessionId: string) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IPC.NOTIFICATION_SESSION_SELECT, sessionId);
+      }
+    },
+  });
+  sessionManager.setNotifier(notifier);
 
   ipcMain.handle(IPC.DOCS_OPEN, (_e, target?: DocsOpenTarget) => createDocsWindow(target));
 

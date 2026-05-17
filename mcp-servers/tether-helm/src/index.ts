@@ -8,6 +8,14 @@ import {
 import { BridgeClient } from './bridge-client.js';
 
 /**
+ * Canonical CLI tool ids accepted by spawn_session's `cliTool` argument. Must
+ * stay in sync with `src/shared/cli-tools.ts` on the Tether side — the bridge
+ * re-validates against the live registry, so this list exists purely so the
+ * MCP schema rejects typos at the schema boundary (closer to the caller).
+ */
+const SPAWN_SESSION_CLI_TOOL_IDS = ['claude', 'codex', 'copilot', 'opencode', 'custom'] as const;
+
+/**
  * tether-helm MCP server.
  *
  * Spawned by Claude Code as a stdio MCP child when a Tether session has the
@@ -59,6 +67,11 @@ const SPAWN_SESSION_TOOL = {
       autoMode: {
         type: 'boolean',
         description: 'When true, launch the child in auto mode (skip per-tool-call approval prompts). Use with care — the child will act autonomously on the brief.',
+      },
+      cliTool: {
+        type: 'string',
+        enum: [...SPAWN_SESSION_CLI_TOOL_IDS],
+        description: 'Optional CLI tool the child should run. One of: claude, codex, copilot, opencode, custom. When omitted, the child inherits the parent Helm session\'s CLI tool. Use this to route a dispatch to a different CLI than the parent (e.g. parent on Claude dispatching a Codex child for a task that suits Codex better). When set to "custom", the child uses the parent\'s custom binary unless a launch profile overrides it.',
       },
       cliFlags: {
         type: 'array',

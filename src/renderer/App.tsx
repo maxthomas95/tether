@@ -57,6 +57,15 @@ import { getBroadcastSessionIds, pruneBroadcastPaneIds } from './lib/broadcast-t
 import type { MenuDef } from './components/MenuBar';
 import { WelcomePane } from './components/WelcomePane';
 
+/**
+ * Delay before dropping a waiting-ack when a session transitions back to
+ * `running`. Must be > the status detector's WAITING_TIMEOUT (3000ms in
+ * src/main/status/status-detector.ts) so the silence-fallback re-asserting
+ * `waiting` after a micro-output blip (CLI cleanup, anti-idle, render
+ * twitch) can't sneak through as "real" activity and re-bang the user.
+ */
+const ACK_DROP_DELAY_MS = 5000;
+
 export function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [environments, setEnvironments] = useState<EnvironmentInfo[]>([]);
@@ -146,6 +155,12 @@ export function App() {
   const { confirm: confirmDialog, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [vaultPrompt, setVaultPrompt] = useState<{ reason?: string; onDone: (loggedIn: boolean) => void } | null>(null);
   const expectedSessionExitIds = useRef<Set<string>>(new Set());
+  // Pending ack-drop timers, keyed by session id. When a session transitions
+  // out of {waiting,idle} into `running`, we delay dropping the ack until
+  // the session has stayed in `running` for ACK_DROP_DELAY_MS — otherwise
+  // a silence-fallback re-asserting `waiting` re-bangs an already-acked
+  // session. See setAcknowledgedWaitingIds usage below.
+  const pendingAckDropTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const sessionsRef = useRef<SessionInfo[]>([]);
   // Gate the persist effect until the restore effect has finished reading the
   // saved workspace. Otherwise the initial-mount persist (with sessions=[])
@@ -160,6 +175,24 @@ export function App() {
     globalThis.setTimeout(() => {
       expectedSessionExitIds.current.delete(sessionId);
     }, 30_000);
+  }, []);
+
+  const clearPendingAckDrop = useCallback((sessionId: string) => {
+    const handle = pendingAckDropTimers.current.get(sessionId);
+    if (handle !== undefined) {
+      globalThis.clearTimeout(handle);
+      pendingAckDropTimers.current.delete(sessionId);
+    }
+  }, []);
+
+  // Ensure any pending ack-drop timers are released on App unmount so they
+  // don't fire after the renderer is torn down.
+  useEffect(() => {
+    const timers = pendingAckDropTimers.current;
+    return () => {
+      for (const handle of timers.values()) globalThis.clearTimeout(handle);
+      timers.clear();
+    };
   }, []);
 
   useEffect(() => {
@@ -473,15 +506,49 @@ export function App() {
         // byte-level waiting→idle transition (30s silence) is purely a
         // detector reclassification of the same dormant state and shouldn't
         // re-alarm the user.
+        //
+        // For the running case we defer the drop by ACK_DROP_DELAY_MS:
+        // the status detector's silence-fallback can re-assert `waiting`
+        // ~3s after a micro PTY output flips us briefly to `running`, and
+        // dropping the ack immediately would let that fallback re-bang an
+        // already-acked session. Stopped/dead drop immediately since the
+        // session is no longer awaiting the user.
         const wasNeedsAttention = old?.state === 'waiting' || old?.state === 'idle';
         const isNeedsAttention = state === 'waiting' || state === 'idle';
-        if (wasNeedsAttention && !isNeedsAttention && old && old.state !== state) {
+        const dropAckNow = () => {
           setAcknowledgedWaitingIds(prevAck => {
             if (!prevAck.has(sid)) return prevAck;
             const next = new Set(prevAck);
             next.delete(sid);
             return next;
           });
+        };
+        const cancelPendingAckDrop = () => {
+          const existing = pendingAckDropTimers.current.get(sid);
+          if (existing !== undefined) {
+            globalThis.clearTimeout(existing);
+            pendingAckDropTimers.current.delete(sid);
+          }
+        };
+        if (wasNeedsAttention && !isNeedsAttention && old && old.state !== state) {
+          if (state === 'running') {
+            cancelPendingAckDrop();
+            const handle = globalThis.setTimeout(() => {
+              pendingAckDropTimers.current.delete(sid);
+              dropAckNow();
+            }, ACK_DROP_DELAY_MS);
+            pendingAckDropTimers.current.set(sid, handle);
+          } else {
+            // stopped / dead / anything else terminal — drop immediately.
+            cancelPendingAckDrop();
+            dropAckNow();
+          }
+        } else if (isNeedsAttention) {
+          // Bounced back into waiting/idle (the silence-fallback case, or
+          // a real new turn). Cancel any pending drop so the existing ack
+          // stays put; the INTO-`waiting` handler elsewhere governs whether
+          // a fresh ack is needed.
+          cancelPendingAckDrop();
         }
         return prev.map(s => s.id === sid ? { ...s, state, waitingReason } : s);
       });
@@ -627,6 +694,7 @@ export function App() {
         await window.electronAPI.session.remove(s.id);
         termManager.remove(s.id);
         layoutDispatch({ type: 'REMOVE_SESSION', sessionId: s.id });
+        clearPendingAckDrop(s.id);
       }
       await window.electronAPI.environment.delete(env.id);
       setEnvironments(prev => prev.filter(e => e.id !== env.id));
@@ -635,7 +703,7 @@ export function App() {
       console.error('Failed to delete environment:', err);
       notifyError('Failed to delete environment', err);
     }
-  }, [sessions, termManager, layoutDispatch, notifyError, confirmDialog, markExpectedSessionExit]);
+  }, [sessions, termManager, layoutDispatch, notifyError, confirmDialog, markExpectedSessionExit, clearPendingAckDrop]);
 
   // Close env context menu on outside click
   useEffect(() => {
@@ -704,6 +772,7 @@ export function App() {
       termManager.remove(id);
       layoutDispatch({ type: 'REMOVE_SESSION', sessionId: id });
       setSessions(prev => prev.filter(s => s.id !== id));
+      clearPendingAckDrop(id);
     } catch (err) {
       expectedSessionExitIds.current.delete(id);
       notifyError('Failed to remove session', err);
@@ -740,7 +809,7 @@ export function App() {
         }
       }
     }
-  }, [sessions, termManager, layoutDispatch, confirmDialog, notify, notifyError, markExpectedSessionExit]);
+  }, [sessions, termManager, layoutDispatch, confirmDialog, notify, notifyError, markExpectedSessionExit, clearPendingAckDrop]);
 
   const handleToggleHelm = useCallback(async (id: string, enabled: boolean) => {
     try {
@@ -748,6 +817,21 @@ export function App() {
       setSessions(prev => prev.map(s => s.id === id ? { ...s, helmEnabled: enabled } : s));
     } catch (err) {
       notifyError('Failed to update Helm setting', err);
+    }
+  }, [notifyError]);
+
+  /**
+   * Per-session opt-out for desktop notifications. Optimistic update on the
+   * local SessionInfo so the context-menu label flips immediately; the main
+   * process is the source of truth and will emit an onUpdated event with the
+   * authoritative state anyway.
+   */
+  const handleToggleNotificationsMuted = useCallback(async (id: string, muted: boolean) => {
+    try {
+      await window.electronAPI.notifications.setSessionMuted(id, muted);
+      setSessions(prev => prev.map(s => s.id === id ? { ...s, notificationsMuted: muted || undefined } : s));
+    } catch (err) {
+      notifyError('Failed to update notification mute', err);
     }
   }, [notifyError]);
 
@@ -778,13 +862,14 @@ export function App() {
         await window.electronAPI.session.remove(s.id);
         termManager.remove(s.id);
         layoutDispatch({ type: 'REMOVE_SESSION', sessionId: s.id });
+        clearPendingAckDrop(s.id);
       } catch (err) {
         expectedSessionExitIds.current.delete(s.id);
         notifyError(`Failed to remove ${s.label}`, err);
       }
     }
     setSessions(prev => prev.filter(s => !targets.some(t => t.id === s.id)));
-  }, [termManager, layoutDispatch, markExpectedSessionExit, notifyError]);
+  }, [termManager, layoutDispatch, markExpectedSessionExit, notifyError, clearPendingAckDrop]);
 
   const recreateFromSnapshot = useCallback((snap: SessionInfo) => {
     handleCreateSession(
@@ -936,6 +1021,16 @@ export function App() {
       return next;
     });
   }, []);
+
+  // Bridge desktop notification clicks → in-app session focus. The notification
+  // service in the main process focuses the window; this hook handles the
+  // sidebar selection so the right session pops to the front. Declared after
+  // handleSelectSession so the dependency is in scope.
+  useEffect(() => {
+    return window.electronAPI.notifications.onSessionSelect((sessionId) => {
+      handleSelectSession(sessionId);
+    });
+  }, [handleSelectSession]);
 
   // Drag handlers for sidebar → terminal area
   const handleDragStart = useCallback(() => {
@@ -1365,6 +1460,7 @@ export function App() {
       layoutDispatch({ type: 'REPLACE_SESSION', paneId, sessionId: fresh.id });
       layoutDispatch({ type: 'SET_FOCUS', paneId });
       termManager.remove(deadSessionId);
+      clearPendingAckDrop(deadSessionId);
       try {
         await window.electronAPI.session.remove(deadSessionId);
       } catch {
@@ -1373,7 +1469,7 @@ export function App() {
     } catch (err) {
       notifyError('Failed to restart session', err);
     }
-  }, [sessions, termManager, layoutDispatch, notifyError]);
+  }, [sessions, termManager, layoutDispatch, notifyError, clearPendingAckDrop]);
 
   const handleCheckForUpdates = useCallback(async () => {
     try {
@@ -1622,6 +1718,7 @@ export function App() {
                         showResumeBadge={showResumeBadge}
                         allowHelm={allowHelm}
                         onToggleHelm={handleToggleHelm}
+                        onToggleNotificationsMuted={handleToggleNotificationsMuted}
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
                         onReorderSession={handleReorderSession}
