@@ -35,6 +35,13 @@ function read(p: string): string {
   return fs.readFileSync(p, 'utf-8');
 }
 
+// Most tests assert "exactly one top-level notify entry survives." Pulled out
+// to one helper so we don't trip Sonar's duplicated-blocks detector.
+function expectSingleNotifyLine(text: string): void {
+  const matches = text.match(/^notify\s*=/gm) || [];
+  expect(matches.length).toBe(1);
+}
+
 describe('Codex config overlay', () => {
   it('creates a fresh config.toml with notify when none exists', async () => {
     const { configPath } = makeCtx();
@@ -99,8 +106,7 @@ describe('Codex config overlay', () => {
     await installCodexHooks({ helperPath: HELPER, configPath });
 
     const text = read(configPath);
-    const matches = text.match(/^notify\s*=/gm) || [];
-    expect(matches.length).toBe(1);
+    expectSingleNotifyLine(text);
   });
 
   it('does not displace a user-owned notify entry, but still scrubs orphans', async () => {
@@ -125,8 +131,7 @@ describe('Codex config overlay', () => {
     // Stale tether entry removed
     expect(text).not.toContain('/old/tether-cli-hook');
     // We did NOT add our fresh entry on top of theirs — exactly one notify line.
-    const matches = text.match(/^notify\s*=/gm) || [];
-    expect(matches.length).toBe(1);
+    expectSingleNotifyLine(text);
     // Section preserved
     expect(text).toContain('[mcp_servers.local]');
   });
@@ -199,8 +204,7 @@ describe('Codex config overlay', () => {
     const text = read(configPath);
     expect(text).not.toContain('/old/path/tether-cli-hook');
     expect(text).not.toContain('/even/older/tether-cli-hook');
-    const matches = text.match(/^notify\s*=/gm) || [];
-    expect(matches.length).toBe(1);
+    expectSingleNotifyLine(text);
     expect(text).toContain('Program Files');
   });
 
@@ -245,8 +249,7 @@ describe('Codex config overlay', () => {
       installCodexHooks({ helperPath: HELPER, configPath }),
     ]);
     const text = read(configPath);
-    const matches = text.match(/^notify\s*=/gm) || [];
-    expect(matches.length).toBe(1);
+    expectSingleNotifyLine(text);
   });
 
   it('handles a multi-line array Tether-managed notify entry on scrub', async () => {
@@ -273,8 +276,7 @@ describe('Codex config overlay', () => {
     expect(text).toContain('[section]');
     expect(text).toContain('k = "v"');
     // Exactly one notify (ours)
-    const matches = text.match(/^notify\s*=/gm) || [];
-    expect(matches.length).toBe(1);
+    expectSingleNotifyLine(text);
     expect(text).toContain('Program Files');
   });
 });

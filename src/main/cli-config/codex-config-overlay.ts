@@ -3,6 +3,7 @@ import path from 'node:path';
 import { atomicWriteFileSync } from '../db/atomic-write';
 import { getCodexHome } from '../codex/transcripts';
 import { createLogger } from '../logger';
+import { SENTINEL_TOKEN, createOverlayMutex } from './overlay-common';
 
 const log = createLogger('codex-overlay');
 
@@ -49,8 +50,6 @@ const log = createLogger('codex-overlay');
  * interleaved read-modify-writes inside a single Tether process.
  */
 
-const SENTINEL_TOKEN = 'tether-cli-hook';
-
 export interface CodexOverlayContext {
   /** Absolute path to `cli-tools/tether-cli-hook/index.js`. */
   helperPath: string;
@@ -58,17 +57,7 @@ export interface CodexOverlayContext {
   configPath?: string;
 }
 
-// Single-writer mutex for all overlay operations within this process.
-let mutex: Promise<void> = Promise.resolve();
-function withMutex<T>(fn: () => Promise<T> | T): Promise<T> {
-  const prev = mutex;
-  let release!: () => void;
-  mutex = new Promise<void>((r) => { release = r; });
-  return prev.then(async () => {
-    try { return await fn(); }
-    finally { release(); }
-  });
-}
+const withMutex = createOverlayMutex();
 
 function resolveConfigPath(ctx: CodexOverlayContext): string {
   return ctx.configPath || path.join(getCodexHome(), 'config.toml');
@@ -92,8 +81,10 @@ function readFileOrEmpty(filePath: string): string {
 function isSectionHeader(line: string): boolean {
   const t = line.trim();
   if (!t.startsWith('[')) return false;
-  // Strip trailing comment so `[foo] # comment` still counts.
-  const noComment = t.replace(/\s*#.*$/, '').trim();
+  // Strip trailing comment so `[foo] # comment` still counts. Use indexOf
+  // rather than a regex to sidestep Sonar S5852 (super-linear backtracking).
+  const hash = t.indexOf('#');
+  const noComment = (hash === -1 ? t : t.slice(0, hash)).trim();
   return /^\[\[?[^\]]+\]\]?$/.test(noComment);
 }
 
