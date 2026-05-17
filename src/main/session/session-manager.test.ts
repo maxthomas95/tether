@@ -50,12 +50,14 @@ vi.mock('../transport/coder-transport', () => ({
   CoderTransport: vi.fn(),
 }));
 
+const dbState = vi.hoisted(() => ({
+  config: {} as Record<string, string>,
+  defaultEnvVars: {} as Record<string, string>,
+  defaultCliFlagsPerTool: {} as Record<string, string[]>,
+}));
+
 vi.mock('../db/database', () => ({
-  getDb: () => ({
-    config: {},
-    defaultEnvVars: {},
-    defaultCliFlagsPerTool: {},
-  }),
+  getDb: () => dbState,
 }));
 
 vi.mock('../db/environment-repo', () => ({
@@ -83,7 +85,7 @@ vi.mock('../codex/transcripts', () => ({
 }));
 
 vi.mock('../codex/session-watcher', () => ({
-  detectNewCodexSession: vi.fn(),
+  detectNewCodexSession: vi.fn(() => ({ cancel: vi.fn(), promise: new Promise<string | null>(() => undefined) })),
   releaseCodexSessionClaim: vi.fn(),
 }));
 
@@ -105,8 +107,13 @@ vi.mock('../opencode/session-watcher', () => ({
   releaseOpencodeSessionClaim: vi.fn(),
 }));
 
+const helmHarness = vi.hoisted(() => ({
+  capturedHandlers: null as Record<string, (params: Record<string, unknown>) => Promise<unknown>> | null,
+  setup: vi.fn(),
+}));
+
 vi.mock('../helm/integration', () => ({
-  setupHelmForSession: vi.fn(),
+  setupHelmForSession: helmHarness.setup,
 }));
 
 vi.mock('../usage/usage-service', () => ({
@@ -122,7 +129,7 @@ vi.mock('../coder/workspace-service', () => ({
   getCoderTemplateParams: vi.fn(),
 }));
 
-import { SessionManager } from './session-manager';
+import { SessionManager, setHelmChildCallbacks } from './session-manager';
 
 function callbacks() {
   return {
@@ -140,11 +147,93 @@ describe('SessionManager', () => {
     transportHarness.state.instances.length = 0;
     transportHarness.state.startImpl.mockReset();
     transportHarness.state.startImpl.mockResolvedValue(undefined);
+    dbState.config = {};
+    dbState.defaultEnvVars = {};
+    dbState.defaultCliFlagsPerTool = {};
+    helmHarness.capturedHandlers = null;
+    helmHarness.setup.mockReset();
+    helmHarness.setup.mockImplementation(async (_id: string, handlers: Record<string, (params: Record<string, unknown>) => Promise<unknown>>) => {
+      helmHarness.capturedHandlers = handlers;
+      return { mcpConfigPath: 'C:\\fake\\helm.json', cleanup: vi.fn() };
+    });
     manager = new SessionManager();
   });
 
   afterEach(() => {
     manager.dispose();
+  });
+
+  describe('spawn_session helm handler — cliTool', () => {
+    async function spawnHelmParent(): Promise<Record<string, (params: Record<string, unknown>) => Promise<unknown>>> {
+      dbState.config.allowHelm = 'true';
+      // Register a child-callbacks shim — the spawn_session handler refuses to
+      // run children otherwise.
+      setHelmChildCallbacks({
+        onData: vi.fn(),
+        onStateChange: vi.fn(),
+        onExit: vi.fn(),
+      });
+      const cb = callbacks();
+      await manager.createSession({
+        workingDir: 'C:\\repo\\helm-parent',
+        cliTool: 'claude',
+        helmEnabled: true,
+      }, cb);
+      if (!helmHarness.capturedHandlers) {
+        throw new Error('Helm setup was not invoked — fixture is wrong');
+      }
+      return helmHarness.capturedHandlers;
+    }
+
+    it('rejects an unknown cliTool with a clear error', async () => {
+      const handlers = await spawnHelmParent();
+      await expect(
+        handlers.spawn_session({
+          environmentId: 'env-1',
+          label: 'child',
+          initialPrompt: 'hi',
+          cliTool: 'gpt-cli', // not in the registry
+        }),
+      ).rejects.toThrow(/unknown cliTool "gpt-cli"/);
+      // Validation must happen BEFORE any session is created.
+      expect(manager.listSessions()).toHaveLength(1); // only the parent
+    });
+
+    it('rejects a non-string cliTool', async () => {
+      const handlers = await spawnHelmParent();
+      await expect(
+        handlers.spawn_session({
+          environmentId: 'env-1',
+          label: 'child',
+          initialPrompt: 'hi',
+          cliTool: 42,
+        }),
+      ).rejects.toThrow(/cliTool must be a string/);
+    });
+
+    it('accepts a valid cliTool and dispatches the child on that CLI', async () => {
+      const handlers = await spawnHelmParent();
+      const result = await handlers.spawn_session({
+        environmentId: 'env-1',
+        label: 'child',
+        initialPrompt: 'hi',
+        cliTool: 'codex',
+      }) as { sessionId: string };
+      const child = manager.getSession(result.sessionId);
+      expect(child?.cliTool).toBe('codex');
+    });
+
+    it('inherits the parent cliTool when omitted', async () => {
+      const handlers = await spawnHelmParent();
+      const result = await handlers.spawn_session({
+        environmentId: 'env-1',
+        label: 'child',
+        initialPrompt: 'hi',
+        // no cliTool → inherit parent ('claude')
+      }) as { sessionId: string };
+      const child = manager.getSession(result.sessionId);
+      expect(child?.cliTool).toBe('claude');
+    });
   });
 
   it('cleans up a session when transport.start rejects', async () => {

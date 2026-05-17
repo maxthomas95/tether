@@ -94,14 +94,62 @@ function projectHelmChildEnvVars(params: Record<string, unknown>): Record<string
 }
 
 /**
- * Build the CLI args list for a Helm child: caller-supplied flags plus the
- * `--dangerously-skip-permissions` shorthand when `autoMode` is set.
+ * Resolve the cliTool for a Helm-dispatched child. When the caller omits
+ * `cliTool`, the child inherits the parent Helm session's CLI tool — that's
+ * the principle-of-least-surprise default and what makes per-call routing
+ * opt-in rather than opt-out. When the caller passes a string, validate it
+ * against the registry HERE (at the bridge boundary) so unknown values fail
+ * with a clear error before any session-manager work happens.
  */
-function buildHelmChildCliArgs(params: Record<string, unknown>): string[] {
+function resolveHelmChildCliTool(
+  params: Record<string, unknown>,
+  parentCliTool: CliToolId,
+): CliToolId {
+  if (params.cliTool === undefined || params.cliTool === null) {
+    return parentCliTool;
+  }
+  if (typeof params.cliTool !== 'string') {
+    throw new Error(
+      `spawn_session: cliTool must be a string, got ${typeof params.cliTool}. ` +
+      `Valid values: ${CLI_TOOL_IDS.join(', ')}.`,
+    );
+  }
+  if (!CLI_TOOL_IDS.includes(params.cliTool as CliToolId)) {
+    throw new Error(
+      `spawn_session: unknown cliTool "${params.cliTool}". ` +
+      `Valid values: ${CLI_TOOL_IDS.join(', ')}.`,
+    );
+  }
+  return params.cliTool as CliToolId;
+}
+
+/**
+ * Per-CLI translation of the `autoMode: true` shorthand into the flag that
+ * means "yes to everything in this session" for that CLI. Mirrors the
+ * registry's commonFlags but is intentionally local — autoMode is a Helm
+ * concept, not a CLI feature, and the registry doesn't know about it.
+ *
+ * OpenCode and Custom have no documented auto-yes flag; for those, autoMode
+ * is a no-op (the caller can still pass an explicit flag via cliFlags).
+ */
+const AUTO_MODE_FLAGS: Partial<Record<CliToolId, string>> = {
+  claude: '--dangerously-skip-permissions',
+  codex: '--full-auto',
+  copilot: '--allow-all-tools',
+};
+
+/**
+ * Build the CLI args list for a Helm child: caller-supplied flags plus the
+ * CLI-appropriate auto-mode flag when `autoMode` is set.
+ */
+function buildHelmChildCliArgs(params: Record<string, unknown>, cliTool: CliToolId): string[] {
   const flags = Array.isArray(params.cliFlags)
     ? params.cliFlags.filter((f): f is string => typeof f === 'string')
     : [];
-  if (params.autoMode === true) flags.push('--dangerously-skip-permissions');
+  if (params.autoMode === true) {
+    const autoFlag = AUTO_MODE_FLAGS[cliTool];
+    if (autoFlag) flags.push(autoFlag);
+  }
   return flags;
 }
 
@@ -541,16 +589,24 @@ export class SessionManager {
             if (!helmChildCallbacks) {
               throw new Error('Helm child callbacks not registered');
             }
+            // Validate cliTool at the bridge boundary so unknown tools fail
+            // with a clear error before any session-manager / transport work
+            // happens. Default: inherit the parent Helm session's CLI tool.
+            const childCliTool = resolveHelmChildCliTool(params, cliTool);
             const childOpts: CreateSessionOptions = {
               workingDir: typeof params.workingDir === 'string' && params.workingDir
                 ? params.workingDir
                 : opts.workingDir,
               label: typeof params.label === 'string' ? params.label : undefined,
               environmentId: typeof params.environmentId === 'string' ? params.environmentId : undefined,
-              cliTool: 'claude',
+              cliTool: childCliTool,
+              // When the child runs the 'custom' CLI, inherit the parent's
+              // custom binary so callers don't have to re-specify it (they
+              // can still override via a launch profile's env/flag bundle).
+              customCliBinary: childCliTool === 'custom' ? opts.customCliBinary : undefined,
               initialPrompt: typeof params.initialPrompt === 'string' ? params.initialPrompt : undefined,
               profileId: resolveHelmChildProfileId(params),
-              cliArgs: buildHelmChildCliArgs(params),
+              cliArgs: buildHelmChildCliArgs(params, childCliTool),
               env: projectHelmChildEnvVars(params),
               parentSessionId: id,
             };
