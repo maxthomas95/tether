@@ -31,6 +31,8 @@ interface RepoGroupProps {
   showResumeBadge?: boolean;
   allowHelm?: boolean;
   onToggleHelm?: (id: string, enabled: boolean) => void;
+  /** When provided, surfaces the "Mute notifications" toggle on each session row. */
+  onToggleNotificationsMuted?: (id: string, muted: boolean) => void;
   onDragStart?: (sessionId: string) => void;
   onDragEnd?: () => void;
   /**
@@ -75,6 +77,7 @@ export function RepoGroup({
   showResumeBadge,
   allowHelm,
   onToggleHelm,
+  onToggleNotificationsMuted,
   onDragStart,
   onDragEnd,
   onReorderSession,
@@ -310,6 +313,7 @@ export function RepoGroup({
             showResumeBadge={showResumeBadge}
             allowHelm={allowHelm}
             onToggleHelm={onToggleHelm ? (enabled) => onToggleHelm(session.id, enabled) : undefined}
+            onToggleNotificationsMuted={onToggleNotificationsMuted ? (muted) => onToggleNotificationsMuted(session.id, muted) : undefined}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
             onReorderDrop={

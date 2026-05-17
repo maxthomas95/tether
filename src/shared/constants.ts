@@ -111,6 +111,11 @@ export const IPC = {
   KEYBINDINGS_SET: 'keybindings:set',
   KEYBINDINGS_RESET_ALL: 'keybindings:reset-all',
 
+  // Notifications
+  NOTIFICATIONS_GET_PREFS: 'notifications:get-prefs',
+  NOTIFICATIONS_SET_PREFS: 'notifications:set-prefs',
+  SESSION_SET_NOTIFICATIONS_MUTED: 'session:set-notifications-muted',
+
   // Diagnostics
   DIAGNOSTICS_EXPORT: 'diagnostics:export',
   DIAGNOSTICS_OPEN_USER_DATA_FOLDER: 'diagnostics:open-user-data-folder',
@@ -128,4 +133,9 @@ export const IPC = {
   GIT_CLONE_PROGRESS: 'git:clone-progress',
   VAULT_STATUS_CHANGED: 'vault:status-changed',
   VAULT_EXPIRY_WARNING: 'vault:expiry-warning',
+  /**
+   * Main → renderer: user clicked a desktop notification. Renderer should
+   * focus + select the session, matching the in-app session-click behavior.
+   */
+  NOTIFICATION_SESSION_SELECT: 'notifications:session-select',
 } as const;

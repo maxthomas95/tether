@@ -751,6 +751,21 @@ export function App() {
     }
   }, [notifyError]);
 
+  /**
+   * Per-session opt-out for desktop notifications. Optimistic update on the
+   * local SessionInfo so the context-menu label flips immediately; the main
+   * process is the source of truth and will emit an onUpdated event with the
+   * authoritative state anyway.
+   */
+  const handleToggleNotificationsMuted = useCallback(async (id: string, muted: boolean) => {
+    try {
+      await window.electronAPI.notifications.setSessionMuted(id, muted);
+      setSessions(prev => prev.map(s => s.id === id ? { ...s, notificationsMuted: muted || undefined } : s));
+    } catch (err) {
+      notifyError('Failed to update notification mute', err);
+    }
+  }, [notifyError]);
+
   const handleDuplicate = useCallback(async (id: string) => {
     const source = sessions.find(s => s.id === id);
     if (!source) return;
@@ -936,6 +951,16 @@ export function App() {
       return next;
     });
   }, []);
+
+  // Bridge desktop notification clicks → in-app session focus. The notification
+  // service in the main process focuses the window; this hook handles the
+  // sidebar selection so the right session pops to the front. Declared after
+  // handleSelectSession so the dependency is in scope.
+  useEffect(() => {
+    return window.electronAPI.notifications.onSessionSelect((sessionId) => {
+      handleSelectSession(sessionId);
+    });
+  }, [handleSelectSession]);
 
   // Drag handlers for sidebar → terminal area
   const handleDragStart = useCallback(() => {
@@ -1622,6 +1647,7 @@ export function App() {
                         showResumeBadge={showResumeBadge}
                         allowHelm={allowHelm}
                         onToggleHelm={handleToggleHelm}
+                        onToggleNotificationsMuted={handleToggleNotificationsMuted}
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
                         onReorderSession={handleReorderSession}

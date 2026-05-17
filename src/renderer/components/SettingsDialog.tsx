@@ -7,7 +7,8 @@ import { themeList } from '../styles/themes';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../utils/vault-path';
 
 const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
-import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo, UsageExportFormat } from '../../shared/types';
+import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo, UsageExportFormat, NotificationPrefs } from '../../shared/types';
+import { DEFAULT_NOTIFICATION_PREFS } from '../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 import { KeybindingsEditor } from './KeybindingsEditor';
 import { HelpAnchor } from './HelpAnchor';
@@ -100,12 +101,13 @@ function formatExpiry(expiresAt?: string): string {
   return `in ${Math.round(hours / 24)}d`;
 }
 
-type SettingsSection = 'general' | 'terminal' | 'sessions' | 'shortcuts' | 'integrations' | 'usage';
+type SettingsSection = 'general' | 'terminal' | 'sessions' | 'notifications' | 'shortcuts' | 'integrations' | 'usage';
 
 const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
   { id: 'general', label: 'General' },
   { id: 'terminal', label: 'Terminal' },
   { id: 'sessions', label: 'Sessions' },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'usage', label: 'Usage' },
@@ -113,12 +115,13 @@ const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
 
 /** Per-section docs deep-link target, used by the (?) help icon. */
 const SECTION_HELP: Record<SettingsSection, { title: string; anchor: string }> = {
-  general:      { title: 'General',      anchor: 'general' },
-  terminal:     { title: 'Terminal',     anchor: 'terminal' },
-  sessions:     { title: 'Sessions',     anchor: 'sessions' },
-  shortcuts:    { title: 'Shortcuts',    anchor: 'shortcuts' },
-  integrations: { title: 'Integrations', anchor: 'integrations' },
-  usage:        { title: 'Usage',        anchor: 'usage' },
+  general:       { title: 'General',       anchor: 'general' },
+  terminal:      { title: 'Terminal',      anchor: 'terminal' },
+  sessions:      { title: 'Sessions',      anchor: 'sessions' },
+  notifications: { title: 'Notifications', anchor: 'notifications' },
+  shortcuts:     { title: 'Shortcuts',     anchor: 'shortcuts' },
+  integrations:  { title: 'Integrations',  anchor: 'integrations' },
+  usage:         { title: 'Usage',         anchor: 'usage' },
 };
 
 function SectionHeader({ section }: Readonly<{ section: SettingsSection }>) {
@@ -199,6 +202,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [newProviderError, setNewProviderError] = useState<string | null>(null);
   const [providerTestResult, setProviderTestResult] = useState<Record<string, { ok: boolean; error?: string }>>({});
 
+  // Notification prefs state. Loaded once on dialog open via the notifications
+  // IPC (single round trip, returns the full struct with defaults applied
+  // server-side). Saved on dialog close along with the rest of the prefs.
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>(DEFAULT_NOTIFICATION_PREFS);
+
   // Vault state
   const [vaultConfig, setVaultConfig] = useState<VaultConfig>({
     enabled: false, addr: '', role: '', mount: 'secret', namespace: '',
@@ -274,6 +282,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     window.electronAPI.knownHosts.list().then(setKnownHosts).catch(() => {});
     window.electronAPI.vault.getConfig().then(setVaultConfig).catch(() => {});
     window.electronAPI.vault.status().then(setVaultStatus).catch(() => {});
+    window.electronAPI.notifications.getPrefs()
+      .then(p => { if (p) setNotificationPrefs(p); })
+      .catch(() => { /* leave defaults */ });
   }, [isOpen]);
 
   // Live status updates from main
@@ -311,8 +322,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       await window.electronAPI.config.setDefaultCliFlagsForTool?.(toolId, cliFlagsPerTool[toolId] || []);
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
+    await window.electronAPI.notifications.setPrefs(notificationPrefs);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, onClose]);
 
   const handleExportUsage = async (format: UsageExportFormat) => {
     setExportBusy(format);
@@ -1088,6 +1100,82 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             </p>
             {loaded && <EnvVarEditor vars={envVars} onChange={setEnvVars} vaultEnabled={vaultStatus.enabled} />}
           </div>
+            </>
+          )}
+
+          {activeSection === 'notifications' && (
+            <>
+            <SectionHeader section="notifications" />
+            <div className="form-group">
+              <p className="form-hint" style={{ marginBottom: 12 }}>
+                Tether can post an OS desktop notification when a session changes state, so you can
+                step away from the window and still know when it needs attention. Mute an individual
+                session from its right-click menu in the sidebar.
+              </p>
+
+              <label className="form-radio-label">
+                <input
+                  type="checkbox"
+                  checked={notificationPrefs.onWaiting}
+                  onChange={e => setNotificationPrefs(p => ({ ...p, onWaiting: e.target.checked }))}
+                />
+                Notify when a session is waiting for input
+              </label>
+              <p className="form-hint">
+                Fires when the CLI finishes its turn or hits a permission prompt — the moment the
+                sidebar dot goes amber.
+              </p>
+
+              <label className="form-radio-label" style={{ marginTop: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={notificationPrefs.onIdle}
+                  onChange={e => setNotificationPrefs(p => ({ ...p, onIdle: e.target.checked }))}
+                />
+                Notify when a session goes idle
+              </label>
+              <p className="form-hint">
+                Fires after the session has been silent past the idle timeout.
+              </p>
+
+              <label className="form-radio-label" style={{ marginTop: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={notificationPrefs.onError}
+                  onChange={e => setNotificationPrefs(p => ({ ...p, onError: e.target.checked }))}
+                />
+                Notify when a session exits unexpectedly
+              </label>
+              <p className="form-hint">
+                Fires on non-zero exit codes. Clean exits (you closed the session) stay quiet.
+              </p>
+
+              <label className="form-radio-label" style={{ marginTop: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={notificationPrefs.onBell}
+                  onChange={e => setNotificationPrefs(p => ({ ...p, onBell: e.target.checked }))}
+                />
+                Notify on terminal bell
+              </label>
+              <p className="form-hint">
+                Fires when the CLI emits an ASCII BEL (<code>\x07</code>). Coalesced so a noisy
+                session won&rsquo;t spam your notification center.
+              </p>
+
+              <label className="form-radio-label" style={{ marginTop: 14 }}>
+                <input
+                  type="checkbox"
+                  checked={notificationPrefs.suppressWhenFocused}
+                  onChange={e => setNotificationPrefs(p => ({ ...p, suppressWhenFocused: e.target.checked }))}
+                />
+                Suppress notifications while Tether is focused
+              </label>
+              <p className="form-hint">
+                If you&rsquo;re already looking at Tether, the OS toast is redundant. Turn this off if
+                you want the alert even when the window has focus.
+              </p>
+            </div>
             </>
           )}
 

@@ -6,6 +6,7 @@ import { CoderTransport } from '../transport/coder-transport';
 import type { SessionTransport } from '../transport/types';
 import type { SSHConfig } from '../transport/ssh-transport';
 import { statusDetector } from '../status/status-detector';
+import { classifyExit, classifyTransition, type NotificationService, type NotifiedSession } from '../notifications/notification-service';
 import { getEnvironment, listEnvironments } from '../db/environment-repo';
 import { getProfile, listProfiles } from '../db/profile-repo';
 import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
@@ -152,6 +153,14 @@ export class Session {
   resumed = false;
   /** When true, Helm MCP was wired at spawn — or will be on next restart. */
   helmEnabled = false;
+  /**
+   * When true, desktop notifications for this session are suppressed
+   * regardless of the global prefs. Toggle via SessionManager#setNotificationsMuted.
+   * Runtime-only — fresh sessions start unmuted (sessions are re-created on
+   * app launch, and persisting a per-session preference would require an id
+   * stable across launches, which today only `savedWorkspace` provides).
+   */
+  notificationsMuted = false;
   /** Live Helm integration (bridge + MCP config file). Null when Helm is off. */
   helmIntegration: HelmIntegration | null = null;
   /** Parent session id when this session was dispatched via Helm's spawn_session. */
@@ -201,6 +210,7 @@ export class Session {
       worktreeOf: this.worktreeOf || undefined,
       helmEnabled: this.helmEnabled || undefined,
       parentSessionId: this.parentSessionId || undefined,
+      notificationsMuted: this.notificationsMuted || undefined,
     };
   }
 }
@@ -290,16 +300,84 @@ async function createTransport(environmentId?: string): Promise<SessionTransport
 export class SessionManager {
   private sessions = new Map<string, Session>();
   private callbacksMap = new Map<string, SessionCallbacks>();
+  /**
+   * Optional notification sink. Wired by the main process after both the
+   * session manager and the notification service exist. Left null during
+   * tests so the SessionManager has zero coupling to Electron's Notification
+   * API by default.
+   */
+  private notifier: NotificationService | null = null;
 
   constructor() {
     statusDetector.onStateChange((sessionId, state, waitingReason) => {
       const session = this.sessions.get(sessionId);
-      if (session) {
-        session.state = state;
-        session.waitingReason = state === 'waiting' ? waitingReason : undefined;
-        this.callbacksMap.get(sessionId)?.onStateChange(sessionId, state, session.waitingReason);
+      if (!session) return;
+      const prevState = session.state;
+      session.state = state;
+      session.waitingReason = state === 'waiting' ? waitingReason : undefined;
+      this.callbacksMap.get(sessionId)?.onStateChange(sessionId, state, session.waitingReason);
+
+      // Fire desktop notification for the transition, if the notifier is
+      // wired. Classification + filtering live in the service — we just
+      // forward the projected session.
+      const kind = classifyTransition(prevState, state);
+      if (kind && this.notifier) {
+        this.notifier.fire(kind, this.projectForNotification(session), session.waitingReason);
       }
     });
+
+    statusDetector.onBell((sessionId) => {
+      const session = this.sessions.get(sessionId);
+      if (!session || !this.notifier) return;
+      this.notifier.fire('bell', this.projectForNotification(session));
+    });
+  }
+
+  /**
+   * Inject the notification sink. Called once at boot from `main/index.ts`
+   * after the BrowserWindow exists and `createNotificationService` has run.
+   * Idempotent — passing the same service twice is a no-op.
+   */
+  setNotifier(notifier: NotificationService | null): void {
+    this.notifier = notifier;
+  }
+
+  private projectForNotification(session: Session): NotifiedSession {
+    // Resolve the environment name lazily so the notification body can
+    // include "SSH: prod-vm" etc. without dragging the full env row into
+    // the service. Done at fire-time so renamed envs don't show stale labels.
+    let environmentName: string | undefined;
+    if (session.environmentId) {
+      try {
+        // Local import to keep the service decoupled from the DB layer's
+        // module-init side effects in tests.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const repo = require('../db/environment-repo') as typeof import('../db/environment-repo');
+        const env = repo.getEnvironment(session.environmentId);
+        if (env && env.name !== 'Local') environmentName = env.name;
+      } catch { /* ignore — degrade to label-only */ }
+    }
+    return {
+      id: session.id,
+      label: session.label,
+      workingDir: session.workingDir,
+      environmentName,
+      notificationsMuted: session.notificationsMuted,
+    };
+  }
+
+  /**
+   * Flip the per-session notification mute. Takes effect immediately —
+   * any in-flight notifications already fired stay visible (the OS owns
+   * them at that point), but the next state transition is suppressed.
+   * Pushes the new SessionInfo through the update callback so the sidebar
+   * context-menu label flips ("Mute" ↔ "Unmute") without a refetch.
+   */
+  setNotificationsMuted(id: string, muted: boolean): void {
+    const session = this.sessions.get(id);
+    if (!session || session.notificationsMuted === muted) return;
+    session.notificationsMuted = muted;
+    this.callbacksMap.get(id)?.onUpdate?.(id, session.toInfo());
   }
 
   /**
@@ -385,6 +463,14 @@ export class SessionManager {
       session.helmIntegration?.cleanup();
       session.helmIntegration = null;
       callbacks.onExit(id, { exitCode, signal: exitInfo.signal });
+
+      // Surface unexpected exits as a desktop notification. Clean exits
+      // (exitCode 0) are usually user-initiated stops and are intentionally
+      // quiet — the user just clicked the menu item or typed `exit`.
+      const exitKind = classifyExit(exitCode);
+      if (exitKind && this.notifier) {
+        this.notifier.fire(exitKind, this.projectForNotification(session));
+      }
     });
 
     // Resolve env var cascade: app defaults -> environment -> profile -> session override
