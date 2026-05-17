@@ -4,6 +4,7 @@ import { atomicWriteFileSync } from '../db/atomic-write';
 import { getClaudeHome } from '../claude/transcripts';
 import { createLogger } from '../logger';
 import { quoteShellArg } from '../../shared/shell-quote';
+import { SENTINEL_TOKEN, createOverlayMutex } from './overlay-common';
 
 const log = createLogger('claude-overlay');
 
@@ -26,8 +27,6 @@ const log = createLogger('claude-overlay');
  * can't interleave their read-modify-write cycles.
  */
 
-const SENTINEL_TOKEN = 'tether-cli-hook';
-
 export interface ClaudeOverlayContext {
   /** Absolute path to `cli-tools/tether-cli-hook/index.js`. */
   helperPath: string;
@@ -35,17 +34,7 @@ export interface ClaudeOverlayContext {
   settingsPath?: string;
 }
 
-// Single-writer mutex for all overlay operations within this process.
-let mutex: Promise<void> = Promise.resolve();
-function withMutex<T>(fn: () => Promise<T> | T): Promise<T> {
-  const prev = mutex;
-  let release!: () => void;
-  mutex = new Promise<void>((r) => { release = r; });
-  return prev.then(async () => {
-    try { return await fn(); }
-    finally { release(); }
-  });
-}
+const withMutex = createOverlayMutex();
 
 interface CommandHook { type?: string; command?: string; [k: string]: unknown }
 interface NotificationGroup { matcher?: string; hooks?: CommandHook[]; [k: string]: unknown }

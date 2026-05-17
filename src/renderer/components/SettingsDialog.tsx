@@ -159,6 +159,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
   const [maxPanes, setMaxPanes] = useState(4);
   const [allowHelm, setAllowHelm] = useState(false);
+  const [cliHooksEnabled, setCliHooksEnabled] = useState(true);
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true);
   const [quotaEnabled, setQuotaEnabled] = useState(true);
   const [usageStripEnabled, setUsageStripEnabled] = useState(true);
@@ -243,7 +244,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       window.electronAPI.config.get?.('terminalCursorStyle')?.catch(() => null),
       window.electronAPI.config.get?.('terminalCursorBlink')?.catch(() => null),
       window.electronAPI.config.get?.('terminalScrollback')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback]) => {
+      window.electronAPI.config.get?.('cliHooksEnabled')?.catch(() => null),
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -275,6 +277,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       if (Number.isFinite(parsedScrollback)) {
         setTerminalScrollback(Math.max(100, Math.min(100000, parsedScrollback)));
       }
+      // cliHooksEnabled: default-on, opt-out. Missing key counts as enabled —
+      // matches the read on the main side (`!== 'false'`).
+      setCliHooksEnabled(cliHooks !== 'false');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -311,6 +316,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     await window.electronAPI.config.set?.('terminalCursorStyle', terminalCursorStyle);
     await window.electronAPI.config.set?.('terminalCursorBlink', terminalCursorBlink ? 'true' : 'false');
     await window.electronAPI.config.set?.('allowHelm', allowHelm ? 'true' : 'false');
+    // Write the literal string the read-side compares against. Default-on
+    // semantics live on the read side: `cliHooksEnabled !== 'false'` is true
+    // when the key is absent or any non-'false' string.
+    await window.electronAPI.config.set?.('cliHooksEnabled', cliHooksEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('terminalFontSize', String(terminalFontSize));
     await window.electronAPI.config.set?.('terminalScrollback', String(terminalScrollback));
     await window.electronAPI.config.set?.('terminalFontFamily', terminalFontFamily);
@@ -324,7 +333,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     await window.electronAPI.vault.setConfig(vaultConfig);
     await window.electronAPI.notifications.setPrefs(notificationPrefs);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, onClose]);
 
   const handleExportUsage = async (format: UsageExportFormat) => {
     setExportBusy(format);
@@ -800,6 +809,25 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               Unlocks the per-session &ldquo;Enable Helm&rdquo; toggle, which lets a designated
               Claude session dispatch pre-briefed child sessions via the <code>tether-helm</code> MCP.
               Leave off unless you&rsquo;re specifically using this — it changes Tether&rsquo;s surface area.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={cliHooksEnabled}
+                onChange={e => setCliHooksEnabled(e.target.checked)}
+              />
+              <span>Use CLI hooks for smarter status detection</span>
+            </label>
+            <p className="form-hint">
+              When on, Tether installs an additive entry in your
+              <code> ~/.claude/settings.json </code> and
+              <code> ~/.codex/config.toml </code>
+              so Claude/Codex tell us directly when a turn finishes or input is needed.
+              When off, Tether falls back to passive output observation only.
+              Takes effect on the next Tether launch.
             </p>
           </div>
 
