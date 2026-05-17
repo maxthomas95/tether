@@ -3,6 +3,7 @@ import path from 'node:path';
 import { app } from 'electron';
 import { createHookBridge, type HookBridgeHandle } from './hook-bridge';
 import { installClaudeHooks, uninstallClaudeHooks } from './claude-settings-overlay';
+import { installCodexHooks, uninstallCodexHooks } from './codex-config-overlay';
 import { sessionManager } from '../session/session-manager';
 import { getDb } from '../db/database';
 import { createLogger } from '../logger';
@@ -60,7 +61,12 @@ export async function startHookService(): Promise<void> {
   try {
     await uninstallClaudeHooks({ helperPath: helper });
   } catch (err) {
-    log.warn('Boot-time orphan scrub failed', { error: err instanceof Error ? err.message : String(err) });
+    log.warn('Boot-time Claude orphan scrub failed', { error: err instanceof Error ? err.message : String(err) });
+  }
+  try {
+    await uninstallCodexHooks({ helperPath: helper });
+  } catch (err) {
+    log.warn('Boot-time Codex orphan scrub failed', { error: err instanceof Error ? err.message : String(err) });
   }
 
   if (!isEnabled()) {
@@ -80,23 +86,40 @@ export async function startHookService(): Promise<void> {
     return;
   }
 
+  let anyInstalled = false;
   try {
     await installClaudeHooks({ helperPath: helper });
-    installed = true;
+    anyInstalled = true;
   } catch (err) {
     log.warn('Claude hook install failed — leaving bridge running for any pre-installed entries', {
       error: err instanceof Error ? err.message : String(err),
     });
-    installed = false;
   }
+  try {
+    await installCodexHooks({ helperPath: helper });
+    anyInstalled = true;
+  } catch (err) {
+    log.warn('Codex notify install failed — leaving bridge running for any pre-installed entries', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  installed = anyInstalled;
 }
 
 export async function stopHookService(): Promise<void> {
   if (installed) {
+    const helper = helperPath();
     try {
-      await uninstallClaudeHooks({ helperPath: helperPath() });
+      await uninstallClaudeHooks({ helperPath: helper });
     } catch (err) {
       log.warn('Claude hook uninstall failed during shutdown', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    try {
+      await uninstallCodexHooks({ helperPath: helper });
+    } catch (err) {
+      log.warn('Codex notify uninstall failed during shutdown', {
         error: err instanceof Error ? err.message : String(err),
       });
     }
