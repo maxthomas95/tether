@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.5.1-beta.2] — 2026-05-18
+
+A soak release on top of beta.1 with the long-standing top 1.0 gap finally closed: **desktop notifications on session state change**. Codex `notify` hook overlay completes the multi-CLI hook story for local sessions; a `cliHooksEnabled` UI toggle gives users a kill switch. Helm's `tether-helm` MCP gains a `cliTool` argument on `spawn_session`. New Tether house theme (rope/canvas/brass) ships alongside the Catppuccin set. Plus one notable bug fix for the bang-refire glitch reported on beta.1.
+
+### New Features
+- **Desktop notifications on session state change** — Electron Notification surface subscribed to detector transitions and exit codes; four transitions on by default (waiting, idle, unexpected-exit, bell) with focus suppression, per-session mute, and click-to-focus (#132)
+- **Codex `notify` hook overlay** — Codex sessions now drive smarter waiting/idle detection via a hand-rolled TOML overlay for `~/.codex/config.toml`, parity with the Claude hook integration (#133)
+- **`cliHooksEnabled` settings toggle** — opt-out checkbox under Settings → Sessions for users who don't want Tether modifying CLI config; default-on, takes effect on next launch (#133)
+- **Tether house theme** — new warmer dark palette (rope/canvas/brass) alongside Catppuccin Mocha/Macchiato/Frappe/Latte and Default Dark; capstone of the Phase 3 visual identity work (#116)
+- **`cliTool` arg on `tether-helm` MCP `spawn_session`** — Helm child sessions can now request a specific CLI tool (Claude/Codex/Copilot/OpenCode/Custom) rather than inheriting parent default (#134)
+- **Welcome pane logo** — splash diagram now centers the Tether mark (#127)
+
+### Bug Fixes
+- **Bang re-fires on micro PTY output** — after acking a waiting session, navigating away no longer re-bangs when a brief PTY blip flips status to running and the silence-fallback re-asserts waiting. Ack-drop on waiting → running is now deferred 5s and cancelled if the session bounces back inside the window (#135)
+
+### Improvements
+- **Phase 1 tokenization sweep finished** — last font-size and on-scale padding literals now flow through the design-tokens layer (#131)
+
+### Reverts
+- **Wordmark + knot active-session indicator removed** — both shipped briefly in beta.1 (#120) and have been reverted; the menubar `tether` text returns and active-session indication goes back to the previous treatment (#126)
+
+### Internal
+- Auto-bump package-lock on release; release script keeps `package-lock.json` in sync with `package.json` so release PRs no longer leave lockfile drift (#129)
+- 1.0 readiness docs sweep — refreshed in-app docs, README, ROADMAP for the 1.0 push (#130)
+- Roadmap flip — scrollback persistence per pane marked `[done]` (#128)
+- Historical specs archived under `docs/archive/` — `PRODUCT_SPEC.md`, `MVP_SCOPE.md`, `UI_DESIGN.md` moved out of the live docs set with frozen banners; README/CLAUDE refreshed; `docs/TRANSPORT_DESIGN.md` obsolete "post-MVP" SSH env-var note rewritten to reflect shipped behavior (#136)
+
+---
+
 ## [0.5.0-beta.1] — 2026-05-16
 
 A big push toward 1.0. UX refresh phases 2 and 3 land (surface depth, motion pass, welcome-pane redesign, wordmark + knot active-session indicator). Keyboard shortcuts are now fully user-remappable. New broadcast input fans keystrokes across N panes; Alt+Arrow / Alt+Shift+Arrow drive pane focus and swap from the keyboard. Claude Notification/Stop hooks replace cadence-only waiting heuristics. Usage breaks down per CLI tool. Plus a refreshed setup wizard, configurable cursor and scrollback, and a hardened build chain with a clean audit posture.
