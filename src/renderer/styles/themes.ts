@@ -229,14 +229,16 @@ export const latte: TetherTheme = {
   },
 };
 
-// ── Tether (rope / canvas / brass) ──────────────────────────────────
-// Phase 3 identity theme. Warmer base than Mocha (canvas-tinted darks
-// instead of cool blue-purple), deeper shadows, and a copper/brass
-// accent that leans into the anchor metaphor. Selectable from Settings
-// but not the default — Mocha remains canonical (decision C).
+// ── Brass (rope / canvas / brass) ───────────────────────────────────
+// Warm identity palette: canvas-tinted darks (instead of cool blue-purple),
+// deeper shadows, copper/brass accent. Originally shipped as "Tether" but
+// renamed to "Brass" — the brown clashed with the logo, so the lighter
+// neutral "Default Dark" took over the Tether name. The internal `name:`
+// stays as 'tether' to preserve persisted user settings and existing
+// [data-theme='tether'] CSS selectors (tokens.css, loader-themes.ts).
 export const tether: TetherTheme = {
   name: 'tether',
-  label: 'Tether',
+  label: 'Brass',
   isDark: true,
   titlebar: { color: '#1a1714', symbolColor: '#ece4d4' },
   css: {
@@ -283,10 +285,15 @@ export const tether: TetherTheme = {
   },
 };
 
-// ── Default Dark (original Tether theme) ────────────────────────────
+// ── Tether (Default Dark) — house theme ─────────────────────────────
+// Neutral cool-dark palette that pairs cleanly with the logo. This is
+// the "Tether" theme presented to users. Internal `name:` stays as
+// 'default-dark' to preserve persisted user settings and the existing
+// [data-theme='default-dark'] CSS selectors (tokens.css, loader-themes.ts,
+// docs-renderer). A "Tether Light" variant is an outstanding work item.
 export const defaultDark: TetherTheme = {
   name: 'default-dark',
-  label: 'Default Dark',
+  label: 'Tether (Default Dark)',
   isDark: true,
   titlebar: { color: '#252526', symbolColor: '#cccccc' },
   css: {
@@ -316,6 +323,60 @@ export const defaultDark: TetherTheme = {
   },
 };
 
+// ── Tether Light (Default Light) — light parity of Tether ───────────
+// VS Code Light+ inspired, paired with "Tether (Default Dark)". Same
+// neutral cool palette flipped to a white canvas with a cool blue
+// accent. Internal `name: 'tether-light'` is the key used by tokens.css,
+// loader-themes.ts, and docs-renderer.
+export const tetherLight: TetherTheme = {
+  name: 'tether-light',
+  label: 'Tether Light',
+  isDark: false,
+  titlebar: { color: '#f3f3f3', symbolColor: '#1f1f1f' },
+  css: {
+    '--bg-primary': '#ffffff',
+    '--bg-sidebar': '#f3f3f3',
+    '--bg-header': '#ececec',
+    '--bg-hover': '#e8e8e8',
+    '--bg-active': '#d6d6d6',
+    '--text-primary': '#1f1f1f',
+    '--text-secondary': '#616161',
+    '--text-muted': '#8c8c8c',
+    '--border-color': '#d4d4d4',
+    '--accent': '#0078d4',
+    '--status-running': '#16a34a',
+    '--status-waiting': '#d97706',
+    '--status-idle': '#9ca3af',
+    '--status-dead': '#dc2626',
+    '--btn-primary-text': '#ffffff',
+    '--shadow-opacity': '0.15',
+  },
+  xterm: {
+    background: '#ffffff',
+    foreground: '#1f1f1f',
+    cursor: '#1f1f1f',
+    cursorAccent: '#ffffff',
+    selectionBackground: '#add6ff',
+    selectionForeground: '#1f1f1f',
+    black: '#000000',
+    red: '#cd3131',
+    green: '#00bc00',
+    yellow: '#949800',
+    blue: '#0451a5',
+    magenta: '#bc05bc',
+    cyan: '#0598bc',
+    white: '#555555',
+    brightBlack: '#666666',
+    brightRed: '#cd3131',
+    brightGreen: '#14ce14',
+    brightYellow: '#b5ba00',
+    brightBlue: '#0451a5',
+    brightMagenta: '#bc05bc',
+    brightCyan: '#0598bc',
+    brightWhite: '#a5a5a5',
+  },
+};
+
 // ── Registry ────────────────────────────────────────────────────────
 export const themes: Record<string, TetherTheme> = {
   mocha,
@@ -324,9 +385,10 @@ export const themes: Record<string, TetherTheme> = {
   latte,
   tether,
   'default-dark': defaultDark,
+  'tether-light': tetherLight,
 };
 
-export const themeList: TetherTheme[] = [mocha, macchiato, frappe, latte, tether, defaultDark];
+export const themeList: TetherTheme[] = [mocha, macchiato, frappe, latte, tether, defaultDark, tetherLight];
 
 export const DEFAULT_THEME = 'mocha';
 

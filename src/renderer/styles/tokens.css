@@ -144,6 +144,11 @@
   --surface-2: #e6e9ef;
   --surface-3: #e6e9ef;
   --surface-4: #e6e9ef;
+  /* White-alpha highlight is invisible on near-white surfaces. Drop the
+   * inner-highlight entirely on light themes — shadow-dropdown / dialog
+   * recipes carry the lift on their own. Slot kept as 0 0 0 0 transparent
+   * so it composes safely in comma-separated box-shadow lists. */
+  --inner-highlight: 0 0 0 0 transparent;
 }
 :root[data-theme='tether'] {
   --surface-1: #1f1c18;
@@ -156,4 +161,12 @@
   --surface-2: #1b1b1b;
   --surface-3: #181818;
   --surface-4: #252526;
+}
+:root[data-theme='tether-light'] {
+  --surface-1: #ffffff;
+  --surface-2: #f3f3f3;
+  --surface-3: #f3f3f3;
+  --surface-4: #f3f3f3;
+  /* See latte for rationale. */
+  --inner-highlight: 0 0 0 0 transparent;
 }
