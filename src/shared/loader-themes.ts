@@ -64,6 +64,14 @@ export const LOADER_THEMES: Record<string, LoaderTheme> = {
     accent: '#4fc1e9',
     border: '#3c3c3c',
   },
+  'tether-light': {
+    bg: '#ffffff',
+    sidebar: '#f3f3f3',
+    text: '#1f1f1f',
+    muted: '#8c8c8c',
+    accent: '#0078d4',
+    border: '#d4d4d4',
+  },
 };
 
 export const DEFAULT_LOADER_THEME = 'mocha';

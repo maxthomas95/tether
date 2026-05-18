@@ -31,6 +31,7 @@ const EXTENDED_THEMES: Record<string, {
   latte:          { hover: '#bcc0cc', active: '#acb0be', header: '#ccd0da', textSecondary: '#5c5f77' },
   tether:         { hover: '#3a342d', active: '#4a4239', header: '#2c2723', textSecondary: '#c9bfae' },
   'default-dark': { hover: '#2a2d2e', active: '#37373d', header: '#3c3c3c', textSecondary: '#999999' },
+  'tether-light':  { hover: '#e8e8e8', active: '#d6d6d6', header: '#ececec', textSecondary: '#616161' },
 };
 
 // Slugify heading text into a stable anchor id matching what dialog (?) icons
