@@ -34,20 +34,9 @@ Grab the latest release from [GitHub Releases](https://github.com/maxthomas95/te
 
 > Windows only for now. Linux and macOS support planned.
 
-## What's new
+## Core Principle
 
-We're in the **1.0 polish push**. Recent releases (0.4.x → 0.5.0-beta.1) tightened the daily-driver UX, sharpened the visual identity, and replaced cadence-only status heuristics with real CLI hooks rather than adding new surface area:
-
-- **Customizable keyboard shortcuts** — every binding is remappable in Settings, with a reserved-chord warn list for conflicts
-- **Pane keyboard navigation + broadcast** — `Alt+Arrow` to focus a neighboring pane, `Alt+Shift+Arrow` to swap, in-pane recovery overlay when a session dies, and per-pane broadcast buttons to fan a single keystroke to N selected panes
-- **Smarter waiting/idle detection** — Claude Code Notification/Stop hooks drive status, replacing the prior cadence-only heuristics (local Claude sessions today; Codex + remote installs in flight)
-- **UX refresh phases 1-3** — typography + spacing tokens, surface depth and motion pass, redesigned welcome pane, plus a new Tether house theme (rope/canvas/brass) alongside the Catppuccin set
-- **Daily-driver UX** — drag-reorder sessions, bulk group actions, ctrl-click URLs, `Ctrl+scroll` per-pane font, `Ctrl+=/-` window zoom, configurable cursor shape/blink, configurable scrollback buffer
-- **Repo bootstrapping** — start a new project end-to-end from New Session: create a folder, `git init`, and provision an empty repo on GitHub / Gitea / Azure DevOps
-- **Usage history** — clickable global footer expands into Daily / Weekly / Monthly rollups with per-environment and per-CLI attribution and CSV / JSON export
-- **In-app documentation** — refreshed `src/docs/*.md` pages with `(?)` deep-link icons in dialogs that jump straight to the relevant section
-
-See the [Changelog](CHANGELOG.md) for the full release history and the [Roadmap](ROADMAP.md) for what's still on the way to 1.0.
+> **Dumb pipe, smart shell.** Never parse, intercept, or re-render CLI output. The PTY stream flows untouched into xterm.js. Status detection is a passive side-channel tap, not an interceptor.
 
 ## Why?
 
@@ -127,10 +116,6 @@ Tether is a dumb-pipe PTY multiplexer for interactive coding CLIs. You can selec
 
 OpenCode and custom tools run as raw PTY sessions without tool-specific resume support.
 
-## Core Principle
-
-> **Dumb pipe, smart shell.** Never parse, intercept, or re-render CLI output. The PTY stream flows untouched into xterm.js. Status detection is a passive side-channel tap, not an interceptor.
-
 ## Quick Start
 
 Download a release (see above), or build from source:
@@ -178,8 +163,6 @@ Contributor / design docs:
 |---|---|
 | [Architecture](docs/ARCHITECTURE.md) | System design, component diagram, IPC, data schema |
 | [Transport Design](docs/TRANSPORT_DESIGN.md) | Transport interface, Local/SSH adapter specs, data flow |
-| [UI Design](docs/UI_DESIGN.md) | Layout, sidebar, terminal panel, interaction model |
-| [Product Spec](docs/PRODUCT_SPEC.md) | Vision, user stories, feature requirements |
 | [Roadmap](ROADMAP.md) | Pre-1.0 polish plan and post-1.0 plans |
 | [Changelog](CHANGELOG.md) | Release history |
 
