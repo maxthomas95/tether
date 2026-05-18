@@ -37,12 +37,12 @@ Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provid
 |---|---|
 | `README.md` | Project intro, problem/solution, core principles |
 | `CHANGELOG.md` | Release history with features and known issues per version |
-| `docs/PRODUCT_SPEC.md` | Vision, target user, user stories (SF-01 through SF-34), non-goals |
-| `docs/MVP_SCOPE.md` | Original MVP definition, milestones (M1-M5), post-MVP roadmap |
+| `ROADMAP.md` | Pre-1.0 polish plan and post-1.0 plans |
 | `docs/ARCHITECTURE.md` | System diagram, component design, data schema, IPC design, key decisions |
 | `docs/TRANSPORT_DESIGN.md` | Transport interface (TypeScript), Local/SSH/Coder adapter specs, data flow |
-| `docs/UI_DESIGN.md` | Layout mockups, sidebar, terminal panel, dialogs, keyboard shortcuts, visual design |
+| `docs/1.0_RELEASE_CHECKLIST.md` | Release-mechanics gates (audit, signing, fuses, smoke) for tagging 1.0 |
 | `src/docs/*.md` | In-app help docs (rendered in the docs window) |
+| `docs/archive/` | Historical originals — `PRODUCT_SPEC.md`, `MVP_SCOPE.md`, `UI_DESIGN.md`. Frozen reference, not maintained. |
 
 ## Development Guidelines
 
@@ -50,7 +50,6 @@ Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provid
 
 - Follow the architecture in `docs/ARCHITECTURE.md` — main process owns PTYs, renderer owns UI
 - Use the `SessionTransport` interface from `src/main/transport/types.ts` as the contract for all adapters
-- Follow UI specs in `docs/UI_DESIGN.md` for layout, colors, keyboard shortcuts
 - Dark theme by default. Status colors: green (#22C55E), amber (#EAB308), gray (#6B7280), red (#EF4444)
 - Per-CLI behavior (resume args, history provider, common flags) goes in `src/shared/cli-tools.ts`, not scattered through transports
 

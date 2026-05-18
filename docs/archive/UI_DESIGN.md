@@ -1,6 +1,6 @@
 # UI Design — Tether
 
-> **Note:** This document was the original UI design spec. The implementation has evolved beyond this spec in several areas — notably session grouping (by working directory), the settings UI (dialog instead of panel), theming (5 Catppuccin themes + Default Dark), the New Session dialog (env selection, repo quick-pick, env vars, CLI flags, launch profiles, Coder workspace creation), pane splitting with snap layouts, the sidebar's Vault status pill and quota/usage footers, the per-session cost strip below each pane, the Resume Chat picker for Claude/Codex transcripts, and the Setup Wizard for first-run onboarding. Differences are noted inline.
+> **Archived 2026-05-18.** This is the original UI design spec, kept for historical reference. The shipped UI has diverged in many places (session grouping, dialog-based Settings, Catppuccin + Tether themes, pane splitting, sidebar pills/footers, Setup Wizard, etc.). For current shipped behavior see `src/docs/` and live in the app. Inline diff annotations below are frozen and will not be updated.
 
 ## Layout
 

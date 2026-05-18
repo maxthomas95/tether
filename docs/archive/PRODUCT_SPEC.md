@@ -1,6 +1,6 @@
 # Product Spec — Tether
 
-> **Note:** This document was the original product spec written before implementation. As of v0.5.x, all SF-01 through SF-23 stories are implemented, plus several originally-future items (SF-30 Coder, SF-31 workspace persistence, SF-33 transcript browsing for resume). Tether also now supports Codex CLI and GitHub Copilot CLI as first-class peers, OpenCode and custom binaries as raw PTY sessions, Vault-backed env vars, per-session and rolled-up usage/cost tracking with per-environment attribution, pane splitting with broadcast input, and user-remappable keyboard shortcuts. Stories are annotated with their status below.
+> **Archived 2026-05-18.** This is the original pre-implementation product spec, kept for historical reference. For current behavior see `README.md`, `src/docs/`, and `docs/ARCHITECTURE.md`; for current scope see `ROADMAP.md`. Inline status annotations below are frozen at v0.5.x and will not be updated.
 
 ## Vision
 

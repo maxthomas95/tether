@@ -4,7 +4,7 @@ Helm is an **opt-in, experimental** capability that lets a designated "parent" s
 
 ## Status
 
-Helm is intentionally low-key. There is no flagship UI for it yet, and it isn't on the 1.0 critical path. The design lives in `docs/HELM_DESIGN.md` (local-only, excluded from the repo) and the feature stays behind a per-session toggle so it doesn't affect anyone who hasn't opted in.
+Helm is intentionally low-key. There is no flagship UI for it yet, and it isn't on the 1.0 critical path. The feature stays behind a per-session toggle so it doesn't affect anyone who hasn't opted in.
 
 If you're not actively trying to use Helm, you can ignore this page.
 

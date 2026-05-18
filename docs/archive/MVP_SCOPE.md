@@ -1,6 +1,6 @@
 # MVP Scope — Tether
 
-> **Note:** This document was the original MVP plan. As of v0.5.x, all MVP milestones (M1-M5) are complete and most post-MVP items have shipped: SSH adapter (with TOFU/known-hosts verification), Coder workspace adapter, environment management, session grouping with drag-reorder + bulk actions, workspace persistence, Claude/Codex/Copilot resume picker, multi-CLI support (Claude/Codex/Copilot/OpenCode/Custom), Vault-backed env vars, usage/cost tracking with rollups and per-environment attribution, pane splitting with broadcast input, user-remappable keyboard shortcuts, and auto-update. Items below are annotated with their current status.
+> **Archived 2026-05-18.** This is the original MVP plan, kept for historical reference. All M1–M5 milestones shipped during 0.x. For current scope see `ROADMAP.md`; for release-mechanics gates see `docs/1.0_RELEASE_CHECKLIST.md`. Inline status annotations below are frozen at v0.5.x and will not be updated.
 
 ## MVP Definition
 

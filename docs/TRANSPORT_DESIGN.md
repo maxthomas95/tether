@@ -239,7 +239,7 @@ Tether does NOT install Claude Code on remote hosts. This is a manual prerequisi
 ### Security Considerations
 
 - SSH private keys are never stored by Tether. We store the path to the key file.
-- API keys sent as env var exports are visible in the remote shell history. Mitigation: use `env` command instead of `export` to avoid shell history, or inject via a temp file. This is a known tradeoff to be addressed post-MVP.
+- API keys are injected via `env VAR=val ... <cli>` (see `ssh-transport.ts:buildLaunchCommand`), not `export`, so they don't enter interactive shell history. Vault references (`vault://`) resolve in the main process and inject the same way — plaintext never lands in config or on disk.
 - SSH agent forwarding is supported but disabled by default.
 
 ## Coder Adapter
