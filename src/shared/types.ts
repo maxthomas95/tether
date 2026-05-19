@@ -207,8 +207,8 @@ export interface SessionInfo {
 
 /**
  * User preferences for desktop notifications on session state transitions.
- * All defaults are on except for whatever the user explicitly disables; the
- * service computes effective firing as
+ * Only `onWaiting` defaults on — the other transitions are opt-in via Settings
+ * or the Setup Wizard. The service computes effective firing as
  * `prefs[transition] && !focusedAndSuppressed && !session.notificationsMuted`.
  */
 export interface NotificationPrefs {
@@ -226,9 +226,9 @@ export interface NotificationPrefs {
 
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   onWaiting: true,
-  onIdle: true,
-  onError: true,
-  onBell: true,
+  onIdle: false,
+  onError: false,
+  onBell: false,
   suppressWhenFocused: true,
 };
 

@@ -1858,6 +1858,7 @@ export function App() {
         onEnvironmentCreated={env => {
           setEnvironments(prev => prev.some(existing => existing.id === env.id) ? prev : [...prev, env]);
         }}
+        onThemeChange={setTheme}
       />
       {resumePickerFor && (
         <ResumeChatDialog
