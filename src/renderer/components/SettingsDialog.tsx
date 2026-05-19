@@ -159,7 +159,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
   const [maxPanes, setMaxPanes] = useState(4);
   const [allowHelm, setAllowHelm] = useState(false);
-  const [cliHooksEnabled, setCliHooksEnabled] = useState(true);
+  const [cliHooksEnabled, setCliHooksEnabled] = useState(false);
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true);
   const [quotaEnabled, setQuotaEnabled] = useState(true);
   const [usageStripEnabled, setUsageStripEnabled] = useState(true);
@@ -277,9 +277,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       if (Number.isFinite(parsedScrollback)) {
         setTerminalScrollback(Math.max(100, Math.min(100000, parsedScrollback)));
       }
-      // cliHooksEnabled: default-on, opt-out. Missing key counts as enabled —
-      // matches the read on the main side (`!== 'false'`).
-      setCliHooksEnabled(cliHooks !== 'false');
+      // cliHooksEnabled: default-off, opt-in. Only literal 'true' enables —
+      // matches the read on the main side (`=== 'true'`). Missing key, empty
+      // string, or any other value counts as disabled.
+      setCliHooksEnabled(cliHooks === 'true');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -316,9 +317,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     await window.electronAPI.config.set?.('terminalCursorStyle', terminalCursorStyle);
     await window.electronAPI.config.set?.('terminalCursorBlink', terminalCursorBlink ? 'true' : 'false');
     await window.electronAPI.config.set?.('allowHelm', allowHelm ? 'true' : 'false');
-    // Write the literal string the read-side compares against. Default-on
-    // semantics live on the read side: `cliHooksEnabled !== 'false'` is true
-    // when the key is absent or any non-'false' string.
+    // Write the literal string the read-side compares against. Default-off,
+    // opt-in semantics live on the read side: only the exact string 'true'
+    // enables CLI hooks. Missing key / any other value counts as disabled.
     await window.electronAPI.config.set?.('cliHooksEnabled', cliHooksEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('terminalFontSize', String(terminalFontSize));
     await window.electronAPI.config.set?.('terminalScrollback', String(terminalScrollback));

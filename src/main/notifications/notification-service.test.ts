@@ -92,7 +92,9 @@ describe('NotificationService.fire', () => {
   });
 
   it('returns "session-muted" when the session opted out via per-session toggle', () => {
-    const { service, fakeCreate } = makeServiceWithSpy({});
+    // Explicit `onIdle: true` — defaults have idle off (opt-in), but this
+    // test is about the per-session mute taking priority over an enabled pref.
+    const { service, fakeCreate } = makeServiceWithSpy({ prefs: { onIdle: true } });
     expect(service.fire('idle', makeSession({ notificationsMuted: true }))).toBe('session-muted');
     expect(fakeCreate).not.toHaveBeenCalled();
   });
@@ -113,13 +115,14 @@ describe('NotificationService.fire', () => {
   });
 
   it('treats a destroyed window as not focused (no suppression)', () => {
-    const { service } = makeServiceWithSpy({ window: makeWindow(true, true) });
+    // Explicit `onError: true` — defaults have error off (opt-in).
+    const { service } = makeServiceWithSpy({ window: makeWindow(true, true), prefs: { onError: true } });
     expect(service.fire('error', makeSession())).toBe('fired');
   });
 
   it('routes click → window.show/focus + onSessionSelect callback', () => {
     const win = makeWindow(false);
-    const { service, created, onSessionSelect } = makeServiceWithSpy({ window: win });
+    const { service, created, onSessionSelect } = makeServiceWithSpy({ window: win, prefs: { onError: true } });
     service.fire('error', makeSession({ id: 'click-target' }));
     expect(created[0].clickCb).not.toBeNull();
     created[0].clickCb!();

@@ -21,13 +21,14 @@ const log = createLogger('hook-service');
  *     before laying fresh entries down. Net effect of a crashed shutdown
  *     is a one-launch delay before overlays are clean.
  *
- * Honors the `cliHooksEnabled` config bit (defaults to true). When false,
- * `start()` still runs the orphan-scrub pass (defense in depth — a user
- * who toggles the feature off should not be left with our entries on disk)
- * but does not lay fresh ones, and `envForSession()` returns an empty
- * record so spawned CLIs run without `TETHER_HOOK_*` in env. The helper
- * already exits 0 when those vars are missing, so unwired sessions degrade
- * to byte-level detection without errors.
+ * Honors the `cliHooksEnabled` config bit (defaults to false; opt-in via
+ * Settings or the Setup Wizard). When unset, hooks are not installed. When
+ * disabled, `start()` still runs the orphan-scrub pass (defense in depth —
+ * a user who toggles the feature off should not be left with our entries
+ * on disk) but does not lay fresh ones, and `envForSession()` returns an
+ * empty record so spawned CLIs run without `TETHER_HOOK_*` in env. The
+ * helper already exits 0 when those vars are missing, so unwired sessions
+ * degrade to byte-level detection without errors.
  */
 
 let bridge: HookBridgeHandle | null = null;
@@ -44,8 +45,8 @@ function helperPath(): string {
 }
 
 function isEnabled(): boolean {
-  // Default-on: missing key counts as enabled. Users opt OUT via Settings.
-  return getDb().config?.cliHooksEnabled !== 'false';
+  // Default-off, opt-in: user must explicitly enable via Settings or Setup Wizard.
+  return getDb().config?.cliHooksEnabled === 'true';
 }
 
 export async function startHookService(): Promise<void> {

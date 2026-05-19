@@ -5,13 +5,16 @@ import { VaultPickerDialog } from './VaultPickerDialog';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../utils/vault-path';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
-import type {
-  CliToolId,
-  EnvironmentInfo,
-  GitProviderInfo,
-  GitProviderType,
-  VaultConfig,
-  VaultStatus,
+import { themeList, DEFAULT_THEME } from '../styles/themes';
+import {
+  DEFAULT_NOTIFICATION_PREFS,
+  type CliToolId,
+  type EnvironmentInfo,
+  type GitProviderInfo,
+  type GitProviderType,
+  type NotificationPrefs,
+  type VaultConfig,
+  type VaultStatus,
 } from '../../shared/types';
 
 interface SetupWizardProps {
@@ -19,14 +22,22 @@ interface SetupWizardProps {
   onClose: () => void;
   onComplete: (opts?: { openNewSession?: boolean }) => void;
   onEnvironmentCreated?: (environment: EnvironmentInfo) => void;
+  /**
+   * Optional live-apply hook for the Theme step. When provided, the wizard
+   * calls this on selection change so the active theme updates instantly
+   * (same path SettingsDialog uses). When omitted, the wizard still
+   * persists the choice via `config.set('theme', ...)` — the new value is
+   * picked up by `useTheme` on next app start.
+   */
+  onThemeChange?: (name: string) => void;
 }
 
-type WizardStep = 0 | 1 | 2 | 3 | 4 | 5;
+type WizardStep = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 type RemoteEnvironmentChoice = 'none' | 'ssh' | 'coder';
 type SshAuthMethod = 'agent' | 'key' | 'password';
 type VaultPickerTarget = 'sshPassword' | 'providerToken';
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 9;
 const CLI_TOOL_IDS = Object.keys(CLI_TOOL_REGISTRY) as CliToolId[];
 const KNOWN_CLI_TOOL_IDS = CLI_TOOL_IDS.filter(id => id !== 'custom');
 const DEFAULT_PROVIDER_URLS: Partial<Record<GitProviderType, string>> = {
@@ -59,16 +70,30 @@ function stepTitle(step: WizardStep): string {
   switch (step) {
     case 0: return 'Welcome';
     case 1: return 'Projects';
-    case 2: return 'Vault';
-    case 3: return 'Environment & CLI';
-    case 4: return 'Git Provider';
-    case 5: return 'Ready';
+    case 2: return 'Theme';
+    case 3: return 'Vault';
+    case 4: return 'Environment & CLI';
+    case 5: return 'CLI Hooks';
+    case 6: return 'Notifications';
+    case 7: return 'Git Provider';
+    case 8: return 'Ready';
   }
 }
 
-export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated }: SetupWizardProps) {
+export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated, onThemeChange }: SetupWizardProps) {
   const [step, setStep] = useState<WizardStep>(0);
   const [reposRoot, setReposRoot] = useState('');
+
+  // Theme step state — seeded from config on dialog open.
+  const [wizardTheme, setWizardTheme] = useState(DEFAULT_THEME);
+
+  // CLI Hooks consent step state — default-off, opt-in.
+  const [enableCliHooks, setEnableCliHooks] = useState(false);
+
+  // Notifications step state — seeded from the live prefs on dialog open;
+  // the new DEFAULT_NOTIFICATION_PREFS already encodes "only onWaiting is on".
+  const [wizardNotificationPrefs, setWizardNotificationPrefs] =
+    useState<NotificationPrefs>(DEFAULT_NOTIFICATION_PREFS);
 
   const [defaultCliTool, setDefaultCliTool] = useState<CliToolId>('claude');
   const [customCliBinary, setCustomCliBinary] = useState('');
@@ -132,6 +157,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
   const resetForm = useCallback(() => {
     setStep(0);
     setReposRoot('');
+    setWizardTheme(DEFAULT_THEME);
+    setEnableCliHooks(false);
+    setWizardNotificationPrefs(DEFAULT_NOTIFICATION_PREFS);
     setDefaultCliTool('claude');
     setCustomCliBinary('');
     setRemoteEnvChoice('none');
@@ -200,7 +228,10 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
       window.electronAPI.vault.status().catch(() => EMPTY_VAULT_STATUS),
       window.electronAPI.gitProvider.list().catch(() => [] as GitProviderInfo[]),
       window.electronAPI.environment.list().catch(() => [] as EnvironmentInfo[]),
-    ]).then(([root, tool, customBinary, vaultConfig, status, providers, envs]) => {
+      window.electronAPI.config.get('theme').catch(() => null),
+      window.electronAPI.config.get('cliHooksEnabled').catch(() => null),
+      window.electronAPI.notifications.getPrefs().catch(() => null),
+    ]).then(([root, tool, customBinary, vaultConfig, status, providers, envs, themeName, cliHooks, notifPrefs]) => {
       if (cancelled) return;
       const parsedTool = isCliToolId(tool) ? tool : 'claude';
       setReposRoot(root || '');
@@ -214,6 +245,10 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
       setVaultStatus(status);
       setGitProviders(providers);
       setEnvironments(envs);
+      if (typeof themeName === 'string' && themeName) setWizardTheme(themeName);
+      // cliHooksEnabled: default-off, opt-in (matches the main-side `=== 'true'`).
+      setEnableCliHooks(cliHooks === 'true');
+      if (notifPrefs) setWizardNotificationPrefs(notifPrefs);
       const remoteEnvCount = envs.filter(env => env.type !== 'local').length;
       setSummary(prev => ({
         ...prev,
@@ -285,6 +320,42 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
     setStep(2);
   }, [reposRoot]);
 
+  const handleThemeNext = useCallback(async () => {
+    // Persist the theme. Live-apply is already handled by onThemeChange in
+    // the select onChange — this is the safety net for users who click Save
+    // without changing the dropdown (the default still needs to land in config).
+    try {
+      await window.electronAPI.config.set('theme', wizardTheme);
+    } catch {
+      // best-effort — fall through to the next step anyway
+    }
+    setStep(3);
+  }, [wizardTheme]);
+
+  const handleCliHooksNext = useCallback(async () => {
+    // Default-off, opt-in: only the literal string 'true' enables hooks on
+    // the main side. Writing 'false' explicitly is fine — same as missing.
+    // Takes effect on next app start (see startHookService).
+    try {
+      await window.electronAPI.config.set?.(
+        'cliHooksEnabled',
+        enableCliHooks ? 'true' : 'false',
+      );
+    } catch {
+      // best-effort
+    }
+    setStep(6);
+  }, [enableCliHooks]);
+
+  const handleNotificationsNext = useCallback(async () => {
+    try {
+      await window.electronAPI.notifications.setPrefs(wizardNotificationPrefs);
+    } catch {
+      // best-effort
+    }
+    setStep(7);
+  }, [wizardNotificationPrefs]);
+
   const vaultConfig = useMemo<VaultConfig>(() => ({
     enabled: vaultEnabled,
     addr: vaultAddr.trim(),
@@ -309,7 +380,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
         vaultEnabled,
         vaultLoggedIn: vaultStatus.loggedIn,
       }));
-      setStep(3);
+      setStep(4);
     } catch (err) {
       setVaultError(err instanceof Error ? err.message : String(err));
     }
@@ -430,7 +501,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
         customCliBinary: defaultCliTool === 'custom' ? customCliBinary.trim() : null,
         environmentName,
       }));
-      setStep(4);
+      setStep(5);
     } catch (err) {
       setEnvironmentError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -612,6 +683,35 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
             <>
               <div className="form-group">
                 <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+                  Pick a theme
+                </label>
+                <p className="form-hint" style={{ marginBottom: 12 }}>
+                  Choose a theme. You can change this later in Settings → General.
+                </p>
+                <select
+                  className="form-input"
+                  value={wizardTheme}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setWizardTheme(next);
+                    // Live-apply through the parent's setTheme (same path as
+                    // SettingsDialog). Falls back to bare persistence on the
+                    // step-advance handler if the parent didn't pass the prop.
+                    onThemeChange?.(next);
+                  }}
+                >
+                  {themeList.map(t => (
+                    <option key={t.name} value={t.name}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+
+          {step === 3 && (
+            <>
+              <div className="form-group">
+                <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
                   Secure secrets with Vault
                 </label>
                 <p className="form-hint" style={{ marginBottom: 12 }}>
@@ -704,7 +804,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
             </>
           )}
 
-          {step === 3 && (
+          {step === 4 && (
             <>
               <div className="form-group">
                 <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
@@ -961,7 +1061,113 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
             </>
           )}
 
-          {step === 4 && (
+          {step === 5 && (
+            <>
+              <div className="form-group">
+                <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+                  Install Tether CLI hooks?
+                </label>
+                <p className="form-hint" style={{ marginBottom: 12 }}>
+                  Tether can install hook entries into <code>~/.claude/settings.json</code> and
+                  {' '}<code>~/.codex/config.toml</code> so it gets notified when a session finishes a
+                  turn or stops responding. This gives faster, more accurate session status
+                  indicators (the green/amber/gray dots). The hooks are scoped to Tether's events
+                  only and can be removed at any time from Settings → Sessions.
+                </p>
+                <label className="form-radio-label">
+                  <input
+                    type="checkbox"
+                    checked={enableCliHooks}
+                    onChange={e => setEnableCliHooks(e.target.checked)}
+                  />
+                  Install Tether hooks into Claude Code and Codex CLI for smarter status detection
+                </label>
+                <p className="form-hint" style={{ marginTop: 8 }}>
+                  Takes effect after Tether restarts. Without hooks, status detection still works
+                  via byte-level cadence — just a touch less reliable.
+                </p>
+              </div>
+            </>
+          )}
+
+          {step === 6 && (
+            <>
+              <div className="form-group">
+                <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+                  Desktop notifications
+                </label>
+                <p className="form-hint" style={{ marginBottom: 12 }}>
+                  Tether can notify you when sessions need attention. Pick the events you want — you
+                  can change this later in Settings → Notifications.
+                </p>
+
+                <label className="form-radio-label">
+                  <input
+                    type="checkbox"
+                    checked={wizardNotificationPrefs.onWaiting}
+                    onChange={e => setWizardNotificationPrefs(p => ({ ...p, onWaiting: e.target.checked }))}
+                  />
+                  Notify when a session is waiting for input
+                </label>
+                <p className="form-hint">
+                  Fires when the CLI finishes its turn or hits a permission prompt — the moment the
+                  sidebar dot goes amber.
+                </p>
+
+                <label className="form-radio-label" style={{ marginTop: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={wizardNotificationPrefs.onIdle}
+                    onChange={e => setWizardNotificationPrefs(p => ({ ...p, onIdle: e.target.checked }))}
+                  />
+                  Notify when a session goes idle
+                </label>
+                <p className="form-hint">
+                  Fires after the session has been silent past the idle timeout.
+                </p>
+
+                <label className="form-radio-label" style={{ marginTop: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={wizardNotificationPrefs.onError}
+                    onChange={e => setWizardNotificationPrefs(p => ({ ...p, onError: e.target.checked }))}
+                  />
+                  Notify when a session exits unexpectedly
+                </label>
+                <p className="form-hint">
+                  Fires on non-zero exit codes. Clean exits (you closed the session) stay quiet.
+                </p>
+
+                <label className="form-radio-label" style={{ marginTop: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={wizardNotificationPrefs.onBell}
+                    onChange={e => setWizardNotificationPrefs(p => ({ ...p, onBell: e.target.checked }))}
+                  />
+                  Notify on terminal bell
+                </label>
+                <p className="form-hint">
+                  Fires when the CLI emits an ASCII BEL (<code>\x07</code>). Coalesced so a noisy
+                  session won&rsquo;t spam your notification center.
+                </p>
+
+                <label className="form-radio-label" style={{ marginTop: 14 }}>
+                  <input
+                    type="checkbox"
+                    checked={wizardNotificationPrefs.suppressWhenFocused}
+                    onChange={e => setWizardNotificationPrefs(p => ({ ...p, suppressWhenFocused: e.target.checked }))}
+                  />
+                  Suppress notifications while Tether is focused
+                </label>
+                <p className="form-hint">
+                  If you&rsquo;re already looking at Tether, the OS toast is redundant. Turn this off if
+                  you want the alert even when the window has focus.
+                </p>
+              </div>
+            </>
+          )}
+
+          {step === 7 && (
             <>
               <div className="form-group">
                 <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
@@ -1147,7 +1353,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
                   <button className="form-btn" onClick={handleProviderAddAnother}>
                     Add Another Provider
                   </button>
-                  <button className="form-btn form-btn--primary" onClick={() => setStep(5)}>
+                  <button className="form-btn form-btn--primary" onClick={() => setStep(8)}>
                     Continue
                   </button>
                 </div>
@@ -1155,7 +1361,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
             </>
           )}
 
-          {step === 5 && (
+          {step === 8 && (
             <div className="wizard-welcome">
               <div className="wizard-welcome-title">You're ready to start</div>
               <div className="wizard-summary">
@@ -1222,7 +1428,18 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
           {step === 2 && (
             <>
               <button className="form-btn" onClick={() => setStep(1)}>Back</button>
-              <button className="form-btn" onClick={() => setStep(3)}>Skip</button>
+              <button
+                className="form-btn form-btn--primary"
+                onClick={() => { handleThemeNext().catch(() => undefined); }}
+              >
+                Save & Continue
+              </button>
+            </>
+          )}
+          {step === 3 && (
+            <>
+              <button className="form-btn" onClick={() => setStep(2)}>Back</button>
+              <button className="form-btn" onClick={() => setStep(4)}>Skip</button>
               <button
                 className="form-btn form-btn--primary"
                 disabled={!vaultReadyToSave}
@@ -1232,9 +1449,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
               </button>
             </>
           )}
-          {step === 3 && (
+          {step === 4 && (
             <>
-              <button className="form-btn" onClick={() => setStep(2)}>Back</button>
+              <button className="form-btn" onClick={() => setStep(3)}>Back</button>
               <button
                 className="form-btn form-btn--primary"
                 disabled={!environmentCanContinue || savingEnvironment}
@@ -1244,10 +1461,32 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
               </button>
             </>
           )}
-          {step === 4 && !providerAdded && (
+          {step === 5 && (
             <>
-              <button className="form-btn" onClick={() => setStep(3)}>Back</button>
-              <button className="form-btn" onClick={() => setStep(5)}>Skip</button>
+              <button className="form-btn" onClick={() => setStep(4)}>Back</button>
+              <button
+                className="form-btn form-btn--primary"
+                onClick={() => { handleCliHooksNext().catch(() => undefined); }}
+              >
+                Save & Continue
+              </button>
+            </>
+          )}
+          {step === 6 && (
+            <>
+              <button className="form-btn" onClick={() => setStep(5)}>Back</button>
+              <button
+                className="form-btn form-btn--primary"
+                onClick={() => { handleNotificationsNext().catch(() => undefined); }}
+              >
+                Save & Continue
+              </button>
+            </>
+          )}
+          {step === 7 && !providerAdded && (
+            <>
+              <button className="form-btn" onClick={() => setStep(6)}>Back</button>
+              <button className="form-btn" onClick={() => setStep(8)}>Skip</button>
               <button
                 className="form-btn form-btn--primary"
                 disabled={!providerRequiredFilled || savingProvider}
@@ -1257,7 +1496,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated 
               </button>
             </>
           )}
-          {step === 5 && (
+          {step === 8 && (
             <>
               <button className="form-btn" onClick={() => handleComplete(false)}>
                 Start Using Tether
