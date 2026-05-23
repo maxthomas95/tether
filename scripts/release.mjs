@@ -380,6 +380,7 @@ function phaseChangelog(version, prereleaseTag) {
   const range = prevTag ? `${prevTag}..HEAD` : '';
   const commits = prevTag ? sh(`git log ${range} --oneline --no-merges`) : '';
   const today = new Date().toISOString().slice(0, 10);
+  const eol = content.includes('\r\n') ? '\r\n' : '\n';
   const draft = [
     `## [${version}-${prereleaseTag}] — ${today}`,
     '',
@@ -395,8 +396,8 @@ function phaseChangelog(version, prereleaseTag) {
     '',
     '---',
     '',
-  ].filter(Boolean).join('\n');
-  const insertAfter = '---\n\n';
+  ].filter(Boolean).join(eol);
+  const insertAfter = `---${eol}${eol}`;
   const idx = content.indexOf(insertAfter);
   if (idx === -1) die('Could not find insertion point in CHANGELOG.md (expected `---` separator after header)');
   const newContent = content.slice(0, idx + insertAfter.length) + draft + content.slice(idx + insertAfter.length);
