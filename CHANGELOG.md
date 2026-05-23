@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.5.2-beta.3] — 2026-05-23
+
+A small follow-up on beta.2 focused on first-launch UX: safer opt-in defaults for two of the more invasive behaviors, an expanded Setup Wizard that surfaces them, and a light-theme companion to the new Tether house look.
+
+### New Features
+- **Tether Light theme** — VS Code Light+ inspired light theme with full 16-color xterm palette and #0078d4 accent; light-mode parity for the Tether (Default Dark) house look (#138)
+- **Setup Wizard expanded 6 → 9 steps** — adds a theme picker, CLI Hooks consent step, and notifications disclosure so invasive behaviors are surfaced up-front instead of silently default-on (#139)
+
+### Behavior Changes
+- **`cliHooksEnabled` now opt-in (default off)** — Tether no longer writes to `~/.claude/settings.json` or `~/.codex/config.toml` on first launch without explicit consent via Settings or the Setup Wizard. Existing installs keep their current setting (#139)
+- **Notification defaults narrowed** — `onIdle`, `onError`, and `onBell` default to off on fresh installs; `onWaiting` (the core "ping me when a session needs attention" signal) stays on (#139)
+
+### Improvements
+- **Theme labels clarified** — old "Tether" brass/canvas palette relabeled to "Brass" (warm brown clashed with the logo); "Default Dark" relabeled to "Tether (Default Dark)" as the new house dark theme. Internal theme names preserved so persisted settings keep working (#138)
+
+### Bug Fixes
+- **Inner-highlight invisible on light themes** — `--inner-highlight` was rgba(255,255,255,0.04), invisible on near-white surfaces; Latte and Tether Light now use a transparent shadow slot so light-theme elevation comes from drop-shadows alone (#138)
+
+---
+
 ## [0.5.1-beta.2] — 2026-05-18
 
 A soak release on top of beta.1 with the long-standing top 1.0 gap finally closed: **desktop notifications on session state change**. Codex `notify` hook overlay completes the multi-CLI hook story for local sessions; a `cliHooksEnabled` UI toggle gives users a kill switch. Helm's `tether-helm` MCP gains a `cliTool` argument on `spawn_session`. New Tether house theme (rope/canvas/brass) ships alongside the Catppuccin set. Plus one notable bug fix for the bang-refire glitch reported on beta.1.
