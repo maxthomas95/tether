@@ -226,6 +226,14 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
                   🪝
                 </span>
               )}
+              {session.notificationsMuted && (
+                <span
+                  title="Notifications muted"
+                  style={{ marginLeft: 6, opacity: 0.55, fontSize: 11 }}
+                >
+                  🔕
+                </span>
+              )}
             </span>
             <span className="session-path">
               <CliToolBadge session={session} />
