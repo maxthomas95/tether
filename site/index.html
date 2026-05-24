@@ -1,0 +1,1496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tether — Session Multiplexer for Agentic CLI Tools</title>
+<meta name="description" content="One window for every AI coding session. Manage Claude Code, Codex CLI, and more across local, SSH, and Coder workspaces with raw PTY fidelity.">
+<meta property="og:title" content="Tether — Session Multiplexer for Agentic CLI Tools">
+<meta property="og:description" content="One window for every AI coding session. Manage Claude Code, Codex CLI, and more across local, SSH, and Coder workspaces.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0DFFFF">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1FAA2;</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --surface-raised: #1a1a1a;
+    --border: #222222;
+    --border-hover: #333333;
+    --grad-start: #0DFFFF;
+    --grad-end: #23B822;
+    --text: #e0e0e0;
+    --text-secondary: #888888;
+    --muted: #555555;
+    --red: #ef4444;
+    --amber: #eab308;
+    --green: #22c55e;
+  }
+
+  html { scroll-behavior: smooth; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid var(--grad-start);
+    outline-offset: 2px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Ambient glow — slow breathing gradient ── */
+  .ambient {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+
+  .ambient-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0;
+    animation: orbBreathe 8s ease-in-out infinite;
+  }
+
+  .ambient-orb.cyan {
+    width: 600px;
+    height: 600px;
+    top: -200px;
+    left: 20%;
+    background: radial-gradient(circle, rgba(13, 255, 255, 0.06) 0%, transparent 70%);
+    animation-delay: 0s;
+  }
+
+  .ambient-orb.green {
+    width: 500px;
+    height: 500px;
+    top: 40%;
+    right: -100px;
+    background: radial-gradient(circle, rgba(35, 184, 34, 0.04) 0%, transparent 70%);
+    animation-delay: 3s;
+  }
+
+  .ambient-orb.deep {
+    width: 800px;
+    height: 800px;
+    bottom: -300px;
+    left: -200px;
+    background: radial-gradient(circle, rgba(13, 255, 255, 0.03) 0%, transparent 70%);
+    animation-delay: 5s;
+  }
+
+  @keyframes orbBreathe {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.1); }
+  }
+
+  .container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 32px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── Gradient utilities ── */
+  .grad-text {
+    background: linear-gradient(135deg, var(--grad-start), var(--grad-end));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .grad-border {
+    border: 1px solid transparent;
+    background-image: linear-gradient(var(--surface), var(--surface)), linear-gradient(135deg, var(--grad-start), var(--grad-end));
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+  }
+
+  .grad-border-subtle {
+    border: 1px solid transparent;
+    background-image: linear-gradient(var(--surface), var(--surface)), linear-gradient(135deg, rgba(13, 255, 255, 0.3), rgba(35, 184, 34, 0.3));
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+  }
+
+  /* ── Scroll reveals ── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .reveal .stagger {
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+
+  .reveal.visible .stagger {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .reveal.visible .stagger:nth-child(1) { transition-delay: 0.04s; }
+  .reveal.visible .stagger:nth-child(2) { transition-delay: 0.08s; }
+  .reveal.visible .stagger:nth-child(3) { transition-delay: 0.12s; }
+  .reveal.visible .stagger:nth-child(4) { transition-delay: 0.16s; }
+  .reveal.visible .stagger:nth-child(5) { transition-delay: 0.20s; }
+  .reveal.visible .stagger:nth-child(6) { transition-delay: 0.24s; }
+  .reveal.visible .stagger:nth-child(7) { transition-delay: 0.28s; }
+  .reveal.visible .stagger:nth-child(8) { transition-delay: 0.32s; }
+  .reveal.visible .stagger:nth-child(9) { transition-delay: 0.36s; }
+  .reveal.visible .stagger:nth-child(10) { transition-delay: 0.40s; }
+
+  /* ── Hero ── */
+  .hero {
+    padding: 100px 0 60px;
+    animation: fadeIn 0.8s ease both;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .hero-top {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 20px;
+  }
+
+  .hero-logo {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 20px rgba(13, 255, 255, 0.2));
+    animation: logoFloat 6s ease-in-out infinite;
+  }
+
+  @keyframes logoFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+
+  .hero-title {
+    font-size: 56px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1;
+  }
+
+  .hero-tagline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    letter-spacing: 0.02em;
+    margin-bottom: 20px;
+  }
+
+  .hero-desc {
+    font-size: 18px;
+    color: var(--text-secondary);
+    max-width: 580px;
+    line-height: 1.7;
+    margin-bottom: 28px;
+  }
+
+  .hero-desc strong { color: var(--text); font-weight: 600; }
+
+  .typed-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    margin-bottom: 36px;
+    height: 1.6em;
+  }
+
+  .typed-line .prompt-char { color: var(--text-secondary); }
+
+  .typed-line .typed-text {
+    background: linear-gradient(90deg, var(--grad-start), var(--grad-end));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .typed-line .cursor {
+    display: inline-block;
+    width: 7px;
+    height: 1.1em;
+    background: linear-gradient(180deg, var(--grad-start), var(--grad-end));
+    vertical-align: text-bottom;
+    margin-left: 2px;
+    animation: blink-caret 0.8s step-end infinite;
+    border-radius: 1px;
+  }
+
+  @keyframes blink-caret {
+    50% { opacity: 0; }
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 48px;
+  }
+
+  .btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    padding: 10px 24px;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .btn-grad {
+    background: linear-gradient(135deg, var(--grad-start), var(--grad-end));
+    color: #000;
+    border: none;
+  }
+
+  .btn-grad:hover {
+    box-shadow: 0 0 24px rgba(13, 255, 255, 0.25), 0 0 48px rgba(35, 184, 34, 0.15);
+    transform: translateY(-1px);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+
+  .btn-ghost:hover {
+    color: var(--text);
+    border-color: var(--border-hover);
+    transform: translateY(-1px);
+  }
+
+  /* ── App Mockup ── */
+  .mockup-wrapper {
+    position: relative;
+    border-radius: 14px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(13, 255, 255, 0.25), rgba(35, 184, 34, 0.15), rgba(13, 255, 255, 0.08));
+    box-shadow: 0 0 80px rgba(13, 255, 255, 0.06), 0 32px 64px rgba(0, 0, 0, 0.5);
+    transition: box-shadow 0.4s ease;
+  }
+
+  .mockup-wrapper:hover {
+    box-shadow: 0 0 100px rgba(13, 255, 255, 0.1), 0 32px 80px rgba(0, 0, 0, 0.6);
+  }
+
+  .app-mockup {
+    background: var(--surface);
+    border-radius: 13px;
+    overflow: hidden;
+  }
+
+  .mockup-titlebar {
+    height: 36px;
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mockup-titlebar .dots {
+    display: flex;
+    gap: 7px;
+  }
+
+  .mockup-titlebar .dots span {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    opacity: 0.6;
+  }
+
+  .mockup-titlebar .dots span:nth-child(1) { background: #ff5f57; }
+  .mockup-titlebar .dots span:nth-child(2) { background: #ffbd2e; }
+  .mockup-titlebar .dots span:nth-child(3) { background: #28c840; }
+
+  .mockup-titlebar .title-text {
+    flex: 1;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+
+  .mockup-body {
+    display: flex;
+    height: 340px;
+  }
+
+  .mockup-sidebar {
+    width: 210px;
+    background: #1a1a1a;
+    border-right: 1px solid var(--border);
+    padding: 14px 0;
+    overflow: hidden;
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .mockup-group { margin-bottom: 6px; }
+
+  .mockup-group-header {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    padding: 3px 14px;
+    letter-spacing: 0.03em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mockup-group-header .chevron { font-size: 8px; color: var(--text-secondary); }
+
+  .mockup-session {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 14px 5px 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .mockup-session.active {
+    background: rgba(13, 255, 255, 0.04);
+    color: var(--text);
+    border-left: 2px solid;
+    border-image: linear-gradient(180deg, var(--grad-start), var(--grad-end)) 1;
+    padding-left: 22px;
+  }
+
+  .mockup-session .s-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .mockup-session .s-dot.green { background: var(--green); }
+  .mockup-session .s-dot.amber { background: var(--amber); }
+  .mockup-session .s-dot.gray { background: var(--muted); }
+
+  .mockup-session .badge {
+    font-size: 8px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.04em;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .badge.b-claude { background: rgba(13, 255, 255, 0.1); color: var(--grad-start); }
+  .badge.b-codex { background: rgba(35, 184, 34, 0.1); color: var(--grad-end); }
+
+  .mockup-footer {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    background: #1a1a1a;
+  }
+
+  .mockup-footer .cost {
+    background: linear-gradient(90deg, var(--grad-start), var(--grad-end));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+  }
+
+  .mockup-terminals {
+    flex: 1;
+    display: flex;
+  }
+
+  .mockup-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mockup-pane + .mockup-pane {
+    border-left: 2px solid var(--border);
+  }
+
+  .pane-header {
+    height: 26px;
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    gap: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .pane-header .p-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+  }
+
+  .mockup-term {
+    flex: 1;
+    padding: 10px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.65;
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .mockup-term .p { color: var(--green); }
+  .mockup-term .c { color: var(--text); }
+  .mockup-term .o { color: var(--text-secondary); }
+  .mockup-term .h { color: var(--grad-start); }
+  .mockup-term .w { color: var(--amber); }
+
+  /* ── Section headings ── */
+  .section {
+    padding: 80px 0;
+  }
+
+  .section + .section {
+    border-top: 1px solid var(--border);
+  }
+
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 12px;
+    line-height: 1.15;
+  }
+
+  .section-desc {
+    font-size: 16px;
+    color: var(--text-secondary);
+    max-width: 560px;
+    line-height: 1.6;
+    margin-bottom: 40px;
+  }
+
+  /* ── Principle callout ── */
+  .principle {
+    margin-top: 48px;
+    padding: 24px 28px;
+    border-radius: 12px;
+    background: var(--surface);
+    border-left: 3px solid;
+    border-image: linear-gradient(180deg, var(--grad-start), var(--grad-end)) 1;
+  }
+
+  .principle-headline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .principle-body {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  /* ── Feature cards ── */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+
+  .feature {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 28px;
+    transition: border-color 0.3s, transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .feature.wide {
+    grid-column: 1 / -1;
+  }
+
+  .feature:hover {
+    border-color: rgba(13, 255, 255, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  .feature-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .feature-icon {
+    font-size: 20px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(13, 255, 255, 0.05);
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+
+  .feature-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .feature-body {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.65;
+  }
+
+  /* ── Environment cards ── */
+  .env-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  .env-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 24px;
+    text-align: center;
+    transition: border-color 0.3s, transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .env-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  }
+
+  .env-card:nth-child(1):hover { border-color: rgba(13, 255, 255, 0.3); }
+  .env-card:nth-child(2):hover { border-color: rgba(24, 200, 28, 0.3); }
+  .env-card:nth-child(3):hover { border-color: rgba(35, 184, 34, 0.3); }
+
+  .env-icon { font-size: 28px; margin-bottom: 14px; }
+
+  .env-name {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .env-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+
+  .env-tech {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── Architecture ── */
+  .arch {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    overflow-x: auto;
+    margin-bottom: 16px;
+  }
+
+  .arch pre {
+    color: var(--text-secondary);
+    white-space: pre;
+    margin: 0;
+  }
+
+  .arch .hl { color: var(--grad-start); }
+  .arch .hl2 { color: var(--grad-end); }
+
+  .arch .flow {
+    display: inline-block;
+    color: var(--muted);
+    opacity: 0.3;
+    animation: flowPulse 3s ease-in-out infinite;
+  }
+
+  .arch .flow:nth-of-type(2) { animation-delay: 0.3s; }
+  .arch .flow:nth-of-type(3) { animation-delay: 0.6s; }
+  .arch .flow:nth-of-type(4) { animation-delay: 0.9s; }
+  .arch .flow:nth-of-type(5) { animation-delay: 1.2s; }
+  .arch .flow:nth-of-type(6) { animation-delay: 1.5s; }
+
+  @keyframes flowPulse {
+    0%, 100% { opacity: 0.15; color: var(--muted); }
+    50% { opacity: 1; color: var(--grad-start); text-shadow: 0 0 6px rgba(13, 255, 255, 0.4); }
+  }
+
+  .arch-note {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    padding: 20px 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--grad-end);
+    border-radius: 8px;
+  }
+
+  /* ── Stack grid ── */
+  .stack {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  .stack-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    transition: border-color 0.3s, transform 0.3s ease;
+  }
+
+  .stack-item:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+  }
+
+  .stack-layer {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .stack-name {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .stack-note {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  /* ── CLI tools ── */
+  .cli-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+  }
+
+  .cli-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    transition: border-color 0.3s, transform 0.3s ease;
+  }
+
+  .cli-card:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+  }
+
+  .cli-name {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .cli-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-bottom: 8px;
+  }
+
+  .cli-level {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+
+  .cli-level.full { color: var(--green); }
+  .cli-level.partial { color: var(--amber); }
+
+  /* ── Theme swatches ── */
+  .theme-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .theme-swatch {
+    flex: 1;
+    min-width: 110px;
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border: 1px solid transparent;
+  }
+
+  .theme-swatch:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .swatch-bar {
+    height: 36px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 0 8px;
+  }
+
+  .swatch-bar .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .swatch-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+  }
+
+  /* ── Download CTA ── */
+  .download {
+    text-align: center;
+    padding: 80px 0 40px;
+  }
+
+  .download-title {
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 8px;
+  }
+
+  .download-version {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 12px;
+  }
+
+  .download-note {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 28px;
+    line-height: 1.6;
+  }
+
+  .download-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+
+  .download-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ── Footer ── */
+  .footer {
+    padding: 32px 0;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .footer a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .footer a:hover { color: var(--text); }
+
+  .footer-links {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 860px) {
+    .features { grid-template-columns: 1fr; }
+    .feature.wide { grid-column: span 1; }
+    .stack { grid-template-columns: repeat(2, 1fr); }
+    .env-grid { grid-template-columns: 1fr; }
+    .mockup-sidebar { width: 170px; }
+  }
+
+  @media (max-width: 600px) {
+    .container { padding: 0 20px; }
+    .hero { padding: 60px 0 40px; }
+    .hero-title { font-size: 36px; }
+    .hero-logo { width: 48px; height: 48px; }
+    .stack { grid-template-columns: 1fr; }
+    .mockup-sidebar { display: none; }
+    .mockup-body { height: 220px; }
+    .cli-grid { grid-template-columns: 1fr 1fr; }
+    .theme-row { gap: 8px; }
+    .theme-swatch { min-width: 80px; }
+    .section { padding: 48px 0; }
+    .section-title { font-size: 24px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .skip-link {
+    position: absolute;
+    top: -100%;
+    left: 16px;
+    background: var(--grad-start);
+    color: var(--bg);
+    padding: 8px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 0 0 6px 6px;
+    z-index: 100;
+    text-decoration: none;
+  }
+
+  .skip-link:focus { top: 0; }
+</style>
+</head>
+<body>
+<a href="#features" class="skip-link">Skip to content</a>
+
+<div class="ambient" aria-hidden="true">
+  <div class="ambient-orb cyan"></div>
+  <div class="ambient-orb green"></div>
+  <div class="ambient-orb deep"></div>
+</div>
+
+<div class="container">
+
+  <!-- ═══ Hero ═══ -->
+  <header class="hero">
+    <div class="hero-top">
+      <img src="logo.png" alt="" class="hero-logo" aria-hidden="true">
+      <h1 class="hero-title"><span class="grad-text">Tether</span></h1>
+    </div>
+    <p class="hero-tagline">Session multiplexer for agentic CLI tools</p>
+    <p class="hero-desc">
+      One window for <strong>every AI coding session</strong>. Manage Claude Code, Codex, and more across local, SSH, and Coder workspaces &mdash; with raw PTY fidelity that never touches your output.
+    </p>
+    <p class="typed-line" role="status" aria-label="terminal typing animation"></p>
+    <div class="hero-actions">
+      <a href="#download" class="btn btn-grad">Download</a>
+      <a href="#features" class="btn btn-ghost">Features</a>
+      <a href="https://github.com/maxthomas95/tether" class="btn btn-ghost">Source</a>
+    </div>
+
+    <div class="mockup-wrapper">
+      <div class="app-mockup" aria-label="Tether application interface showing grouped sessions and split terminal panes">
+        <div class="mockup-titlebar">
+          <div class="dots"><span></span><span></span><span></span></div>
+          <div class="title-text">TETHER</div>
+        </div>
+        <div class="mockup-body">
+          <div class="mockup-sidebar">
+            <div class="mockup-group">
+              <div class="mockup-group-header"><span class="chevron">&#x25BE;</span> ~/projects/api</div>
+              <div class="mockup-session active">
+                <span class="s-dot green"></span>
+                <span>api-refactor</span>
+                <span class="badge b-claude">CLAUDE</span>
+              </div>
+              <div class="mockup-session">
+                <span class="s-dot amber"></span>
+                <span>api-tests</span>
+                <span class="badge b-claude">CLAUDE</span>
+              </div>
+            </div>
+            <div class="mockup-group">
+              <div class="mockup-group-header"><span class="chevron">&#x25BE;</span> ~/projects/web</div>
+              <div class="mockup-session">
+                <span class="s-dot green"></span>
+                <span>frontend</span>
+                <span class="badge b-codex">CODEX</span>
+              </div>
+              <div class="mockup-session">
+                <span class="s-dot gray"></span>
+                <span>design-sys</span>
+                <span class="badge b-claude">CLAUDE</span>
+              </div>
+            </div>
+            <div class="mockup-group">
+              <div class="mockup-group-header"><span class="chevron">&#x25B8;</span> ~/infra</div>
+            </div>
+            <div class="mockup-footer">
+              TODAY <span class="cost">$4.27</span> &middot; 12 sessions
+            </div>
+          </div>
+          <div class="mockup-terminals">
+            <div class="mockup-pane">
+              <div class="pane-header">
+                <span class="p-dot" style="background: var(--green);"></span>
+                api-refactor &middot; claude
+              </div>
+              <div class="mockup-term">
+                <div><span class="p">$</span> <span class="c">claude</span></div>
+                <div>&nbsp;</div>
+                <div><span class="h">&#x25CF; Claude</span> <span class="o">analyzing src/auth/middleware.ts</span></div>
+                <div>&nbsp;</div>
+                <div><span class="o">I'll refactor the auth middleware to</span></div>
+                <div><span class="o">separate token validation from session</span></div>
+                <div><span class="o">management. This gives us:</span></div>
+                <div>&nbsp;</div>
+                <div><span class="o">1. Testable token validator</span></div>
+                <div><span class="o">2. Pluggable session backends</span></div>
+                <div><span class="o">3. Clean middleware composition</span></div>
+                <div>&nbsp;</div>
+                <div><span class="h">&#x25CF;</span> <span class="o">Writing src/auth/validate.ts</span></div>
+              </div>
+            </div>
+            <div class="mockup-pane">
+              <div class="pane-header">
+                <span class="p-dot" style="background: var(--amber);"></span>
+                api-tests &middot; claude
+              </div>
+              <div class="mockup-term">
+                <div><span class="p">$</span> <span class="c">claude --resume abc123</span></div>
+                <div>&nbsp;</div>
+                <div><span class="h">&#x25CF; Claude</span> <span class="o">test suite ready</span></div>
+                <div>&nbsp;</div>
+                <div><span class="w">&#x25B6; Waiting for permission:</span></div>
+                <div><span class="o">&nbsp; Run </span><span class="h">npm test</span><span class="o"> in ~/projects/api?</span></div>
+                <div>&nbsp;</div>
+                <div><span class="o">&nbsp; </span><span class="h">[Y]es</span><span class="o"> / [N]o / [A]lways</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══ What & Why ═══ -->
+  <section class="section reveal">
+    <div class="section-label grad-text">The problem</div>
+    <h2 class="section-title">Terminals don't scale</h2>
+    <div class="section-desc">
+      AI coding agents are session-native &mdash; each runs in its own terminal, owns its own context, works at its own pace. Real work needs several running at once, often across different machines.
+    </div>
+    <p style="font-size: 15px; color: var(--text-secondary); line-height: 1.7; max-width: 640px;">
+      By the fourth tab you've lost track of which session is waiting, which is done, and what anything costs. SSH sessions live in separate windows. Coder workspaces need their own CLI. Tether puts every session, every machine, and every CLI tool into a single pane of glass &mdash; grouped by repo, split into panes, with cost tracking and status detection that tells you what needs attention.
+    </p>
+
+    <div class="principle">
+      <div class="principle-headline grad-text">Dumb pipe, smart shell.</div>
+      <div class="principle-body">
+        Tether never parses, filters, or re-renders CLI output. The PTY stream flows byte-for-byte into xterm.js untouched &mdash; the same renderer VS Code uses. Status detection is a passive side-channel tap, never an interceptor. Your CLI experience is exactly what you'd get in a native terminal.
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Features ═══ -->
+  <section class="section reveal" id="features">
+    <div class="section-label grad-text">Capabilities</div>
+    <h2 class="section-title">Everything shipped</h2>
+    <div class="section-desc">
+      Not a roadmap &mdash; these are all in the current release.
+    </div>
+    <div class="features">
+      <div class="feature wide stagger">
+        <div class="feature-header">
+          <div class="feature-icon">&#x1F5A5;&#xFE0F;</div>
+          <div class="feature-title">Multi-Environment Sessions</div>
+        </div>
+        <div class="feature-body">Run sessions on your local machine, over SSH to a Linux VM, or inside a Coder workspace &mdash; all from one window. Each environment has preconfigured settings. Pick an environment, pick a CLI, go.</div>
+      </div>
+      <div class="feature stagger">
+        <div class="feature-header">
+          <div class="feature-icon">&#x1F4CA;</div>
+          <div class="feature-title">Cost Tracking</div>
+        </div>
+        <div class="feature-body">Real-time usage across all sessions. Daily/weekly/monthly rollups, per-CLI and per-environment breakdowns, sparkline footer. CSV and JSON export.</div>
+      </div>
+      <div class="feature stagger">
+        <div class="feature-header">
+          <div class="feature-icon">&#x2B1C;</div>
+          <div class="feature-title">Split Panes & Broadcast</div>
+        </div>
+        <div class="feature-body">Split into multiple panes. Keyboard-driven focus and swap. Broadcast input fans keystrokes to every selected pane simultaneously.</div>
+      </div>
+      <div class="feature stagger">
+        <div class="feature-header">
+          <div class="feature-icon">&#x1F514;</div>
+          <div class="feature-title">Status Detection</div>
+        </div>
+        <div class="feature-body">Hook-driven detection for "waiting for permission" and "idle" states. Desktop notifications surface what needs attention. Per-session mute.</div>
+      </div>
+      <div class="feature stagger">
+        <div class="feature-header">
+          <div class="feature-icon">&#x1F512;</div>
+          <div class="feature-title">Vault Integration</div>
+        </div>
+        <div class="feature-body">Reference secrets from HashiCorp Vault with vault:// URIs. Token and OIDC auth. Expiry warnings. No plaintext secrets in config.</div>
+      </div>
+      <div class="feature stagger">
+        <div class="feature-header">
+          <div class="feature-icon">&#x1F4C1;</div>
+          <div class="feature-title">Repo Bootstrapping</div>
+        </div>
+        <div class="feature-body">Create folders, git init, and provision repos on GitHub, Gitea, or Azure DevOps &mdash; from the new session dialog.</div>
+      </div>
+      <div class="feature stagger">
+        <div class="feature-header">
+          <div class="feature-icon">&#x23EA;</div>
+          <div class="feature-title">Session Resume</div>
+        </div>
+        <div class="feature-body">Browse Claude and Codex transcripts and resume any past conversation, grouped by recency and working directory.</div>
+      </div>
+      <div class="feature stagger">
+        <div class="feature-header">
+          <div class="feature-icon">&#x2328;&#xFE0F;</div>
+          <div class="feature-title">Remappable Shortcuts</div>
+        </div>
+        <div class="feature-body">Every keyboard shortcut is user-remappable with reserved-chord warnings. Focus, split, swap, zoom, broadcast &mdash; all rebindable.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Environments ═══ -->
+  <section class="section reveal">
+    <div class="section-label grad-text">Environments</div>
+    <h2 class="section-title">One interface, any machine</h2>
+    <div class="section-desc">
+      All three transports implement the same interface &mdash; the UI is environment-agnostic.
+    </div>
+    <div class="env-grid">
+      <div class="env-card stagger">
+        <div class="env-icon" aria-hidden="true">&#x1F4BB;</div>
+        <div class="env-name">Local</div>
+        <div class="env-desc">Native PTY via node-pty. Full speed, zero latency.</div>
+        <div class="env-tech grad-text">NODE-PTY</div>
+      </div>
+      <div class="env-card stagger">
+        <div class="env-icon" aria-hidden="true">&#x1F310;</div>
+        <div class="env-name">SSH</div>
+        <div class="env-desc">Connect to any box. TOFU host key verification, optional sudo elevation.</div>
+        <div class="env-tech grad-text">SSH2 + KNOWN HOSTS</div>
+      </div>
+      <div class="env-card stagger">
+        <div class="env-icon" aria-hidden="true">&#x2601;&#xFE0F;</div>
+        <div class="env-name">Coder</div>
+        <div class="env-desc">Connect to workspaces or create from templates via the Coder API.</div>
+        <div class="env-tech grad-text">CODER REST API</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Architecture ═══ -->
+  <section class="section reveal" id="architecture">
+    <div class="section-label grad-text">Architecture</div>
+    <h2 class="section-title">Data flow</h2>
+    <div class="section-desc">
+      Main process owns PTYs. Renderer owns UI. The stream is never parsed.
+    </div>
+    <div class="arch">
+      <pre>
+  <span class="hl">Keystroke</span>                     You type in the terminal pane
+       <span class="flow">&#x2195;</span>
+  <span class="hl2">xterm.js</span>                      Captures input, renders output
+       <span class="flow">&#x2195;</span>
+  Electron IPC                  Commands + event channels
+       <span class="flow">&#x2195;</span>
+  <span class="hl2">Transport Adapter</span>             Local / SSH / Coder
+       <span class="flow">&#x2195;</span>
+  <span class="hl">PTY stdin/stdout</span>              Raw byte stream
+       <span class="flow">&#x2195;</span>
+  CLI Tool                      Claude / Codex / OpenCode / Custom
+       <span class="flow">&#x2195;</span>
+  <span class="hl2">Status Detector</span>               Passive tap (copy, never intercept)
+      </pre>
+    </div>
+    <div class="arch-note">
+      Transport adapters implement a common <code>SessionTransport</code> interface. Local, SSH, and Coder sessions look and behave identically to the UI. Status detection copies the PTY stream &mdash; it never sits in the data path.
+    </div>
+  </section>
+
+  <!-- ═══ Tech Stack ═══ -->
+  <section class="section reveal">
+    <div class="section-label grad-text">Stack</div>
+    <h2 class="section-title">Built with</h2>
+    <div class="stack" style="margin-top: 32px;">
+      <div class="stack-item stagger">
+        <div class="stack-layer grad-text">Shell</div>
+        <div class="stack-name">Electron 41</div>
+        <div class="stack-note">Main process owns PTY lifecycle</div>
+      </div>
+      <div class="stack-item stagger">
+        <div class="stack-layer grad-text">Frontend</div>
+        <div class="stack-name">React 19 + TypeScript</div>
+        <div class="stack-note">Sidebar, panes, split layouts, dialogs</div>
+      </div>
+      <div class="stack-item stagger">
+        <div class="stack-layer grad-text">Terminal</div>
+        <div class="stack-name">xterm.js 6.0</div>
+        <div class="stack-note">Same renderer VS Code uses</div>
+      </div>
+      <div class="stack-item stagger">
+        <div class="stack-layer grad-text">Local PTY</div>
+        <div class="stack-name">node-pty</div>
+        <div class="stack-note">Native pseudo-terminal</div>
+      </div>
+      <div class="stack-item stagger">
+        <div class="stack-layer grad-text">Remote</div>
+        <div class="stack-name">ssh2 + Coder API</div>
+        <div class="stack-note">SSH with TOFU, Coder workspace exec</div>
+      </div>
+      <div class="stack-item stagger">
+        <div class="stack-layer grad-text">Secrets</div>
+        <div class="stack-name">HashiCorp Vault</div>
+        <div class="stack-note">KV v2, token + OIDC auth</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ CLI Tools ═══ -->
+  <section class="section reveal">
+    <div class="section-label grad-text">CLI tools</div>
+    <h2 class="section-title">Bring your agent</h2>
+    <div class="section-desc">
+      Tether is a dumb-pipe multiplexer &mdash; it doesn't depend on any one CLI.
+    </div>
+    <div class="cli-grid">
+      <div class="cli-card stagger">
+        <div class="cli-name">Claude Code</div>
+        <div class="cli-desc">Resume, transcripts, hooks, cost tracking</div>
+        <div class="cli-level full">FULL</div>
+      </div>
+      <div class="cli-card stagger">
+        <div class="cli-name">Codex CLI</div>
+        <div class="cli-desc">Resume, transcripts, notify hooks, cost tracking</div>
+        <div class="cli-level full">FULL</div>
+      </div>
+      <div class="cli-card stagger">
+        <div class="cli-name">Copilot CLI</div>
+        <div class="cli-desc">PTY + status detection. Cost blocked on upstream.</div>
+        <div class="cli-level partial">PTY</div>
+      </div>
+      <div class="cli-card stagger">
+        <div class="cli-name">OpenCode</div>
+        <div class="cli-desc">PTY, cost via crush.db</div>
+        <div class="cli-level full">FULL</div>
+      </div>
+      <div class="cli-card stagger">
+        <div class="cli-name">Custom</div>
+        <div class="cli-desc">Any binary &mdash; you configure the command</div>
+        <div class="cli-level partial">PTY</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Themes ═══ -->
+  <section class="section reveal">
+    <div class="section-label grad-text">Themes</div>
+    <h2 class="section-title">7 palettes, full xterm support</h2>
+    <div class="theme-row" style="margin-top: 32px;">
+      <div class="theme-swatch stagger" style="background: #1e1e2e;">
+        <div class="swatch-bar" style="background: #181825; border: 1px solid #585b70;">
+          <span class="dot" style="background: #b4befe;"></span>
+          <span class="dot" style="background: #a6e3a1;"></span>
+          <span class="dot" style="background: #f38ba8;"></span>
+          <span class="dot" style="background: #f9e2af;"></span>
+        </div>
+        <div class="swatch-name" style="color: #cdd6f4;">Mocha</div>
+      </div>
+      <div class="theme-swatch stagger" style="background: #24273a;">
+        <div class="swatch-bar" style="background: #1e2030; border: 1px solid #5b6078;">
+          <span class="dot" style="background: #b7bdf8;"></span>
+          <span class="dot" style="background: #a6da95;"></span>
+          <span class="dot" style="background: #ed8796;"></span>
+          <span class="dot" style="background: #eed49f;"></span>
+        </div>
+        <div class="swatch-name" style="color: #cad3f5;">Macchiato</div>
+      </div>
+      <div class="theme-swatch stagger" style="background: #303446;">
+        <div class="swatch-bar" style="background: #292c3c; border: 1px solid #626880;">
+          <span class="dot" style="background: #babbf1;"></span>
+          <span class="dot" style="background: #a6d189;"></span>
+          <span class="dot" style="background: #e78284;"></span>
+          <span class="dot" style="background: #e5c890;"></span>
+        </div>
+        <div class="swatch-name" style="color: #c6d0f5;">Frapp&eacute;</div>
+      </div>
+      <div class="theme-swatch stagger" style="background: #eff1f5;">
+        <div class="swatch-bar" style="background: #e6e9ef; border: 1px solid #acb0be;">
+          <span class="dot" style="background: #7287fd;"></span>
+          <span class="dot" style="background: #40a02b;"></span>
+          <span class="dot" style="background: #d20f39;"></span>
+          <span class="dot" style="background: #df8e1d;"></span>
+        </div>
+        <div class="swatch-name" style="color: #4c4f69;">Latte</div>
+      </div>
+      <div class="theme-swatch stagger" style="background: #1e1e1e;">
+        <div class="swatch-bar" style="background: #252526; border: 1px solid #3c3c3c;">
+          <span class="dot" style="background: #4fc1e9;"></span>
+          <span class="dot" style="background: #22c55e;"></span>
+          <span class="dot" style="background: #ef4444;"></span>
+          <span class="dot" style="background: #eab308;"></span>
+        </div>
+        <div class="swatch-name" style="color: #cccccc;">Tether</div>
+      </div>
+      <div class="theme-swatch stagger" style="background: #ffffff;">
+        <div class="swatch-bar" style="background: #f3f3f3; border: 1px solid #d4d4d4;">
+          <span class="dot" style="background: #0078d4;"></span>
+          <span class="dot" style="background: #16a34a;"></span>
+          <span class="dot" style="background: #dc2626;"></span>
+          <span class="dot" style="background: #d97706;"></span>
+        </div>
+        <div class="swatch-name" style="color: #1f1f1f;">Light</div>
+      </div>
+      <div class="theme-swatch stagger" style="background: #1f1c18;">
+        <div class="swatch-bar" style="background: #1a1714; border: 1px solid #3a342d;">
+          <span class="dot" style="background: #c68a5c;"></span>
+          <span class="dot" style="background: #22c55e;"></span>
+          <span class="dot" style="background: #ef4444;"></span>
+          <span class="dot" style="background: #eab308;"></span>
+        </div>
+        <div class="swatch-name" style="color: #ece4d4;">Brass</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Download ═══ -->
+  <section class="section download reveal" id="download">
+    <img src="logo.png" alt="Tether logo" style="width: 72px; height: 72px; margin-bottom: 20px; filter: drop-shadow(0 0 24px rgba(13, 255, 255, 0.2));">
+    <div class="download-title">Get <span class="grad-text">Tether</span></div>
+    <div class="download-version grad-text" id="version-badge">v0.5.2-beta.3</div>
+    <div class="download-note">
+      Free and open source. Windows only for now &mdash; macOS and Linux are post-1.0.<br>
+      Requires Node.js 20+ and at least one supported CLI tool.
+    </div>
+    <div class="download-buttons">
+      <a href="https://github.com/maxthomas95/tether/releases/latest" class="btn btn-grad">Download for Windows</a>
+      <a href="https://github.com/maxthomas95/tether" class="btn btn-ghost">View on GitHub</a>
+    </div>
+    <div class="download-meta">MIT License &middot; Electron + React + xterm.js</div>
+  </section>
+
+  <!-- ═══ Footer ═══ -->
+  <footer class="footer">
+    <span>Built by <a href="https://max-thomas.com">Max Thomas</a></span>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="https://github.com/maxthomas95/tether">GitHub</a>
+      <span style="color: var(--border);">&middot;</span>
+      <a href="https://ko-fi.com/maxthomas1995">Ko-fi</a>
+      <span style="color: var(--border);">&middot;</span>
+      <span>MIT &middot; 2026</span>
+    </nav>
+  </footer>
+
+</div>
+
+<script>
+// Scroll reveals
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.06, rootMargin: '0px 0px -30px 0px' });
+
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// Typing animation
+(function() {
+  const el = document.querySelector('.typed-line');
+  const prefix = '~ ';
+  const lines = [
+    'spawning claude in ~/projects/api',
+    '4 sessions — 2 local, 1 SSH, 1 Coder',
+    'vault://secrets/prod/api-key resolved',
+    'broadcasting input to 3 panes',
+    'session waiting for permission',
+    '$4.27 today across 12 sessions',
+    'resume: abc123 — auth refactor',
+    'codex started in ~/infra',
+    'dumb pipe, smart shell',
+  ];
+  let lineIdx = 0;
+
+  const promptSpan = document.createElement('span');
+  promptSpan.className = 'prompt-char';
+  promptSpan.textContent = prefix;
+
+  const textSpan = document.createElement('span');
+  textSpan.className = 'typed-text';
+
+  const cursor = document.createElement('span');
+  cursor.className = 'cursor';
+
+  el.appendChild(promptSpan);
+  el.appendChild(textSpan);
+  el.appendChild(cursor);
+
+  function eraseLine(cb) {
+    function eraseChar() {
+      if (textSpan.textContent.length > 0) {
+        textSpan.textContent = textSpan.textContent.slice(0, -1);
+        setTimeout(eraseChar, 18 + Math.random() * 18);
+      } else {
+        cb();
+      }
+    }
+    eraseChar();
+  }
+
+  function typeLine(text, cb) {
+    let i = 0;
+    function typeChar() {
+      if (i < text.length) {
+        textSpan.textContent += text[i];
+        i++;
+        setTimeout(typeChar, 40 + Math.random() * 50);
+      } else {
+        cb();
+      }
+    }
+    typeChar();
+  }
+
+  function cycle() {
+    typeLine(lines[lineIdx], () => {
+      setTimeout(() => {
+        eraseLine(() => {
+          lineIdx = (lineIdx + 1) % lines.length;
+          setTimeout(cycle, 350);
+        });
+      }, 2400);
+    });
+  }
+
+  setTimeout(cycle, 600);
+})();
+
+// Fetch latest release version from GitHub API
+(function() {
+  const repo = 'maxthomas95/tether';
+  const badge = document.getElementById('version-badge');
+  fetch('https://api.github.com/repos/' + repo + '/releases/latest')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (data && data.tag_name) {
+        badge.textContent = data.tag_name;
+      }
+    })
+    .catch(function() {});
+})();
+</script>
+</body>
+</html>
