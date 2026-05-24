@@ -53,8 +53,9 @@ describe('StatusDetector', () => {
     expect(stateChanges).toContainEqual({ sessionId: 's1', state: 'running' });
   });
 
-  it('transitions to waiting after silence (fallback)', () => {
-    start('s1', 'some streaming output');
+  it('transitions to waiting after silence (non-hook CLI fallback)', () => {
+    detector.register('s1', 'opencode');
+    feed('s1', 'some streaming output');
     expect(detector.getState('s1')).toBe('running');
 
     // 3000ms silence → waiting fires; +500ms debounce
@@ -62,13 +63,51 @@ describe('StatusDetector', () => {
     expect(detector.getState('s1')).toBe('waiting');
   });
 
-  it('transitions to idle after extended silence', () => {
-    start('s1', 'some output');
+  it('transitions to idle after extended silence (non-hook CLI)', () => {
+    detector.register('s1', 'opencode');
+    feed('s1', 'some output');
     vi.advanceTimersByTime(3000 + 500);
     expect(detector.getState('s1')).toBe('waiting');
 
     // idle timeout (30s total - 3s already elapsed) + debounce
     vi.advanceTimersByTime(27000 + 500);
+    expect(detector.getState('s1')).toBe('idle');
+  });
+
+  it('stays running for hook-enabled CLI when turn has not completed', () => {
+    start('s1', 'codex output');
+
+    // 3s silence — non-hook CLI would go waiting, but hook CLI stays running
+    vi.advanceTimersByTime(3000 + 500);
+    expect(detector.getState('s1')).toBe('running');
+
+    // 30s total silence — still running, not idle
+    vi.advanceTimersByTime(27000 + 500);
+    expect(detector.getState('s1')).toBe('running');
+  });
+
+  it('markTurnComplete sets waiting state for hook-enabled CLI (idle via silence later)', () => {
+    start('s1', 'claude output');
+    detector.markTurnComplete('s1');
+    expect(detector.getState('s1')).toBe('waiting');
+    expect(detector.getWaitingReason('s1')).toBe('idle');
+
+    // markTurnComplete clears all timers; no pending idle timer → stays at waiting.
+    // The idle STATE is only reachable via the safety timer or a new feedData cycle.
+    vi.advanceTimersByTime(60000);
+    expect(detector.getState('s1')).toBe('waiting');
+  });
+
+  it('safety timer forces idle after TURN_SAFETY_TIMEOUT for hook-enabled CLI', () => {
+    start('s1', 'codex output');
+
+    // Stays running through normal silence timeouts
+    vi.advanceTimersByTime(30000 + 500);
+    expect(detector.getState('s1')).toBe('running');
+
+    // Safety timeout (10 min) fires → hookSignaledDone flips true → idle
+    vi.advanceTimersByTime(10 * 60 * 1000);
+    settle();
     expect(detector.getState('s1')).toBe('idle');
   });
 
@@ -213,7 +252,7 @@ describe('StatusDetector', () => {
     });
 
     it('byte-level waiting transition sets reason=idle, not permission', () => {
-      detector.register('s1');
+      detector.register('s1', 'opencode');
       detector.feedData('s1', 'output');
       vi.advanceTimersByTime(500); // settle running
       vi.advanceTimersByTime(3000); // hit WAITING_TIMEOUT
@@ -229,9 +268,9 @@ describe('StatusDetector', () => {
     });
 
     it('upgrades waiting+idle to waiting+permission when a permission_prompt arrives mid-wait', () => {
-      // Simulate the realistic sequence: byte-level inference flipped us to
-      // waiting+idle first, then Claude fires the permission_prompt hook.
-      detector.register('s1');
+      // Non-hook CLI: byte-level inference flips to waiting+idle, then a
+      // hypothetical hook upgrades the reason.
+      detector.register('s1', 'opencode');
       detector.feedData('s1', 'output');
       vi.advanceTimersByTime(500);
       vi.advanceTimersByTime(3500); // waiting+idle
@@ -239,6 +278,15 @@ describe('StatusDetector', () => {
       detector.markPermissionWaiting('s1');
       expect(detector.getWaitingReason('s1')).toBe('permission');
       expect(stateChanges).toEqual([{ sessionId: 's1', state: 'waiting', reason: 'permission' }]);
+    });
+
+    it('markPermissionWaiting flips from running to waiting+permission for hook-enabled CLI', () => {
+      start('s1', 'output');
+      stateChanges.length = 0;
+      // Hook fires while CLI is still in running (silence timers suppressed)
+      detector.markPermissionWaiting('s1');
+      expect(detector.getState('s1')).toBe('waiting');
+      expect(detector.getWaitingReason('s1')).toBe('permission');
     });
   });
 });

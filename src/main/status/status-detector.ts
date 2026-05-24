@@ -33,6 +33,13 @@ const IDLE_TIMEOUT = 30000;     // No data for 30s → idle
 const DEBOUNCE_MS = 500;        // Debounce state transitions
 const BUFFER_MAX = 4096;        // Per-session rolling byte buffer for OSC matching
 const BELL_COALESCE_MS = 2000;  // Suppress bell notifications fired in this window
+const TURN_SAFETY_TIMEOUT = 10 * 60 * 1000; // 10 min fallback if hook never fires
+
+// CLIs where Tether installs hooks that fire markTurnComplete at end-of-turn.
+// For these CLIs the byte-level idle timeout is suppressed while a turn is in
+// progress — markTurnComplete is the canonical "done" signal. CLIs NOT in this
+// set rely solely on byte-level silence for idle detection.
+const HOOK_ENABLED_CLIS: ReadonlySet<CliToolId> = new Set<CliToolId>(['claude', 'codex']);
 
 // OSC sequences that AI CLIs (notably Claude Code) emit at end-of-turn.
 //   ESC ] 9 ; <text> BEL          — desktop notification
@@ -52,6 +59,15 @@ export class StatusDetector {
   private readonly waitingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly safetyTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * True once markTurnComplete has fired and no new PTY data has arrived
+   * since. While false for a hook-enabled CLI, the byte-level idle timeout
+   * is suppressed — the hook is the canonical end-of-turn signal, and CLIs
+   * like Codex can go silent for 60–90+ seconds mid-turn while the model
+   * processes large contexts.
+   */
+  private readonly hookSignaledDone = new Map<string, boolean>();
   /**
    * Last time we surfaced a bell for this session. Used to coalesce rapid
    * BEL spam (some CLIs ring on every error) into one notification per
@@ -79,6 +95,9 @@ export class StatusDetector {
   register(sessionId: string, cliTool: CliToolId = 'claude'): void {
     this.states.set(sessionId, 'starting');
     this.cliTools.set(sessionId, cliTool);
+    if (HOOK_ENABLED_CLIS.has(cliTool)) {
+      this.hookSignaledDone.set(sessionId, true);
+    }
   }
 
   unregister(sessionId: string): void {
@@ -87,9 +106,11 @@ export class StatusDetector {
     this.cliTools.delete(sessionId);
     this.buffers.delete(sessionId);
     this.lastBellAt.delete(sessionId);
+    this.hookSignaledDone.delete(sessionId);
     this.clearTimer(this.waitingTimers, sessionId);
     this.clearTimer(this.idleTimers, sessionId);
     this.clearTimer(this.debounceTimers, sessionId);
+    this.clearTimer(this.safetyTimers, sessionId);
   }
 
   // Called for every chunk of PTY output — this is the passive tap
@@ -125,6 +146,15 @@ export class StatusDetector {
     this.clearTimer(this.waitingTimers, sessionId);
     this.clearTimer(this.idleTimers, sessionId);
 
+    // For hook-enabled CLIs, mark the turn as active (output is flowing,
+    // hook hasn't signaled completion yet). The safety timer caps how long
+    // we'll suppress the byte-level idle fallback when the hook is missing.
+    const cliTool = this.cliTools.get(sessionId);
+    if (cliTool && HOOK_ENABLED_CLIS.has(cliTool)) {
+      this.hookSignaledDone.set(sessionId, false);
+      this.resetSafetyTimer(sessionId);
+    }
+
     // Layer 1: OSC 9 notification — strongest "turn ended" signal.
     // Search the combined buffer so split-across-chunks sequences still match.
     // Once matched, clear the buffer so a stale notification from a prior turn
@@ -140,16 +170,22 @@ export class StatusDetector {
     // Layer 4: silence-based fallback. After WAITING_TIMEOUT with no further data,
     // assume the CLI has stopped streaming and is waiting on the user. This catches
     // CLIs that don't emit OSC notifications (Copilot, OpenCode, custom).
+    // For hook-enabled CLIs mid-turn, both transitions are suppressed — the hook
+    // is the canonical signal, and silence during an API call is normal.
     this.waitingTimers.set(sessionId, setTimeout(() => {
+      const cli = this.cliTools.get(sessionId);
+      const hookActive = cli && HOOK_ENABLED_CLIS.has(cli) && !this.hookSignaledDone.get(sessionId);
+
       const currentState = this.states.get(sessionId);
-      if (currentState === 'running' || currentState === 'starting') {
+      if ((currentState === 'running' || currentState === 'starting') && !hookActive) {
         this.transition(sessionId, 'waiting');
       }
 
-      // After IDLE_TIMEOUT total silence, drop to idle.
+      // After IDLE_TIMEOUT total silence, drop to idle — unless a
+      // hook-enabled CLI is mid-turn (the safety timer handles that case).
       this.idleTimers.set(sessionId, setTimeout(() => {
         const cur = this.states.get(sessionId);
-        if (cur === 'waiting' || cur === 'running') {
+        if ((cur === 'waiting' || cur === 'running') && !hookActive) {
           this.transition(sessionId, 'idle');
         }
       }, IDLE_TIMEOUT - WAITING_TIMEOUT));
@@ -161,6 +197,7 @@ export class StatusDetector {
     if (!this.states.has(sessionId)) return;
     this.clearSessionTimers(sessionId);
     this.buffers.delete(sessionId);
+    this.hookSignaledDone.delete(sessionId);
     const state: SessionState = exitCode === 0 ? 'stopped' : 'dead';
     this.setState(sessionId, state); // No debounce for exit
   }
@@ -190,6 +227,8 @@ export class StatusDetector {
     this.clearTimer(this.waitingTimers, sessionId);
     this.clearTimer(this.idleTimers, sessionId);
     this.clearTimer(this.debounceTimers, sessionId);
+    this.clearTimer(this.safetyTimers, sessionId);
+    this.hookSignaledDone.set(sessionId, true);
     this.setState(sessionId, 'waiting', 'idle');
   }
 
@@ -242,14 +281,26 @@ export class StatusDetector {
     }
   }
 
+  private resetSafetyTimer(sessionId: string): void {
+    this.clearTimer(this.safetyTimers, sessionId);
+    this.safetyTimers.set(sessionId, setTimeout(() => {
+      this.hookSignaledDone.set(sessionId, true);
+      const cur = this.states.get(sessionId);
+      if (cur === 'waiting' || cur === 'running') {
+        this.transition(sessionId, 'idle');
+      }
+    }, TURN_SAFETY_TIMEOUT));
+  }
+
   private clearSessionTimers(sessionId: string): void {
     this.clearTimer(this.waitingTimers, sessionId);
     this.clearTimer(this.idleTimers, sessionId);
     this.clearTimer(this.debounceTimers, sessionId);
+    this.clearTimer(this.safetyTimers, sessionId);
   }
 
   dispose(): void {
-    for (const map of [this.waitingTimers, this.idleTimers, this.debounceTimers]) {
+    for (const map of [this.waitingTimers, this.idleTimers, this.debounceTimers, this.safetyTimers]) {
       for (const timer of map.values()) clearTimeout(timer);
       map.clear();
     }
@@ -258,6 +309,7 @@ export class StatusDetector {
     this.buffers.clear();
     this.cliTools.clear();
     this.lastBellAt.clear();
+    this.hookSignaledDone.clear();
   }
 }
 
