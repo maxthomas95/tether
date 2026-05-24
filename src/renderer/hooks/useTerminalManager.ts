@@ -45,7 +45,13 @@ const BASE_TERMINAL_OPTIONS = {
 } as const;
 
 function trimSelectionTrailingSpaces(text: string): string {
-  return text.replace(/[^\S\n]+$/gm, '');
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    let end = lines[i].length;
+    while (end > 0 && lines[i][end - 1] === ' ') end--;
+    if (end < lines[i].length) lines[i] = lines[i].slice(0, end);
+  }
+  return lines.join('\n');
 }
 
 /**
