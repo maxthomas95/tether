@@ -44,6 +44,16 @@ const BASE_TERMINAL_OPTIONS = {
   allowProposedApi: true,
 } as const;
 
+function trimSelectionTrailingSpaces(text: string): string {
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    let end = lines[i].length;
+    while (end > 0 && lines[i][end - 1] === ' ') end--;
+    if (end < lines[i].length) lines[i] = lines[i].slice(0, end);
+  }
+  return lines.join('\n');
+}
+
 /**
  * Scrollback buffer size constants. xterm.js's built-in default is 1000 lines,
  * which agent sessions blow past almost instantly. Tether's default is 10k.
@@ -195,7 +205,7 @@ export function useTerminalManager(
 
       // Ctrl+C with selection → copy to clipboard
       if (ctrl && e.key === 'c' && terminal.hasSelection()) {
-        window.electronAPI.clipboard.writeText(terminal.getSelection());
+        window.electronAPI.clipboard.writeText(trimSelectionTrailingSpaces(terminal.getSelection()));
         return false;
       }
 
@@ -208,7 +218,7 @@ export function useTerminalManager(
 
       // Ctrl+Shift+C → always copy
       if (ctrl && e.shiftKey && e.key === 'C') {
-        window.electronAPI.clipboard.writeText(terminal.getSelection());
+        window.electronAPI.clipboard.writeText(trimSelectionTrailingSpaces(terminal.getSelection()));
         return false;
       }
 
