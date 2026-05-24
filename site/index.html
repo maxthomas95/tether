@@ -13,7 +13,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1FAA2;</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" crossorigin> <!-- NOSONAR(Web:S5725) Google Fonts CSS varies by user-agent, SRI not feasible -->
 <style>
   :root {
     --bg: #0a0a0a;
@@ -983,7 +983,7 @@
     <p class="hero-desc">
       One window for <strong>every AI coding session</strong>. Manage Claude Code, Codex, and more across local, SSH, and Coder workspaces &mdash; with raw PTY fidelity that never touches your output.
     </p>
-    <p class="typed-line" role="status" aria-label="terminal typing animation"></p>
+    <output class="typed-line" aria-label="terminal typing animation"></output>
     <div class="hero-actions">
       <a href="#download" class="btn btn-grad">Download</a>
       <a href="#features" class="btn btn-ghost">Features</a>
@@ -1438,41 +1438,35 @@ document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
   el.appendChild(textSpan);
   el.appendChild(cursor);
 
-  function eraseLine(cb) {
-    function eraseChar() {
-      if (textSpan.textContent.length > 0) {
-        textSpan.textContent = textSpan.textContent.slice(0, -1);
-        setTimeout(eraseChar, 18 + Math.random() * 18);
-      } else {
-        cb();
-      }
+  function eraseChar(cb) {
+    if (textSpan.textContent.length > 0) {
+      textSpan.textContent = textSpan.textContent.slice(0, -1);
+      setTimeout(function() { eraseChar(cb); }, 18 + Math.random() * 18);
+    } else {
+      cb();
     }
-    eraseChar();
   }
 
-  function typeLine(text, cb) {
-    let i = 0;
-    function typeChar() {
-      if (i < text.length) {
-        textSpan.textContent += text[i];
-        i++;
-        setTimeout(typeChar, 40 + Math.random() * 50);
-      } else {
-        cb();
-      }
+  function typeChar(text, i, cb) {
+    if (i < text.length) {
+      textSpan.textContent += text[i];
+      setTimeout(function() { typeChar(text, i + 1, cb); }, 40 + Math.random() * 50);
+    } else {
+      cb();
     }
-    typeChar();
+  }
+
+  function onErased() {
+    lineIdx = (lineIdx + 1) % lines.length;
+    setTimeout(cycle, 350);
+  }
+
+  function onTyped() {
+    setTimeout(function() { eraseChar(onErased); }, 2400);
   }
 
   function cycle() {
-    typeLine(lines[lineIdx], () => {
-      setTimeout(() => {
-        eraseLine(() => {
-          lineIdx = (lineIdx + 1) % lines.length;
-          setTimeout(cycle, 350);
-        });
-      }, 2400);
-    });
+    typeChar(lines[lineIdx], 0, onTyped);
   }
 
   setTimeout(cycle, 600);
