@@ -4,7 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [0.5.2-beta.3] — 2026-05-23
+## [0.6.0] — 2026-05-25
+### New Features
+- _(fill in)_
+### Bug Fixes
+- _(fill in)_
+<!-- commits since previous tag (delete this block before release):
+9915a26 feat(release): add stable channel to release script (#154)
+57ec4f3 fix: prevent accidental refresh from killing sessions (#153)
+83f25be docs: add in-app docs update rule to CLAUDE.md (#152)
+9f0eee6 feat(update): add stable/beta update channel setting (#151)
+b0aad12 docs: pre-release documentation sweep (#150)
+68d2d07 chore: add repository templates (#149)
+38c17b3 fix(site): restore typed-line spacing (#148)
+28ab886 ci(pages): add GitHub Pages deploy workflow for site/ (#147)
+13903a0 feat(site): add landing page for tethercli.app (#146)
+8012e3f fix(status): keep hook-enabled CLIs green during long turns (#145)
+ba4c174 fix(terminal): strip trailing spaces from copied text (#144)
+2013b69 feat(sidebar): add mute badge to session items (#143)
+434b217 fix(release): handle CRLF line endings in phaseChangelog draft path (#142)
+1ba0a49 build(deps): Bump qs from 6.15.1 to 6.15.2 in /mcp-servers/tether-helm (#140)
+-->
+---## [0.5.2-beta.3] — 2026-05-23
 
 A small follow-up on beta.2 focused on first-launch UX: safer opt-in defaults for two of the more invasive behaviors, an expanded Setup Wizard that surfaces them, and a light-theme companion to the new Tether house look.
 
