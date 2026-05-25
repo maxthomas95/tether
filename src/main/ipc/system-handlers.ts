@@ -27,8 +27,10 @@ export function registerSystemHandlers(ctx: HandlerContext): void {
   const { mainWindow } = ctx;
 
   ipcMain.handle(IPC.UPDATE_CHECK, async () => {
+    const { getDb } = await import('../db/database');
     const { checkForUpdates } = await import('../update/update-checker');
-    return checkForUpdates();
+    const channel = getDb().config.updateChannel === 'beta' ? 'beta' as const : 'stable' as const;
+    return checkForUpdates(channel);
   });
 
   ipcMain.handle(IPC.UPDATE_OPEN_RELEASE_PAGE, async (_event, url: string) => {

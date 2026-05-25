@@ -32,6 +32,15 @@ The theme applies to the entire app: title bar, sidebar, terminal, dialogs, and 
 
 Tether polls GitHub Releases on a background timer (15 seconds after launch, then daily). Disable here if you're on a locked-down network. Updates are non-blocking — when one is available you'll get a toast pointing to the release page.
 
+### Update channel
+
+Choose which release track you follow:
+
+- **Stable** — only shows final, numbered releases (e.g. `v0.7.0`). This is the default.
+- **Beta** — also shows pre-release builds (e.g. `v0.8.0-beta.1`) with the latest features and fixes before they graduate to stable.
+
+The channel takes effect on the next update check.
+
 ### Folders
 
 Two quick-access buttons for support and troubleshooting:

@@ -206,7 +206,8 @@ const createWindow = () => {
         if (db.config.updateCheckEnabled === 'false') return;
 
         const { checkForUpdates } = await import('./update/update-checker');
-        const result = await checkForUpdates();
+        const channel = db.config.updateChannel === 'beta' ? 'beta' as const : 'stable' as const;
+        const result = await checkForUpdates(channel);
         if (!result.updateAvailable) return;
 
         if (mainWindow && !mainWindow.isDestroyed()) {
