@@ -161,6 +161,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [allowHelm, setAllowHelm] = useState(false);
   const [cliHooksEnabled, setCliHooksEnabled] = useState(false);
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true);
+  const [updateChannel, setUpdateChannel] = useState<'stable' | 'beta'>('stable');
   const [quotaEnabled, setQuotaEnabled] = useState(true);
   const [usageStripEnabled, setUsageStripEnabled] = useState(true);
   const [globalUsageEnabled, setGlobalUsageEnabled] = useState(true);
@@ -245,7 +246,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       window.electronAPI.config.get?.('terminalCursorBlink')?.catch(() => null),
       window.electronAPI.config.get?.('terminalScrollback')?.catch(() => null),
       window.electronAPI.config.get?.('cliHooksEnabled')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks]) => {
+      window.electronAPI.config.get?.('updateChannel')?.catch(() => null),
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, updateCh]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -281,6 +283,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       // matches the read on the main side (`=== 'true'`). Missing key, empty
       // string, or any other value counts as disabled.
       setCliHooksEnabled(cliHooks === 'true');
+      setUpdateChannel(updateCh === 'beta' ? 'beta' : 'stable');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -308,6 +311,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     await window.electronAPI.config.set?.('enablePaneSplitting', enablePaneSplitting ? 'true' : 'false');
     await window.electronAPI.config.set?.('maxPanes', String(maxPanes));
     await window.electronAPI.config.set?.('updateCheckEnabled', updateCheckEnabled ? 'true' : 'false');
+    await window.electronAPI.config.set?.('updateChannel', updateChannel);
     await window.electronAPI.config.set?.('quotaEnabled', quotaEnabled ? 'true' : 'false');
     await window.electronAPI.quota.setEnabled(quotaEnabled);
     await window.electronAPI.config.set?.('usageStripEnabled', usageStripEnabled ? 'true' : 'false');
@@ -334,7 +338,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     await window.electronAPI.vault.setConfig(vaultConfig);
     await window.electronAPI.notifications.setPrefs(notificationPrefs);
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, updateChannel, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, onClose]);
 
   const handleExportUsage = async (format: UsageExportFormat) => {
     setExportBusy(format);
@@ -595,6 +599,24 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             </label>
             <p className="form-hint">
               Automatically check GitHub for new Tether releases when the app starts.
+            </p>
+
+            <label className="form-label" htmlFor="update-channel-select" style={{ marginTop: 12 }}>
+              Update channel
+            </label>
+            <select
+              id="update-channel-select"
+              className="form-input"
+              value={updateChannel}
+              onChange={e => setUpdateChannel(e.target.value as 'stable' | 'beta')}
+              disabled={!updateCheckEnabled}
+            >
+              <option value="stable">Stable</option>
+              <option value="beta">Beta</option>
+            </select>
+            <p className="form-hint">
+              <strong>Stable</strong> only shows final releases. <strong>Beta</strong> also
+              shows pre-release builds with the latest features and fixes.
             </p>
           </div>
 

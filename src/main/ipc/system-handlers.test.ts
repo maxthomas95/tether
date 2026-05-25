@@ -6,6 +6,12 @@ const shellMock = vi.hoisted(() => ({ openExternal: vi.fn() }));
 const dialogMock = vi.hoisted(() => ({ showSaveDialog: vi.fn() }));
 vi.mock('electron', () => ({ ...makeElectronMockBase(registry), dialog: dialogMock, shell: shellMock }));
 
+const dbState = { config: { updateChannel: 'stable' } as Record<string, string> };
+vi.mock('../db/database', () => ({
+  getDb: () => dbState,
+  saveDb: vi.fn(),
+}));
+
 const updateCheckerMock = vi.hoisted(() => ({ checkForUpdates: vi.fn() }));
 vi.mock('../update/update-checker', () => updateCheckerMock);
 
@@ -32,10 +38,19 @@ describe('system-handlers', () => {
   });
 
   describe('UPDATE_CHECK', () => {
-    it('delegates to checkForUpdates', async () => {
+    it('delegates to checkForUpdates with stable channel by default', async () => {
+      dbState.config.updateChannel = 'stable';
       updateCheckerMock.checkForUpdates.mockResolvedValue({ available: false });
       const result = await harness.invoke(IPC.UPDATE_CHECK);
       expect(result).toEqual({ available: false });
+      expect(updateCheckerMock.checkForUpdates).toHaveBeenCalledWith('stable');
+    });
+
+    it('passes beta channel from config', async () => {
+      dbState.config.updateChannel = 'beta';
+      updateCheckerMock.checkForUpdates.mockResolvedValue({ available: true });
+      await harness.invoke(IPC.UPDATE_CHECK);
+      expect(updateCheckerMock.checkForUpdates).toHaveBeenCalledWith('beta');
     });
   });
 

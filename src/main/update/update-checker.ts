@@ -8,24 +8,42 @@ const log = createLogger('update');
 
 const GITHUB_API = 'https://api.github.com/repos/maxthomas95/tether/releases';
 
+export type UpdateChannel = 'stable' | 'beta';
+
+interface ParsedVersion {
+  base: string;        // e.g. "0.7.0"
+  preTag: string;      // e.g. "beta" or "" for stable
+  preNum: number;      // e.g. 2 from "-beta.2", or Infinity for stable
+}
+
+function parseVersionFull(tag: string): ParsedVersion | null {
+  const m = tag.match(/^v?(\d+\.\d+\.\d+)(?:-([\w]+)\.(\d+))?/);
+  if (!m) return null;
+  return {
+    base: m[1],
+    preTag: m[2] ?? '',
+    preNum: m[3] !== undefined ? Number(m[3]) : Infinity,
+  };
+}
+
 /**
- * Compare two semver strings (major.minor.patch).
+ * Compare two parsed versions. Stable (no pre-release suffix) is always
+ * newer than a pre-release of the same base version.
  * Returns 1 if a > b, -1 if a < b, 0 if equal.
  */
-function compareSemver(a: string, b: string): number {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
+function compareParsed(a: ParsedVersion, b: ParsedVersion): number {
+  const pa = a.base.split('.').map(Number);
+  const pb = b.base.split('.').map(Number);
   for (let i = 0; i < 3; i++) {
     if (pa[i] > pb[i]) return 1;
     if (pa[i] < pb[i]) return -1;
   }
+  // Same base — Infinity (stable) beats any finite pre-release number
+  if (a.preNum > b.preNum) return 1;
+  if (a.preNum < b.preNum) return -1;
   return 0;
 }
 
-/**
- * Extract base semver (e.g. "0.3.0") from a tag like "v0.3.0-alpha.1".
- * Returns null if the tag doesn't match.
- */
 function parseVersion(tag: string): string | null {
   const m = tag.match(/^v?(\d+\.\d+\.\d+)/);
   return m ? m[1] : null;
@@ -38,8 +56,9 @@ interface GitHubRelease {
   prerelease: boolean;
 }
 
-export async function checkForUpdates(): Promise<UpdateCheckResult> {
+export async function checkForUpdates(channel: UpdateChannel = 'stable'): Promise<UpdateCheckResult> {
   const currentVersion = app.getVersion();
+  const currentParsed = parseVersionFull(currentVersion);
   const empty: UpdateCheckResult = {
     updateAvailable: false,
     latestVersion: currentVersion,
@@ -68,20 +87,24 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
 
     const releases: GitHubRelease[] = await res.json();
 
-    // Filter out drafts and prereleases, then find the highest version
     const candidates = releases
-      .filter(r => !r.draft && !r.prerelease)
-      .map(r => ({ ...r, version: parseVersion(r.tag_name) }))
-      .filter((r): r is typeof r & { version: string } => r.version !== null);
+      .filter(r => !r.draft && (channel === 'beta' || !r.prerelease))
+      .map(r => ({ ...r, parsed: parseVersionFull(r.tag_name) }))
+      .filter((r): r is typeof r & { parsed: ParsedVersion } => r.parsed !== null);
 
     if (candidates.length === 0) return empty;
 
-    candidates.sort((a, b) => compareSemver(b.version, a.version));
+    candidates.sort((a, b) => compareParsed(b.parsed, a.parsed));
     const latest = candidates[0];
+    const latestVersion = parseVersion(latest.tag_name) ?? latest.parsed.base;
+
+    const isNewer = currentParsed
+      ? compareParsed(latest.parsed, currentParsed) > 0
+      : latestVersion > currentVersion;
 
     return {
-      updateAvailable: compareSemver(latest.version, currentVersion) > 0,
-      latestVersion: latest.version,
+      updateAvailable: isNewer,
+      latestVersion,
       latestTag: latest.tag_name,
       releaseUrl: latest.html_url,
       currentVersion,
