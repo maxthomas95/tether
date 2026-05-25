@@ -6,35 +6,35 @@ For the additional 1.0 hardening gate, see `docs/1.0_RELEASE_CHECKLIST.md`.
 
 ## Quick start
 
+Cut a stable release (always bumps minor, e.g. `0.5.2` → `0.6.0`):
+
+```bash
+npm run release -- stable
+```
+
+Cut a beta (bumps patch by default):
+
+```bash
+npm run release -- beta.1
+```
+
 Cut the next alpha (auto-picks the next number from GitHub releases):
 
 ```bash
 npm run release -- --next
 ```
 
-Cut a specific alpha or beta:
-
-```bash
-npm run release -- alpha.5
-npm run release -- beta.1
-```
-
-Minor version bump (e.g. `0.2.3` → `0.3.0`):
-
-```bash
-npm run release -- beta.1 --minor
-```
-
 Resume a partially-cut release (e.g. after a build failure or after the PR wait timed out):
 
 ```bash
-npm run release -- alpha.5 --resume
+npm run release -- stable --resume
+npm run release -- beta.1 --resume
 ```
 
 Dry-run to see what would happen without making changes:
 
 ```bash
-npm run release -- alpha.5 --dry-run
+npm run release -- stable --dry-run
 ```
 
 ## How it works
@@ -45,20 +45,31 @@ npm run release -- alpha.5 --dry-run
 
 ### Versioning
 
-- `package.json` `version` is plain semver: `0.3.0`. No prerelease suffix.
-- Default bump per release is **patch** (`0.2.3` → `0.2.4`). Pass `--minor` for a minor bump (`0.2.3` → `0.3.0`) when a release marks a notable milestone.
+- `package.json` `version` is plain semver: `0.6.0`. No prerelease suffix.
+- **Stable** releases always bump **minor** (`0.5.2` → `0.6.0`). Every stable release is a minor bump.
+- **Beta/alpha** releases bump **patch** by default (`0.5.2` → `0.5.3`). Pass `--minor` to force a minor bump.
+- **Hotfix** releases bump **patch** on top of the current stable.
 - Major bumps are reserved for 1.0 and beyond.
+
+### Release channels
+
+| Channel | Tag format | GitHub flag | When to use |
+|---------|-----------|-------------|-------------|
+| `stable` | `v0.6.0` | Latest Release | Graduating betas to a stable milestone |
+| `beta.N` | `v0.7.0-beta.1` | Pre-release | New features for early adopters |
+| `alpha.N` | `v0.7.0-alpha.1` | Pre-release | Rough builds for internal testing |
+| `hotfix.N` | `v0.6.1-hotfix.1` | Latest Release | Urgent patches to the current stable |
 
 ### Git tag
 
-- Format: `v{version}-{channel}.{N}`. Example: `v0.3.0-beta.1`.
-- Lightweight tag (matching existing tags — not annotated).
-- Points at the squash commit merged from the release PR.
+- **Stable:** `v{version}` (e.g. `v0.6.0`). No suffix.
+- **Pre-release:** `v{version}-{channel}.{N}` (e.g. `v0.7.0-beta.1`).
+- Lightweight tag (not annotated). Points at the squash commit merged from the release PR.
 
 ### Release branch + PR
 
-- Branch: `release/v{version}-{prerelease}` (e.g. `release/v0.3.0-beta.1`).
-- PR title: `Release v{version}-{prerelease}`.
+- Branch: `release/v{version}` or `release/v{version}-{prerelease}`.
+- PR title: `Release v{version}` or `Release v{version}-{prerelease}`.
 - Merged via squash; branch is deleted on merge.
 
 ### CHANGELOG.md
@@ -66,7 +77,7 @@ npm run release -- alpha.5 --dry-run
 Each release adds one section to the top, under the `# Changelog — Tether` heading:
 
 ```markdown
-## [0.3.0-beta.1] — 2026-04-13
+## [0.6.0] — 2026-05-24
 
 ### New Features
 - ...
@@ -75,10 +86,13 @@ Each release adds one section to the top, under the `# Changelog — Tether` hea
 - ...
 ```
 
+For pre-release channels the heading includes the suffix: `## [0.7.0-beta.1] — 2026-05-25`.
+
 The script auto-drafts the section with placeholders and embeds commits since the previous tag as an HTML comment. Edit the draft before the PR lands — either ahead of time, or by pushing a fixup commit to the release branch while the PR is open.
 
 ### GitHub release
 
+- `prerelease: false` for `stable` and `hotfix.*` tags (marked as "Latest Release").
 - `prerelease: true` for `alpha.*` and `beta.*` tags.
 - `target_commitish: "main"`.
 - `name` and `tag_name` both equal the git tag.
@@ -126,14 +140,16 @@ The script prefers `gh auth token` for API auth (same creds it already uses for 
 
 If the script breaks and you need to ship anyway:
 
-1. `git checkout -b release/v0.X.Y-beta.N main`
-2. `npm version 0.X.Y --no-git-tag-version`
+1. `git checkout -b release/v0.X.0 main`
+2. `npm version 0.X.0 --no-git-tag-version`
 3. Edit `CHANGELOG.md` — add a section at the top
-4. `git add package.json CHANGELOG.md && git commit -m "Release v0.X.Y-beta.N"`
-5. `git push -u github release/v0.X.Y-beta.N`
+4. `git add package.json CHANGELOG.md && git commit -m "Release v0.X.0"`
+5. `git push -u github release/v0.X.0`
 6. Open a PR on GitHub, wait for checks, squash-merge
 7. `git checkout main && git pull github main`
-8. `git tag v0.X.Y-beta.N && git push github v0.X.Y-beta.N`
+8. `git tag v0.X.0 && git push github v0.X.0`
 9. `npm run make`
-10. Find `out/make/squirrel.windows/x64/tether-0.X.Y Setup.exe` and `out/make/zip/win32/x64/tether-win32-x64-0.X.Y.zip`
-11. On GitHub UI: create a release from the tag, mark as pre-release, paste the CHANGELOG section, upload the two files renamed to `Tether-0.X.Y-Setup.exe` and `Tether-0.X.Y-portable.zip`.
+10. Find `out/make/squirrel.windows/x64/tether-0.X.0 Setup.exe` and `out/make/zip/win32/x64/tether-win32-x64-0.X.0.zip`
+11. On GitHub UI: create a release from the tag, paste the CHANGELOG section, upload the two files renamed to `Tether-0.X.0-Setup.exe` and `Tether-0.X.0-portable.zip`.
+
+For beta releases, replace `v0.X.0` with `v0.X.0-beta.N` throughout and mark as pre-release on GitHub.
