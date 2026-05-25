@@ -30,7 +30,7 @@ const EXTENDED_THEMES: Record<string, {
   frappe:         { hover: '#51576d', active: '#626880', header: '#414559', textSecondary: '#b5bfe2' },
   latte:          { hover: '#bcc0cc', active: '#acb0be', header: '#ccd0da', textSecondary: '#5c5f77' },
   tether:         { hover: '#3a342d', active: '#4a4239', header: '#2c2723', textSecondary: '#c9bfae' },
-  'default-dark': { hover: '#2a2d2e', active: '#37373d', header: '#3c3c3c', textSecondary: '#999999' },
+  'default-dark': { hover: '#2a2d2e', active: '#37373d', header: '#2d2d2d', textSecondary: '#858585' },
   'tether-light':  { hover: '#e8e8e8', active: '#d6d6d6', header: '#ececec', textSecondary: '#616161' },
 };
 
@@ -181,6 +181,12 @@ if (initialPage && pages.some(p => p.id === initialPage)) {
   currentPage = pages.find(p => p.id === initialPage)!;
 }
 if (initialAnchor) pendingAnchor = initialAnchor;
+
+// Apply the correct theme from the URL on initial mount, so even if the
+// boot script in docs-window.html was blocked (CSP hash drift) or
+// overridden by the docs.css :root defaults, the docs render correctly.
+const initialTheme = initialParams.get('theme');
+if (initialTheme) applyTheme(initialTheme);
 
 // Initial render
 render();
