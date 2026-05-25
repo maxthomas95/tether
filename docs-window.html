@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-44CC6clIMcjmSteQT0oF3LedXquPDLyHp92GARHhobY='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-PlGkxYnXMHIwK3Ozx4jp6vv7r8XPkvITA7ihyiq981c='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" />
     <title>Tether Documentation</title>
     <script>
       // Apply the saved theme before any CSS/JS runs. The main process
@@ -15,7 +15,9 @@
           macchiato:      { bg:'#24273a', sidebar:'#1e2030', text:'#cad3f5', muted:'#6e738d', accent:'#b7bdf8', border:'#363a4f', hover:'#494d64', active:'#5b6078', header:'#363a4f', textSecondary:'#b8c0e0' },
           frappe:         { bg:'#303446', sidebar:'#292c3c', text:'#c6d0f5', muted:'#737994', accent:'#babbf1', border:'#414559', hover:'#51576d', active:'#626880', header:'#414559', textSecondary:'#b5bfe2' },
           latte:          { bg:'#eff1f5', sidebar:'#e6e9ef', text:'#4c4f69', muted:'#9ca0b0', accent:'#7287fd', border:'#ccd0da', hover:'#bcc0cc', active:'#acb0be', header:'#ccd0da', textSecondary:'#5c5f77' },
-          'default-dark': { bg:'#1e1e1e', sidebar:'#252526', text:'#cccccc', muted:'#5a5a5a', accent:'#4fc1e9', border:'#3c3c3c', hover:'#2a2d2e', active:'#37373d', header:'#3c3c3c', textSecondary:'#999999' },
+          tether:         { bg:'#1f1c18', sidebar:'#1a1714', text:'#ece4d4', muted:'#807565', accent:'#c68a5c', border:'#3a342d', hover:'#3a342d', active:'#4a4239', header:'#2c2723', textSecondary:'#c9bfae' },
+          'default-dark': { bg:'#1e1e1e', sidebar:'#252526', text:'#cccccc', muted:'#5a5a5a', accent:'#4fc1e9', border:'#3c3c3c', hover:'#2a2d2e', active:'#37373d', header:'#2d2d2d', textSecondary:'#858585' },
+          'tether-light': { bg:'#ffffff', sidebar:'#f3f3f3', text:'#1f1f1f', muted:'#8c8c8c', accent:'#0078d4', border:'#d4d4d4', hover:'#e8e8e8', active:'#d6d6d6', header:'#ececec', textSecondary:'#616161' },
         };
         var match = /[?&]theme=([^&]+)/.exec(location.search);
         var name = match ? decodeURIComponent(match[1]) : 'mocha';

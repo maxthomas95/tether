@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-j5VdZphEvM+FTgwhwir/dJYlVo2iRGVE/wWjxdDYlIw='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-6cDPM5csWwx/Gb/C1om51C9qit1rhzLrrd+sEf3R0OU='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" />
     <title>Tether</title>
     <script>
       // Apply the saved theme before any CSS/JS runs. The main process
@@ -23,7 +23,9 @@
           macchiato:      { bg:'#24273a', sidebar:'#1e2030', text:'#cad3f5', muted:'#6e738d', accent:'#b7bdf8', border:'#363a4f' },
           frappe:         { bg:'#303446', sidebar:'#292c3c', text:'#c6d0f5', muted:'#737994', accent:'#babbf1', border:'#414559' },
           latte:          { bg:'#eff1f5', sidebar:'#e6e9ef', text:'#4c4f69', muted:'#9ca0b0', accent:'#7287fd', border:'#ccd0da' },
+          tether:         { bg:'#1f1c18', sidebar:'#1a1714', text:'#ece4d4', muted:'#807565', accent:'#c68a5c', border:'#3a342d' },
           'default-dark': { bg:'#1e1e1e', sidebar:'#252526', text:'#cccccc', muted:'#5a5a5a', accent:'#4fc1e9', border:'#3c3c3c' },
+          'tether-light': { bg:'#ffffff', sidebar:'#f3f3f3', text:'#1f1f1f', muted:'#8c8c8c', accent:'#0078d4', border:'#d4d4d4' },
         };
         var match = /[?&]theme=([^&]+)/.exec(location.search);
         var name = match ? decodeURIComponent(match[1]) : 'mocha';
