@@ -192,6 +192,19 @@ const createWindow = () => {
 
   hardenNavigation(mainWindow, 'index.html', MAIN_WINDOW_VITE_DEV_SERVER_URL);
 
+  // Block browser-style refresh shortcuts (Ctrl+R, Ctrl+Shift+R, F5).
+  // Tether isn't a website — an accidental refresh disconnects the renderer
+  // from live PTY sessions.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    const ctrl = input.control || input.meta;
+    if (ctrl && input.key.toLowerCase() === 'r') {
+      event.preventDefault();
+    }
+    if (input.key === 'F5') {
+      event.preventDefault();
+    }
+  });
+
   // Wait until the renderer has painted its first frame (which includes
   // the inline boot loader in index.html) before showing the window.
   // This avoids a blank/white flash on launch.

@@ -343,7 +343,10 @@ export function App() {
     }).catch(() => {});
   }, []);
 
-  // Load environments on mount, then restore workspace
+  // Load environments on mount, then restore workspace.
+  // On a renderer-only reload (Ctrl+Shift+R), the main process still holds
+  // live PTY sessions. Detect this by calling session.list() first — if live
+  // sessions exist we reconnect to them instead of spawning new processes.
   useEffect(() => {
     let mounted = true;
     window.electronAPI.environment.list().then(async (envs) => {
@@ -351,6 +354,107 @@ export function App() {
         if (!mounted) return;
         setEnvironments(envs);
 
+        // --- Reconnect path: renderer reload while main process has live sessions ---
+        const liveSessions = await window.electronAPI.session.list();
+        const activeSessions = liveSessions.filter(s => s.state !== 'stopped');
+
+        if (activeSessions.length > 0) {
+          // This is a reconnect scenario (renderer refreshed, not a fresh app launch).
+          // The main process still owns the PTY processes — just rebuild UI state.
+          const splittingSetting = await window.electronAPI.config.get?.('enablePaneSplitting');
+          const maxPaneSetting = await window.electronAPI.config.get?.('maxPanes');
+          const reconnectMaxPanes = splittingSetting === 'true' ? parseMaxPanes(maxPaneSetting) : 1;
+
+          // Load saved workspace for ordering/focus hints
+          const workspace = await window.electronAPI.workspace?.load?.();
+
+          // Determine session order: use workspace ordering if available, otherwise
+          // use the order from the main process session list.
+          let orderedSessions: SessionInfo[];
+          let activeIndex = 0;
+
+          if (workspace && workspace.sessions.length > 0) {
+            // Match workspace order to live sessions by toolSessionId or workingDir+label
+            const matched: SessionInfo[] = [];
+            const remaining = new Set(activeSessions.map(s => s.id));
+
+            for (const saved of workspace.sessions) {
+              const found = activeSessions.find(s =>
+                remaining.has(s.id) && (
+                  (saved.toolSessionId && s.toolSessionId === saved.toolSessionId) ||
+                  (saved.claudeSessionId && s.claudeSessionId === saved.claudeSessionId) ||
+                  (s.workingDir === saved.workingDir && s.label === (saved.label || ''))
+                )
+              );
+              if (found) {
+                matched.push(found);
+                remaining.delete(found.id);
+              }
+            }
+            // Append any sessions not matched by workspace (created after last save)
+            for (const s of activeSessions) {
+              if (remaining.has(s.id)) matched.push(s);
+            }
+            orderedSessions = matched;
+            activeIndex = workspace.activeIndex ?? 0;
+          } else {
+            orderedSessions = activeSessions;
+          }
+
+          // Also include stopped sessions so they remain visible in the sidebar
+          const stoppedSessions = liveSessions.filter(s => s.state === 'stopped');
+          const allSessions = [...orderedSessions, ...stoppedSessions];
+
+          // Build layout tree from reconnected sessions
+          let root: LayoutNode | null = null;
+          let focusPaneId: string | null = null;
+
+          for (let i = 0; i < orderedSessions.length; i++) {
+            const session = orderedSessions[i];
+            termManager.getOrCreate(session.id);
+
+            const paneId = generatePaneId();
+            if (!root) {
+              root = { type: 'leaf', id: paneId, sessionId: session.id };
+              focusPaneId = paneId;
+            } else {
+              const leaves = getLeaves(root);
+              if (leaves.length > 0) {
+                root = addPane(root, leaves[leaves.length - 1].id, session.id, 'right');
+              }
+            }
+
+            if (i === activeIndex) {
+              const leaves = getLeaves(root!);
+              const leaf = leaves.find(l => l.sessionId === session.id);
+              if (leaf) focusPaneId = leaf.id;
+            }
+          }
+
+          // Also register terminals for stopped sessions (sidebar visibility)
+          for (const session of stoppedSessions) {
+            termManager.getOrCreate(session.id);
+          }
+
+          if (mounted) {
+            setSessions(allSessions);
+
+            if (root) {
+              const normalizedRoot = normalizeToConstrained(root, reconnectMaxPanes, focusPaneId);
+              const focusedSessionId = focusPaneId ? findLeaf(root, focusPaneId)?.sessionId : null;
+              const normalizedFocusPaneId = normalizedRoot
+                ? getLeaves(normalizedRoot).find(l => l.sessionId === focusedSessionId)?.id
+                  ?? getLeaves(normalizedRoot).find(l => l.sessionId !== null)?.id
+                  ?? getLeaves(normalizedRoot)[0]?.id
+                : null;
+              layoutDispatch({ type: 'SET_ROOT', root: normalizedRoot });
+              if (normalizedFocusPaneId) layoutDispatch({ type: 'SET_FOCUS', paneId: normalizedFocusPaneId });
+            }
+          }
+          return;
+        }
+
+        // --- Fresh launch path: no live sessions in main process ---
         const restoreSetting = await window.electronAPI.config.get?.('restoreOnLaunch');
         if (restoreSetting === 'false') return;
 
