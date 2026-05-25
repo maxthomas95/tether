@@ -52,6 +52,7 @@ Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provid
 - Use the `SessionTransport` interface from `src/main/transport/types.ts` as the contract for all adapters
 - Dark theme by default. Status colors: green (#22C55E), amber (#EAB308), gray (#6B7280), red (#EF4444)
 - Per-CLI behavior (resume args, history provider, common flags) goes in `src/shared/cli-tools.ts`, not scattered through transports
+- **When adding or changing a feature, update the in-app docs** (`src/docs/*.md`) in the same PR. Check `settings.md`, `sessions.md`, `getting-started.md`, and `keyboard-shortcuts.md` for any sections that reference the feature. User-facing docs ship inside the app — stale docs are bugs.
 
 ### Session grouping
 
