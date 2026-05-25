@@ -17,7 +17,7 @@ The wizard only marks setup complete when you click **Skip Setup**, **Start Usin
 
 1. Click **+ New session** in the sidebar, or press **Ctrl+N**
 2. Choose how to start:
-   - **Existing folder** — browse to or paste a working directory
+   - **Existing folder** — browse to or paste a working directory. If it's a git repo, you can optionally create a **git worktree** for the session (see [Sessions](sessions#git-worktrees-local-only)).
    - **Clone** — clone a repo from GitHub / Azure DevOps / Gitea (see [Git Providers](git-providers))
    - **New folder** — create an empty folder under your repos root, optionally `git init` and provision an empty remote (see [Git Providers](git-providers#new-folder))
 3. Pick an [environment](environments) (Local, SSH, or Coder)
@@ -36,8 +36,9 @@ The left sidebar groups sessions by environment and then by working directory. E
 - A **status dot** — green (running), amber (waiting on you), gray (idle), red (dead / stopped)
 - The **label** (auto-named from the directory, or rename inline by double-clicking)
 - A **pane badge** when the session is currently mounted in a split pane
+- A **🔕 badge** when notifications are muted for that session
 
-Drag sessions to reorder them inside a group. Right-click a group header for **bulk actions** (Kill all, Restart all, Clear all). Right-click a session for per-session actions (Stop, Kill, Duplicate, Remove, Helm enable). Collapse groups with the chevron. Resize the sidebar by dragging its edge (180–400px) or hide it with **Ctrl+B**.
+Drag sessions to reorder them inside a group. Right-click a group header for **bulk actions** (Kill all, Restart all, Clear all). Right-click a session for per-session actions (Stop, Kill, Duplicate, Remove, Mute/Unmute notifications, Helm enable). Collapse groups with the chevron. Resize the sidebar by dragging its edge (180–400px) or hide it with **Ctrl+B**.
 
 Footers along the bottom of the sidebar show:
 
@@ -65,6 +66,12 @@ Drag a session from the sidebar onto the edge of the terminal area to view two o
 - **Center** — replace the current pane
 
 Once split, use **Alt+Arrow** to focus the neighboring pane (un-maximizing if needed) and **Alt+Shift+Arrow** to swap the focused pane's session with its neighbor. If a session inside a pane dies, an in-pane overlay offers **Restart in this pane** or **Close pane** so the layout survives.
+
+You can also **broadcast input** to multiple panes at once — toggle targets from the pane status strip. See [Sessions](sessions#broadcast-input).
+
+### Desktop Notifications
+
+Tether can post OS notifications when a session goes waiting, idle, or exits. Configure triggers in [Settings](settings#notifications), and mute individual sessions from their right-click menu.
 
 ## Next Steps
 

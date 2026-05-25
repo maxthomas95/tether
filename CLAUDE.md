@@ -4,7 +4,7 @@
 
 Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provides a single unified interface to manage multiple agentic CLI sessions across local, SSH, and Coder workspace environments — preserving the exact native terminal experience via raw PTY piping into xterm.js.
 
-**Status:** Active development — in the 1.0 polish push. Currently `0.5.0-beta.1`. Local, SSH, and Coder transports working; multi-CLI support (Claude/Codex/Copilot/OpenCode/Custom); Vault-backed env vars; usage tracking with daily/weekly/monthly rollups, per-CLI and per-environment attribution, and CSV/JSON export; pane splitting with keyboard-driven focus/swap and broadcast input; auto-update; SSH host key verification; user-remappable keyboard shortcuts; Claude Notification/Stop hook-driven waiting/idle detection (Phase 1).
+**Status:** Active development — in the 1.0 polish push. Currently `0.5.2-beta.3`. Local, SSH, and Coder transports working; multi-CLI support (Claude/Codex/Copilot/OpenCode/Custom); Vault-backed env vars; usage tracking with daily/weekly/monthly rollups, per-CLI and per-environment attribution, and CSV/JSON export; pane splitting with keyboard-driven focus/swap and broadcast input; desktop notifications with per-session muting; auto-update; SSH host key verification; user-remappable keyboard shortcuts; Claude/Codex hook-driven waiting/idle detection; git worktree support.
 
 ## Core Principle
 
@@ -21,12 +21,12 @@ Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provid
 - **Secrets:** HashiCorp Vault integration (KV v2) for env var refs
 - **State:** JSON file persistence (`{userData}/data.json`) — SQLite planned but deferred due to native module ABI issues
 - **IPC:** Electron IPC (commands + event channels for PTY data streaming)
-- **Themes:** Catppuccin (Mocha, Macchiato, Frappe, Latte) + Default Dark + Tether (house rope/canvas/brass palette)
+- **Themes:** Catppuccin (Mocha, Macchiato, Frappé, Latte) + Brass + Tether (Default Dark) + Tether Light
 - **CLI tools registry:** Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, Custom — selected per session via `src/shared/cli-tools.ts`
 
 ## Architecture
 
-- **Main process:** Session Manager, Transport Adapters (Local/SSH/Coder), Session Registry (JSON), Status Detector, Vault client, Usage/Quota services, Update checker, Git providers (ADO/Gitea), Codex/Claude transcript readers
+- **Main process:** Session Manager, Transport Adapters (Local/SSH/Coder), Session Registry (JSON), Status Detector, CLI Hook Bridge (Claude/Codex overlays), Notification Service, Vault client, Usage/Quota services, Update checker, Git providers (ADO/Gitea), Codex/Claude transcript readers, Helm MCP bridge, Diagnostics export
 - **Renderer process:** React UI — Sidebar (sessions grouped by working dir, env, vault pill, quota/usage footers), Terminal Pane(s) with split layouts, dialogs (Settings, NewSession, NewEnvironment, About, ResumeChat, KeyboardShortcuts, HostKeyVerify, VaultPicker, etc.), Setup Wizard for first run
 - **Transport interface:** All adapters implement `SessionTransport` — the UI is environment-agnostic
 - **Data flow:** Keystroke → xterm.js → IPC → transport.write() → PTY stdin → CLI → PTY stdout → status detector (copy) + IPC → xterm.js → screen
@@ -125,6 +125,19 @@ src/
       ssh-transport.ts                # SSH via ssh2 (with TOFU/known-hosts)
       coder-transport.ts              # Coder workspace PTY
     status/status-detector.ts         # Passive PTY status detection
+    cli-config/
+      claude-settings-overlay.ts      # Additive ~/.claude/settings.json hook entry
+      codex-config-overlay.ts         # Additive ~/.codex/config.toml notify entry
+      hook-bridge.ts                  # Token-authed local socket for hook events
+      hook-service.ts                 # Hook overlay lifecycle manager
+    notifications/
+      notification-service.ts         # Desktop notification dispatch + preferences
+    helm/
+      bridge.ts                       # MCP spawn_session tool for helm sessions
+      integration.ts                  # MCP server lifecycle per helm-enabled session
+    diagnostics/
+      diagnostics-service.ts          # Scrubbed diagnostic bundle export
+      scrub.ts                        # Sensitive-value redaction
     db/
       database.ts                     # JSON file persistence
       environment-repo.ts             # Environment CRUD
@@ -165,7 +178,9 @@ src/
       ConfirmDialog.tsx               # Tether-styled confirm replacement
       DropZoneOverlay.tsx
       EnvVarEditor.tsx
+      HelpAnchor.tsx                  # (?) deep-link icon for docs sections
       HostKeyVerifyDialog.tsx         # SSH first-connect host key approval
+      KeybindingsEditor.tsx           # Keybinding recorder/editor component
       KeyboardShortcutsDialog.tsx
       MenuBar.tsx
       MigrateToVaultDialog.tsx
@@ -176,12 +191,15 @@ src/
       SplitDivider.tsx                # Split pane drag handle
       SplitLayout.tsx                 # Split pane container with snap zones
       TerminalPane.tsx                # xterm.js container + resize
+      UsageHistoryDialog.tsx          # Usage history with daily/weekly/monthly rollups
+      WelcomePane.tsx                 # Welcome/onboarding pane
       VaultLoginPromptDialog.tsx
       VaultPickerDialog.tsx           # Browse Vault KV paths to pick a secret
       sidebar/
         GlobalUsageFooter.tsx         # Today's cost + 7-day sparkline
         NewEnvironmentDialog.tsx      # Local/SSH/Coder config
         NewSessionDialog.tsx          # Session creation
+        PaneLocationBadge.tsx         # Split pane location indicator
         QuotaFooter.tsx               # Subscription quota status
         RepoGroup.tsx                 # Groups sessions by working directory
         ResumeChatDialog.tsx          # Pick a Claude/Codex transcript to resume
@@ -199,10 +217,10 @@ src/
       useUsage.ts
     styles/
       global.css                      # Component styles + CSS variable theming
-      themes.ts                       # 5 theme definitions
+      themes.ts                       # 7 theme definitions
     assets/logo.png
   shared/
-    cli-tools.ts                      # CLI tool registry (Claude/Codex/OpenCode/Custom)
+    cli-tools.ts                      # CLI tool registry (Claude/Codex/Copilot/OpenCode/Custom)
     constants.ts                      # IPC channel name constants
     layout-types.ts                   # Pane split layout types
     loader-themes.ts                  # Splash loader themes
