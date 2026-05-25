@@ -17,12 +17,13 @@
 //   12. publish         — create GitHub release + upload assets
 //
 // Usage:
-//   node scripts/release.mjs alpha.N            # cut a new alpha (patch bump)
+//   node scripts/release.mjs stable             # cut a stable release (always minor bump)
 //   node scripts/release.mjs beta.N             # cut a new beta  (patch bump)
-//   node scripts/release.mjs hotfix.N           # cut a hotfix on top of a beta
+//   node scripts/release.mjs alpha.N            # cut a new alpha (patch bump)
+//   node scripts/release.mjs hotfix.N           # cut a hotfix on top of a stable
 //   node scripts/release.mjs beta.1 --minor     # minor bump (e.g. 0.2.3 → 0.3.0)
-//   node scripts/release.mjs alpha.N --resume   # skip phases that are already done
-//   node scripts/release.mjs alpha.N --dry-run  # print what would happen
+//   node scripts/release.mjs stable --resume    # skip phases that are already done
+//   node scripts/release.mjs beta.N --dry-run   # print what would happen
 //   node scripts/release.mjs --next             # auto-pick next prerelease number
 //
 // Auth:
@@ -193,8 +194,16 @@ async function nextPrereleaseNumber(channel) {
   return max + 1;
 }
 
+function fullTag(version, prereleaseTag) {
+  return prereleaseTag ? `v${version}-${prereleaseTag}` : `v${version}`;
+}
+
+function fullLabel(version, prereleaseTag) {
+  return prereleaseTag ? `${version}-${prereleaseTag}` : version;
+}
+
 function releaseBranchName(version, prereleaseTag) {
-  return `release/v${version}-${prereleaseTag}`;
+  return `release/${fullTag(version, prereleaseTag)}`;
 }
 
 // ─── Phases ──────────────────────────────────────────────────────────────────
@@ -368,11 +377,12 @@ async function phasePricingRefresh() {
 
 function phaseChangelog(version, prereleaseTag) {
   log(`Phase 5/12: changelog`);
+  const label = fullLabel(version, prereleaseTag);
   const path = join(REPO_ROOT, 'CHANGELOG.md');
   const content = readFileSync(path, 'utf8');
-  const heading = `## [${version}-${prereleaseTag}]`;
+  const heading = `## [${label}]`;
   if (content.includes(heading)) {
-    ok(`CHANGELOG.md already has section for ${version}-${prereleaseTag}`);
+    ok(`CHANGELOG.md already has section for ${label}`);
     return;
   }
   let prevTag = '';
@@ -382,7 +392,7 @@ function phaseChangelog(version, prereleaseTag) {
   const today = new Date().toISOString().slice(0, 10);
   const eol = content.includes('\r\n') ? '\r\n' : '\n';
   const draft = [
-    `## [${version}-${prereleaseTag}] — ${today}`,
+    `## [${label}] — ${today}`,
     '',
     '### New Features',
     '- _(fill in)_',
@@ -402,7 +412,7 @@ function phaseChangelog(version, prereleaseTag) {
   if (idx === -1) die('Could not find insertion point in CHANGELOG.md (expected `---` separator after header)');
   const newContent = content.slice(0, idx + insertAfter.length) + draft + content.slice(idx + insertAfter.length);
   if (!DRY_RUN) writeFileSync(path, newContent);
-  warn(`Drafted CHANGELOG.md section for ${version}-${prereleaseTag}. Edit it before the PR merges if needed.`);
+  warn(`Drafted CHANGELOG.md section for ${label}. Edit it before the PR merges if needed.`);
 }
 
 function phaseCommitPush(version, prereleaseTag, branch) {
@@ -411,7 +421,7 @@ function phaseCommitPush(version, prereleaseTag, branch) {
   const releaseFileDiff = sh('git diff --name-only HEAD -- package.json package-lock.json CHANGELOG.md src/main/usage/litellm-prices.json');
   if (releaseFileDiff) {
     sh('git add package.json package-lock.json CHANGELOG.md src/main/usage/litellm-prices.json', { mutating: true });
-    const msg = `Release v${version}-${prereleaseTag}`;
+    const msg = `Release ${fullTag(version, prereleaseTag)}`;
     sh(`git commit -m "${msg}"`, { mutating: true });
     ok(`committed bump to ${branch}`);
   } else {
@@ -435,7 +445,8 @@ function phaseCommitPush(version, prereleaseTag, branch) {
 
 async function phasePR(version, prereleaseTag, branch) {
   log(`Phase 7/12: pull request`);
-  const title = `Release v${version}-${prereleaseTag}`;
+  const tag = fullTag(version, prereleaseTag);
+  const title = `Release ${tag}`;
 
   const existing = JSON.parse(gh(['pr', 'list', '--head', branch, '--state', 'all', '--json', 'number,state,url,mergedAt']) || '[]');
   let pr = existing[0];
@@ -446,7 +457,7 @@ async function phasePR(version, prereleaseTag, branch) {
   }
 
   if (!pr) {
-    const body = `Automated release PR for \`v${version}-${prereleaseTag}\`.\n\nSee CHANGELOG.md for details.`;
+    const body = `Automated release PR for \`${tag}\`.\n\nSee CHANGELOG.md for details.`;
     if (DRY_RUN) {
       log(`[dry-run] would create PR: ${title}`);
       return { number: 0, state: 'OPEN' };
@@ -494,7 +505,7 @@ async function phaseWaitMerge(pr) {
 
 function phaseTag(version, prereleaseTag) {
   log(`Phase 9/12: tag main`);
-  const tag = `v${version}-${prereleaseTag}`;
+  const tag = fullTag(version, prereleaseTag);
 
   sh(`git fetch ${GITHUB_REMOTE} main`);
   const currentBranch = sh('git rev-parse --abbrev-ref HEAD');
@@ -575,12 +586,13 @@ function phaseAssets(version, { setupPath, zipPath }) {
 
 async function phasePublishGithub(version, prereleaseTag, assets) {
   log(`Phase 12/12: publish to GitHub`);
-  const tag = `v${version}-${prereleaseTag}`;
-  // Convention: alpha.* = prerelease; beta.* and hotfix.* = full release (won't be latest until no newer).
-  const isPrerelease = prereleaseTag.startsWith('alpha.');
+  const tag = fullTag(version, prereleaseTag);
+  const label = fullLabel(version, prereleaseTag);
+  // Convention: stable (no suffix) and hotfix.* = full release; beta.* = GitHub prerelease; alpha.* = GitHub prerelease.
+  const isPrerelease = !!prereleaseTag && (prereleaseTag.startsWith('alpha.') || prereleaseTag.startsWith('beta.'));
 
   const changelog = readFileSync(join(REPO_ROOT, 'CHANGELOG.md'), 'utf8');
-  const sectionRe = new RegExp(String.raw`(## \[${escapeRegex(version)}-${escapeRegex(prereleaseTag)}\][\s\S]*?)(?=\n## \[|$)`);
+  const sectionRe = new RegExp(String.raw`(## \[${escapeRegex(label)}\][\s\S]*?)(?=\n## \[|$)`);
   const sectionMatch = changelog.match(sectionRe);
   let body = sectionMatch ? sectionMatch[1].trim() : `Release ${tag}`;
   body = body.replace(/^## \[.*?\][^\n]*\n+/, '');
@@ -636,18 +648,20 @@ async function phasePublishGithub(version, prereleaseTag, assets) {
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
-  let prereleaseTag = args.find(a => /^(alpha|beta|hotfix)\.\d+$/.test(a));
-  if (!prereleaseTag && NEXT) {
+  const isStable = args.includes('stable');
+  let prereleaseTag = args.find(a => /^(alpha|beta|hotfix)\.\d+$/.test(a)) || null;
+  if (!prereleaseTag && !isStable && NEXT) {
     const channel = args.find(a => /^(alpha|beta|hotfix)$/.test(a)) || 'alpha';
     const n = await nextPrereleaseNumber(channel);
     prereleaseTag = `${channel}.${n}`;
     log(`auto-picked prerelease tag: ${prereleaseTag}`);
   }
-  if (!prereleaseTag) die('Usage: node scripts/release.mjs <alpha|beta|hotfix>.N [--minor] [--resume] [--dry-run]   (or: --next)');
+  if (!prereleaseTag && !isStable) die('Usage: node scripts/release.mjs <stable | alpha|beta|hotfix>.N [--minor] [--resume] [--dry-run]   (or: --next)');
 
   // --resume reuses current pkg version; --minor bumps minor; default bumps patch.
+  // Stable releases always bump minor (0.5.2 → 0.6.0).
   const cur = currentPackageVersion();
-  const tagForCur = `v${cur}-${prereleaseTag}`;
+  const tagForCur = fullTag(cur, prereleaseTag);
   const tagExists = sh(`git tag -l ${tagForCur}`);
   let targetVersion;
   if (tagExists) {
@@ -655,10 +669,10 @@ async function main() {
     log(`resuming: tag ${tagForCur} already exists, using current package version ${cur}`);
   } else if (RESUME) {
     targetVersion = cur;
-    log(`resuming: using current package version ${cur} (${prereleaseTag})`);
-  } else if (MINOR) {
+    log(`resuming: using current package version ${cur} (${prereleaseTag || 'stable'})`);
+  } else if (isStable || MINOR) {
     targetVersion = bumpMinor(cur);
-    log(`current package version: ${cur} → target: ${targetVersion} (${prereleaseTag}, minor bump)`);
+    log(`current package version: ${cur} → target: ${targetVersion} (${prereleaseTag || 'stable'}, minor bump)`);
   } else {
     targetVersion = bumpPatch(cur);
     log(`current package version: ${cur} → target: ${targetVersion} (${prereleaseTag})`);
