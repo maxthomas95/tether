@@ -56,8 +56,9 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Multiple concurrent sessions** with instant switching — click in the sidebar, or `Ctrl+1`–`Ctrl+9`
 - **Session grouping** by environment and working directory; collapsible groups, **drag-reorder** inside a group
 - **Bulk group actions** — Kill all / Restart all / Clear all per repo group from a right-click menu
-- **Split panes** *(experimental)* — drag from the sidebar into drop zones to view sessions side-by-side; keyboard-driven focus (`Alt+Arrow`) and swap (`Alt+Shift+Arrow`); in-pane recovery overlay when a session dies
-- **Status indicators** — green (running), amber (waiting), gray (idle), red (dead) — passive PTY tap, no ANSI parsing
+- **Split panes** *(experimental)* — drag from the sidebar into drop zones to view sessions side-by-side; keyboard-driven focus (`Alt+Arrow`) and swap (`Alt+Shift+Arrow`); broadcast input to multiple panes; in-pane recovery overlay when a session dies
+- **Desktop notifications** — configurable alerts for waiting, idle, unexpected exit, and terminal bell; per-session mute toggle with 🔕 badge; suppresses when focused
+- **Status indicators** — green (running), amber (waiting), gray (idle), red (dead) — passive PTY tap, no ANSI parsing; optional CLI hook integration for higher-fidelity detection
 - **Workspace persistence** — sessions save on quit and restore on launch; writes are atomic (tmp → fsync → rename)
 - **Resume previous chats** — pick up a prior Claude Code, Codex CLI, OpenCode, or Copilot CLI transcript on session create
 - **First-run Setup Wizard** — guided setup for projects, Vault, environments, CLI defaults, and Git providers
@@ -92,9 +93,10 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 
 - **Customizable keyboard shortcuts** — every binding remappable in Settings, with a reserved-chord warn list for conflicts like `Ctrl+C`
 - **Window zoom** — `Ctrl+=` / `Ctrl+-` / `Ctrl+0` zoom UI + terminal together; `Ctrl+scroll` resizes just one pane's terminal font
+- **Font customization** — pick terminal font (Cascadia Code, JetBrains Mono, Fira Code, Consolas) and UI font (IBM Plex Sans, Inter, Atkinson Hyperlegible, System) independently
 - **Clickable URLs** — `Ctrl+click` any printed link to open in the system browser
 - **In-app documentation** with `(?)` deep-link icons that jump from dialogs straight to the relevant docs section
-- **Catppuccin themes** — Mocha, Macchiato, Frappe, Latte, plus Default Dark — applied everywhere including the title bar and docs window
+- **Seven themes** — Catppuccin (Mocha, Macchiato, Frappé, Latte), Brass, Tether (Default Dark), Tether Light — applied everywhere including the title bar and docs window
 
 ### Operations
 

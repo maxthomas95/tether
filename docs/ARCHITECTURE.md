@@ -34,6 +34,8 @@ Tether is an Electron desktop application with a React frontend. The Electron ma
 └─────────────────────────────────────────────────────────────┘
 ```
 
+> **Note:** This is a simplified diagram showing the core data flow. Additional subsystems (Notifications, Vault, Usage/Quota, Keybindings, Helm, Diagnostics, Auto-Update) are described in their own sections below.
+
 ## Component Design
 
 ### Session Registry
@@ -63,7 +65,6 @@ interface EnvironmentRow {
   config: string               // JSON blob — host, port, username, etc.
   env_vars: string             // JSON-encoded Record<string, string>
   auth_mode: string | null     // Placeholder for future auth modes
-  api_key_enc: string | null   // Placeholder for encrypted API key
   model: string | null         // Placeholder for model selection
   small_model: string | null   // Placeholder for small/fast model
   sort_order: number
@@ -79,7 +80,6 @@ interface SessionRow {
   working_dir: string
   state: string                // SessionState enum value
   auth_mode: string | null     // Placeholder
-  api_key_enc: string | null   // Placeholder
   model: string | null         // Placeholder
   small_model: string | null   // Placeholder
   pid: number | null           // Local PTY PID
@@ -92,7 +92,7 @@ interface SessionRow {
 
 **Notes:**
 - Environment variable config cascades: app defaults -> environment -> session overrides.
-- `auth_mode`, `api_key_enc`, `model`, and `small_model` fields exist as placeholders for future auth/model selection features. Currently unused.
+- `auth_mode`, `model`, and `small_model` fields exist as placeholders for future auth/model selection features. Currently unused.
 - `state` is updated by the Status Detector, not by the transport adapters directly.
 - `pid` is only meaningful for local sessions. SSH sessions track connection state internally.
 - On startup, `markAllRunningAsStopped()` resets any sessions left in running states from a previous crash.
@@ -185,7 +185,7 @@ All adapters implement a common interface (detailed in [Transport Design](TRANSP
 | PTY exit event | `pty.onExit` / SSH channel close | `stopped` or `dead` |
 | Error output | Exit code != 0 | `dead` |
 
-**CLI hook overlay (Claude only, Phase 1 — local sessions).** `src/main/cli-config/claude-settings-overlay.ts` writes a sentinel-scoped block into the user's `~/.claude/settings.json` so Claude Code's Notification/Stop hooks call a bundled stdlib-only Node helper (`tether-cli-hook`, shipped as a Forge `extraResource`). The helper posts to a token-authed local socket; `hook-bridge.ts` plumbs the events into the status detector. The overlay is additive, scrubbed on clean shutdown, and recovered on next boot after a crash. Codex `notify`, the `cliHooksEnabled` settings toggle, and SSH/Coder remote installation are deferred follow-ups (Phase 1b).
+**CLI hook overlay (Claude + Codex — local sessions).** `src/main/cli-config/claude-settings-overlay.ts` writes a sentinel-scoped block into the user's `~/.claude/settings.json` so Claude Code's Notification/Stop hooks call a bundled stdlib-only Node helper (`tether-cli-hook`, shipped as a Forge `extraResource`). `codex-config-overlay.ts` does the same for Codex's `~/.codex/config.toml` notify hook. The helper posts to a token-authed local socket; `hook-bridge.ts` plumbs the events into the status detector. The overlay is additive, scrubbed on clean shutdown, and recovered on next boot after a crash. The `cliHooksEnabled` settings toggle gates the feature (opt-in, off by default). SSH/Coder remote hook installation is a deferred follow-up.
 
 **Important:** The detector does NOT attempt to parse ANSI escape sequences or understand Claude Code's UI structure. It operates on timing and byte-level patterns only. This makes it resilient to Claude Code UI changes across versions.
 
@@ -193,7 +193,7 @@ All adapters implement a common interface (detailed in [Transport Design](TRANSP
 
 ### IPC Design
 
-The IPC surface has grown to ~88 channels across these families, split since 0.4.3-beta.4 into per-domain modules under `src/main/ipc/` (`session-handlers`, `env-handlers`, `config-handlers`, `vault-handlers`, `usage-handlers`, `git-handlers`, `coder-handlers`, `ssh-handlers`, `profile-handlers`, `keybindings-handlers`, `dialog-handlers`, `system-handlers`). `handlers.ts` is now a thin dispatcher:
+The IPC surface has grown to ~92 channels across these families, split since 0.4.3-beta.4 into per-domain modules under `src/main/ipc/` (`session-handlers`, `env-handlers`, `config-handlers`, `vault-handlers`, `usage-handlers`, `git-handlers`, `coder-handlers`, `ssh-handlers`, `profile-handlers`, `keybindings-handlers`, `dialog-handlers`, `system-handlers`). `handlers.ts` is now a thin dispatcher:
 
 **Sessions:** `session:create`, `session:list`, `session:stop`, `session:kill`, `session:rename`, `session:remove`, plus per-session usage queries
 
@@ -276,6 +276,51 @@ Surfaced in the UI as a sidebar global usage footer (today's cost + 7-day sparkl
 ### Auto-Update
 
 `src/main/update/update-checker.ts` polls GitHub Releases for newer versions and surfaces a notification in the renderer. The user opts in to download/install; the install is delegated to the OS installer.
+
+### Desktop Notifications
+
+`src/main/notifications/notification-service.ts` manages OS-level desktop notifications with:
+- Five configurable triggers: waiting, idle, unexpected exit, terminal bell, and a suppress-when-focused toggle
+- Per-session mute (right-click menu in sidebar; persisted as `notificationsMuted` on the session)
+- Bell coalescing to prevent notification spam from noisy sessions
+- Click-to-select: clicking a notification focuses Tether and selects the originating session
+
+Preferences are stored in `data.json` under the `notificationPrefs` config key and managed from Settings → Notifications.
+
+### Split Pane Layout
+
+`src/renderer/components/SplitLayout.tsx` and `SplitDivider.tsx` implement a tree-based multi-pane terminal layout:
+- Drag sessions from the sidebar onto edge drop zones (left/right/top/bottom) or center (replace)
+- Keyboard-driven: **Alt+Arrow** to focus neighbors, **Alt+Shift+Arrow** to swap panes
+- Layout state persisted in `savedWorkspace` so pane arrangements survive restarts
+- Pane recovery overlay on session exit: **Restart in this pane** or **Close pane**
+- Gated by the `enablePaneSplitting` config toggle in Settings → Sessions
+
+### Broadcast Input
+
+When multiple panes are open, keystrokes can be echoed to several sessions simultaneously. Managed by `src/renderer/lib/broadcast-targets.ts`; toggled from the pane status strip. The terminal manager (`useTerminalManager.ts`) fans out `session:input` IPC calls to all broadcast targets.
+
+### Keybindings System
+
+`src/main/ipc/keybindings-handlers.ts` and `src/renderer/components/KeybindingsEditor.tsx` provide user-remappable keyboard shortcuts:
+- Bindings stored in `data.json` as a `keybindings` record (action → chord)
+- Reserved-chord warn list prevents accidental rebinding of Ctrl+C, etc.
+- Defaults defined in `useKeyboardShortcuts.ts`; editor UI in Settings → Shortcuts
+
+### Helm Integration
+
+`src/main/helm/` implements an opt-in MCP capability where a designated Claude session can dispatch pre-briefed child sessions:
+- `bridge.ts` exposes a `spawn_session` tool to the MCP server
+- `integration.ts` manages the MCP server lifecycle per helm-enabled session
+- Gated by the `allowHelm` config toggle in Settings → Sessions, plus a per-session enable in the right-click menu
+
+### Diagnostics
+
+`src/main/diagnostics/diagnostics-service.ts` bundles a scrubbed diagnostic export (sanitized `data.json` + rotated logs) for bug reports. Triggered from About → **Export diagnostics for support**.
+
+### Setup Wizard
+
+`src/renderer/components/SetupWizard.tsx` runs on first launch, walking the user through repos root, Vault config, environment/CLI selection, and git provider setup. Only marks setup complete on explicit user action (not window dismiss).
 
 ## Key Design Decisions
 

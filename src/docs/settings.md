@@ -1,10 +1,11 @@
 # Settings
 
-Open Settings with **Ctrl+,** or from the menu bar under **View**. The dialog has six sections in a left rail:
+Open Settings with **Ctrl+,** or from the menu bar under **View**. The dialog has seven sections in a left rail:
 
 - [General](#general) — theme and update checks
-- [Terminal](#terminal) — font, terminal-pane behavior, scrollback
-- [Sessions](#sessions) — default CLI, default env vars, per-CLI flag presets, launch profiles
+- [Terminal](#terminal) — font families, cursor shape, scrollback
+- [Sessions](#sessions) — default CLI, Helm toggle, default env vars, per-CLI flag presets, launch profiles
+- [Notifications](#notifications) — desktop notification triggers and suppression
 - [Shortcuts](#shortcuts) — keyboard shortcut customization
 - [Integrations](#integrations) — Vault, Git providers, SSH known hosts, diagnostics
 - [Usage](#usage) — cost tracking, history dialog, exports, subscription quota
@@ -13,15 +14,17 @@ Open Settings with **Ctrl+,** or from the menu bar under **View**. The dialog ha
 
 ### Theme
 
-Tether ships with five built-in themes:
+Tether ships with seven built-in themes:
 
 | Theme | Style |
 |-------|-------|
 | **Catppuccin Mocha** | Dark (default) — warm muted pastels |
 | **Catppuccin Macchiato** | Dark — slightly lighter than Mocha |
-| **Catppuccin Frappe** | Dark — cooler than Mocha |
-| **Catppuccin Latte** | Light — the only light theme |
-| **Default Dark** | Dark — neutral gray tones |
+| **Catppuccin Frappé** | Dark — cooler than Mocha |
+| **Catppuccin Latte** | Light — cream background |
+| **Brass** | Dark — warm rope / canvas / copper palette |
+| **Tether (Default Dark)** | Dark — neutral cool tones, pairs with the logo |
+| **Tether Light** | Light — VS Code Light+ inspired, white canvas |
 
 The theme applies to the entire app: title bar, sidebar, terminal, dialogs, and this documentation window.
 
@@ -48,15 +51,51 @@ Sets the default terminal font size for all new panes. Existing panes keep whate
 
 Number of lines of output kept per pane (100&ndash;100,000; default 10,000). xterm.js ships with a 1,000-line default, which agentic CLI output exhausts almost immediately — Tether bumps the default to 10k so you can scroll back through a full Claude or Codex run. Larger values keep more history at the cost of memory per pane; the setting applies immediately to existing panes.
 
-### Terminal behavior
+### Terminal font family
 
-A few terminal-pane toggles (e.g. cursor visibility, font family). The hint copy explains the trade-offs per option — most users should leave these at the defaults.
+Pick from four presets or leave the default:
+
+| Preset | Notes |
+|--------|-------|
+| **Default (Cascadia Code)** | Bundled with Windows; the xterm.js default |
+| **JetBrains Mono** | Must be installed on the OS |
+| **Fira Code** | Must be installed on the OS |
+| **Consolas** | Bundled with Windows |
+
+This only affects xterm.js panes. Tether's own UI keeps IBM Plex Sans / JetBrains Mono regardless. Missing fonts fall back to Cascadia Code or Consolas.
+
+### UI font family
+
+Pick the font used in the sidebar, dialogs, and menus:
+
+| Preset | Notes |
+|--------|-------|
+| **Default (IBM Plex Sans)** | Tether's identity face |
+| **Inter** | Bundled — clean geometric sans |
+| **Atkinson Hyperlegible** | Bundled — optimized for readability |
+| **System default** | Uses the OS's UI font (Segoe UI on Windows) |
+
+### Hide terminal cursor
+
+Hides the blinking cursor inside xterm.js panes. Useful when you're just watching output. When on, the cursor shape and blink controls below are disabled.
 
 ### Cursor shape & blink
 
-When the xterm.js cursor is visible, pick its shape (block / underline / bar) and whether it blinks. Both controls are disabled while **Hide terminal cursor** is on, since shape and blink have no effect on a hidden cursor.
+When the xterm.js cursor is visible, pick its shape (block / underline / bar) and whether it blinks.
 
 ## Sessions
+
+### Allow Helm
+
+Unlocks the per-session "Enable Helm" toggle, which lets a designated Claude session dispatch pre-briefed child sessions via the `tether-helm` MCP. Leave off unless you're specifically using this. See [Helm](helm).
+
+### CLI hooks
+
+When on, Tether installs an additive entry in your `~/.claude/settings.json` and `~/.codex/config.toml` so Claude/Codex tell Tether directly when a turn finishes or input is needed. This produces more accurate waiting/idle status detection than passive output observation alone. Takes effect on the next Tether launch.
+
+### Enable pane splitting
+
+Turns on drag-to-split and the split pane layout. When off, sessions always open full-screen in the terminal area. See [Getting Started](getting-started#split-panes).
 
 ### Default CLI tool
 
@@ -88,6 +127,20 @@ Each profile has:
 - **Default** — one profile can be marked as default; it pre-selects in the New Session dialog
 
 When you create a session and pick a profile, its env vars and CLI flags merge on top of the environment and global defaults. You can still override individual values per-session.
+
+## Notifications
+
+Tether can post OS desktop notifications when a session changes state, so you can step away from the window and still know when something needs attention. Five triggers, each independently toggleable:
+
+| Trigger | When it fires |
+|---------|---------------|
+| **Waiting for input** | The CLI finishes its turn or hits a permission prompt — the moment the sidebar dot goes amber |
+| **Idle** | The session has been silent past the idle timeout |
+| **Unexpected exit** | The CLI exits with a non-zero code. Clean exits (you closed the session) stay quiet |
+| **Terminal bell** | The CLI emits an ASCII BEL (`\x07`). Coalesced so a noisy session won't spam your notification center |
+| **Suppress while focused** | When on, notifications are hidden while Tether's window has focus (the sidebar already tells you) |
+
+Individual sessions can be muted from the right-click menu in the sidebar — see [Sessions](sessions#muting-notifications).
 
 ## Shortcuts
 

@@ -13,11 +13,15 @@ Click **+ New session** or press **Ctrl+N**. The dialog has three tabs for picki
 Other fields:
 
 - **Environment** — Local, SSH, or Coder (see [Environments](environments))
-- **CLI tool** — [Claude Code](#multi-cli-support), [Codex CLI](#multi-cli-support), [OpenCode](#multi-cli-support), or a [Custom](#multi-cli-support) binary
+- **CLI tool** — [Claude Code](#multi-cli-support), [Codex CLI](#multi-cli-support), [GitHub Copilot CLI](#multi-cli-support), [OpenCode](#multi-cli-support), or a [Custom](#multi-cli-support) binary
 - **Label** — optional display name (defaults to the directory name)
 - **Launch profile** — preset env vars and CLI flags (see [Settings](settings#launch-profiles))
 - **Environment variables** — key-value pairs passed to the CLI process. Values can be `vault://` references; see [Vault](vault).
 - **CLI flags** — additional command-line arguments. Multi-token flags like `--permission-mode plan` are tokenized at the transport boundary.
+
+### Git worktrees (local only)
+
+When the Existing tab points to a git repository, a **Create as new git worktree** checkbox appears. Check it, type a branch name, and Tether will `git worktree add` a new working tree alongside the repo before spawning the session. The worktree path auto-fills from the branch name but can be edited. Useful for running parallel agent sessions on different branches of the same repo without juggling stashes or clones.
 
 ## Resume Conversation
 
@@ -29,9 +33,10 @@ Tether is CLI-agnostic. The CLI registry lives in `src/shared/cli-tools.ts`; per
 
 | Tool | Notes |
 |------|-------|
-| **Claude Code** | Full integration: resume (`--resume`, `--session-id`), transcript browsing, hooks-based status (planned). |
-| **Codex CLI** | Full integration: `codex resume <id>`, transcript browsing, session-id watcher captures `sessionId` at spawn. |
-| **OpenCode** | Raw PTY only; cost is read from OpenCode's local DB. No transcript-based resume. |
+| **Claude Code** | Full integration: resume (`--resume`, `--session-id`), transcript browsing, hooks-based status detection. |
+| **Codex CLI** | Full integration: `codex resume <id>`, transcript browsing, session-id watcher captures `sessionId` at spawn, hooks-based status detection. |
+| **GitHub Copilot CLI** | Resume support, transcript browsing. |
+| **OpenCode** | Cost tracking from OpenCode's local DB. No transcript-based resume. |
 | **Custom** | Any binary you specify. No resume, no transcript reader. |
 
 ## Session States
@@ -74,9 +79,17 @@ Right-click and choose **Duplicate** to clone a session with the same environmen
 
 Drag sessions within a group to reorder them. Order is persisted per repo group.
 
+### Muting notifications
+
+Right-click a session and choose **Mute notifications** to silence desktop notifications for that session only — useful when one session is noisy but you still want alerts from others. Muted sessions show a 🔕 badge next to the status dot. Unmute from the same right-click menu. Global notification triggers are configured in [Settings](settings#notifications).
+
 ### Pane recovery
 
 If a session inside a split pane dies, the pane shows an in-pane overlay with **Restart in this pane** (re-spawn with the same params, keeping the layout slot) or **Close pane**.
+
+## Broadcast Input
+
+When you have multiple panes open in a split layout, you can broadcast keystrokes to several sessions at once — useful for running the same command in parallel. Toggle broadcast targets from the pane status strip or from **View → Clear Broadcast Input Targets** to reset. When broadcast is active, anything you type in the focused pane is echoed to all targeted panes simultaneously.
 
 ## Bulk Actions on a Group
 
