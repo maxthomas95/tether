@@ -98,10 +98,6 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     await sessionManager.stopSession(sessionId);
   });
 
-  ipcMain.handle(IPC.SESSION_KILL, async (_event, sessionId: string) => {
-    sessionManager.killSession(sessionId);
-  });
-
   ipcMain.handle(IPC.SESSION_RENAME, async (_event, sessionId: string, label: string) => {
     sessionManager.renameSession(sessionId, label);
     sessionRepo.updateSessionLabel(sessionId, label);

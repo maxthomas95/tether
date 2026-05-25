@@ -680,7 +680,8 @@ export class SessionManager {
             const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
             if (!sessionId) throw new Error('kill_session requires sessionId');
             if (params.graceful === false) {
-              this.killSession(sessionId);
+              // Explicit non-graceful request → bypass the grace period
+              this.forceKill(sessionId);
             } else {
               await this.stopSession(sessionId);
             }
@@ -875,18 +876,86 @@ export class SessionManager {
     this.sessions.get(id)?.transport?.resize(cols, rows);
   }
 
+  /**
+   * Sessions currently in the grace period between a graceful stop() and the
+   * forced kill() escalation. A second stopSession() call during this window
+   * immediately escalates to kill().
+   */
+  private stoppingIds = new Set<string>();
+
+  /**
+   * Unified stop: tries a graceful transport.stop() first, then auto-escalates
+   * to transport.kill() after ~3 seconds if the session hasn't terminated.
+   *
+   * If called a second time while the grace period is active, escalates to
+   * kill() immediately (double-click-to-force pattern).
+   */
   async stopSession(id: string): Promise<void> {
     const session = this.sessions.get(id);
-    if (session?.transport) {
-      log.info('Stopping session', { id });
-      await session.transport.stop();
+    if (!session?.transport) return;
+
+    // Second call during grace period → immediate kill
+    if (this.stoppingIds.has(id)) {
+      log.warn('Stop called again during grace period, escalating to kill', { id });
+      this.forceKill(id);
+      return;
     }
+
+    log.info('Stopping session (graceful)', { id });
+    this.stoppingIds.add(id);
+
+    // Kick off the graceful stop (non-blocking — SSH stop sends Ctrl+C / exit
+    // and resolves; local stop calls ptyProcess.kill which may resolve quickly).
+    try {
+      await session.transport.stop();
+    } catch {
+      // If the graceful stop itself throws, escalate immediately.
+      if (this.stoppingIds.has(id) && session.transport) {
+        log.warn('Graceful stop threw, escalating to kill', { id });
+        this.forceKill(id);
+      }
+      return;
+    }
+
+    // If the transport already disconnected during the await, we're done.
+    if (!session.transport) {
+      this.stoppingIds.delete(id);
+      return;
+    }
+
+    // Wait up to 3 seconds for the session to terminate on its own.
+    await new Promise<void>(resolve => {
+      const timer = setTimeout(() => {
+        // Grace period expired — force-kill if still alive.
+        if (this.stoppingIds.has(id) && session.transport) {
+          log.warn('Grace period expired, escalating to kill', { id });
+          this.forceKill(id);
+        }
+        resolve();
+      }, 3000);
+
+      // Early exit: transport's onExit fires during the wait → clear timer.
+      const checkInterval = setInterval(() => {
+        if (!session.transport) {
+          clearTimeout(timer);
+          clearInterval(checkInterval);
+          this.stoppingIds.delete(id);
+          resolve();
+        }
+      }, 100);
+    });
   }
 
-  killSession(id: string): void {
+  /**
+   * Internal forced termination. Destroys the transport, marks the session
+   * exited, and cleans up the stopping state. Callers: auto-escalation from
+   * stopSession and the Helm kill_session tool.
+   */
+  forceKill(id: string): void {
+    this.stoppingIds.delete(id);
     const session = this.sessions.get(id);
     if (session?.transport) {
-      log.warn('Killing session', { id });
+      log.warn('Force-killing session', { id });
       session.transport.kill();
       session.transport = null;
       statusDetector.markExited(id, 1);

@@ -61,15 +61,11 @@ Double-click the label in the sidebar, or right-click and choose **Rename**. Ent
 
 ### Stopping
 
-**Ctrl+W** sends a graceful stop signal (SIGTERM) to the active session. You can also right-click and choose **Stop**.
-
-### Killing
-
-If a session doesn't respond to Stop, right-click and choose **Kill**. SIGKILL — no cleanup, the process is terminated immediately.
+**Ctrl+W** sends a graceful stop signal (SIGTERM) to the active session. You can also right-click and choose **Stop**. If the session doesn't terminate within 3 seconds, Tether automatically escalates to a forced kill. Clicking **Stop** a second time during the grace period forces an immediate kill.
 
 ### Removing
 
-Right-click and choose **Remove** to drop the session from the sidebar. If it's still running, it's killed first.
+Right-click and choose **Remove** to drop the session from the sidebar. If it's still running, it's stopped first.
 
 ### Duplicating
 
@@ -95,9 +91,9 @@ When you have multiple panes open in a split layout, you can broadcast keystroke
 
 Right-click a repo-group header in the sidebar for bulk actions across every session in that group:
 
-- **Kill all** — SIGKILL every session under this working directory
-- **Restart all** — kill and re-spawn each session with its original params
-- **Clear all** — kill and remove every session
+- **Stop all** — gracefully stop every running session under this working directory (auto-escalates to forced kill after 3 seconds per session)
+- **Restart all** — stop and re-spawn each session with its original params
+- **Clear all** — stop and remove every session
 
 ## Helm (opt-in)
 

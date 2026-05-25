@@ -37,7 +37,6 @@ const api: TetherAPI = {
     vaultPreflight: (opts: CreateSessionOptions): Promise<VaultPreflightResult> => ipcRenderer.invoke(IPC.SESSION_VAULT_PREFLIGHT, opts),
     list: (): Promise<SessionInfo[]> => ipcRenderer.invoke(IPC.SESSION_LIST),
     stop: (id: string): Promise<void> => ipcRenderer.invoke(IPC.SESSION_STOP, id),
-    kill: (id: string): Promise<void> => ipcRenderer.invoke(IPC.SESSION_KILL, id),
     rename: (id: string, label: string): Promise<void> => ipcRenderer.invoke(IPC.SESSION_RENAME, id, label),
     remove: (id: string): Promise<void> => ipcRenderer.invoke(IPC.SESSION_REMOVE, id),
     setHelmEnabled: (id: string, enabled: boolean): Promise<void> => ipcRenderer.invoke(IPC.SESSION_SET_HELM_ENABLED, id, enabled),
