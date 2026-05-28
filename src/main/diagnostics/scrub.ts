@@ -11,6 +11,9 @@ import { isVaultRef } from '../vault/vault-resolver';
 
 const REDACTED = '[REDACTED]';
 const SENSITIVE_KEY_PATTERN = /key|secret|token|password|credential|auth/i;
+const ENCRYPTED_SECRET_PREFIX = 'tether-safe:v1:';
+const CREDENTIAL_URL_RE = /\b([a-z][a-z0-9+.-]*:\/\/)([^/\s:@]+):([^/\s@]+)@/gi;
+const BEARER_TOKEN_RE = /\b(Authorization:\s*Bearer\s+)[A-Za-z0-9._~+/-]{16,}/gi;
 
 // High-precision API-key prefixes (avoid false positives in log scrubbing).
 const API_KEY_PATTERNS: ReadonlyArray<RegExp> = [
@@ -32,6 +35,19 @@ function looksSensitive(key: string): boolean {
   return SENSITIVE_KEY_PATTERN.test(key);
 }
 
+function looksSensitiveValue(value: string): boolean {
+  if (value.startsWith(ENCRYPTED_SECRET_PREFIX)) return true;
+  if (CREDENTIAL_URL_RE.test(value)) {
+    CREDENTIAL_URL_RE.lastIndex = 0;
+    return true;
+  }
+  CREDENTIAL_URL_RE.lastIndex = 0;
+  return API_KEY_PATTERNS.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(value);
+  });
+}
+
 function scrubEnvVarsJson(rawJson: string | undefined): string {
   if (!rawJson) return rawJson ?? '{}';
   let parsed: Record<string, unknown>;
@@ -48,7 +64,7 @@ function scrubEnvVarsJson(rawJson: string | undefined): string {
     }
     if (isVaultRef(v)) {
       scrubbed[k] = v;            // refs are not secrets
-    } else if (looksSensitive(k)) {
+    } else if (looksSensitive(k) || looksSensitiveValue(v)) {
       scrubbed[k] = REDACTED;
     } else {
       scrubbed[k] = v;
@@ -104,7 +120,7 @@ export function scrubDbData(input: DbData): DbData {
   // Default env vars.
   for (const k of Object.keys(db.defaultEnvVars)) {
     const v = db.defaultEnvVars[k];
-    if (typeof v === 'string' && !isVaultRef(v) && looksSensitive(k)) {
+    if (typeof v === 'string' && !isVaultRef(v) && (looksSensitive(k) || looksSensitiveValue(v))) {
       db.defaultEnvVars[k] = REDACTED;
     }
   }
@@ -122,6 +138,8 @@ export function scrubLogLine(line: string): string {
   for (const pattern of API_KEY_PATTERNS) {
     out = out.replace(pattern, '[REDACTED-API-KEY]');
   }
+  out = out.replace(CREDENTIAL_URL_RE, '$1[REDACTED]@');
+  out = out.replace(BEARER_TOKEN_RE, '$1[REDACTED-API-KEY]');
   return out;
 }
 

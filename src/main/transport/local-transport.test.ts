@@ -25,7 +25,24 @@ describe('LocalTransport', () => {
     await new LocalTransport().start(baseOptions({ binaryName: 'claude' }));
     const [file, args] = ptySpawnSpy.mock.calls[0];
     expect(file).toBe('cmd.exe');
-    expect(args).toEqual(['/c', 'claude']);
+    expect(args).toEqual(['/d', '/c', 'claude']);
+  });
+
+  it('on win32, rejects unsafe command-position binary values', async () => {
+    platform.set('win32');
+    await expect(new LocalTransport().start(baseOptions({ binaryName: 'claude&calc' })))
+      .rejects.toThrow(/unsafe/);
+    expect(ptySpawnSpy).not.toHaveBeenCalled();
+  });
+
+  it('on win32, escapes cmd.exe expansion metacharacters in args', async () => {
+    platform.set('win32');
+    await new LocalTransport().start(baseOptions({
+      binaryName: 'claude',
+      cliArgs: ['--model', 'sonnet%PATH%', 'caret^x', 'fix&calc'],
+    }));
+    const [, args] = ptySpawnSpy.mock.calls[0];
+    expect(args).toEqual(['/d', '/c', 'claude', '--model', 'sonnet^%PATH^%', 'caret^^x', 'fix^&calc']);
   });
 
   it('on POSIX, spawns the binary directly', async () => {

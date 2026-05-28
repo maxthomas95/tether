@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+const safeStorageMock = vi.hoisted(() => ({
+  isEncryptionAvailable: vi.fn(() => true),
+  encryptString: vi.fn((value: string) => Buffer.from(`enc:${value}`)),
+  decryptString: vi.fn((value: Buffer) => value.toString('utf8').replace(/^enc:/, '')),
+}));
+
+vi.mock('electron', () => ({ safeStorage: safeStorageMock }));
+
 // Mock the database module so we don't need Electron
 vi.mock('./database');
 
@@ -11,12 +19,15 @@ import {
   deleteEnvironment,
   ensureDefaultLocalEnvironment,
 } from './environment-repo';
-import { __resetDb } from './__mocks__/database';
+import { __resetDb, getDb } from './__mocks__/database';
 
 describe('environment-repo', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     __resetDb();
+    safeStorageMock.isEncryptionAvailable.mockReturnValue(true);
+    safeStorageMock.encryptString.mockClear();
+    safeStorageMock.decryptString.mockClear();
   });
 
   afterEach(() => {
@@ -66,6 +77,8 @@ describe('environment-repo', () => {
     });
     const parsed = JSON.parse(env.env_vars);
     expect(parsed.ANTHROPIC_API_KEY).toBe('sk-test');
+    const raw = JSON.parse(getDb().environments[0].env_vars);
+    expect(raw.ANTHROPIC_API_KEY).not.toBe('sk-test');
   });
 
   it('gets an environment by id', () => {

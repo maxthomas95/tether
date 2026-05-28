@@ -460,6 +460,7 @@ export interface SessionOrderPref {
 export interface KnownHostInfo {
   id: string;
   hostKey: string;
+  /** OpenSSH SHA256 fingerprint body; old stored rows may still be legacy hex. */
   keyHash: string;
   keyType: string;
   trustedAt: string;
@@ -471,6 +472,7 @@ export interface HostVerifyRequest {
   host: string;
   port: number;
   username?: string;
+  /** OpenSSH SHA256 fingerprint body, displayed as `SHA256:<value>`. */
   keyHash: string;
 }
 

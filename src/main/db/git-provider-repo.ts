@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb, saveDb } from './database';
 import type { GitProviderRow } from './database';
+import { encryptSecretForStorage } from './secret-storage';
 
 export type { GitProviderRow };
 
@@ -31,7 +32,7 @@ export function createGitProvider(input: CreateGitProviderInput): GitProviderRow
     baseUrl: input.baseUrl.replace(/\/+$/, ''),
     organization: input.organization || null,
     defaultProject: input.defaultProject || null,
-    token: input.token,
+    token: encryptSecretForStorage(input.token, 'Git provider token'),
     created_at: now,
     updated_at: now,
   };
@@ -48,7 +49,11 @@ export function updateGitProvider(id: string, updates: Partial<CreateGitProvider
   if (updates.baseUrl !== undefined) provider.baseUrl = updates.baseUrl.replace(/\/+$/, '');
   if (updates.organization !== undefined) provider.organization = updates.organization || null;
   if (updates.defaultProject !== undefined) provider.defaultProject = updates.defaultProject || null;
-  if (updates.token !== undefined) provider.token = updates.token;
+  if (updates.token !== undefined) {
+    provider.token = encryptSecretForStorage(updates.token, 'Git provider token');
+  } else {
+    provider.token = encryptSecretForStorage(provider.token, 'Git provider token');
+  }
   provider.updated_at = new Date().toISOString();
   saveDb();
 }

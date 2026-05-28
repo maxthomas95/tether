@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { findKnownHost, saveKnownHost } from '../db/known-hosts-repo';
 import { createLogger } from '../logger';
 import type { HostVerifyRequest } from '../../shared/types';
+import { formatSshFingerprint } from './fingerprint';
 
 const log = createLogger('ssh-host-verifier');
 
@@ -25,12 +26,17 @@ export async function verifyHost(
   port: number,
   keyHash: string,
   username?: string,
+  legacyKeyHash?: string,
 ): Promise<VerifyResult> {
   const hostKey = `${host}:${port || 22}`;
   const known = findKnownHost(hostKey);
 
   if (known) {
     if (known.keyHash === keyHash) {
+      return { trust: true };
+    }
+    if (legacyKeyHash && known.keyHash === legacyKeyHash) {
+      saveKnownHost({ hostKey, keyHash, keyType: known.keyType });
       return { trust: true };
     }
     log.error('Host key changed', {
@@ -42,8 +48,9 @@ export async function verifyHost(
       trust: false,
       reason:
         `Host key for ${hostKey} has changed. ` +
-        `Stored: SHA256:${known.keyHash.slice(0, 12)}…, received: SHA256:${keyHash.slice(0, 12)}…. ` +
-        `If this is expected, revoke the entry under Settings → SSH Known Hosts and reconnect.`,
+        `Stored: ${formatSshFingerprint(known.keyHash).slice(0, 24)}..., ` +
+        `received: ${formatSshFingerprint(keyHash).slice(0, 24)}.... ` +
+        'If this is expected, revoke the entry under Settings -> SSH Known Hosts and reconnect.',
     };
   }
 
