@@ -1,5 +1,6 @@
 import { safeStorage, type BrowserWindow } from 'electron';
 import { isVaultRef, resolveRef } from '../vault/vault-resolver';
+import { decryptSecretFromStorage } from '../db/secret-storage';
 
 /** Shared dependencies passed into each domain's `register*Handlers` function. */
 export interface HandlerContext {
@@ -37,5 +38,5 @@ export function decryptConfigPassword(config: Record<string, unknown>): Record<s
 
 export async function resolveProviderToken(token: string): Promise<string> {
   if (isVaultRef(token)) return resolveRef(token);
-  return token;
+  return decryptSecretFromStorage(token, 'Git provider token');
 }

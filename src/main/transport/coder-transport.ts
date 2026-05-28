@@ -5,6 +5,8 @@ import type { SessionTransport, TransportStartOptions, TransportExitInfo } from 
 import { createLogger } from '../logger';
 import { loadPty } from './pty-loader';
 import { buildEnvAssignments, buildRemoteCliCommand, quotePosixShellArg, quoteRemotePath } from './posix-shell';
+import { assertSafeCmdExeCommand, escapeCmdExeArgForNodePty } from '../../shared/shell-quote';
+import { validateGitRemoteUrl } from '../git/git-url';
 
 const log = createLogger('coder-pty');
 
@@ -56,20 +58,25 @@ export class CoderTransport implements SessionTransport {
       : cliCmd;
     const quotedSubDir = subDir ? quoteRemotePath(subDir) : '';
     const cdStep = subDir ? `cd ${quotedSubDir}` : '';
-    const cloneStep = options.cloneUrl && subDir
-      ? `{ [ -d ${quotedSubDir} ] || git clone ${quotePosixShellArg(options.cloneUrl)} ${quotedSubDir}; }`
+    const cloneUrl = options.cloneUrl ? validateGitRemoteUrl(options.cloneUrl) : undefined;
+    const cloneStep = cloneUrl && subDir
+      ? `{ [ -d ${quotedSubDir} ] || GIT_ALLOW_PROTOCOL=https:ssh git clone -- ${quotePosixShellArg(cloneUrl)} ${quotedSubDir}; }`
       : '';
     const chain = [cloneStep, cdStep, baseCmd].filter(Boolean).join(' && ');
     const cmd = `${chain}\n`;
 
     // On Windows, node-pty's CreateProcess call doesn't resolve PATHEXT, so
     // bare names like "coder" need a cmd.exe wrapper.
-    const shell = process.platform === 'win32' ? 'cmd.exe' : this.binaryPath;
-    const spawnArgs = process.platform === 'win32'
-      ? ['/c', this.binaryPath, 'ssh', workspaceName]
+    const isWin32 = process.platform === 'win32';
+    if (isWin32) {
+      assertSafeCmdExeCommand(this.binaryPath, 'Coder binary');
+    }
+    const shell = isWin32 ? 'cmd.exe' : this.binaryPath;
+    const spawnArgs = isWin32
+      ? ['/d', '/c', this.binaryPath, 'ssh', escapeCmdExeArgForNodePty(workspaceName)]
       : ['ssh', workspaceName];
 
-    log.info('Spawning coder ssh', { shell, args: spawnArgs });
+    log.info('Spawning coder ssh', { shell, binaryPath: this.binaryPath, workspaceName, hasSubDir: Boolean(subDir) });
 
     this.ptyProcess = pty.spawn(shell, spawnArgs, {
       name: 'xterm-256color',

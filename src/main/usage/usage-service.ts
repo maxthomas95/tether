@@ -51,6 +51,10 @@ function emptySessionUsage(sessionId: string, cliTool: CliToolId, environmentId?
   };
 }
 
+export function resetUsageForReparse(existing: SessionUsage): SessionUsage {
+  return emptySessionUsage(existing.sessionId, existing.cliTool, existing.environmentId);
+}
+
 function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOffset: number): SessionUsage {
   if (messages.length === 0) return { ...existing, parsedByteOffset: newOffset };
 
@@ -202,8 +206,13 @@ class UsageService {
         newSessions++;
         continue;
       }
-      // Already known. Only re-parse if the file grew since we last looked.
-      if (d.size > existing.usage.parsedByteOffset) {
+      // Already known. Re-parse if the file grew; if it shrank, reset the full
+      // accumulator first so a replacement/truncation cannot double-count.
+      if (d.size < existing.usage.parsedByteOffset) {
+        existing.usage = resetUsageForReparse(existing.usage);
+        this.parseSession(existing);
+        updatedSessions++;
+      } else if (d.size > existing.usage.parsedByteOffset) {
         this.parseSession(existing);
         updatedSessions++;
       }
@@ -235,7 +244,12 @@ class UsageService {
         newSessions++;
         continue;
       }
-      if (d.size > existing.usage.parsedByteOffset) {
+      if (d.size < existing.usage.parsedByteOffset) {
+        existing.usage = resetUsageForReparse(existing.usage);
+        existing.lastSeenModel = null;
+        this.parseSession(existing);
+        updatedSessions++;
+      } else if (d.size > existing.usage.parsedByteOffset) {
         this.parseSession(existing);
         updatedSessions++;
       }
@@ -580,9 +594,10 @@ class UsageService {
       if (curr.size === 0 && curr.mtimeMs === 0) return;
       // Size or mtime change → schedule a parse. An inode change (atomic
       // replace) means the file is effectively new; reset the offset so we
-      // re-parse from the top.
-      if (prev.ino !== 0 && curr.ino !== prev.ino) {
-        session.usage.parsedByteOffset = 0;
+      // re-parse from the top without keeping old token totals.
+      if ((prev.ino !== 0 && curr.ino !== prev.ino) || curr.size < session.usage.parsedByteOffset) {
+        session.usage = resetUsageForReparse(session.usage);
+        if (session.cliTool === 'codex') session.lastSeenModel = null;
       }
       if (curr.size === prev.size && curr.mtimeMs === prev.mtimeMs) return;
       this.debouncedParse(session);

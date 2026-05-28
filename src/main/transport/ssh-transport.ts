@@ -2,6 +2,7 @@ import { StringDecoder } from 'node:string_decoder';
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
 import { createLogger } from '../logger';
 import { verifyHost } from '../ssh/host-verifier';
+import { hostKeyFingerprints } from '../ssh/fingerprint';
 import { loadSsh2 } from './ssh2-loader';
 import { buildEnvAssignments, buildRemoteCliCommand, quoteRemotePath } from './posix-shell';
 
@@ -211,10 +212,14 @@ export class SSHTransport implements SessionTransport {
   }
 
   private verifyHostKey(key: string | Buffer, callback: (accept: boolean) => void): void {
-    // With hostHash set, ssh2 hands us a hex string. Normalize to lowercase
-    // so we compare deterministically with stored hashes.
-    const keyHash = (typeof key === 'string' ? key : key.toString('hex')).toLowerCase();
-    verifyHost(this.sshConfig.host, this.sshConfig.port || 22, keyHash, this.sshConfig.username)
+    const fingerprints = hostKeyFingerprints(key);
+    verifyHost(
+      this.sshConfig.host,
+      this.sshConfig.port || 22,
+      fingerprints.sha256,
+      this.sshConfig.username,
+      fingerprints.legacyHex,
+    )
       .then((result) => {
         if (!result.trust && result.reason) {
           this.verifyError = result.reason;

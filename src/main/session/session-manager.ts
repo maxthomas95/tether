@@ -9,6 +9,7 @@ import { statusDetector } from '../status/status-detector';
 import { classifyExit, classifyTransition, type NotificationService, type NotifiedSession } from '../notifications/notification-service';
 import { getEnvironment, listEnvironments } from '../db/environment-repo';
 import { getProfile, listProfiles } from '../db/profile-repo';
+import { decryptEnvVarsRecord } from '../db/secret-storage';
 import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
 import { transcriptExists } from '../claude/transcripts';
 import { codexTranscriptExists } from '../codex/transcripts';
@@ -272,7 +273,7 @@ export class Session {
  */
 export async function findVaultRefInSession(opts: CreateSessionOptions): Promise<string | null> {
   const { getDb } = await import('../db/database');
-  const appEnvVars = getDb().defaultEnvVars || {};
+  const appEnvVars = decryptEnvVarsRecord(getDb().defaultEnvVars || {});
   let envEnvVars: Record<string, string> = {};
   let sshPassword: string | undefined;
   if (opts.environmentId) {
@@ -523,7 +524,7 @@ export class SessionManager {
 
     // Resolve env var cascade: app defaults -> environment -> profile -> session override
     const { getDb } = await import('../db/database');
-    const appEnvVars = getDb().defaultEnvVars;
+    const appEnvVars = decryptEnvVarsRecord(getDb().defaultEnvVars || {});
     let envEnvVars: Record<string, string> = {};
     if (opts.environmentId) {
       const envRow = getEnvironment(opts.environmentId);

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assertSafeCmdExeCommand,
+  escapeCmdExeArgForNodePty,
   quoteCmdExeArg,
   quotePosixEnvAssignment,
   quotePosixPathPreservingHome,
@@ -39,6 +41,22 @@ describe('shell quote helpers', () => {
 
   it('rejects cmd.exe args with double quotes', () => {
     expect(() => quoteCmdExeArg(String.raw`C:\bad"path\hook.js`)).toThrow(/double quotes/);
+  });
+
+  it('escapes cmd.exe argv values for node-pty without forcing quotes', () => {
+    expect(escapeCmdExeArgForNodePty('percent%PATH%')).toBe('percent^%PATH^%');
+    expect(escapeCmdExeArgForNodePty('caret^x')).toBe('caret^^x');
+    expect(escapeCmdExeArgForNodePty('fix&calc')).toBe('fix^&calc');
+  });
+
+  it('does not caret-escape ampersands inside whitespace args that node-pty quotes', () => {
+    expect(escapeCmdExeArgForNodePty('fix & explain')).toBe('fix & explain');
+  });
+
+  it('rejects unsafe cmd.exe command-position values', () => {
+    expect(() => assertSafeCmdExeCommand('claude&calc', 'CLI binary')).toThrow(/unsafe/);
+    expect(() => assertSafeCmdExeCommand('claude%PATH%', 'CLI binary')).toThrow(/unsafe/);
+    expect(() => assertSafeCmdExeCommand('claude')).not.toThrow();
   });
 
   it('selects platform-specific quoting when requested', () => {

@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb, saveDb } from './database';
 import type { EnvironmentRow } from './database';
+import { decryptEnvVarsJson, encryptEnvVarsRecord } from './secret-storage';
 
 export type { EnvironmentRow };
 
@@ -14,12 +15,23 @@ export interface CreateEnvironmentInput {
   small_model?: string;
 }
 
+function toPublicRow(row: EnvironmentRow): EnvironmentRow {
+  return { ...row, env_vars: decryptEnvVarsJson(row.env_vars || '{}') };
+}
+
+function findEnvironmentRow(id: string): EnvironmentRow | undefined {
+  return getDb().environments.find(e => e.id === id);
+}
+
 export function listEnvironments(): EnvironmentRow[] {
-  return getDb().environments.sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at));
+  return getDb().environments
+    .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
+    .map(toPublicRow);
 }
 
 export function getEnvironment(id: string): EnvironmentRow | undefined {
-  return getDb().environments.find(e => e.id === id);
+  const row = findEnvironmentRow(id);
+  return row ? toPublicRow(row) : undefined;
 }
 
 export function createEnvironment(input: CreateEnvironmentInput): EnvironmentRow {
@@ -29,7 +41,7 @@ export function createEnvironment(input: CreateEnvironmentInput): EnvironmentRow
     name: input.name,
     type: input.type,
     config: JSON.stringify(input.config || {}),
-    env_vars: JSON.stringify(input.envVars || {}),
+    env_vars: JSON.stringify(encryptEnvVarsRecord(input.envVars || {})),
     auth_mode: input.auth_mode || null,
     model: input.model || null,
     small_model: input.small_model || null,
@@ -39,16 +51,16 @@ export function createEnvironment(input: CreateEnvironmentInput): EnvironmentRow
   };
   getDb().environments.push(env);
   saveDb();
-  return env;
+  return toPublicRow(env);
 }
 
 export function updateEnvironment(id: string, updates: Partial<CreateEnvironmentInput>): void {
-  const env = getEnvironment(id);
+  const env = findEnvironmentRow(id);
   if (!env) return;
   if (updates.name !== undefined) env.name = updates.name;
   if (updates.type !== undefined) env.type = updates.type;
   if (updates.config !== undefined) env.config = JSON.stringify(updates.config);
-  if (updates.envVars !== undefined) env.env_vars = JSON.stringify(updates.envVars);
+  if (updates.envVars !== undefined) env.env_vars = JSON.stringify(encryptEnvVarsRecord(updates.envVars));
   if (updates.auth_mode !== undefined) env.auth_mode = updates.auth_mode;
   if (updates.model !== undefined) env.model = updates.model;
   if (updates.small_model !== undefined) env.small_model = updates.small_model;

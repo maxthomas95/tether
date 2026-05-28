@@ -31,6 +31,11 @@ function defaultProviderUrl(type: GitProviderType): string {
   return DEFAULT_PROVIDER_URLS[type] || '';
 }
 
+function formatKnownHostFingerprint(hash: string): string {
+  if (/^[a-f0-9]{64}$/i.test(hash)) return `legacy-hex:${hash}`;
+  return hash.startsWith('SHA256:') ? hash : `SHA256:${hash}`;
+}
+
 /**
  * Preset terminal font stacks. Empty value means "use the Tether default"
  * (Cascadia Code, defined in tokens.css). The dropdown stores the full CSS
@@ -1496,8 +1501,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                     <div className="known-host-details">
                       <span className="known-host-name">{h.hostKey}</span>
                       <span className="known-host-meta">
-                        <span title={`SHA256:${h.keyHash}`} className="known-host-fingerprint">
-                          SHA256:{h.keyHash.slice(0, 12)}...
+                        <span title={formatKnownHostFingerprint(h.keyHash)} className="known-host-fingerprint">
+                          {formatKnownHostFingerprint(h.keyHash).slice(0, 19)}...
                         </span>
                         <span>trusted {new Date(h.trustedAt).toLocaleDateString()}</span>
                       </span>

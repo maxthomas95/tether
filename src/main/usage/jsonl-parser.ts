@@ -49,13 +49,15 @@ export function parseJsonlFile(filePath: string, startOffset: number): ParseResu
     const stat = fs.fstatSync(fd);
     const fileSize = stat.size;
 
-    if (fileSize <= startOffset) {
-      return { messages: [], newByteOffset: startOffset };
+    const effectiveStartOffset = fileSize < startOffset ? 0 : startOffset;
+
+    if (fileSize <= effectiveStartOffset) {
+      return { messages: [], newByteOffset: effectiveStartOffset };
     }
 
-    const readLength = fileSize - startOffset;
+    const readLength = fileSize - effectiveStartOffset;
     const buf = Buffer.alloc(readLength);
-    const bytesRead = fs.readSync(fd, buf, 0, readLength, startOffset);
+    const bytesRead = fs.readSync(fd, buf, 0, readLength, effectiveStartOffset);
     const text = buf.slice(0, bytesRead).toString('utf-8');
 
     // Handle partial last line — if text doesn't end with \n, the last
@@ -68,7 +70,7 @@ export function parseJsonlFile(filePath: string, startOffset: number): ParseResu
       const lastNewline = text.lastIndexOf('\n');
       if (lastNewline === -1) {
         // Entire chunk is a partial line — nothing to parse yet
-        return { messages: [], newByteOffset: startOffset };
+        return { messages: [], newByteOffset: effectiveStartOffset };
       }
       usableText = text.slice(0, lastNewline + 1);
       consumedBytes = Buffer.byteLength(usableText, 'utf-8');
@@ -91,15 +93,16 @@ export function parseJsonlFile(filePath: string, startOffset: number): ParseResu
       const outputTokens = usage.output_tokens || 0;
       const cacheReadTokens = usage.cache_read_input_tokens || 0;
 
-      // Cache creation breakdown: prefer granular 5m/1h split.
-      // If breakdown missing, treat all cache_creation as 1h (ccusage convention).
+      // Cache creation breakdown: prefer granular 5m/1h split. If the
+      // breakdown is missing, Claude reports the common 5-minute cache-write
+      // field as a flat `cache_creation_input_tokens` value.
       let cacheCreate5m = 0;
       let cacheCreate1h = 0;
       if (usage.cache_creation) {
         cacheCreate5m = usage.cache_creation.ephemeral_5m_input_tokens || 0;
         cacheCreate1h = usage.cache_creation.ephemeral_1h_input_tokens || 0;
       } else if (usage.cache_creation_input_tokens) {
-        cacheCreate1h = usage.cache_creation_input_tokens;
+        cacheCreate5m = usage.cache_creation_input_tokens;
       }
 
       const cost = calculateMessageCost(
@@ -121,7 +124,7 @@ export function parseJsonlFile(filePath: string, startOffset: number): ParseResu
 
     return {
       messages,
-      newByteOffset: startOffset + consumedBytes,
+      newByteOffset: effectiveStartOffset + consumedBytes,
     };
   } catch (err) {
     // File doesn't exist or is unreadable — return empty

@@ -7,13 +7,8 @@ interface HostKeyVerifyDialogProps {
   onReject: () => void;
 }
 
-function formatFingerprint(hex: string): string {
-  // Standard SSH fingerprint shape: "SHA256:<hex>" — show in chunks for readability.
-  const chunks: string[] = [];
-  for (let i = 0; i < hex.length; i += 4) {
-    chunks.push(hex.slice(i, i + 4));
-  }
-  return `SHA256:${chunks.join(':')}`;
+function formatFingerprint(fingerprint: string): string {
+  return fingerprint.startsWith('SHA256:') ? fingerprint : `SHA256:${fingerprint}`;
 }
 
 export function HostKeyVerifyDialog({ request, onTrust, onReject }: HostKeyVerifyDialogProps) {

@@ -5,6 +5,7 @@ import { createLogger } from '../logger';
 import { buildCliArgsForTool } from '../../shared/cli-tools';
 import { loadPty } from './pty-loader';
 import { tokenizeCliArgEntries } from './cli-args';
+import { assertSafeCmdExeCommand, escapeCmdExeArgForNodePty } from '../../shared/shell-quote';
 
 const log = createLogger('local-pty');
 
@@ -52,10 +53,21 @@ export class LocalTransport implements SessionTransport {
     // Spawn the CLI binary directly on Unix instead of `sh -c "${binary} ${cliArgs.join(' ')}"`,
     // which would interpret shell metachars in cliArgs. Windows keeps the cmd.exe wrapper
     // because node-pty's Windows host expects it for proper PTY semantics.
-    const spawnFile = process.platform === 'win32' ? 'cmd.exe' : binary;
-    const spawnArgs = process.platform === 'win32' ? ['/c', binary, ...tokenizedArgs] : tokenizedArgs;
+    const isWin32 = process.platform === 'win32';
+    if (isWin32) {
+      assertSafeCmdExeCommand(binary, 'CLI binary');
+    }
+    const spawnFile = isWin32 ? 'cmd.exe' : binary;
+    const spawnArgs = isWin32
+      ? ['/d', '/c', binary, ...tokenizedArgs.map(escapeCmdExeArgForNodePty)]
+      : tokenizedArgs;
 
-    log.info('Spawning local PTY', { spawnFile, cwd: options.workingDir, args: spawnArgs });
+    log.info('Spawning local PTY', {
+      spawnFile,
+      cwd: options.workingDir,
+      binary,
+      argCount: tokenizedArgs.length,
+    });
     this.ptyProcess = pty.spawn(spawnFile, spawnArgs, {
       name: 'xterm-256color',
       cols: options.cols,

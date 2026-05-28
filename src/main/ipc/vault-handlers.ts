@@ -20,6 +20,7 @@ import {
 import { isVaultRef, resolveRef, parseRef, buildRef } from '../vault/vault-resolver';
 import { createLogger } from '../logger';
 import type { HandlerContext } from './helpers';
+import { decryptSecretFromStorage } from '../db/secret-storage';
 
 const log = createLogger('ipc:vault');
 
@@ -216,7 +217,7 @@ export function registerVaultHandlers(ctx: HandlerContext): void {
         const provider = db.gitProviders.find(p => p.id === opts.sourceId);
         if (!provider) throw new Error('Git provider not found');
         if (!provider.token) throw new Error('Git provider has no token to migrate');
-        currentValue = provider.token;
+        currentValue = decryptSecretFromStorage(provider.token, 'Git provider token');
         writebackRef = () => {
           provider.token = opts.targetRef;
           provider.updated_at = new Date().toISOString();
@@ -227,7 +228,7 @@ export function registerVaultHandlers(ctx: HandlerContext): void {
         if (!opts.key) throw new Error('Missing env var key');
         const value = db.defaultEnvVars[opts.key];
         if (!value) throw new Error(`Default env var ${opts.key} not found`);
-        currentValue = value;
+        currentValue = decryptSecretFromStorage(value, `environment variable ${opts.key}`);
         writebackRef = () => {
           db.defaultEnvVars[opts.key as string] = opts.targetRef;
         };
@@ -240,7 +241,7 @@ export function registerVaultHandlers(ctx: HandlerContext): void {
         const envVars = JSON.parse(env.env_vars || '{}') as Record<string, string>;
         const value = envVars[opts.key];
         if (!value) throw new Error(`Env var ${opts.key} not found on environment`);
-        currentValue = value;
+        currentValue = decryptSecretFromStorage(value, `environment variable ${opts.key}`);
         writebackRef = () => {
           envVars[opts.key as string] = opts.targetRef;
           env.env_vars = JSON.stringify(envVars);

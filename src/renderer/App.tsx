@@ -658,8 +658,7 @@ export function App() {
       });
     });
     const removeExit = globalThis.electronAPI.session.onExited((sid, exitInfo) => {
-      const managed = termManager.getOrCreate(sid);
-      managed.terminal.write('\r\n\x1b[90m[Session ended]\x1b[0m\r\n');
+      termManager.writeData(sid, '\r\n\x1b[90m[Session ended]\x1b[0m\r\n');
       const wasExpected = expectedSessionExitIds.current.delete(sid);
       if (!wasExpected && exitInfo.exitCode !== 0) {
         const session = sessionsRef.current.find(s => s.id === sid);

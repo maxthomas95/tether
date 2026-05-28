@@ -127,6 +127,22 @@ describe('scrubDbData', () => {
     expect(env.OTHER_SECRET).toBe('vault://secret/foo#k');
   });
 
+  it('redacts API-key-looking env values even under benign names', () => {
+    const db = emptyDb({
+      environments: [makeEnv({
+        env_vars: JSON.stringify({
+          DATABASE_URL: 'postgres://user:pass@example.com/db',
+          SERVICE_VALUE: 'ghp_abcdef1234567890ABCDEF',
+          NORMAL: 'value',
+        }),
+      })],
+    });
+    const env = JSON.parse(scrubDbData(db).environments[0].env_vars);
+    expect(env.DATABASE_URL).toBe('[REDACTED]');
+    expect(env.SERVICE_VALUE).toBe('[REDACTED]');
+    expect(env.NORMAL).toBe('value');
+  });
+
   it('applies the same env-var rules to launchProfiles', () => {
     const db = emptyDb({
       launchProfiles: [makeProfile({
@@ -221,6 +237,13 @@ describe('scrubLogLine', () => {
   it('redacts multiple keys in one line', () => {
     const out = scrubLogLine('keys sk-ant-abcdef1234567890 and ghp_abcdef1234567890ABCD');
     expect(out).toBe('keys [REDACTED-API-KEY] and [REDACTED-API-KEY]');
+  });
+
+  it('redacts credential URLs and bearer tokens in logs', () => {
+    expect(scrubLogLine('url https://user:pass@example.com/repo.git'))
+      .toBe('url https://[REDACTED]@example.com/repo.git');
+    expect(scrubLogLine('Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456'))
+      .toBe('Authorization: Bearer [REDACTED-API-KEY]');
   });
 });
 

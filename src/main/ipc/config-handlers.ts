@@ -60,12 +60,14 @@ export function registerConfigHandlers(ctx: HandlerContext): void {
 
   ipcMain.handle(IPC.CONFIG_GET_DEFAULT_ENV_VARS, async () => {
     const { getDb } = await import('../db/database');
-    return getDb().defaultEnvVars;
+    const { decryptEnvVarsRecord } = await import('../db/secret-storage');
+    return decryptEnvVarsRecord(getDb().defaultEnvVars);
   });
 
   ipcMain.handle(IPC.CONFIG_SET_DEFAULT_ENV_VARS, async (_event, vars: Record<string, string>) => {
     const { getDb, saveDb } = await import('../db/database');
-    getDb().defaultEnvVars = vars;
+    const { encryptEnvVarsRecord } = await import('../db/secret-storage');
+    getDb().defaultEnvVars = encryptEnvVarsRecord(vars);
     saveDb();
   });
 

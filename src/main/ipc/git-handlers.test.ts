@@ -2,7 +2,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createHarness, makeElectronMockBase, type IpcRegistry } from './ipc-test-harness.test-helper';
 
 const registry = vi.hoisted<IpcRegistry>(() => ({ handlers: new Map(), listeners: new Map() }));
-vi.mock('electron', () => makeElectronMockBase(registry));
+vi.mock('electron', () => ({
+  ...makeElectronMockBase(registry),
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: vi.fn((value: string) => Buffer.from(value)),
+    decryptString: vi.fn((value: Buffer) => value.toString('utf8')),
+  },
+}));
 
 const gitProviderMocks = vi.hoisted(() => ({
   listGitProviders: vi.fn(),

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import type { CloneProgressInfo } from '../../shared/types';
+import { gitProtocolEnv, validateGitRemoteUrl } from './git-url';
 
 export interface CloneOptions {
   url: string;
@@ -25,7 +26,9 @@ export function gitClone(opts: CloneOptions): Promise<string> {
       return reject(new Error(`Destination already exists: ${opts.destination}`));
     }
 
-    const proc = spawn('git', ['clone', '--progress', opts.url, opts.destination], {
+    const remoteUrl = validateGitRemoteUrl(opts.url);
+    const proc = spawn('git', ['clone', '--progress', '--', remoteUrl, opts.destination], {
+      env: gitProtocolEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -131,8 +134,13 @@ export function gitRemoteAdd(repoPath: string, remoteName: string, remoteUrl: st
     if (!isGitRepo(repoPath)) {
       return reject(new Error(`Not a git repository: ${repoPath}`));
     }
+    const safeRemoteUrl = validateGitRemoteUrl(remoteUrl);
+    if (!remoteName.trim() || remoteName.startsWith('-') || remoteName.includes('\0') || /[\r\n]/.test(remoteName)) {
+      return reject(new Error('Git remote name is invalid'));
+    }
     // Spawning by binary name (PATH lookup) matches the rest of git-service.ts.
-    const proc = spawn('git', ['-C', repoPath, 'remote', 'add', remoteName, remoteUrl], { // NOSONAR(typescript:S4036)
+    const proc = spawn('git', ['-C', repoPath, 'remote', 'add', '--', remoteName, safeRemoteUrl], { // NOSONAR(typescript:S4036)
+      env: gitProtocolEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

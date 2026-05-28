@@ -52,7 +52,21 @@ describe('CoderTransport', () => {
     await new CoderTransport().start(baseOptions({ workingDir: 'ws' }));
     const [file, args] = ptySpawnSpy.mock.calls[0];
     expect(file).toBe('cmd.exe');
-    expect(args).toEqual(['/c', 'coder', 'ssh', 'ws']);
+    expect(args).toEqual(['/d', '/c', 'coder', 'ssh', 'ws']);
+  });
+
+  it('on win32, rejects unsafe coder binary values', async () => {
+    platform.set('win32');
+    await expect(new CoderTransport({ binaryPath: 'coder&calc' }).start(baseOptions({ workingDir: 'ws' })))
+      .rejects.toThrow(/unsafe/);
+    expect(ptySpawnSpy).not.toHaveBeenCalled();
+  });
+
+  it('on win32, escapes workspace names before passing through cmd.exe', async () => {
+    platform.set('win32');
+    await new CoderTransport().start(baseOptions({ workingDir: 'ws%PATH%&calc' }));
+    const [, args] = ptySpawnSpy.mock.calls[0];
+    expect(args).toEqual(['/d', '/c', 'coder', 'ssh', 'ws^%PATH^%^&calc']);
   });
 
   it('preserves a leading ~ in the subdir path (for remote shell expansion)', async () => {
@@ -90,7 +104,16 @@ describe('CoderTransport', () => {
       cloneUrl: 'https://github.com/example/proj.git',
     }));
     const writes = ptyHarness.current!.write.mock.calls.map((c) => c[0]).join('');
-    expect(writes).toContain("[ -d 'repos/proj' ] || git clone 'https://github.com/example/proj.git' 'repos/proj'");
+    expect(writes).toContain("[ -d 'repos/proj' ] || GIT_ALLOW_PROTOCOL=https:ssh git clone -- 'https://github.com/example/proj.git' 'repos/proj'");
+  });
+
+  it('rejects unsafe clone URLs before spawning coder ssh', async () => {
+    platform.set('linux');
+    await expect(new CoderTransport().start(baseOptions({
+      workingDir: 'ws::repos/proj',
+      cloneUrl: 'ext::sh -c calc',
+    }))).rejects.toThrow(/not allowed/);
+    expect(ptySpawnSpy).not.toHaveBeenCalled();
   });
 
   it('passes initialPrompt as a single shell-escaped positional arg', async () => {

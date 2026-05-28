@@ -2,7 +2,15 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createHarness, makeElectronMockBase, type IpcRegistry } from './ipc-test-harness.test-helper';
 
 const registry = vi.hoisted<IpcRegistry>(() => ({ handlers: new Map(), listeners: new Map() }));
-vi.mock('electron', () => makeElectronMockBase(registry));
+const safeStorageMock = vi.hoisted(() => ({
+  isEncryptionAvailable: vi.fn(() => true),
+  encryptString: vi.fn((value: string) => Buffer.from(`enc:${value}`)),
+  decryptString: vi.fn((value: Buffer) => value.toString('utf8').replace(/^enc:/, '')),
+}));
+vi.mock('electron', () => ({
+  ...makeElectronMockBase(registry),
+  safeStorage: safeStorageMock,
+}));
 
 const dbState = vi.hoisted(() => ({
   config: {} as Record<string, string>,
@@ -93,6 +101,16 @@ describe('config-handlers', () => {
       await harness.invoke(IPC.CONFIG_SET_DEFAULT_ENV_VARS, { K: 'v', X: 'y' });
       expect(dbState.defaultEnvVars).toEqual({ K: 'v', X: 'y' });
       expect(await harness.invoke(IPC.CONFIG_GET_DEFAULT_ENV_VARS)).toEqual({ K: 'v', X: 'y' });
+    });
+
+    it('encrypts sensitive values at rest and decrypts them for reads', async () => {
+      await harness.invoke(IPC.CONFIG_SET_DEFAULT_ENV_VARS, { OPENAI_API_KEY: 'sk-secret', NORMAL: 'v' });
+      expect(dbState.defaultEnvVars.OPENAI_API_KEY).not.toBe('sk-secret');
+      expect(dbState.defaultEnvVars.NORMAL).toBe('v');
+      expect(await harness.invoke(IPC.CONFIG_GET_DEFAULT_ENV_VARS)).toEqual({
+        OPENAI_API_KEY: 'sk-secret',
+        NORMAL: 'v',
+      });
     });
   });
 
