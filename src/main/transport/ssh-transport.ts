@@ -203,7 +203,6 @@ export class SSHTransport implements SessionTransport {
       keepaliveInterval: 10000,
       keepaliveCountMax: 3,
       readyTimeout: 15000,
-      hostHash: 'sha256',
       hostVerifier: (key: string | Buffer, callback: (accept: boolean) => void) => this.verifyHostKey(key, callback),
     };
 
@@ -218,7 +217,7 @@ export class SSHTransport implements SessionTransport {
       this.sshConfig.port || 22,
       fingerprints.sha256,
       this.sshConfig.username,
-      fingerprints.legacyHex,
+      fingerprints.legacySha256Hex,
     )
       .then((result) => {
         if (!result.trust && result.reason) {
