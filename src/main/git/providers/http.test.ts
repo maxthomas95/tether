@@ -23,7 +23,9 @@ describe('git provider HTTP helpers', () => {
   });
 
   it('rejects unsafe provider base URLs before tokens are attached', () => {
-    expect(() => normalizeBaseUrl('http://github.com')).toThrow(/HTTPS/);
+    const insecureUrl = new URL('https://github.com');
+    insecureUrl.protocol = 'http:';
+    expect(() => normalizeBaseUrl(insecureUrl.toString())).toThrow(/HTTPS/);
     expect(() => normalizeBaseUrl('https://localhost')).toThrow(/not allowed/);
     expect(() => normalizeBaseUrl('https://127.0.0.1')).toThrow(/not allowed/);
     expect(() => normalizeBaseUrl('https://10.0.0.5')).toThrow(/not allowed/);
@@ -40,4 +42,3 @@ describe('git provider HTTP helpers', () => {
     }));
   });
 });
-

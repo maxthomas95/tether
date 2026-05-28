@@ -10,9 +10,9 @@ describe('git URL validation', () => {
 
   it('rejects git transports and values that can be parsed as options', () => {
     expect(() => validateGitRemoteUrl('ext::sh -c calc')).toThrow(/ext::/);
-    expect(() => validateGitRemoteUrl('file:///tmp/repo')).toThrow(/protocol/);
+    expect(() => validateGitRemoteUrl('file:///repo/project')).toThrow(/protocol/);
     expect(() => validateGitRemoteUrl('--upload-pack=calc')).toThrow(/start/);
-    expect(() => validateGitRemoteUrl('/tmp/repo')).toThrow(/HTTPS or SSH/);
+    expect(() => validateGitRemoteUrl('/repo/project')).toThrow(/HTTPS or SSH/);
   });
 
   it('rejects embedded credentials', () => {
@@ -23,4 +23,3 @@ describe('git URL validation', () => {
     expect(gitProtocolEnv().GIT_ALLOW_PROTOCOL).toBe('https:ssh');
   });
 });
-

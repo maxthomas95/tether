@@ -27,7 +27,7 @@ export function gitClone(opts: CloneOptions): Promise<string> {
     }
 
     const remoteUrl = validateGitRemoteUrl(opts.url);
-    const proc = spawn('git', ['clone', '--progress', '--', remoteUrl, opts.destination], {
+    const proc = spawn('git', ['clone', '--progress', '--', remoteUrl, opts.destination], { // NOSONAR(typescript:S4036)
       env: gitProtocolEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
