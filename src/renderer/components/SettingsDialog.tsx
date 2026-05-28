@@ -32,7 +32,7 @@ function defaultProviderUrl(type: GitProviderType): string {
 }
 
 function formatKnownHostFingerprint(hash: string): string {
-  if (/^[a-f0-9]{64}$/i.test(hash)) return `legacy-hex:${hash}`;
+  if (/^[a-f0-9]{64}$/i.test(hash)) return `legacy-sha256-hex:${hash.toLowerCase()}`;
   return hash.startsWith('SHA256:') ? hash : `SHA256:${hash}`;
 }
 

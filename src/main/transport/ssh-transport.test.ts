@@ -113,6 +113,7 @@ describe('SSHTransport', () => {
     expect(cfg.username).toBe('alice');
     expect(cfg.keepaliveInterval).toBe(10000);
     expect(cfg.readyTimeout).toBe(15000);
+    expect(cfg.hostHash).toBeUndefined();
   });
 
   it('uses agent path when useAgent is set', async () => {
@@ -159,11 +160,18 @@ describe('SSHTransport', () => {
     const client = ssh2Harness.current!;
 
     // Trigger the host verifier path
-    const cfg = client.connect.mock.calls[0][0] as { hostVerifier: (k: string, cb: (b: boolean) => void) => void };
+    const cfg = client.connect.mock.calls[0][0] as { hostVerifier: (k: Buffer, cb: (b: boolean) => void) => void };
     const verifyResult = await new Promise<boolean>((resolve) => {
-      cfg.hostVerifier('abcd1234', resolve);
+      cfg.hostVerifier(Buffer.from('hello'), resolve);
     });
     expect(verifyResult).toBe(false);
+    expect(verifyHostMock).toHaveBeenCalledWith(
+      'host.example',
+      22,
+      'LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ',
+      'me',
+      '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+    );
 
     client.emit('error', new Error('handshake failed'));
     await expect(start).rejects.toThrow(/Host key changed/);

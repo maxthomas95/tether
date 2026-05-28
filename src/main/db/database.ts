@@ -60,7 +60,7 @@ export interface LaunchProfileRow {
 export interface KnownHostEntry {
   id: string;
   hostKey: string;        // "host:port"
-  keyHash: string;        // OpenSSH SHA256 fingerprint body; legacy rows may be lowercase hex
+  keyHash: string;        // OpenSSH SHA256 fingerprint body; legacy rows may be lowercase SHA256 hex
   keyType: string;        // best-effort; 'unknown' from hostVerifier alone
   trustedAt: string;      // ISO timestamp
   firstSeen: string;      // ISO timestamp (same as trustedAt for TOFU)
