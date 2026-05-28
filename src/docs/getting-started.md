@@ -38,7 +38,7 @@ The left sidebar groups sessions by environment and then by working directory. E
 - A **pane badge** when the session is currently mounted in a split pane
 - A **🔕 badge** when notifications are muted for that session
 
-Drag sessions to reorder them inside a group. Right-click a group header for **bulk actions** (Kill all, Restart all, Clear all). Right-click a session for per-session actions (Stop, Kill, Duplicate, Remove, Mute/Unmute notifications, Helm enable). Collapse groups with the chevron. Resize the sidebar by dragging its edge (180–400px) or hide it with **Ctrl+B**.
+Drag sessions to reorder them inside a group. Right-click a group header for **bulk actions** (Stop all, Restart all, Clear all). Right-click a session for per-session actions (Stop, Duplicate, Remove, Mute/Unmute notifications, Helm enable). Collapse groups with the chevron. Resize the sidebar by dragging its edge (180–400px) or hide it with **Ctrl+B**.
 
 Footers along the bottom of the sidebar show:
 

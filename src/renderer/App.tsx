@@ -831,16 +831,6 @@ export function App() {
     }
   }, [markExpectedSessionExit, notifyError]);
 
-  const handleKill = useCallback(async (id: string) => {
-    markExpectedSessionExit(id);
-    try {
-      await window.electronAPI.session.kill(id);
-    } catch (err) {
-      expectedSessionExitIds.current.delete(id);
-      notifyError('Failed to kill session', err);
-    }
-  }, [markExpectedSessionExit, notifyError]);
-
   const handleRename = useCallback(async (id: string, label: string) => {
     try {
       await window.electronAPI.session.rename(id, label);
@@ -993,7 +983,7 @@ export function App() {
     );
   }, [handleCreateSession]);
 
-  const handleKillAllInGroup = useCallback(async (environmentId: string, workingDir: string) => {
+  const handleStopAllInGroup = useCallback(async (environmentId: string, workingDir: string) => {
     const targets = sessionsInGroup(environmentId, workingDir).filter(
       s => s.state === 'running' || s.state === 'starting' || s.state === 'waiting',
     );
@@ -1001,15 +991,15 @@ export function App() {
     for (const s of targets) {
       markExpectedSessionExit(s.id);
       try {
-        await window.electronAPI.session.kill(s.id);
+        await window.electronAPI.session.stop(s.id);
       } catch (err) {
         expectedSessionExitIds.current.delete(s.id);
-        notifyError(`Failed to kill ${s.label}`, err);
+        notifyError(`Failed to stop ${s.label}`, err);
       }
     }
     notify({
       type: 'info',
-      title: `Killed ${targets.length} session${targets.length === 1 ? '' : 's'}`,
+      title: `Stopped ${targets.length} session${targets.length === 1 ? '' : 's'}`,
       ttl: 5000,
     });
   }, [sessionsInGroup, markExpectedSessionExit, notify, notifyError]);
@@ -1673,7 +1663,6 @@ export function App() {
         { label: 'Previous Pane', shortcut: formatChord(resolvedBindings['session.prev']) || undefined, onClick: shortcutActions.onPrevSession, disabled: !layoutState.root || getLeaves(layoutState.root).length < 2 },
         { label: 'Clear Broadcast Input Targets', onClick: handleClearBroadcastTargets, disabled: broadcastPaneIds.size === 0 },
         { separator: true },
-        { label: 'Kill Session', onClick: () => { if (activeSessionId) handleKill(activeSessionId); }, disabled: !isAlive, danger: true },
         { label: 'Remove Session', onClick: () => { if (activeSessionId) handleRemove(activeSessionId); }, disabled: !activeSession, danger: true },
       ],
     },
@@ -1703,7 +1692,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleKill, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size]);
 
   return (
     <div className="app-layout">
@@ -1813,7 +1802,6 @@ export function App() {
                         onDropRepoGroup={handleDropRepoGroup}
                         onSelectSession={handleSelectSession}
                         onStop={handleStop}
-                        onKill={handleKill}
                         onRename={handleRename}
                         onRemove={handleRemove}
                         onDuplicate={handleDuplicate}
@@ -1826,7 +1814,7 @@ export function App() {
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
                         onReorderSession={handleReorderSession}
-                        onKillAllInGroup={handleKillAllInGroup}
+                        onStopAllInGroup={handleStopAllInGroup}
                         onRestartAllInGroup={handleRestartAllInGroup}
                         onClearAllInGroup={handleClearAllInGroup}
                         paneLocations={paneLocations}

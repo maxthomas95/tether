@@ -509,7 +509,6 @@ export interface TetherAPI {
     vaultPreflight(opts: CreateSessionOptions): Promise<VaultPreflightResult>;
     list(): Promise<SessionInfo[]>;
     stop(sessionId: string): Promise<void>;
-    kill(sessionId: string): Promise<void>;
     rename(sessionId: string, label: string): Promise<void>;
     remove(sessionId: string): Promise<void>;
     setHelmEnabled(sessionId: string, enabled: boolean): Promise<void>;

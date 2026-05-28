@@ -69,7 +69,7 @@ Each environment can have:
 Right-click an environment group in the sidebar to:
 
 - **Edit** — modify connection settings
-- **Delete** — remove the environment. Existing running sessions in that environment are not killed, but you can't create new ones.
+- **Delete** — remove the environment. Existing running sessions in that environment are not stopped, but you can't create new ones.
 
 The default Local environment cannot be deleted.
 

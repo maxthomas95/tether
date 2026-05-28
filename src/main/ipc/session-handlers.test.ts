@@ -8,7 +8,6 @@ const sessionManagerMock = vi.hoisted(() => ({
   createSession: vi.fn(),
   listSessions: vi.fn().mockReturnValue([]),
   stopSession: vi.fn(),
-  killSession: vi.fn(),
   renameSession: vi.fn(),
   setHelmEnabled: vi.fn(),
   removeSession: vi.fn(),
@@ -158,12 +157,9 @@ describe('session-handlers', () => {
     ]);
   });
 
-  it('SESSION_STOP / KILL / REMOVE / SET_HELM forward sessionId to manager', async () => {
+  it('SESSION_STOP / REMOVE / SET_HELM forward sessionId to manager', async () => {
     await harness.invoke(IPC.SESSION_STOP, 's1');
     expect(sessionManagerMock.stopSession).toHaveBeenCalledWith('s1');
-
-    await harness.invoke(IPC.SESSION_KILL, 's2');
-    expect(sessionManagerMock.killSession).toHaveBeenCalledWith('s2');
 
     await harness.invoke(IPC.SESSION_REMOVE, 's3');
     expect(sessionManagerMock.removeSession).toHaveBeenCalledWith('s3');

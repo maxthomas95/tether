@@ -22,7 +22,6 @@ interface RepoGroupProps {
   onDropRepoGroup: (environmentId: string, sourceDir: string, targetDir: string, position: 'above' | 'below') => void;
   onSelectSession: (id: string) => void;
   onStop: (id: string) => void;
-  onKill: (id: string) => void;
   onRename: (id: string, label: string) => void;
   onRemove: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -40,7 +39,7 @@ interface RepoGroupProps {
    * with its env+dir context so the parent doesn't need to look them up.
    */
   onReorderSession?: (environmentId: string, workingDir: string, sourceSessionId: string, targetSessionId: string, position: 'above' | 'below') => void;
-  onKillAllInGroup?: (environmentId: string, workingDir: string) => void;
+  onStopAllInGroup?: (environmentId: string, workingDir: string) => void;
   onRestartAllInGroup?: (environmentId: string, workingDir: string) => void;
   onClearAllInGroup?: (environmentId: string, workingDir: string) => void;
   /** Map of sessionId -> pane location for sessions currently mounted in the layout. */
@@ -68,7 +67,6 @@ export function RepoGroup({
   onDropRepoGroup,
   onSelectSession,
   onStop,
-  onKill,
   onRename,
   onRemove,
   onDuplicate,
@@ -81,7 +79,7 @@ export function RepoGroup({
   onDragStart,
   onDragEnd,
   onReorderSession,
-  onKillAllInGroup,
+  onStopAllInGroup,
   onRestartAllInGroup,
   onClearAllInGroup,
   paneLocations,
@@ -229,10 +227,10 @@ export function RepoGroup({
           >
             {pinned ? 'Unpin' : 'Pin to top'}
           </div>
-          {(onKillAllInGroup || onRestartAllInGroup || onClearAllInGroup) && (
+          {(onStopAllInGroup || onRestartAllInGroup || onClearAllInGroup) && (
             <div className="context-menu-separator" role="separator" />
           )}
-          {onKillAllInGroup && (
+          {onStopAllInGroup && (
             <div
               className={`context-menu-item ${runningCount === 0 ? 'context-menu-item--disabled' : ''}`}
               role="menuitem"
@@ -241,15 +239,15 @@ export function RepoGroup({
               onClick={() => {
                 if (runningCount === 0) return;
                 setShowMenu(false);
-                onKillAllInGroup(environmentId, repoPath);
+                onStopAllInGroup(environmentId, repoPath);
               }}
               onKeyDown={onKeyActivate(() => {
                 if (runningCount === 0) return;
                 setShowMenu(false);
-                onKillAllInGroup(environmentId, repoPath);
+                onStopAllInGroup(environmentId, repoPath);
               })}
             >
-              Kill all{runningCount > 0 ? ` (${runningCount})` : ''}
+              Stop all{runningCount > 0 ? ` (${runningCount})` : ''}
             </div>
           )}
           {onRestartAllInGroup && (
@@ -305,7 +303,6 @@ export function RepoGroup({
             bangSuppressed={bangSuppressedIds?.has(session.id) ?? false}
             onClick={() => onSelectSession(session.id)}
             onStop={() => onStop(session.id)}
-            onKill={() => onKill(session.id)}
             onRename={(label) => onRename(session.id, label)}
             onRemove={() => onRemove(session.id)}
             onDuplicate={() => onDuplicate(session.id)}

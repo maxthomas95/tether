@@ -2,7 +2,6 @@ export const IPC = {
   // Renderer -> Main
   SESSION_CREATE: 'session:create',
   SESSION_STOP: 'session:stop',
-  SESSION_KILL: 'session:kill',
   SESSION_INPUT: 'session:input',
   SESSION_RESIZE: 'session:resize',
   SESSION_LIST: 'session:list',

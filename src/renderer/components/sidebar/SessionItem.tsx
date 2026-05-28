@@ -20,7 +20,6 @@ interface SessionItemProps {
   bangSuppressed?: boolean;
   onClick: () => void;
   onStop: () => void;
-  onKill: () => void;
   onRename: (label: string) => void;
   onRemove: () => void;
   onDuplicate: () => void;
@@ -58,7 +57,7 @@ interface SessionItemProps {
  */
 let activeReorderSource: { id: string; environmentId: string | null; workingDir: string } | null = null;
 
-export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppressed, onClick, onStop, onKill, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, onToggleNotificationsMuted, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane }: SessionItemProps) {
+export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppressed, onClick, onStop, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, onToggleNotificationsMuted, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
@@ -314,17 +313,6 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
               onKeyDown={onKeyActivate(() => { setShowMenu(false); onStop(); })}
             >
               Stop
-            </div>
-          )}
-          {isAlive && (
-            <div
-              className="context-menu-item context-menu-item--danger"
-              role="menuitem"
-              tabIndex={0}
-              onClick={() => { setShowMenu(false); onKill(); }}
-              onKeyDown={onKeyActivate(() => { setShowMenu(false); onKill(); })}
-            >
-              Kill
             </div>
           )}
           <div
