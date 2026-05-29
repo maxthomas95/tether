@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.6.1-hotfix.1] — 2026-05-29
+
+First hotfix on the new stable/beta release channel — a focused security and correctness pass on top of 0.6.0. No new features and no data-schema changes; Stable-channel users receive this automatically.
+
+### Security
+- **Windows command injection closed** — user- and Helm-supplied arguments that flow through `cmd.exe` in the Local and Coder transports are now escaped for shell metacharacters (`&`, `|`, `^`, `<`, `>`) and command-position binaries are validated, so a crafted prompt or workspace name can no longer break out to arbitrary command execution (#159)
+- **Git URL hardening** — clone, remote-add, and Coder remote-clone paths now reject dangerous transports (`ext::`, `file://`), leading-dash option injection, and non-allowlisted schemes, and pass a `--` separator with a constrained `GIT_ALLOW_PROTOCOL` (#159)
+- **Secrets encrypted at rest** — Git provider tokens (ADO/Gitea/GitHub) and secret-like environment variables are now encrypted with Electron `safeStorage` before being written to `data.json`, matching how SSH and Vault secrets were already handled. Existing plaintext provider tokens are migrated on first launch (#159)
+- **OpenSSH-compatible SSH fingerprints** — host-key prompts now show a real `SHA256:` base64 fingerprint that matches `ssh-keygen` output, so administrators can verify it out-of-band. Legacy hex known-host rows are migrated on reconnect and labeled honestly rather than mislabeled as `SHA256:` (#159, #160)
+- **Git provider URL validation** — provider base URLs must be HTTPS and may not target private/loopback hosts, preventing credential exfiltration and SSRF (#159)
+- **Stronger redaction** — diagnostics bundles and logs now scrub API-key-shaped values and credential-bearing URLs even under benign key names, and the Local/Coder spawn paths no longer log full launch args (which can contain prompts or secrets) (#159)
+- **Narrowed config writes** — the `CONFIG_SET` IPC channel is restricted so the renderer can no longer write arbitrary config keys, including security toggles (#159)
+- **SSH password storage** — passwords are no longer silently written in plaintext when `safeStorage` is unavailable (#159)
+
+### Bug Fixes
+- **Usage cost double-counting fixed** — when a transcript was atomically replaced, a whole session's tokens and cost could be counted twice; accumulators now reset correctly on transcript replacement and truncation (#159)
+- **Cache-token pricing corrected** — flat cache-creation tokens are now priced at the standard 5-minute rate instead of the ~2× 1-hour rate, fixing a ~60% overcharge on cache-write tokens in the common case (#159)
+- **"[Session ended]" terminal fix** — the end-of-session marker now writes to the visible terminal instead of an orphan terminal; previously, closing the dead pane later could dispose the live terminal and its scrollback (#159)
+- **Docs window respects the selected theme** — the in-app documentation window now uses your chosen theme instead of always rendering in Mocha (#157)
+
+### Behavior Changes
+- **Stop and Kill merged** — the session Stop and Kill actions are now a single auto-escalating Stop control: a graceful stop that escalates to a force-kill if the process does not exit (#158)
+
+---
+
 ## [0.6.0] — 2026-05-25
 
 Tether's first stable release. Everything from the 0.5.x beta cycle graduates here, plus the changes below since beta.3. Going forward, stable releases (no suffix) are for users who want reliability; beta releases get new features first. Choose your track in **Settings → General → Update channel**.
