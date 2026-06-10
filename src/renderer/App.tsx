@@ -13,6 +13,7 @@ import { VaultLoginPromptDialog } from './components/VaultLoginPromptDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { MenuBar } from './components/MenuBar';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
+import { SessionSearchDialog } from './components/SessionSearchDialog';
 import { UsageHistoryDialog } from './components/UsageHistoryDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { HostKeyVerifyDialog } from './components/HostKeyVerifyDialog';
@@ -91,6 +92,7 @@ export function App() {
   const [sidebarWidth, setSidebarWidth] = useState(220);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [usageHistoryOpen, setUsageHistoryOpen] = useState(false);
   const [setupWizardOpen, setSetupWizardOpen] = useState(false);
@@ -1106,6 +1108,27 @@ export function App() {
     }
   }, [layoutState.root, layoutState.focusedPaneId, layoutDispatch, termManager]);
 
+  /**
+   * Activate a session chosen from the Ctrl+P quick switcher. Deliberately
+   * reuses the sidebar's selection path (handleSelectSession) so search and
+   * click behave identically — including replacing the focused/empty pane when
+   * the session isn't already mounted. The only addition is the pane-location
+   * badge's un-maximize behavior: if a different pane is maximized, drop the
+   * maximize first so the focused/placed session is actually visible (mirrors
+   * handleFocusPane / onFocusPaneDirection).
+   */
+  const handleActivateFromSearch = useCallback((sessionId: string) => {
+    if (layoutState.root && layoutState.maximizedPaneId) {
+      const maximizedLeaf = findLeaf(layoutState.root, layoutState.maximizedPaneId);
+      // Keep the maximize only when the chosen session IS the maximized pane;
+      // in every other case it would stay hidden behind the maximize.
+      if (maximizedLeaf?.sessionId !== sessionId) {
+        layoutDispatch({ type: 'TOGGLE_MAXIMIZE', paneId: layoutState.maximizedPaneId });
+      }
+    }
+    handleSelectSession(sessionId);
+  }, [layoutState.root, layoutState.maximizedPaneId, layoutDispatch, handleSelectSession]);
+
   const toggleGroup = useCallback((envId: string) => {
     setCollapsedGroups(prev => {
       const next = new Set(prev);
@@ -1368,6 +1391,7 @@ export function App() {
   // Keyboard shortcuts
   const shortcutActions = useMemo(() => ({
     onNewSession: () => setSessionDialogOpen(true),
+    onOpenSearch: () => setSearchOpen(true),
     onToggleSidebar: () => setSidebarVisible(v => !v),
     onStopSession: () => { if (activeSessionId) handleStop(activeSessionId); },
     onOpenSettings: () => setSettingsOpen(true),
@@ -1655,6 +1679,8 @@ export function App() {
     {
       label: 'Session',
       items: [
+        { label: 'Find Session...', shortcut: formatChord(resolvedBindings['search.open']) || undefined, onClick: () => setSearchOpen(true), disabled: sessions.length === 0 },
+        { separator: true },
         { label: 'Stop Session', shortcut: formatChord(resolvedBindings['session.stop']) || undefined, onClick: () => { if (activeSessionId) handleStop(activeSessionId); }, disabled: !isAlive },
         { label: 'Duplicate Session', onClick: () => { if (activeSessionId) handleDuplicate(activeSessionId); }, disabled: !activeSession },
         { separator: true },
@@ -1691,7 +1717,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length]);
 
   return (
     <div className="app-layout">
@@ -1918,6 +1944,13 @@ export function App() {
         bindings={resolvedBindings}
         onChange={handleKeybindingChange}
         onResetAll={handleResetAllKeybindings}
+      />
+      <SessionSearchDialog
+        isOpen={searchOpen}
+        sessions={sessions}
+        environments={environments}
+        onClose={() => setSearchOpen(false)}
+        onActivate={handleActivateFromSearch}
       />
       <UsageHistoryDialog
         isOpen={usageHistoryOpen}

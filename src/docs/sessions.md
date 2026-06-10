@@ -103,6 +103,17 @@ A session can be designated as a **Helm** parent that dispatches pre-briefed chi
 
 Sessions are grouped by environment in the sidebar (Local, then each SSH host, then each Coder deployment). Within each environment they are further grouped by working directory. Groups are collapsible and reorderable.
 
+## Finding a Session
+
+Press **Ctrl+P** (or **Session → Find Session…**) to open the quick switcher — a VS Code-style finder for jumping straight to any session without scrolling the sidebar. Start typing to fuzzy-match across the session label, working directory, environment name, and CLI tool. Matching is forgiving: the characters you type just have to appear in order, so `apsv` finds *api-server*. Results rank label hits above directory hits, contiguous matches above scattered ones, and start-of-word matches above mid-word ones.
+
+- **↑ / ↓** move the highlight
+- **Enter** opens the highlighted session
+- **Esc** closes the switcher
+- Clicking a row opens it too
+
+Opening a session from the switcher behaves exactly like clicking it in the sidebar: if it's already mounted in a pane, that pane is focused (and un-maximized if it was hidden behind a maximized pane); otherwise it replaces the focused/empty pane.
+
 ## Workspace Persistence
 
 Tether saves open sessions, sidebar order, and pane layout to `{userData}/data.json` when you close the app. On next launch your workspace is restored — same sessions, same positions, same active session. Writes are atomic (tmp file → fsync → rename) and survive AV / OneDrive transient locks via a short retry loop.

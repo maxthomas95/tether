@@ -43,6 +43,7 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 
 ### 4. Daily-driver UX
 
+- [done] **Session search (Ctrl+P quick switcher)** — VS Code-style finder over all sessions, pulled forward from Post-1.0. Default **Ctrl+P** (remappable via the keybinding registry, shows under Settings → Shortcuts and in Session → Find Session…). Regex-free fuzzy subsequence matcher (`src/renderer/utils/session-search.ts`) ranks across label / dir / env / CLI with contiguity + word-boundary + density bonuses; `SessionSearchDialog.tsx` is a focus-trapped `role=listbox` with roving highlight (↑/↓, Enter, Esc, click). Activation reuses the sidebar's `handleSelectSession` path plus the pane-location-badge un-maximize behavior.
 - [done] **Reorder sessions** in a sidebar group (drag-to-reorder)
 - [done] **Bulk actions** on a group — kill all, restart all, clear all
 - [done] **Duplicate carries the source label** — today "Duplicate" passes `''`, so `session-manager.ts` falls back to the working-dir basename and every dupe is named after the repo. Should preserve the source's label with a `(copy)` suffix (`(copy 2)` on subsequent dupes), like Finder / VS Code.
@@ -90,7 +91,6 @@ These are deferred on purpose. We'll revisit when 1.0 has soaked.
 
 - **Cross-platform builds** — macOS first (signing infra is the lift), then Linux. node-pty / ssh2 / Coder REST are already platform-agnostic; the work is at the build / sign / install / auto-update layer.
 - **SQLite migration** — only if usage history scale or query performance starts to bite. Likely path is hybrid: config stays in JSON, usage/transcript index moves to SQLite. `better-sqlite3@^12.8.0` may have eased the original Electron-41 ABI pain — to be verified when it matters.
-- **Session search** — Ctrl+P-style finder across all sessions. Skipped for 1.0; revisit if the sidebar gets unwieldy at higher session counts.
 - **Pin sessions** — pin a session to the top of its group.
 
 ---
