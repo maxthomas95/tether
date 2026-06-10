@@ -186,6 +186,7 @@ export function SessionSearchDialog({ isOpen, sessions, environments, onClose, o
                   aria-selected={selected}
                   data-selected={selected}
                   onClick={() => activate(s.id)}
+                  onKeyDown={onKeyActivate(() => activate(s.id))}
                   onMouseMove={() => setSelectedIndex(index)}
                 >
                   <span className={`status-dot status-dot--${statusDotClass(s.state)}`} aria-hidden="true" />
