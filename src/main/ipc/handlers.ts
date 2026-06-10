@@ -13,6 +13,7 @@ import { registerUsageHandlers } from './usage-handlers';
 import { registerSshHandlers } from './ssh-handlers';
 import { registerKeybindingsHandlers } from './keybindings-handlers';
 import { registerNotificationsHandlers } from './notifications-handlers';
+import { registerJobsHandlers } from './jobs-handlers';
 
 /**
  * Wire up every IPC handler against the renderer window. The actual handler
@@ -41,4 +42,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerUsageHandlers(ctx);
   registerKeybindingsHandlers(ctx);
   registerNotificationsHandlers(ctx);
+  registerJobsHandlers(ctx);
 }

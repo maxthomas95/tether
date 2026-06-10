@@ -314,6 +314,14 @@ When multiple panes are open, keystrokes can be echoed to several sessions simul
 - `integration.ts` manages the MCP server lifecycle per helm-enabled session
 - Gated by the `allowHelm` config toggle in Settings → Sessions, plus a per-session enable in the right-click menu
 
+### J.O.B.S. Office Integration
+
+`src/main/jobs/` integrates the external [J.O.B.S.](https://github.com/maxthomas95/JOBS) pixel-art office visualizer as an optional, auto-detected side feature:
+- `jobs-service.ts` probes `{url}/healthz` once a minute for `{ app: "jobs" }` (positive identification — a stranger service on the port never matches). When a local checkout path is configured and nothing answers, it spawns the built server with `ELECTRON_RUN_AS_NODE` and kills it on quit; instances Tether didn't start are never touched.
+- `jobs-bridge.ts` subscribes to `SessionManager.addLifecycleObserver` and narrates **SSH/Coder sessions only** into the JOBS webhook API (`start`/`status`/`error`/`stop` + 60s heartbeats). Local sessions are excluded — JOBS watches `~/.claude/projects` itself, and bridging them would duplicate agents.
+- Renderer: an Office pill in the sidebar footer plus a `<webview>` pane (`OfficePane.tsx`) over the terminal area, shown only while detected. Requires `webviewTag: true` on the main window; the guest page has no preload and no node access.
+- Config keys: `jobsEnabled` (`auto`/`off`), `jobsUrl`, `jobsToken`, `jobsPath` — managed in Settings → Integrations.
+
 ### Diagnostics
 
 `src/main/diagnostics/diagnostics-service.ts` bundles a scrubbed diagnostic export (sanitized `data.json` + rotated logs) for bug reports. Triggered from About → **Export diagnostics for support**.

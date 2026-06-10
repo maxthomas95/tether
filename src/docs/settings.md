@@ -7,7 +7,7 @@ Open Settings with **Ctrl+,** or from the menu bar under **View**. The dialog ha
 - [Sessions](#sessions) — default CLI, Helm toggle, default env vars, per-CLI flag presets, launch profiles
 - [Notifications](#notifications) — desktop notification triggers and suppression
 - [Shortcuts](#shortcuts) — keyboard shortcut customization
-- [Integrations](#integrations) — Vault, Git providers, SSH known hosts, diagnostics
+- [Integrations](#integrations) — Vault, Git providers, SSH known hosts, diagnostics, J.O.B.S. office
 - [Usage](#usage) — cost tracking, history dialog, exports, subscription quota
 
 ## General
@@ -168,6 +168,20 @@ Register GitHub, Azure DevOps, and Gitea credentials so the **Clone** and **New 
 ### SSH known hosts
 
 Manage host keys captured during SSH first-connect (TOFU). Remove an entry to force re-verification on the next connect.
+
+### J.O.B.S. Office
+
+[J.O.B.S.](https://github.com/maxthomas95/JOBS) is a separate self-hosted pixel-art office that visualizes Claude Code agent activity in real time. When the integration is enabled (default), Tether probes `{url}/healthz` once a minute for a running instance. On detection:
+
+- An **Office** pill appears in the sidebar footer (and a **J.O.B.S. Office** item in the View menu) that opens the office over the terminal area.
+- Tether narrates **SSH and Coder sessions** into the office via the JOBS webhook API, so remote agents appear alongside the local ones JOBS already sees through its own transcript watcher. Local sessions are deliberately not bridged — JOBS watches `~/.claude/projects` itself.
+
+Settings:
+
+- **Server URL** — where to probe (default `http://localhost:8780`).
+- **Token** — sent as Bearer auth on webhook posts; also injected as `JOBS_TOKEN`/`WEBHOOK_TOKEN` when Tether launches the server.
+- **Local JOBS folder** — optional path to a JOBS checkout. When set and nothing answers the probe, Tether launches the built server (`dist-server/`) from that folder using its own runtime (no Node install needed) and stops it on quit. An instance Tether didn't start is never touched. The folder must be built first (`npm install && npm run build`).
+- **Test now** — saves the fields above and re-probes immediately.
 
 ### Diagnostics export
 
