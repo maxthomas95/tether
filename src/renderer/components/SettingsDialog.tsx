@@ -8,7 +8,7 @@ import { themeList } from '../styles/themes';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../utils/vault-path';
 
 const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
-import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo, UsageExportFormat, NotificationPrefs } from '../../shared/types';
+import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo, UsageExportFormat, NotificationPrefs, JobsStatus } from '../../shared/types';
 import { DEFAULT_NOTIFICATION_PREFS } from '../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 import { KeybindingsEditor } from './KeybindingsEditor';
@@ -172,6 +172,13 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [usageStripEnabled, setUsageStripEnabled] = useState(true);
   const [globalUsageEnabled, setGlobalUsageEnabled] = useState(true);
   const [cliToolBreakdownEnabled, setCliToolBreakdownEnabled] = useState(false);
+  // J.O.B.S. office integration
+  const [jobsEnabled, setJobsEnabled] = useState(true);
+  const [jobsUrl, setJobsUrl] = useState('');
+  const [jobsToken, setJobsToken] = useState('');
+  const [jobsPath, setJobsPath] = useState('');
+  const [jobsStatus, setJobsStatus] = useState<JobsStatus | null>(null);
+  const [jobsTesting, setJobsTesting] = useState(false);
   const [exportBusy, setExportBusy] = useState<UsageExportFormat | null>(null);
   const [exportStatus, setExportStatus] = useState<{ kind: 'ok' | 'error'; message: string } | null>(null);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(true);
@@ -253,7 +260,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       window.electronAPI.config.get?.('terminalScrollback')?.catch(() => null),
       window.electronAPI.config.get?.('cliHooksEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('updateChannel')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, updateCh]) => {
+      window.electronAPI.config.get?.('jobsEnabled')?.catch(() => null),
+      window.electronAPI.config.get?.('jobsUrl')?.catch(() => null),
+      window.electronAPI.config.get?.('jobsToken')?.catch(() => null),
+      window.electronAPI.config.get?.('jobsPath')?.catch(() => null),
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, updateCh, jobsEnabledValue, jobsUrlValue, jobsTokenValue, jobsPathValue]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -290,6 +301,12 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       // string, or any other value counts as disabled.
       setCliHooksEnabled(cliHooks === 'true');
       setUpdateChannel(updateCh === 'beta' ? 'beta' : 'stable');
+      // jobsEnabled: default-on auto-detect; only the literal 'off' disables —
+      // matches readJobsConfig() on the main side.
+      setJobsEnabled(jobsEnabledValue !== 'off');
+      setJobsUrl(jobsUrlValue || '');
+      setJobsToken(jobsTokenValue || '');
+      setJobsPath(jobsPathValue || '');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -297,6 +314,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     window.electronAPI.knownHosts.list().then(setKnownHosts).catch(() => {});
     window.electronAPI.vault.getConfig().then(setVaultConfig).catch(() => {});
     window.electronAPI.vault.status().then(setVaultStatus).catch(() => {});
+    window.electronAPI.jobs.getStatus().then(setJobsStatus).catch(() => {});
     window.electronAPI.notifications.getPrefs()
       .then(p => { if (p) setNotificationPrefs(p); })
       .catch(() => { /* leave defaults */ });
@@ -304,8 +322,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
   // Live status updates from main
   useEffect(() => {
-    const unsub = window.electronAPI.vault.onStatusChange(setVaultStatus);
-    return unsub;
+    const unsubVault = window.electronAPI.vault.onStatusChange(setVaultStatus);
+    const unsubJobs = window.electronAPI.jobs.onStatusChange(setJobsStatus);
+    return () => { unsubVault(); unsubJobs(); };
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -343,8 +362,33 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     }
     await window.electronAPI.vault.setConfig(vaultConfig);
     await window.electronAPI.notifications.setPrefs(notificationPrefs);
+    await window.electronAPI.config.set?.('jobsEnabled', jobsEnabled ? 'auto' : 'off');
+    await window.electronAPI.config.set?.('jobsUrl', jobsUrl.trim());
+    await window.electronAPI.config.set?.('jobsToken', jobsToken.trim());
+    await window.electronAPI.config.set?.('jobsPath', jobsPath.trim());
+    // Re-probe with the fresh config — fire-and-forget so save never blocks on a slow probe.
+    window.electronAPI.jobs.refresh().catch(() => {});
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, updateChannel, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, updateChannel, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsEnabled, jobsUrl, jobsToken, jobsPath, onClose]);
+
+  /**
+   * Persist the jobs* keys and re-probe immediately so the user gets feedback
+   * without closing the dialog. The keys are saved again on Save — writing
+   * them here just makes "Test now" honest about what it's testing.
+   */
+  const handleJobsTest = async () => {
+    setJobsTesting(true);
+    try {
+      await window.electronAPI.config.set?.('jobsEnabled', jobsEnabled ? 'auto' : 'off');
+      await window.electronAPI.config.set?.('jobsUrl', jobsUrl.trim());
+      await window.electronAPI.config.set?.('jobsToken', jobsToken.trim());
+      await window.electronAPI.config.set?.('jobsPath', jobsPath.trim());
+      const status = await window.electronAPI.jobs.refresh();
+      setJobsStatus(status);
+    } catch { /* status stays as-is */ } finally {
+      setJobsTesting(false);
+    }
+  };
 
   const handleExportUsage = async (format: UsageExportFormat) => {
     setExportBusy(format);
@@ -1651,6 +1695,113 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                       {vaultLoginError}
                     </p>
                   )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* J.O.B.S. office */}
+          <div className="form-group" style={{ marginTop: 20 }}>
+            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              J.O.B.S. Office
+            </label>
+            <p className="form-hint" style={{ marginBottom: 12 }}>
+              Pixel-art office that visualizes Claude Code agent activity (a separate
+              self-hosted server). Tether auto-detects a running instance, adds an
+              Office view, and narrates SSH/Coder sessions into it — local sessions
+              are seen by JOBS directly via its own transcript watcher.
+            </p>
+
+            <div className="form-group">
+              <label className="form-radio-label">
+                <input
+                  type="checkbox"
+                  checked={jobsEnabled}
+                  onChange={e => setJobsEnabled(e.target.checked)}
+                />
+                Enable J.O.B.S. integration (auto-detect)
+              </label>
+            </div>
+
+            {jobsEnabled && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Server URL</label>
+                  <input
+                    className="form-input"
+                    value={jobsUrl}
+                    onChange={e => setJobsUrl(e.target.value)}
+                    placeholder="http://localhost:8780"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Token (optional)</label>
+                  <input
+                    className="form-input"
+                    type="password"
+                    value={jobsToken}
+                    onChange={e => setJobsToken(e.target.value)}
+                    placeholder=""
+                    spellCheck={false}
+                  />
+                  <p className="form-hint">
+                    Sent as Bearer auth on webhook posts. Also injected as
+                    JOBS_TOKEN/WEBHOOK_TOKEN when Tether launches the server itself.
+                  </p>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Local JOBS folder (optional)</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      className="form-input"
+                      value={jobsPath}
+                      onChange={e => setJobsPath(e.target.value)}
+                      placeholder="C:\repo\jobs"
+                      spellCheck={false}
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      className="form-btn"
+                      onClick={async () => {
+                        const dir = await window.electronAPI.dialog.openDirectory();
+                        if (dir) setJobsPath(dir);
+                      }}
+                    >
+                      Browse…
+                    </button>
+                  </div>
+                  <p className="form-hint">
+                    When set and nothing answers the probe, Tether launches the built
+                    server (dist-server) from this folder and stops it again on quit.
+                    Leave blank if you run JOBS yourself (e.g. Docker).
+                  </p>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Status</label>
+                  <div style={{ marginTop: 4 }}>
+                    {jobsStatus?.detected ? (
+                      <span className="form-hint" style={{ color: 'var(--status-running)' }}>
+                        {'●'} Detected
+                        {jobsStatus.version ? ` v${jobsStatus.version}` : ''}
+                        {jobsStatus.managed ? ' (launched by Tether)' : ''}
+                      </span>
+                    ) : (
+                      <span className="form-hint" style={{ color: 'var(--text-muted)' }}>
+                        {'○'} Not detected
+                      </span>
+                    )}
+                    {jobsStatus?.error && (
+                      <p className="form-hint" style={{ color: 'var(--status-dead)', marginTop: 6 }}>
+                        {jobsStatus.error}
+                      </p>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button className="form-btn" onClick={handleJobsTest} disabled={jobsTesting}>
+                      {jobsTesting ? 'Probing…' : 'Test now'}
+                    </button>
+                  </div>
                 </div>
               </>
             )}

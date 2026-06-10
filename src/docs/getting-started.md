@@ -37,6 +37,7 @@ The left sidebar groups sessions by environment and then by working directory. E
 - The **label** (auto-named from the directory, or rename inline by double-clicking)
 - A **pane badge** when the session is currently mounted in a split pane
 - A **🔕 badge** when notifications are muted for that session
+- A **↻ badge** when the session was resumed from a previous conversation (optional — see [Settings](settings#session-restore))
 
 Drag sessions to reorder them inside a group. Right-click a group header for **bulk actions** (Stop all, Restart all, Clear all). Right-click a session for per-session actions (Stop, Duplicate, Remove, Mute/Unmute notifications, Helm enable). Collapse groups with the chevron. Resize the sidebar by dragging its edge (180–400px) or hide it with **Ctrl+B**.
 

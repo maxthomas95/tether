@@ -20,6 +20,13 @@
 </p>
 
 <p align="center">
+  <a href="https://tethercli.app"><strong>tethercli.app</strong></a> ·
+  <a href="https://github.com/maxthomas95/tether/releases">Download</a> ·
+  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="ROADMAP.md">Roadmap</a>
+</p>
+
+<p align="center">
   <img src="screenshot.png" alt="Tether screenshot" width="800" />
 </p>
 
@@ -55,7 +62,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 
 - **Multiple concurrent sessions** with instant switching — click in the sidebar, or `Ctrl+1`–`Ctrl+9`
 - **Session grouping** by environment and working directory; collapsible groups, **drag-reorder** inside a group
-- **Bulk group actions** — Kill all / Restart all / Clear all per repo group from a right-click menu
+- **Bulk group actions** — Stop all / Restart all / Clear all per repo group from a right-click menu
 - **Split panes** *(experimental)* — drag from the sidebar into drop zones to view sessions side-by-side; keyboard-driven focus (`Alt+Arrow`) and swap (`Alt+Shift+Arrow`); broadcast input to multiple panes; in-pane recovery overlay when a session dies
 - **Desktop notifications** — configurable alerts for waiting, idle, unexpected exit, and terminal bell; per-session mute toggle with 🔕 badge; suppresses when focused
 - **Status indicators** — green (running), amber (waiting), gray (idle), red (dead) — passive PTY tap, no ANSI parsing; optional CLI hook integration for higher-fidelity detection
@@ -79,7 +86,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 
 ### Cost & quota
 
-- **Usage tracking** for Claude Code, Codex CLI, and OpenCode — per-session and global, computed from the CLI's own transcripts using a vendored [LiteLLM](https://github.com/BerriAI/litellm) pricing table
+- **Usage tracking** for Claude Code, Codex CLI, and OpenCode — per-session and global, computed from the CLI's own transcripts using a vendored [LiteLLM](https://github.com/BerriAI/litellm) pricing table. Copilot CLI sessions work fully, but cost tracking is blocked upstream until Copilot persists token usage ([copilot-cli#2947](https://github.com/github/copilot-cli/issues/2947))
 - **Usage history dialog** — Daily / Weekly / Monthly rollups with per-environment cost attribution
 - **CSV / JSON export** of usage history for offline analysis
 - **Subscription quota tracking** *(optional)* — surface your Anthropic / OpenAI quota in the sidebar footer

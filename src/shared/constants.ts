@@ -115,6 +115,10 @@ export const IPC = {
   NOTIFICATIONS_SET_PREFS: 'notifications:set-prefs',
   SESSION_SET_NOTIFICATIONS_MUTED: 'session:set-notifications-muted',
 
+  // J.O.B.S. office integration
+  JOBS_GET_STATUS: 'jobs:get-status',
+  JOBS_REFRESH: 'jobs:refresh',
+
   // Diagnostics
   DIAGNOSTICS_EXPORT: 'diagnostics:export',
   DIAGNOSTICS_OPEN_USER_DATA_FOLDER: 'diagnostics:open-user-data-folder',
@@ -130,6 +134,7 @@ export const IPC = {
   SESSION_UPDATED: 'session:updated',
   SESSION_CREATED: 'session:created',
   GIT_CLONE_PROGRESS: 'git:clone-progress',
+  JOBS_STATUS_UPDATED: 'jobs:status-updated',
   VAULT_STATUS_CHANGED: 'vault:status-changed',
   VAULT_EXPIRY_WARNING: 'vault:expiry-warning',
   /**

@@ -26,7 +26,7 @@ Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provid
 
 ## Architecture
 
-- **Main process:** Session Manager, Transport Adapters (Local/SSH/Coder), Session Registry (JSON), Status Detector, CLI Hook Bridge (Claude/Codex overlays), Notification Service, Vault client, Usage/Quota services, Update checker, Git providers (ADO/Gitea), Codex/Claude transcript readers, Helm MCP bridge, Diagnostics export
+- **Main process:** Session Manager, Transport Adapters (Local/SSH/Coder), Session Registry (JSON), Status Detector, CLI Hook Bridge (Claude/Codex overlays), Notification Service, Vault client, Usage/Quota services, Update checker, Git providers (GitHub/ADO/Gitea), Claude/Codex/Copilot/OpenCode transcript readers, Helm MCP bridge, J.O.B.S. office integration (probe/launch + webhook bridge), Diagnostics export
 - **Renderer process:** React UI — Sidebar (sessions grouped by working dir, env, vault pill, quota/usage footers), Terminal Pane(s) with split layouts, dialogs (Settings, NewSession, NewEnvironment, About, ResumeChat, KeyboardShortcuts, HostKeyVerify, VaultPicker, etc.), Setup Wizard for first run
 - **Transport interface:** All adapters implement `SessionTransport` — the UI is environment-agnostic
 - **Data flow:** Keystroke → xterm.js → IPC → transport.write() → PTY stdin → CLI → PTY stdout → status detector (copy) + IPC → xterm.js → screen
@@ -118,17 +118,29 @@ src/
   main/
     index.ts                          # Electron main entry
     logger.ts                         # File + console logger
-    ipc/handlers.ts                   # IPC handler registry
-    session/session-manager.ts        # Session lifecycle + transport factory
+    process-guards.ts                 # Global unhandledRejection/uncaughtException guards
+    ipc/
+      handlers.ts                     # IPC handler registry (wires per-domain modules)
+      helpers.ts                      # Shared handler utilities
+      *-handlers.ts                   # Per-domain modules: session, env, config, profile, vault,
+                                      #   usage, git, ssh, coder, keybindings, notifications, dialog, system
+    session/
+      session-manager.ts              # Session lifecycle + transport factory
+      detect-new-session.ts           # New-session id detection for transcript attribution
     transport/
       types.ts                        # SessionTransport interface
       local-transport.ts              # Local PTY via node-pty
       ssh-transport.ts                # SSH via ssh2 (with TOFU/known-hosts)
       coder-transport.ts              # Coder workspace PTY
+      pty-loader.ts                   # Lazy node-pty import (ABI safety)
+      ssh2-loader.ts                  # Lazy ssh2 import
+      cli-args.ts                     # CLI flag tokenization at the transport boundary
+      posix-shell.ts                  # POSIX shell quoting helpers
     status/status-detector.ts         # Passive PTY status detection
     cli-config/
       claude-settings-overlay.ts      # Additive ~/.claude/settings.json hook entry
       codex-config-overlay.ts         # Additive ~/.codex/config.toml notify entry
+      overlay-common.ts               # Shared overlay read/write helpers
       hook-bridge.ts                  # Token-authed local socket for hook events
       hook-service.ts                 # Hook overlay lifecycle manager
     notifications/
@@ -141,16 +153,28 @@ src/
       scrub.ts                        # Sensitive-value redaction
     db/
       database.ts                     # JSON file persistence
+      atomic-write.ts                 # tmp → fsync → rename atomic writes
+      secret-storage.ts               # Electron safeStorage-backed secret encryption
       environment-repo.ts             # Environment CRUD
       session-repo.ts                 # Session CRUD
       profile-repo.ts                 # Launch profile CRUD
       git-provider-repo.ts            # Git provider creds CRUD
       known-hosts-repo.ts             # SSH known_hosts persistence
-    ssh/host-verifier.ts              # Host key verification policy
+    ssh/
+      host-verifier.ts                # Host key verification policy
+      fingerprint.ts                  # SSH key fingerprint formatting
     claude/transcripts.ts             # Claude Code transcript reader
     codex/
       transcripts.ts                  # Codex transcript reader
       session-watcher.ts              # Codex session id capture at spawn
+    copilot/
+      transcripts.ts                  # Copilot CLI transcript reader
+      session-watcher.ts              # Copilot session id capture at spawn
+    opencode/
+      transcripts.ts                  # OpenCode transcript reader
+      session-watcher.ts              # OpenCode session id capture at spawn
+      usage-reader.ts                 # OpenCode cost from its local DB
+    coder/workspace-service.ts        # Coder workspace list/create via REST API
     vault/
       vault-client.ts                 # HashiCorp Vault REST client
       vault-auth.ts                   # Token + OIDC auth flows
@@ -158,15 +182,26 @@ src/
       vault-types.ts                  # Vault types
     usage/
       usage-service.ts                # Aggregate per-session and global usage
-      jsonl-parser.ts                 # Parse Claude/Codex JSONL transcripts
+      jsonl-parser.ts                 # Parse Claude JSONL transcripts
+      codex-jsonl-parser.ts           # Parse Codex JSONL transcripts
+      cli-tool-aggregator.ts          # Per-CLI-tool usage attribution
+      env-aggregator.ts               # Per-environment usage attribution
+      usage-exporter.ts               # CSV/JSON usage export
       model-pricing.ts                # Per-model token pricing
+      pricing-fetcher.ts              # Daily LiteLLM pricing JSON refresh
     quota/quota-service.ts            # Subscription quota tracking
+    jobs/
+      jobs-service.ts                 # J.O.B.S. office probe + optional launcher
+      jobs-bridge.ts                  # Narrate SSH/Coder sessions to JOBS webhooks
     update/update-checker.ts          # GitHub Releases poll for app updates
     git/
       git-service.ts                  # Local repo + clone helpers
+      git-url.ts                      # Git URL parsing/normalization
       providers/
+        github-client.ts              # GitHub repo browse/create
         ado-client.ts                 # Azure DevOps repo browse
         gitea-client.ts               # Gitea repo browse
+        http.ts                       # Shared provider HTTP helper
   preload/
     preload.ts                        # contextBridge IPC API for main window
     docs-preload.ts                   # contextBridge for docs window
@@ -209,6 +244,7 @@ src/
         VaultStatusPill.tsx           # Vault auth/expiry indicator
     hooks/
       useEscapeKey.ts
+      useFocusTrap.ts                 # Dialog focus trap (a11y)
       useKeyboardShortcuts.ts
       useLayoutState.ts               # Pane split layout persistence
       useQuota.ts
@@ -216,15 +252,23 @@ src/
       useTerminalManager.ts
       useTheme.ts
       useUsage.ts
+    lib/
+      broadcast-targets.ts            # Broadcast input target tracking
+      layout-tree.ts                  # Split pane layout tree operations
+    utils/                            # a11y, errors, paths, duplicate-label,
+                                      #   usage-format, usage-rollups, vault-path
     styles/
       global.css                      # Component styles + CSS variable theming
+      tokens.css                      # Design tokens (fonts, spacing)
       themes.ts                       # 7 theme definitions
     assets/logo.png
   shared/
     cli-tools.ts                      # CLI tool registry (Claude/Codex/Copilot/OpenCode/Custom)
     constants.ts                      # IPC channel name constants
+    keybindings.ts                    # Keybinding actions, chords, defaults
     layout-types.ts                   # Pane split layout types
     loader-themes.ts                  # Splash loader themes
+    shell-quote.ts                    # Shell quoting/sanitizing helpers
     types.ts                          # Shared TS interfaces
   docs/                               # In-app help (rendered in docs window)
     getting-started.md
@@ -232,6 +276,11 @@ src/
     environments.md
     settings.md
     keyboard-shortcuts.md
+    vault.md
+    git-providers.md
+    usage-quota.md
+    helm.md
+  docs-renderer/                      # Docs window renderer entry + styles
 ```
 
 **Important:** The preload entry is `src/preload/preload.ts` (not `index.ts`) to avoid Vite output collision with main process `index.js` in `.vite/build/`.

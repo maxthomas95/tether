@@ -45,7 +45,7 @@ import { onKeyActivate, stopPropagationOnKey } from './utils/a11y';
 import { extractErrorMessage, formatSessionExitMessage } from './utils/errors';
 import { nextDuplicateLabel } from './utils/duplicate-label';
 import type { LayoutNode } from '../shared/layout-types';
-import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, SessionOrderPref, HostVerifyRequest } from '../shared/types';
+import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, SessionOrderPref, HostVerifyRequest, JobsStatus } from '../shared/types';
 import {
   DEFAULT_KEYBINDINGS,
   resolveBindings,
@@ -57,6 +57,8 @@ import {
 import { getBroadcastSessionIds, pruneBroadcastPaneIds } from './lib/broadcast-targets';
 import type { MenuDef } from './components/MenuBar';
 import { WelcomePane } from './components/WelcomePane';
+import { OfficePane } from './components/OfficePane';
+import { JobsOfficePill } from './components/sidebar/JobsOfficePill';
 
 /**
  * Delay before dropping a waiting-ack when a session transitions back to
@@ -97,6 +99,10 @@ export function App() {
   const [usageHistoryOpen, setUsageHistoryOpen] = useState(false);
   const [setupWizardOpen, setSetupWizardOpen] = useState(false);
   const [hostVerifyRequest, setHostVerifyRequest] = useState<HostVerifyRequest | null>(null);
+  // J.O.B.S. office integration: detection status from the main process, plus
+  // whether the Office pane is currently shown over the terminal area.
+  const [jobsStatus, setJobsStatus] = useState<JobsStatus | null>(null);
+  const [officeOpen, setOfficeOpen] = useState(false);
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [allowHelm, setAllowHelm] = useState(false);
@@ -1664,6 +1670,18 @@ export function App() {
     return cleanup;
   }, []);
 
+  // Track JOBS detection. The pane auto-closes if the office server goes away
+  // so the user is never left staring at a dead webview.
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.jobs.getStatus().then(s => { if (!cancelled) setJobsStatus(s); }).catch(() => {});
+    const unsub = window.electronAPI.jobs.onStatusChange(s => {
+      setJobsStatus(s);
+      if (!s.detected) setOfficeOpen(false);
+    });
+    return () => { cancelled = true; unsub(); };
+  }, []);
+
   const menus: MenuDef[] = useMemo(() => [
     {
       label: 'File',
@@ -1695,6 +1713,9 @@ export function App() {
       label: 'View',
       items: [
         { label: 'Toggle Sidebar', shortcut: formatChord(resolvedBindings['sidebar.toggle']) || undefined, onClick: () => setSidebarVisible(v => !v) },
+        ...(jobsStatus?.detected ? [
+          { label: 'J.O.B.S. Office', checked: officeOpen, onClick: () => setOfficeOpen(v => !v) },
+        ] : []),
         { separator: true },
         ...themeList.map(t => ({
           label: t.label,
@@ -1717,7 +1738,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen]);
 
   return (
     <div className="app-layout">
@@ -1864,12 +1885,14 @@ export function App() {
         <GlobalUsageFooter environments={environments} onOpenHistory={() => setUsageHistoryOpen(true)} />
         <QuotaFooter />
         <VaultStatusPill onAuthError={notifyVaultAuthError} />
+        <JobsOfficePill status={jobsStatus} active={officeOpen} onToggle={() => setOfficeOpen(v => !v)} />
       </aside>
       {sidebarVisible && <SidebarResizeHandle onResize={setSidebarWidth} />}
       <main
         className={`terminal-panel ${isDragging && !layoutState.root ? 'terminal-panel--drop-active' : ''}`}
         onDragOver={handleMainDragOver}
         onDrop={handleMainDrop}
+        style={{ position: 'relative' }}
       >
         {layoutState.root ? (
           <SplitLayout
@@ -1905,6 +1928,13 @@ export function App() {
               onResume={handleWelcomeResume}
             />
           </div>
+        )}
+        {officeOpen && jobsStatus?.detected && (
+          <OfficePane
+            url={jobsStatus.url}
+            version={jobsStatus.version}
+            onClose={() => setOfficeOpen(false)}
+          />
         )}
       </main>
       </div>

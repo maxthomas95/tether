@@ -85,7 +85,7 @@ If a session inside a split pane dies, the pane shows an in-pane overlay with **
 
 ## Broadcast Input
 
-When you have multiple panes open in a split layout, you can broadcast keystrokes to several sessions at once — useful for running the same command in parallel. Toggle broadcast targets from the pane status strip or from **View → Clear Broadcast Input Targets** to reset. When broadcast is active, anything you type in the focused pane is echoed to all targeted panes simultaneously.
+When you have multiple panes open in a split layout, you can broadcast keystrokes to several sessions at once — useful for running the same command in parallel. Toggle broadcast targets from the pane status strip or from **Session → Clear Broadcast Input Targets** to reset. When broadcast is active, anything you type in the focused pane is echoed to all targeted panes simultaneously.
 
 ## Bulk Actions on a Group
 

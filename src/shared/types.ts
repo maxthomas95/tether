@@ -476,6 +476,29 @@ export interface HostVerifyRequest {
   keyHash: string;
 }
 
+/** Whether the J.O.B.S. office integration probes for a running instance. */
+export type JobsEnabledMode = 'auto' | 'off';
+
+/**
+ * Detection/launch state of the J.O.B.S. pixel-office integration. JOBS is an
+ * external self-hosted server (github.com/maxthomas95/JOBS) — Tether never
+ * bundles it; it only probes `GET {url}/healthz` for `{ app: "jobs" }` and,
+ * when a local checkout path is configured, can spawn the built server itself.
+ */
+export interface JobsStatus {
+  enabled: JobsEnabledMode;
+  /** Base URL probed for the office (default http://localhost:8780). */
+  url: string;
+  /** True when a healthz probe positively identified a JOBS instance. */
+  detected: boolean;
+  /** JOBS server version reported by healthz, when detected. */
+  version: string | null;
+  /** True when Tether spawned (and owns) the JOBS server process. */
+  managed: boolean;
+  /** Human-readable launch/probe problem (e.g. "JOBS folder is not built"). */
+  error?: string;
+}
+
 export interface DiagnosticsExportResult {
   ok: boolean;
   /** Absolute path to the written zip when ok is true. */
@@ -668,6 +691,12 @@ export interface TetherAPI {
     get(): Promise<KeybindingOverrides>;
     set(overrides: KeybindingOverrides): Promise<void>;
     resetAll(): Promise<void>;
+  };
+  jobs: {
+    getStatus(): Promise<JobsStatus>;
+    /** Re-read jobs* config keys and probe immediately. Returns the fresh status. */
+    refresh(): Promise<JobsStatus>;
+    onStatusChange(cb: (status: JobsStatus) => void): () => void;
   };
   notifications: {
     getPrefs(): Promise<NotificationPrefs>;
