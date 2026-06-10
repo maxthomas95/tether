@@ -11,6 +11,8 @@ import { getDb, closeDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
 import { markAllRunningAsStopped } from './db/session-repo';
 import { startHookService, stopHookService } from './cli-config/hook-service';
+import { jobsService } from './jobs/jobs-service';
+import { jobsBridge } from './jobs/jobs-bridge';
 import { createNotificationService, readPrefsFromConfig } from './notifications/notification-service';
 import { getLoaderTheme, DEFAULT_LOADER_THEME } from '../shared/loader-themes';
 import { IPC } from '../shared/constants';
@@ -187,6 +189,9 @@ const createWindow = () => {
       // Note: preload.js is built from src/preload/preload.ts
       contextIsolation: true,
       nodeIntegration: false,
+      // Required for the J.O.B.S. Office pane (<webview> guest page). The
+      // guest has no preload and no node integration — it's a plain web page.
+      webviewTag: true,
     },
   });
 
@@ -242,6 +247,13 @@ const createWindow = () => {
       } else {
         quotaService.start();
       }
+    }, 5_000);
+
+    // Probe for a J.O.B.S. office (and narrate remote sessions into it).
+    // Fully passive when nothing is configured/running — one failed fetch/min.
+    setTimeout(() => {
+      jobsService.start();
+      jobsBridge.start();
     }, 5_000);
   });
 
@@ -349,6 +361,8 @@ if (!gotTheLock) {
       });
       return;
     }
+    jobsBridge.dispose();
+    jobsService.dispose();
     usageService.dispose();
     quotaService.dispose();
     sessionManager.dispose();

@@ -26,6 +26,7 @@ import type {
   OpenFolderResult,
   WaitingReason,
   NotificationPrefs,
+  JobsStatus,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -269,6 +270,15 @@ const api: TetherAPI = {
     get: (): Promise<KeybindingOverrides> => ipcRenderer.invoke(IPC.KEYBINDINGS_GET),
     set: (overrides: KeybindingOverrides): Promise<void> => ipcRenderer.invoke(IPC.KEYBINDINGS_SET, overrides),
     resetAll: (): Promise<void> => ipcRenderer.invoke(IPC.KEYBINDINGS_RESET_ALL),
+  },
+  jobs: {
+    getStatus: (): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_GET_STATUS),
+    refresh: (): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_REFRESH),
+    onStatusChange(cb: (status: JobsStatus) => void): () => void {
+      const h = (_e: Electron.IpcRendererEvent, status: JobsStatus) => cb(status);
+      ipcRenderer.on(IPC.JOBS_STATUS_UPDATED, h);
+      return () => ipcRenderer.removeListener(IPC.JOBS_STATUS_UPDATED, h);
+    },
   },
   notifications: {
     getPrefs: (): Promise<NotificationPrefs> => ipcRenderer.invoke(IPC.NOTIFICATIONS_GET_PREFS),

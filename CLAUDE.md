@@ -26,7 +26,7 @@ Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provid
 
 ## Architecture
 
-- **Main process:** Session Manager, Transport Adapters (Local/SSH/Coder), Session Registry (JSON), Status Detector, CLI Hook Bridge (Claude/Codex overlays), Notification Service, Vault client, Usage/Quota services, Update checker, Git providers (ADO/Gitea), Codex/Claude transcript readers, Helm MCP bridge, Diagnostics export
+- **Main process:** Session Manager, Transport Adapters (Local/SSH/Coder), Session Registry (JSON), Status Detector, CLI Hook Bridge (Claude/Codex overlays), Notification Service, Vault client, Usage/Quota services, Update checker, Git providers (ADO/Gitea), Codex/Claude transcript readers, Helm MCP bridge, J.O.B.S. office integration (probe/launch + webhook bridge), Diagnostics export
 - **Renderer process:** React UI — Sidebar (sessions grouped by working dir, env, vault pill, quota/usage footers), Terminal Pane(s) with split layouts, dialogs (Settings, NewSession, NewEnvironment, About, ResumeChat, KeyboardShortcuts, HostKeyVerify, VaultPicker, etc.), Setup Wizard for first run
 - **Transport interface:** All adapters implement `SessionTransport` — the UI is environment-agnostic
 - **Data flow:** Keystroke → xterm.js → IPC → transport.write() → PTY stdin → CLI → PTY stdout → status detector (copy) + IPC → xterm.js → screen
@@ -161,6 +161,9 @@ src/
       jsonl-parser.ts                 # Parse Claude/Codex JSONL transcripts
       model-pricing.ts                # Per-model token pricing
     quota/quota-service.ts            # Subscription quota tracking
+    jobs/
+      jobs-service.ts                 # J.O.B.S. office probe + optional launcher
+      jobs-bridge.ts                  # Narrate SSH/Coder sessions to JOBS webhooks
     update/update-checker.ts          # GitHub Releases poll for app updates
     git/
       git-service.ts                  # Local repo + clone helpers

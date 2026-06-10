@@ -346,9 +346,23 @@ async function createTransport(environmentId?: string): Promise<SessionTransport
   return new LocalTransport();
 }
 
+/**
+ * Passive lifecycle taps for cross-cutting integrations (currently the
+ * J.O.B.S. office bridge). Unlike SessionCallbacks (one bundle per session,
+ * wired to IPC), observers are global, optional, and must never affect the
+ * session flow — every notification is wrapped in try/catch.
+ */
+export interface SessionLifecycleObserver {
+  onCreated?(session: Session): void;
+  /** Fired after the session's state field has been updated. */
+  onStateChanged?(session: Session): void;
+  onRemoved?(sessionId: string): void;
+}
+
 export class SessionManager {
   private sessions = new Map<string, Session>();
   private callbacksMap = new Map<string, SessionCallbacks>();
+  private lifecycleObservers = new Set<SessionLifecycleObserver>();
   /**
    * Optional notification sink. Wired by the main process after both the
    * session manager and the notification service exist. Left null during
@@ -373,6 +387,8 @@ export class SessionManager {
       if (kind && this.notifier) {
         this.notifier.fire(kind, this.projectForNotification(session), session.waitingReason);
       }
+
+      this.notifyLifecycle(o => o.onStateChanged?.(session));
     });
 
     statusDetector.onBell((sessionId) => {
@@ -389,6 +405,18 @@ export class SessionManager {
    */
   setNotifier(notifier: NotificationService | null): void {
     this.notifier = notifier;
+  }
+
+  /** Register a global lifecycle tap. Returns an unsubscribe function. */
+  addLifecycleObserver(observer: SessionLifecycleObserver): () => void {
+    this.lifecycleObservers.add(observer);
+    return () => this.lifecycleObservers.delete(observer);
+  }
+
+  private notifyLifecycle(fn: (observer: SessionLifecycleObserver) => void): void {
+    for (const observer of this.lifecycleObservers) {
+      try { fn(observer); } catch { /* observers never break session flow */ }
+    }
   }
 
   private projectForNotification(session: Session): NotifiedSession {
@@ -819,6 +847,8 @@ export class SessionManager {
       });
     }
 
+    this.notifyLifecycle(o => o.onCreated?.(session));
+
     return session;
   }
 
@@ -866,6 +896,7 @@ export class SessionManager {
       session.transport?.dispose();
       this.sessions.delete(id);
       this.callbacksMap.delete(id);
+      this.notifyLifecycle(o => o.onRemoved?.(id));
     }
   }
 
