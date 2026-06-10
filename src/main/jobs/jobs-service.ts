@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDb } from '../db/database';
@@ -39,6 +39,28 @@ export function readJobsConfig(): JobsConfig {
     token: cfg.jobsToken || undefined,
     path: cfg.jobsPath || undefined,
   };
+}
+
+let cachedNodeBinary: string | null | undefined;
+
+/**
+ * Find a real Node.js runtime on PATH. Packaged Tether builds disable the
+ * RunAsNode fuse (forge.config.ts), so the ELECTRON_RUN_AS_NODE trick boots a
+ * second full Tether app there — which loses the single-instance race and
+ * exits 0 within milliseconds. A real node is the only reliable runtime in
+ * production; it's also already a prerequisite of the JOBS setup (the folder
+ * must be npm-built). Cached for the process lifetime.
+ */
+function findNodeBinary(): string | null {
+  if (cachedNodeBinary !== undefined) return cachedNodeBinary;
+  const candidate = process.platform === 'win32' ? 'node.exe' : 'node';
+  try {
+    const res = spawnSync(candidate, ['--version'], { timeout: 3_000, windowsHide: true });
+    cachedNodeBinary = res.status === 0 ? candidate : null;
+  } catch {
+    cachedNodeBinary = null;
+  }
+  return cachedNodeBinary;
 }
 
 function isLoopbackUrl(url: string): boolean {
@@ -163,8 +185,6 @@ class JobsService {
 
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      // Run the server with Tether's own binary so a Node install isn't required.
-      ELECTRON_RUN_AS_NODE: '1',
       PORT: port,
     };
     if (cfg.token) {
@@ -172,10 +192,20 @@ class JobsService {
       env.WEBHOOK_TOKEN = cfg.token;
     }
 
-    log.info('Launching JOBS server', { entry, port });
+    // Prefer a real node from PATH; the ELECTRON_RUN_AS_NODE fallback only
+    // works in dev — packaged builds disable the RunAsNode fuse (see
+    // findNodeBinary). The JOBS folder had to be npm-built, so node being
+    // on PATH is the normal case.
+    let runtime = findNodeBinary();
+    if (!runtime) {
+      runtime = process.execPath;
+      env.ELECTRON_RUN_AS_NODE = '1';
+    }
+
+    log.info('Launching JOBS server', { entry, port, runtime });
     let child: ChildProcess;
     try {
-      child = spawn(process.execPath, [entry], {
+      child = spawn(runtime, [entry], {
         cwd: cfg.path,
         env,
         windowsHide: true,
@@ -200,7 +230,15 @@ class JobsService {
       if (this.child === child) {
         this.child = null;
         if (!this.disposed) {
-          this.setStatus({ ...this.status, detected: false, managed: false, error: code ? `JOBS server exited with code ${code}` : undefined });
+          // code 0 before ever answering healthz = the runtime didn't actually
+          // run the server (e.g. RunAsNode fuse disabled and no node on PATH).
+          let error: string | undefined;
+          if (code) {
+            error = `JOBS server exited with code ${code}`;
+          } else if (code === 0 && !this.status.detected) {
+            error = 'JOBS server exited immediately — install Node.js (needed to run the server) and Test again';
+          }
+          this.setStatus({ ...this.status, detected: false, managed: false, error });
         }
       }
     });
