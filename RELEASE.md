@@ -58,7 +58,7 @@ npm run release -- stable --dry-run
 | `stable` | `v0.6.0` | Latest Release | Graduating betas to a stable milestone |
 | `beta.N` | `v0.7.0-beta.1` | Pre-release | New features for early adopters |
 | `alpha.N` | `v0.7.0-alpha.1` | Pre-release | Rough builds for internal testing |
-| `hotfix.N` | `v0.6.1-hotfix.1` | Latest Release | Urgent patches to the current stable |
+| `hotfix.N` | `v0.6.1-hotfix.1` | Latest Release | Urgent patches to the current stable. **Only via the script if `main` has nothing unreleased to stable** — otherwise see [Hotfixing stable when `main` has unreleased features](#hotfixing-stable-when-main-has-unreleased-features) |
 
 ### Git tag
 
@@ -135,6 +135,36 @@ If `wait-merge` times out (e.g. a required check is failing and needs attention)
 The script prefers `gh auth token` for API auth (same creds it already uses for PR create/merge), so a green `gh auth status` is all you need. If `gh` isn't installed or hasn't logged in, it falls back to a PAT at `~/.tether/github-token` (override path with `GITHUB_TOKEN_FILE`). Either way the token needs `repo` scope.
 
 **Never commit tokens or paste them into chat.**
+
+## Hotfixing stable when `main` has unreleased features
+
+The script's `hotfix.N` channel cuts its release branch **from the tip of `main`** (phase 2), same as every other channel. That is only correct when everything on `main` is shippable to stable. Once `main` carries features that have only gone out in a beta, a hotfix cut from `main` would drag those features into the stable channel.
+
+In that situation, cut the hotfix from the **last stable tag** and cherry-pick only the commits you want:
+
+1. **Land the fix on `main` first**, via a normal PR (squash). `main` must never miss a fix — the stable line gets a *copy*, never the original.
+2. Cut the release branch from the last stable tag, not `main`:
+   ```bash
+   git checkout -b release/v0.6.2-hotfix.1 v0.6.1-hotfix.1
+   ```
+3. Cherry-pick the fix's squash commit from `main`:
+   ```bash
+   git cherry-pick <squash-sha>
+   ```
+   Every PR squash-merges to a single commit, so each fix is one clean cherry-pick. Features you don't pick simply never reach the stable line — there is nothing to exclude or revert.
+4. Bump `package.json`, add the CHANGELOG section, commit as `Release v{tag}` (manual steps 2–4 below).
+5. Push the branch and tag **the branch tip**, not `main`:
+   ```bash
+   git push -u github release/v0.6.2-hotfix.1
+   git tag v0.6.2-hotfix.1 && git push github v0.6.2-hotfix.1
+   ```
+6. Build and publish as in the manual flow. The GitHub release targets the existing tag (`target_commitish` is ignored once the tag exists), so the release does **not** point at `main`.
+7. **Never merge this branch back into `main`.** A squash PR from an old tag would diff against `main` as a mass revert of everything since that tag. The branch is a dead end by design — the fix is already on `main` from step 1. Delete the branch once the next stable supersedes it; the tag preserves the release point.
+
+Two caveats:
+
+- The release branch bypasses the PR checks gate (the ruleset protects `main` only). The fix itself was checked when its PR landed on `main`, but run `npx tsc --noEmit` and `npm test` on the release branch before tagging.
+- `scripts/release.mjs` cannot do this yet — phase 2 hard-codes `main` as the branch base. Until the script grows a `--from <tag>` option, tag-based hotfixes are manual.
 
 ## Manual release (fallback)
 
