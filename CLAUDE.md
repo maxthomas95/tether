@@ -4,7 +4,7 @@
 
 Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provides a single unified interface to manage multiple agentic CLI sessions across local, SSH, and Coder workspace environments — preserving the exact native terminal experience via raw PTY piping into xterm.js.
 
-**Status:** Active development — in the 1.0 polish push. Currently `0.5.2-beta.3`. Local, SSH, and Coder transports working; multi-CLI support (Claude/Codex/Copilot/OpenCode/Custom); Vault-backed env vars; usage tracking with daily/weekly/monthly rollups, per-CLI and per-environment attribution, and CSV/JSON export; pane splitting with keyboard-driven focus/swap and broadcast input; desktop notifications with per-session muting; auto-update; SSH host key verification; user-remappable keyboard shortcuts; Claude/Codex hook-driven waiting/idle detection; git worktree support.
+**Status:** Active development — in the 1.0 polish push. Currently on the `0.6.x` stable line (stable/beta update channels live). Local, SSH, and Coder transports working; multi-CLI support (Claude/Codex/Copilot/OpenCode/Custom); Vault-backed env vars; usage tracking with daily/weekly/monthly rollups, per-CLI and per-environment attribution, and CSV/JSON export; pane splitting with keyboard-driven focus/swap and broadcast input; desktop notifications with per-session muting; auto-update; SSH host key verification; user-remappable keyboard shortcuts; Claude/Codex hook-driven waiting/idle detection; git worktree support.
 
 ## Core Principle
 
