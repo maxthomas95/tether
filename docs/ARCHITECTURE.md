@@ -51,10 +51,18 @@ Tether is an Electron desktop application with a React frontend. The Electron ma
 interface DbData {
   environments: EnvironmentRow[]
   sessions: SessionRow[]
+  launchProfiles: LaunchProfileRow[]       // Named env-var + CLI-flag presets
   config: Record<string, string>           // Key-value config (theme, reposRoot, restoreOnLaunch)
   defaultEnvVars: Record<string, string>   // App-wide env vars
-  defaultCliFlags: string[]                // App-wide CLI flags
+  defaultCliFlags: string[]                // App-wide CLI flags (legacy single list)
+  defaultCliFlagsPerTool: Partial<Record<CliToolId, string[]>>  // Per-CLI-tool flag presets
   savedWorkspace: SavedWorkspace | null    // Session restore state
+  gitProviders: GitProviderRow[]           // Git provider credentials (GitHub/ADO/Gitea)
+  repoGroupPrefs: RepoGroupPref[]          // Sidebar group pin/sort preferences
+  sessionOrderPrefs: SessionOrderPref[]    // Drag-reorder ordering within groups
+  usageSummaries: PersistedSessionUsage[]  // Persisted per-session usage rollups
+  knownHosts: KnownHostEntry[]             // SSH TOFU host key pins
+  keybindings?: Partial<Record<KeybindingAction, Chord | null>>  // User shortcut overrides
 }
 
 // EnvironmentRow

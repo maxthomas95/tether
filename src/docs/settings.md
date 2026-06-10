@@ -2,7 +2,7 @@
 
 Open Settings with **Ctrl+,** or from the menu bar under **View**. The dialog has seven sections in a left rail:
 
-- [General](#general) — theme and update checks
+- [General](#general) — theme, session restore, and update checks
 - [Terminal](#terminal) — font families, cursor shape, scrollback
 - [Sessions](#sessions) — default CLI, Helm toggle, default env vars, per-CLI flag presets, launch profiles
 - [Notifications](#notifications) — desktop notification triggers and suppression
@@ -27,6 +27,15 @@ Tether ships with seven built-in themes:
 | **Tether Light** | Light — VS Code Light+ inspired, white canvas |
 
 The theme applies to the entire app: title bar, sidebar, terminal, dialogs, and this documentation window.
+
+### Session restore
+
+Controls what happens to your sessions when you quit and relaunch Tether:
+
+- **Restore sessions on launch** — automatically reopen your saved workspace (sessions and pane layout) when Tether starts.
+- **Resume previous conversations** — instead of starting each restored session fresh, reopen the same Claude Code or Codex CLI conversation it was on. Local environments only; SSH and Coder sessions always start fresh.
+- **Show a badge on resumed sessions** — adds a small ↻ marker next to sessions that were resumed from a prior conversation.
+- **Enable "Resume previous conversation..." in the right-click menu** — lets you manually pick an older Claude Code or Codex CLI conversation for a session's working directory. See [Sessions](sessions#resume-conversation).
 
 ### Update checks
 
@@ -62,13 +71,14 @@ Number of lines of output kept per pane (100&ndash;100,000; default 10,000). xte
 
 ### Terminal font family
 
-Pick from four presets or leave the default:
+Pick from five presets or leave the default:
 
 | Preset | Notes |
 |--------|-------|
 | **Default (Cascadia Code)** | Bundled with Windows; the xterm.js default |
 | **JetBrains Mono** | Must be installed on the OS |
 | **Fira Code** | Must be installed on the OS |
+| **Cascadia Code** | Same face as the default, with a plain Consolas fallback stack |
 | **Consolas** | Bundled with Windows |
 
 This only affects xterm.js panes. Tether's own UI keeps IBM Plex Sans / JetBrains Mono regardless. Missing fonts fall back to Cascadia Code or Consolas.
