@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.6.2-beta.1] — 2026-06-09
+
+First beta on the new release train: betas are cut from main's tip for the Beta update channel and graduate to stable once soaked. This one carries everything since the 0.6.1 hotfix — headlined by the Ctrl+P session quick switcher and the J.O.B.S. office integration, plus groundwork for remote (SSH/Coder) hooks.
+
+### New Features
+- **Ctrl+P session quick switcher** — VS Code-style overlay to jump to any open session: type to fuzzy-match across label, working directory, environment name, and CLI tool; arrow keys move the highlight, Enter opens, Escape closes (#174)
+- **J.O.B.S. office integration** — optional, auto-detected bridge to J.O.B.S., a self-hosted pixel-art office that visualizes agent activity. Probes localhost for a running office, can launch a configured local checkout, and narrates SSH/Coder session activity over webhooks. Zero weight when unused (#168)
+
+### Bug Fixes
+- **Remote and un-hooked sessions no longer stuck on "running"** — Claude/Codex sessions whose hooks never actually wired (hooks toggle off, overlay install failure, or any SSH/Coder session) had byte-cadence status inference suppressed and could sit "running" for up to 10 minutes after a turn ended. Suppression is now per-session, based on whether hook env was actually injected at spawn (#175)
+- **Force-killed sessions now clean up fully** — when a graceful Stop escalates to force-kill, exit cleanup no longer races the transport: the Helm MCP integration is released, the usage watcher untracked, and the "[Session ended]" marker reaches the visible terminal (#166)
+- **Main process survives stray async errors** — global unhandledRejection/uncaughtException guards log the error and keep PTY sessions alive instead of letting one unhandled rejection take down every session (#165)
+- **Accessibility pass** — focus traps and labeled close buttons on all dialogs, proper tablist semantics, and AA-compliant muted-text contrast on the light themes (#167)
+
+### Internal
+- Hooks subsystem refactored toward remote (SSH/Coder) hook support: per-session hook capability, stream-agnostic frame server, pure overlay cores (#175)
+- Release-train strategy and hotfix bar codified in RELEASE.md (#173); tag-based stable hotfix flow documented (#170)
+- Docs freshness sweep across in-app docs, repo docs, README, and the site (#169, #171, #172)
+- Dependency hygiene: `tmp` override bumped to 0.2.6 for a path-traversal fix (#164); `hono` bumped in the Helm MCP server (#163)
+- Marketing site: Tether family band section (#162)
+
+---
+
 ## [0.6.1-hotfix.1] — 2026-05-29
 
 First hotfix on the new stable/beta release channel — a focused security and correctness pass on top of 0.6.0. No new features and no data-schema changes; Stable-channel users receive this automatically.
