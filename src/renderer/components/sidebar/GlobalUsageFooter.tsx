@@ -3,22 +3,7 @@ import { useUsage } from '../../hooks/useUsage';
 import type { CliToolUsage, DailyUsage, EnvironmentInfo, EnvironmentUsage } from '../../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import type { CliToolId } from '../../../shared/cli-tools';
-
-function formatCost(cost: number): string {
-  if (cost === 0) return '$0';
-  if (cost < 0.01) return '<$0.01';
-  if (cost >= 1000) return `$${(cost / 1000).toFixed(1)}k`;
-  if (cost >= 100) return `$${cost.toFixed(0)}`;
-  return `$${cost.toFixed(2)}`;
-}
-
-function formatTokens(n: number): string {
-  if (n === 0) return '0';
-  if (n < 1000) return n.toString();
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
-  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  return `${(n / 1_000_000_000).toFixed(2)}B`;
-}
+import { formatCost, formatTokens } from '../../utils/usage-format';
 
 function todayDate(): string {
   return new Date().toISOString().slice(0, 10);

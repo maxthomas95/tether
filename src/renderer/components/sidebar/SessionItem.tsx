@@ -3,6 +3,7 @@ import type { SessionInfo, SessionState } from '../../../shared/types';
 import { CliToolBadge } from '../CliToolBadge';
 import { PaneLocationBadge } from './PaneLocationBadge';
 import { onKeyActivate, stopPropagationOnKey } from '../../utils/a11y';
+import { abbreviatePath } from '../../utils/paths';
 import type { PaneLocation } from '../../lib/layout-tree';
 
 interface SessionItemProps {
@@ -416,13 +417,4 @@ function getStatusLabel(
     default:
       return 'Status: idle';
   }
-}
-
-function abbreviatePath(p: string): string {
-  const home = window.electronAPI.homeDir;
-  if (home && p.startsWith(home)) {
-    return '~' + p.slice(home.length).replace(/\\/g, '/');
-  }
-  const parts = p.split(/[\\/]/);
-  return parts.length > 2 ? `.../${parts.slice(-2).join('/')}` : p;
 }

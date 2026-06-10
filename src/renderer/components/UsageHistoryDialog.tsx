@@ -3,6 +3,7 @@ import { onKeyActivate, stopPropagationOnKey } from '../utils/a11y';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useUsage } from '../hooks/useUsage';
 import { dailyRollups, weeklyRollups, monthlyRollups, windowSummary, type RollupRow, type WindowKind } from '../utils/usage-rollups';
+import { formatCost, formatTokens } from '../utils/usage-format';
 import { CLI_TOOL_REGISTRY, type CliToolId } from '../../shared/cli-tools';
 import type { DailyCliToolUsage } from '../../shared/types';
 
@@ -16,22 +17,6 @@ type ViewMode = 'daily' | 'weekly' | 'monthly';
 const DAILY_DAYS = 30;
 const WEEKLY_WEEKS = 12;
 const MONTHLY_MONTHS = 12;
-
-function formatCost(cost: number): string {
-  if (cost === 0) return '$0';
-  if (cost < 0.01) return '<$0.01';
-  if (cost >= 1000) return `$${(cost / 1000).toFixed(1)}k`;
-  if (cost >= 100) return `$${cost.toFixed(0)}`;
-  return `$${cost.toFixed(2)}`;
-}
-
-function formatTokens(n: number): string {
-  if (n === 0) return '0';
-  if (n < 1000) return n.toString();
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
-  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  return `${(n / 1_000_000_000).toFixed(2)}B`;
-}
 
 function rowTokens(row: RollupRow): number {
   return row.inputTokens + row.outputTokens + row.cacheCreationTokens + row.cacheReadTokens;
