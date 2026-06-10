@@ -41,6 +41,21 @@ npm run release -- stable --dry-run
 
 `main` is ruleset-protected — direct pushes aren't allowed. The release script cuts a `release/v{version}-{prerelease}` branch, opens a PR, enables squash auto-merge, waits for the PR to land, and then tags the merged commit on `main`. Required checks (Sonar Quality Gate, CodeQL, CI) gate the release commit just like any other PR.
 
+## Release strategy — the train model
+
+Decided 2026-06-09, after the stable/beta channel split. Tether runs a **release train with on-demand maintenance hotfixes**:
+
+- **`main` is the train.** Everything merges there — features and fixes alike. No long-lived develop/stable branches.
+- **Betas are save points, not promises.** Cut them freely from main's tip whenever there's something to test (`npm run release -- beta.N`). They're marked pre-release, so only the beta update channel sees them. There is no cost to cutting many.
+- **Stable graduates a soaked beta.** When the current beta feels solid, cut `stable` — stable users get everything at once, already tested on the beta channel. Prefer shipping stable a bit *earlier* over letting main drift far ahead of the last stable tag.
+- **The hotfix bar.** A fix earns a stable hotfix **only** if it is one of:
+  1. a user-visible breakage on the current stable,
+  2. a security issue in the *shipped app* (dev-tooling CVEs don't count),
+  3. data loss.
+
+  Everything else rides the train and waits for the next stable — including "valuable but preventive" fixes. Don't cut opportunistic hotfixes; they ship un-soaked code to the most risk-averse channel.
+- **When a hotfix is earned:** if main has no unreleased features, the script's `hotfix.N` works directly. Otherwise use the tag-based cherry-pick flow below — squash merges make each fix a single clean `git cherry-pick`.
+
 ## Conventions
 
 ### Versioning
