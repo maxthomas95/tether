@@ -1,9 +1,12 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { atomicWriteFileSync } from '../db/atomic-write';
 import { getCodexHome } from '../codex/transcripts';
 import { createLogger } from '../logger';
-import { SENTINEL_TOKEN, createOverlayMutex } from './overlay-common';
+import {
+  SENTINEL_TOKEN,
+  createOverlayMutex,
+  localConfigFileStore,
+  type ConfigFileStore,
+} from './overlay-common';
 
 const log = createLogger('codex-overlay');
 
@@ -55,26 +58,18 @@ export interface CodexOverlayContext {
   helperPath: string;
   /** Override target file (tests only). Defaults to `<codex-home>/config.toml`. */
   configPath?: string;
+  /**
+   * Filesystem seam. Defaults to the local fs + atomic-write store; remote
+   * transports (and tests) inject their own. The merge/scrub logic is
+   * exported separately as pure text functions.
+   */
+  store?: ConfigFileStore;
 }
 
 const withMutex = createOverlayMutex();
 
 function resolveConfigPath(ctx: CodexOverlayContext): string {
   return ctx.configPath || path.join(getCodexHome(), 'config.toml');
-}
-
-function readFileOrEmpty(filePath: string): string {
-  try {
-    return fs.readFileSync(filePath, 'utf-8');
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return '';
-    log.warn('config.toml read failed; treating as empty', {
-      filePath,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return '';
-  }
 }
 
 /** True if the line is a `[header]` or `[[array.header]]` start. */
@@ -229,6 +224,73 @@ function joinLines(lines: string[], hadTrailingNewline: boolean): string {
 }
 
 /**
+ * Pure: merge Tether's `notify` entry into config.toml `text`. Scrubs prior
+ * Tether-managed notify lines (idempotent / crash-recovery), then appends a
+ * fresh top-level entry — UNLESS a user-owned `notify` survives the scrub, in
+ * which case we refuse to displace it and only write back if orphans were
+ * removed.
+ *
+ * Returns `{ text, changed }`; `changed: false` means the input is already in
+ * the desired shape and the caller should skip the write. No I/O.
+ *
+ * @param text       Current file content, or null/'' for a missing file.
+ * @param helperPath Absolute path to the hook helper (`…/tether-cli-hook/index.js`).
+ */
+export function mergeCodexConfig(text: string | null, helperPath: string): { text: string; changed: boolean } {
+  const original = text ?? '';
+  const hadTrailingNewline = original.endsWith('\n');
+  let lines = splitLines(original.endsWith('\n') ? original.slice(0, -1) : original);
+
+  const scrub = scrubTetherNotify(lines);
+  lines = scrub.lines;
+
+  // If a non-Tether top-level `notify` survives the scrub, the user is already
+  // wired to something. Don't fight them: leave their config and only write
+  // back if we removed orphans.
+  const remaining = findTopLevelNotifyRanges(lines);
+  if (remaining.length > 0) {
+    if (!scrub.changed) return { text: original, changed: false };
+    return { text: joinLines(lines, hadTrailingNewline || lines.length > 0), changed: true };
+  }
+
+  lines = appendNotifyToTopLevel(lines, buildNotifyLine(helperPath));
+  return { text: joinLines(lines, true), changed: true };
+}
+
+/**
+ * Pure: strip every Tether-managed notify entry from config.toml `text`.
+ * Returns `{ text, changed }`; `changed: false` means nothing to remove.
+ * `null`/'' text → `{ changed: false }`. No I/O.
+ */
+export function scrubCodexConfig(text: string | null): { text: string; changed: boolean } {
+  const original = text ?? '';
+  const hadTrailingNewline = original.endsWith('\n');
+  const lines = splitLines(original.endsWith('\n') ? original.slice(0, -1) : original);
+
+  const scrub = scrubTetherNotify(lines);
+  if (!scrub.changed) return { text: original, changed: false };
+  return { text: joinLines(scrub.lines, hadTrailingNewline || scrub.lines.length > 0), changed: true };
+}
+
+/**
+ * Read config.toml text via the store, degrading any non-ENOENT read failure
+ * to empty (matching the historical Codex behavior — unlike the Claude
+ * overlay, a corrupt-but-present config.toml is treated as empty here because
+ * the merge only ever appends a single top-level line).
+ */
+function readOrEmpty(store: ConfigFileStore, filePath: string): string {
+  try {
+    return store.read(filePath) ?? '';
+  } catch (err) {
+    log.warn('config.toml read failed; treating as empty', {
+      filePath,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return '';
+  }
+}
+
+/**
  * Install Tether's notify entry. Idempotent: scrubs any prior Tether-managed
  * notify line first (whether from a clean uninstall path or a crashed prior
  * run), then appends a fresh one. Leaves a user-owned `notify` line alone —
@@ -236,30 +298,11 @@ function joinLines(lines: string[], hadTrailingNewline: boolean): string {
  */
 export async function installCodexHooks(ctx: CodexOverlayContext): Promise<void> {
   await withMutex(async () => {
+    const store = ctx.store ?? localConfigFileStore;
     const filePath = resolveConfigPath(ctx);
-    const original = readFileOrEmpty(filePath);
-    const hadTrailingNewline = original.endsWith('\n');
-    let lines = splitLines(original.endsWith('\n') ? original.slice(0, -1) : original);
-
-    const scrub = scrubTetherNotify(lines);
-    lines = scrub.lines;
-
-    // If a non-Tether top-level `notify` survives the scrub, the user is
-    // already wired to something. Don't fight them: bail without touching
-    // the file (but still write if we removed orphans).
-    const remaining = findTopLevelNotifyRanges(lines);
-    if (remaining.length > 0) {
-      log.warn('Skipping Codex notify install — user-owned notify entry present', { filePath });
-      if (scrub.changed) {
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        atomicWriteFileSync(filePath, joinLines(lines, hadTrailingNewline || lines.length > 0));
-      }
-      return;
-    }
-
-    lines = appendNotifyToTopLevel(lines, buildNotifyLine(ctx.helperPath));
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    atomicWriteFileSync(filePath, joinLines(lines, true));
+    const merged = mergeCodexConfig(readOrEmpty(store, filePath), ctx.helperPath);
+    if (!merged.changed) return;
+    store.writeAtomic(filePath, merged.text);
     log.info('Codex notify installed', { filePath });
   });
 }
@@ -271,16 +314,12 @@ export async function installCodexHooks(ctx: CodexOverlayContext): Promise<void>
  */
 export async function uninstallCodexHooks(ctx: CodexOverlayContext): Promise<void> {
   await withMutex(async () => {
+    const store = ctx.store ?? localConfigFileStore;
     const filePath = resolveConfigPath(ctx);
-    if (!fs.existsSync(filePath)) return;
-    const original = readFileOrEmpty(filePath);
-    const hadTrailingNewline = original.endsWith('\n');
-    const lines = splitLines(original.endsWith('\n') ? original.slice(0, -1) : original);
-
-    const scrub = scrubTetherNotify(lines);
-    if (!scrub.changed) return;
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    atomicWriteFileSync(filePath, joinLines(scrub.lines, hadTrailingNewline || scrub.lines.length > 0));
+    if (!store.exists(filePath)) return;
+    const scrubbed = scrubCodexConfig(readOrEmpty(store, filePath));
+    if (!scrubbed.changed) return;
+    store.writeAtomic(filePath, scrubbed.text);
     log.info('Codex notify removed', { filePath });
   });
 }

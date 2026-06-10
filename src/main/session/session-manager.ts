@@ -21,7 +21,7 @@ import { detectNewOpencodeSession, releaseOpencodeSessionClaim } from '../openco
 import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId, SessionExitInfo, WaitingReason } from '../../shared/types';
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
-import { envForSession as hookEnvForSession } from '../cli-config/hook-service';
+import { envForSession as hookEnvForSession, revokeSessionToken as revokeHookSessionToken } from '../cli-config/hook-service';
 import { usageService } from '../usage/usage-service';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { createLogger } from '../logger';
@@ -512,7 +512,20 @@ export class SessionManager {
     this.sessions.set(id, session);
     this.callbacksMap.set(id, callbacks);
 
-    statusDetector.register(id, cliTool);
+    // Compute the hook-bridge env up front so we know whether this session is
+    // actually hook-wired before we register it with the status detector. The
+    // env is keyed only on `id` (no transport/resolved-env dependency), so it's
+    // safe to compute here. Returns `{}` when hooks are off, the bridge failed
+    // to boot, or the helper is missing — and is always empty for SSH/Coder
+    // remotes, since the bridge is local-only today.
+    const hookEnv = hookEnvForSession(id);
+    const hookCapable = Object.keys(hookEnv).length > 0;
+
+    // Sessions with no hook env (toggle off, install failed, remote transport)
+    // register hookCapable=false so the byte-level cadence fallback stays
+    // engaged — otherwise a Claude/Codex session whose hooks never fire would
+    // sit "running" until the 10-minute safety timeout.
+    statusDetector.register(id, cliTool, { hookCapable });
 
     let transport: SessionTransport;
     try {
@@ -583,11 +596,11 @@ export class SessionManager {
     let resolvedEnv: Record<string, string>;
     try {
       resolvedEnv = await resolveAll(mergedEnv);
-      // Layer the hook-bridge env on top, AFTER vault resolution. The hook
-      // env is short-lived and process-local — we never want it to traverse
-      // the vault layer (which would log/error on opaque values), and the
-      // user can never override these keys via their own env config.
-      const hookEnv = hookEnvForSession(id);
+      // Layer the hook-bridge env (computed above) on top, AFTER vault
+      // resolution. The hook env is short-lived and process-local — we never
+      // want it to traverse the vault layer (which would log/error on opaque
+      // values), and the user can never override these keys via their own env
+      // config.
       Object.assign(resolvedEnv, hookEnv);
     } catch (err) {
       log.error('Env var resolution failed', { id, error: err instanceof Error ? err.message : String(err) });
@@ -885,6 +898,10 @@ export class SessionManager {
     if (session) {
       log.info('Removing session', { id });
       statusDetector.unregister(id);
+      // Revoke any per-session hook token. No-op for local sessions (they use
+      // the boot-global token); required once remote sessions get scoped
+      // tokens so a torn-down session can't keep authorizing hook frames.
+      revokeHookSessionToken(id);
       session.codexDetectCancel?.();
       session.copilotDetectCancel?.();
       session.opencodeDetectCancel?.();

@@ -158,6 +158,17 @@ export function envForSession(tetherSessionId: string): Record<string, string> {
 }
 
 /**
+ * Revoke any per-session hook token for a torn-down session. Harmless today
+ * (local sessions all share the boot-global token, which this never touches),
+ * but required once remote sessions get per-session scoped tokens — a revoked
+ * token must stop authorizing forwarded hook frames immediately. No-op when
+ * the bridge isn't running.
+ */
+export function revokeSessionToken(tetherSessionId: string): void {
+  bridge?.revokeSessionToken(tetherSessionId);
+}
+
+/**
  * For tests and Settings UI: report whether the bridge is currently
  * accepting events. Doesn't reflect overlay-install status — that can be
  * false even when the bridge is up (e.g. if settings.json failed to

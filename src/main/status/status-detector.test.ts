@@ -289,4 +289,91 @@ describe('StatusDetector', () => {
       expect(detector.getWaitingReason('s1')).toBe('permission');
     });
   });
+
+  describe('per-session hookCapable gating', () => {
+    it('register defaults hook-enabled CLIs to hookCapable (cadence suppressed)', () => {
+      // No explicit opts → claude/codex default to hookCapable, so the
+      // byte-level idle fallback is suppressed mid-turn.
+      detector.register('s1', 'claude');
+      feed('s1', 'claude output');
+      vi.advanceTimersByTime(30000 + 500);
+      expect(detector.getState('s1')).toBe('running');
+    });
+
+    it('register defaults non-hook CLIs to NOT hookCapable (cadence engaged)', () => {
+      detector.register('s1', 'opencode');
+      feed('s1', 'output');
+      vi.advanceTimersByTime(3000 + 500);
+      expect(detector.getState('s1')).toBe('waiting');
+    });
+
+    it('hookCapable=false on a hook CLI engages the cadence fallback (the bug fix)', () => {
+      // A claude session whose hooks were never wired (toggle off / install
+      // failed / remote transport). Without per-session gating this would sit
+      // "running" until the 10-min safety timeout. With it, the byte-level
+      // fallback fires after the normal silence windows.
+      detector.register('s1', 'claude', { hookCapable: false });
+      feed('s1', 'claude output');
+      expect(detector.getState('s1')).toBe('running');
+
+      vi.advanceTimersByTime(3000 + 500);
+      expect(detector.getState('s1')).toBe('waiting');
+
+      vi.advanceTimersByTime(27000 + 500);
+      expect(detector.getState('s1')).toBe('idle');
+    });
+
+    it('hookCapable=true on a hook CLI suppresses the cadence fallback', () => {
+      detector.register('s1', 'codex', { hookCapable: true });
+      feed('s1', 'codex output');
+      vi.advanceTimersByTime(30000 + 500);
+      expect(detector.getState('s1')).toBe('running');
+    });
+
+    it('setHookCapable(false) mid-session re-engages cadence on the next chunk', () => {
+      // Starts hook-capable: silence is suppressed.
+      detector.register('s1', 'claude', { hookCapable: true });
+      feed('s1', 'first chunk');
+      vi.advanceTimersByTime(30000 + 500);
+      expect(detector.getState('s1')).toBe('running');
+
+      // Hooks drop out (e.g. bridge died). Without waiting out the 10-min
+      // safety timeout, the very next data chunk must re-arm cadence timers.
+      detector.setHookCapable('s1', false);
+      feed('s1', 'next chunk');
+      expect(detector.getState('s1')).toBe('running');
+
+      vi.advanceTimersByTime(3000 + 500);
+      expect(detector.getState('s1')).toBe('waiting');
+      vi.advanceTimersByTime(27000 + 500);
+      expect(detector.getState('s1')).toBe('idle');
+    });
+
+    it('setHookCapable(true) mid-session restores cadence suppression', () => {
+      detector.register('s1', 'claude', { hookCapable: false });
+      feed('s1', 'first chunk');
+      vi.advanceTimersByTime(3000 + 500);
+      expect(detector.getState('s1')).toBe('waiting'); // cadence fired
+
+      detector.setHookCapable('s1', true);
+      feed('s1', 'resumed output');
+      expect(detector.getState('s1')).toBe('running');
+      // Now suppressed again: no idle through the normal silence windows.
+      vi.advanceTimersByTime(30000 + 500);
+      expect(detector.getState('s1')).toBe('running');
+    });
+
+    it('setHookCapable is a no-op for unknown sessions', () => {
+      detector.setHookCapable('does-not-exist', false);
+      expect(stateChanges).toHaveLength(0);
+    });
+
+    it('markTurnComplete still works for a hook-capable session', () => {
+      detector.register('s1', 'claude', { hookCapable: true });
+      feed('s1', 'output');
+      detector.markTurnComplete('s1');
+      expect(detector.getState('s1')).toBe('waiting');
+      expect(detector.getWaitingReason('s1')).toBe('idle');
+    });
+  });
 });

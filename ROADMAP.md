@@ -32,6 +32,7 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
   - [done] Codex `notify` overlay — mirror of the Claude overlay for `~/.codex/config.toml`; hand-rolled TOML merger that only touches the top-level `notify =` line, refuses to displace a user-owned notify, scrubs orphans, and routes through the same `tether-cli-hook` binary (`--codex` mode).
   - [done] Settings UI toggle for `cliHooksEnabled` — opt-in checkbox under Settings → Sessions; default-off; only literal `'true'` enables. Takes effect on next launch.
   - [planned — deferred to 1.x, not in 1.0] SSH / Coder remote installation — remote envs still need the overlay laid down on the box where the CLI runs. Remote sessions fall back to cadence-based status detection until this ships.
+    - [in progress] Phase 1 groundwork landed: per-session `hookCapable` gating in the detector, a stream-agnostic `hook-frame-server` with per-session token registry, and pure overlay merge/scrub cores behind a `ConfigFileStore` — all prerequisites for serving hooks over a forwarded remote stream.
   - Known followup: bang re-fires after navigating away from an acked session — to investigate with live tracing.
 
 ### 3. Notifications & error surfacing

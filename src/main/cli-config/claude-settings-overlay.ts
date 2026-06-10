@@ -1,10 +1,13 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { atomicWriteFileSync } from '../db/atomic-write';
 import { getClaudeHome } from '../claude/transcripts';
 import { createLogger } from '../logger';
-import { quoteShellArg } from '../../shared/shell-quote';
-import { SENTINEL_TOKEN, createOverlayMutex } from './overlay-common';
+import { quoteShellArg, type ShellPlatform } from '../../shared/shell-quote';
+import {
+  SENTINEL_TOKEN,
+  createOverlayMutex,
+  localConfigFileStore,
+  type ConfigFileStore,
+} from './overlay-common';
 
 const log = createLogger('claude-overlay');
 
@@ -32,6 +35,18 @@ export interface ClaudeOverlayContext {
   helperPath: string;
   /** Override target file (tests only). Defaults to `<claude-home>/settings.json`. */
   settingsPath?: string;
+  /**
+   * Filesystem seam. Defaults to the local fs + atomic-write store; remote
+   * transports (and tests) inject their own. Pure merge/scrub logic is
+   * exported separately and takes no store.
+   */
+  store?: ConfigFileStore;
+  /**
+   * Shell platform used to quote the helper path in the hook command.
+   * Defaults to the current platform (unchanged behavior). Lets a remote
+   * (e.g. POSIX) install quote correctly from a Windows host.
+   */
+  platform?: ShellPlatform;
 }
 
 const withMutex = createOverlayMutex();
@@ -53,27 +68,33 @@ function resolveSettingsPath(ctx: ClaudeOverlayContext): string {
   return ctx.settingsPath || path.join(getClaudeHome(), 'settings.json');
 }
 
-function readSettings(filePath: string): SettingsShape {
+/**
+ * Parse settings text into the working shape. A non-object top-level value is
+ * treated as empty (warned). Unparseable text THROWS — the caller must never
+ * overwrite mystery content. `null` text (missing file) yields `{}`.
+ *
+ * `label` only flavors the thrown error / log line (file path in practice).
+ */
+function parseSettings(text: string | null, label: string): SettingsShape {
+  if (text === null) return {};
   try {
-    const raw = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(text);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return parsed as SettingsShape;
     }
-    log.warn('settings.json is not an object; treating as empty', { filePath });
+    log.warn('settings.json is not an object; treating as empty', { label });
     return {};
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return {};
-    log.warn('settings.json read/parse failed; treating as empty', {
-      filePath,
-      error: err instanceof Error ? err.message : String(err),
-    });
     // Bail rather than mangle: throw so the caller can decide. The IPC
     // boundary above us turns this into a user-visible toast — better than
     // silently overwriting a malformed-but-recoverable file.
-    throw new Error(`Unable to parse ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`Unable to parse ${label}: ${err instanceof Error ? err.message : String(err)}`);
   }
+}
+
+/** Serialize a settings object back to the on-disk text form (2-space, trailing newline). */
+function serializeSettings(settings: SettingsShape): string {
+  return JSON.stringify(settings, null, 2) + '\n';
 }
 
 function isTetherManaged(hook: CommandHook | undefined): boolean {
@@ -157,38 +178,74 @@ function scrubTetherEntries(settings: SettingsShape): boolean {
  * Render the absolute path to the helper as a shell command string.
  * `helperPath` is internally derived, but it still crosses the user's login
  * shell when Claude runs the hook, so keep the quoting rules centralized.
+ *
+ * `platform` selects the quoting rules — defaults to the current platform so
+ * local behavior is unchanged; a remote POSIX install passes `'posix'`.
  */
-function helperCommand(helperPath: string, cliFlag: '--claude' | '--codex'): string {
-  return `node ${quoteShellArg(helperPath)} ${cliFlag}`;
+function helperCommand(
+  helperPath: string,
+  cliFlag: '--claude' | '--codex',
+  platform?: ShellPlatform,
+): string {
+  return `node ${quoteShellArg(helperPath, platform)} ${cliFlag}`;
 }
 
-function buildTetherEntries(helperPath: string): {
-  notification: NotificationGroup;
-  stop: StopEntryGroup;
-} {
-  const cmd = helperCommand(helperPath, '--claude');
-  // Both Notification and Stop entries take the same wrapper shape:
-  // { matcher?: string; hooks: [{ type, command }] }. Stop doesn't accept
-  // matchers but the runtime still requires the `hooks` array — bare
-  // {type, command} entries fail validation with "Expected array, but
-  // received undefined" even though the docs example shows the bare form.
-  //
-  // Notification matcher: docs claim omitting = "match all", but in practice
-  // Claude appears to only fire entries whose matcher field is set. We list
-  // every documented event type explicitly so the match is unambiguous and
-  // future-Claude additions can be appended here as we want them.
-  const NOTIFICATION_MATCHER = [
-    'permission_prompt',
-    'idle_prompt',
-    'auth_success',
-    'elicitation_dialog',
-    'elicitation_complete',
-    'elicitation_response',
-  ].join('|');
-  return {
-    notification: { matcher: NOTIFICATION_MATCHER, hooks: [{ type: 'command', command: cmd }] },
-    stop: { hooks: [{ type: 'command', command: cmd }] },
-  };
+// Both Notification and Stop entries take the same wrapper shape:
+// { matcher?: string; hooks: [{ type, command }] }. Stop doesn't accept
+// matchers but the runtime still requires the `hooks` array — bare
+// {type, command} entries fail validation with "Expected array, but
+// received undefined" even though the docs example shows the bare form.
+//
+// Notification matcher: docs claim omitting = "match all", but in practice
+// Claude appears to only fire entries whose matcher field is set. We list
+// every documented event type explicitly so the match is unambiguous and
+// future-Claude additions can be appended here as we want them.
+const NOTIFICATION_MATCHER = [
+  'permission_prompt',
+  'idle_prompt',
+  'auth_success',
+  'elicitation_dialog',
+  'elicitation_complete',
+  'elicitation_response',
+].join('|');
+
+/**
+ * Pure: additively merge Tether's hook entries into `text` (the current
+ * settings.json content, or null/empty for a missing file) and return the
+ * rewritten text. Scrubs prior Tether-managed entries first (idempotent /
+ * crash-recovery), then appends fresh Notification + Stop entries.
+ *
+ * THROWS if `text` is present but unparseable — never returns mangled output.
+ * No I/O — drive it through a ConfigFileStore at the call site.
+ *
+ * @param helperCmd Pre-rendered hook command (`node <helper> --claude`).
+ */
+export function mergeClaudeSettings(text: string | null, helperCmd: string): string {
+  const settings = parseSettings(text, 'settings.json');
+  scrubTetherEntries(settings);
+
+  settings.hooks = settings.hooks || {};
+  const notif = Array.isArray(settings.hooks.Notification) ? settings.hooks.Notification : [];
+  notif.push({ matcher: NOTIFICATION_MATCHER, hooks: [{ type: 'command', command: helperCmd }] });
+  settings.hooks.Notification = notif;
+
+  const stop = Array.isArray(settings.hooks.Stop) ? settings.hooks.Stop : [];
+  stop.push({ hooks: [{ type: 'command', command: helperCmd }] });
+  settings.hooks.Stop = stop;
+
+  return serializeSettings(settings);
+}
+
+/**
+ * Pure: strip every Tether-managed hook entry from `text`. Returns the
+ * rewritten text and whether anything changed (callers skip the write when
+ * unchanged). THROWS on unparseable input. `null` text → `{ changed: false }`.
+ */
+export function scrubClaudeSettings(text: string | null): { text: string; changed: boolean } {
+  if (text === null) return { text: '', changed: false };
+  const settings = parseSettings(text, 'settings.json');
+  const changed = scrubTetherEntries(settings);
+  return { text: serializeSettings(settings), changed };
 }
 
 /**
@@ -201,22 +258,11 @@ function buildTetherEntries(helperPath: string): {
  */
 export async function installClaudeHooks(ctx: ClaudeOverlayContext): Promise<void> {
   await withMutex(async () => {
+    const store = ctx.store ?? localConfigFileStore;
     const filePath = resolveSettingsPath(ctx);
-    const settings = readSettings(filePath);
-    scrubTetherEntries(settings);
-
-    const entries = buildTetherEntries(ctx.helperPath);
-    settings.hooks = settings.hooks || {};
-    const notif = Array.isArray(settings.hooks.Notification) ? settings.hooks.Notification : [];
-    notif.push(entries.notification);
-    settings.hooks.Notification = notif;
-
-    const stop = Array.isArray(settings.hooks.Stop) ? settings.hooks.Stop : [];
-    stop.push(entries.stop);
-    settings.hooks.Stop = stop;
-
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    atomicWriteFileSync(filePath, JSON.stringify(settings, null, 2) + '\n');
+    const helperCmd = helperCommand(ctx.helperPath, '--claude', ctx.platform);
+    const merged = mergeClaudeSettings(store.read(filePath), helperCmd);
+    store.writeAtomic(filePath, merged);
     log.info('Claude hooks installed', { filePath });
   });
 }
@@ -228,12 +274,12 @@ export async function installClaudeHooks(ctx: ClaudeOverlayContext): Promise<voi
  */
 export async function uninstallClaudeHooks(ctx: ClaudeOverlayContext): Promise<void> {
   await withMutex(async () => {
+    const store = ctx.store ?? localConfigFileStore;
     const filePath = resolveSettingsPath(ctx);
-    if (!fs.existsSync(filePath)) return;
-    const settings = readSettings(filePath);
-    const changed = scrubTetherEntries(settings);
+    if (!store.exists(filePath)) return;
+    const { text, changed } = scrubClaudeSettings(store.read(filePath));
     if (!changed) return;
-    atomicWriteFileSync(filePath, JSON.stringify(settings, null, 2) + '\n');
+    store.writeAtomic(filePath, text);
     log.info('Claude hooks removed', { filePath });
   });
 }
