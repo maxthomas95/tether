@@ -23,12 +23,19 @@ export interface JobsConfig {
   path?: string;
 }
 
+/** Trim trailing slashes without a regex (avoids the SonarCloud S5852 ReDoS heuristic). */
+function stripTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === '/') end--;
+  return url.slice(0, end);
+}
+
 /** Read the jobs* keys from the flat string config. Single source of truth for defaults. */
 export function readJobsConfig(): JobsConfig {
   const cfg = getDb().config;
   return {
     enabled: cfg.jobsEnabled === 'off' ? 'off' : 'auto',
-    url: (cfg.jobsUrl || JOBS_DEFAULT_URL).replace(/\/+$/, ''),
+    url: stripTrailingSlashes(cfg.jobsUrl || JOBS_DEFAULT_URL),
     token: cfg.jobsToken || undefined,
     path: cfg.jobsPath || undefined,
   };
