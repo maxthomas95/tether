@@ -7,6 +7,7 @@ All shortcuts below are the defaults. Every one is **remappable** in [Settings â
 | Shortcut | Action |
 |----------|--------|
 | **Ctrl+N** | Create a new session |
+| **Ctrl+P** | Find a session (quick switcher) |
 | **Ctrl+W** | Stop the active session (SIGTERM) |
 
 ## Navigation

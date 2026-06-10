@@ -1,6 +1,7 @@
 export type KeybindingAction =
   | 'session.new'
   | 'session.stop'
+  | 'search.open'
   | 'sidebar.toggle'
   | 'settings.open'
   | 'shortcuts.show'
@@ -34,6 +35,7 @@ export type KeybindingOverrides = Partial<Record<KeybindingAction, Chord | null>
 export const ALL_ACTIONS: KeybindingAction[] = [
   'session.new',
   'session.stop',
+  'search.open',
   'sidebar.toggle',
   'settings.open',
   'shortcuts.show',
@@ -64,6 +66,7 @@ export const ALL_ACTIONS: KeybindingAction[] = [
 export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, Chord> = {
   'session.new': 'ctrl+n',
   'session.stop': 'ctrl+w',
+  'search.open': 'ctrl+p',
   'sidebar.toggle': 'ctrl+b',
   'settings.open': 'ctrl+,',
   'shortcuts.show': 'ctrl+/',
@@ -94,6 +97,7 @@ export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, Chord> = {
 export const ACTION_LABELS: Record<KeybindingAction, string> = {
   'session.new': 'New session',
   'session.stop': 'Stop current session',
+  'search.open': 'Find session',
   'sidebar.toggle': 'Toggle sidebar',
   'settings.open': 'Open settings',
   'shortcuts.show': 'Show keyboard shortcuts',
@@ -126,6 +130,7 @@ export type ActionGroup = 'Session' | 'Switch' | 'Panes' | 'View' | 'Window' | '
 export const ACTION_GROUPS: Record<KeybindingAction, ActionGroup> = {
   'session.new': 'Session',
   'session.stop': 'Session',
+  'search.open': 'Session',
   'session.next': 'Session',
   'session.prev': 'Session',
   'session.switch.1': 'Switch',

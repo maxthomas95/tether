@@ -1315,6 +1315,90 @@ textarea:focus-visible,
   border-top: 1px solid var(--border-color);
 }
 
+/* Session search (Ctrl+P quick switcher) — a compact VS Code-style quick-open:
+ * query input on top, scrollable result list below. Pinned slightly above
+ * center so it reads as a launcher rather than a full modal. */
+.session-search-dialog {
+  width: 560px;
+  max-width: 90vw;
+  align-self: flex-start;
+  margin-top: 12vh;
+  padding: var(--space-2);
+  gap: var(--space-2);
+}
+
+.session-search-input-row {
+  padding: var(--space-1);
+}
+
+.session-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  outline: none;
+}
+
+.session-search-input:focus {
+  border-color: var(--accent);
+}
+
+.session-search-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.session-search-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.session-search-empty {
+  padding: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.session-search-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.session-search-option--selected {
+  background: var(--bg-active);
+}
+
+.session-search-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+
+.session-search-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
 /* Form elements */
 .form-group {
   margin-bottom: var(--space-3);

@@ -10,6 +10,7 @@ export type PaneDirection = 'left' | 'right' | 'up' | 'down';
 
 export interface ShortcutActions {
   onNewSession: () => void;
+  onOpenSearch: () => void;
   onSwitchSession: (index: number) => void;
   onNextSession: () => void;
   onPrevSession: () => void;
@@ -36,6 +37,7 @@ function dispatch(action: KeybindingAction, actions: ShortcutActions): void {
   switch (action) {
     case 'session.new': actions.onNewSession(); return;
     case 'session.stop': actions.onStopSession(); return;
+    case 'search.open': actions.onOpenSearch(); return;
     case 'sidebar.toggle': actions.onToggleSidebar(); return;
     case 'settings.open': actions.onOpenSettings(); return;
     case 'shortcuts.show': actions.onShowShortcuts(); return;
