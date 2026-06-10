@@ -190,7 +190,7 @@ Settings:
 
 - **Server URL** — where to probe (default `http://localhost:8780`).
 - **Token** — sent as Bearer auth on webhook posts; also injected as `JOBS_TOKEN`/`WEBHOOK_TOKEN` when Tether launches the server.
-- **Local JOBS folder** — optional path to a JOBS checkout. When set and nothing answers the probe, Tether launches the built server (`dist-server/`) from that folder using its own runtime (no Node install needed) and stops it on quit. An instance Tether didn't start is never touched. The folder must be built first (`npm install && npm run build`).
+- **Local JOBS folder** — optional path to a JOBS checkout. When set and nothing answers the probe, Tether launches the built server (`dist-server/`) from that folder using Node.js from your PATH, and stops it on quit. An instance Tether didn't start is never touched. The folder must be built first (`npm install && npm run build`) — which means Node is already installed on any machine where this works.
 - **Test now** — saves the fields above and re-probes immediately.
 
 ### Diagnostics export
