@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { EnvVarEditor } from './EnvVarEditor';
 import { MigrateToVaultDialog } from './MigrateToVaultDialog';
 import { VaultPickerDialog } from './VaultPickerDialog';
@@ -486,6 +487,20 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   };
 
   useEscapeKey(onClose, isOpen);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, isOpen);
+
+  // Keyboard navigation for the section tablist (ArrowUp/ArrowDown move
+  // between tabs and move focus, per the WAI-ARIA tablist pattern).
+  const handleTablistKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const idx = SECTIONS.findIndex(s => s.id === activeSection);
+    const delta = e.key === 'ArrowDown' ? 1 : -1;
+    const next = SECTIONS[(idx + delta + SECTIONS.length) % SECTIONS.length];
+    setActiveSection(next.id);
+    document.getElementById(`settings-tab-${next.id}`)?.focus();
+  };
 
   if (!isOpen) return null;
 
@@ -496,17 +511,22 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
   return (
     <div className="dialog-overlay">
-      <div className="dialog dialog--settings" role="dialog" aria-modal="true">
+      <div ref={dialogRef} className="dialog dialog--settings" role="dialog" aria-modal="true" aria-label="Settings">
         <div className="dialog-header">
           <span>Settings</span>
-          <button className="dialog-close" onClick={onClose}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={onClose}>&times;</button>
         </div>
         <div className="dialog-body">
         <div className="settings-layout">
-          <aside className="settings-nav">
+          <aside className="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections" onKeyDown={handleTablistKeyDown}>
             {SECTIONS.map(s => (
               <button
                 key={s.id}
+                id={`settings-tab-${s.id}`}
+                role="tab"
+                aria-selected={activeSection === s.id}
+                aria-controls="settings-tabpanel"
+                tabIndex={activeSection === s.id ? 0 : -1}
                 className={`settings-nav-item${activeSection === s.id ? ' settings-nav-item--active' : ''}`}
                 onClick={() => setActiveSection(s.id)}
               >
@@ -514,7 +534,12 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               </button>
             ))}
           </aside>
-          <div className="settings-content">
+          <div
+            className="settings-content"
+            role="tabpanel"
+            id="settings-tabpanel"
+            aria-labelledby={`settings-tab-${activeSection}`}
+          >
 
           {activeSection === 'general' && (
             <>

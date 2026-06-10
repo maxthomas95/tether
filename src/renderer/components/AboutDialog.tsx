@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import logoSrc from '../assets/logo.png';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface AboutDialogProps {
   isOpen: boolean;
@@ -15,6 +16,8 @@ type ExportState =
 
 export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
   useEscapeKey(onClose, isOpen);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, isOpen);
   const [exportState, setExportState] = useState<ExportState>({ kind: 'idle' });
 
   if (!isOpen) return null;
@@ -42,10 +45,10 @@ export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
     >
-      <div className="dialog" style={{ width: 420 }}>
+      <div ref={dialogRef} className="dialog" role="dialog" aria-modal="true" aria-label="About Tether" style={{ width: 420 }}>
         <div className="dialog-header">
           <span>About Tether</span>
-          <button className="dialog-close" onClick={onClose}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={onClose}>&times;</button>
         </div>
         <div className="dialog-body" style={{ textAlign: 'center', padding: '20px 20px 16px' }}>
           <img src={logoSrc} alt="Tether" style={{ width: 64, height: 64, marginBottom: 12 }} />

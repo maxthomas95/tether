@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
 import { HelpAnchor } from '../HelpAnchor';
 import { VaultPickerDialog } from '../VaultPickerDialog';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import type { EnvironmentType } from '../../../shared/types';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../../utils/vault-path';
 
@@ -90,6 +91,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
   }, [isOpen, editing, initialType]);
 
   useEscapeKey(onClose, isOpen);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, isOpen);
 
   if (!isOpen) return null;
 
@@ -176,7 +179,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
 
   return (
     <div className="dialog-overlay">
-      <div className="dialog" role="dialog" aria-modal="true" onKeyDown={handleKeyDown}>
+      <div ref={dialogRef} className="dialog" role="dialog" aria-modal="true" aria-label={editing ? 'Edit Environment' : 'New Environment'} onKeyDown={handleKeyDown}>
         <div className="dialog-header">
           <span>{editing ? 'Edit Environment' : 'New Environment'}</span>
           <HelpAnchor
@@ -185,7 +188,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
             label={type === 'ssh' ? 'SSH environments' : type === 'coder' ? 'Coder environments' : 'Local environment'}
             className="dialog-header-help"
           />
-          <button className="dialog-close" onClick={onClose}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={onClose}>&times;</button>
         </div>
         <div className="dialog-body">
           <div className="form-group">

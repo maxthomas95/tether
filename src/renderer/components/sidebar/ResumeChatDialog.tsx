@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import type { CliToolId, TranscriptInfo } from '../../../shared/types';
 
 interface ResumeChatDialogProps {
@@ -44,6 +45,8 @@ export function ResumeChatDialog({ isOpen, workingDir, cliTool, currentTranscrip
   }, [isOpen, workingDir, cliTool]);
 
   useEscapeKey(onClose, isOpen);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, isOpen);
   if (!isOpen) return null;
 
   return (
@@ -53,10 +56,10 @@ export function ResumeChatDialog({ isOpen, workingDir, cliTool, currentTranscrip
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
     >
-      <div className="dialog dialog--wide">
+      <div ref={dialogRef} className="dialog dialog--wide" role="dialog" aria-modal="true" aria-label="Resume previous conversation">
         <div className="dialog-header">
           <span>Resume previous conversation</span>
-          <button className="dialog-close" onClick={onClose}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={onClose}>&times;</button>
         </div>
         <div className="dialog-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
           <p className="form-hint" style={{ marginBottom: 12 }}>

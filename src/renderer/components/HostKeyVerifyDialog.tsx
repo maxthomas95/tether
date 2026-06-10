@@ -1,5 +1,7 @@
+import { useRef } from 'react';
 import type { HostVerifyRequest } from '../../shared/types';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface HostKeyVerifyDialogProps {
   request: HostVerifyRequest | null;
@@ -13,6 +15,8 @@ function formatFingerprint(fingerprint: string): string {
 
 export function HostKeyVerifyDialog({ request, onTrust, onReject }: HostKeyVerifyDialogProps) {
   useEscapeKey(onReject, request !== null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, request !== null);
   if (!request) return null;
 
   const target = request.username
@@ -26,10 +30,10 @@ export function HostKeyVerifyDialog({ request, onTrust, onReject }: HostKeyVerif
       onClick={(e) => { if (e.target === e.currentTarget) onReject(); }}
       onKeyDown={(e) => { if (e.key === 'Escape') onReject(); }}
     >
-      <div className="dialog" style={{ width: 520 }}>
+      <div ref={dialogRef} className="dialog" role="dialog" aria-modal="true" aria-label="Verify SSH host key" style={{ width: 520 }}>
         <div className="dialog-header">
           <span>Verify SSH host key</span>
-          <button className="dialog-close" onClick={onReject}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={onReject}>&times;</button>
         </div>
         <div className="dialog-body" style={{ padding: '16px 20px' }}>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.5 }}>

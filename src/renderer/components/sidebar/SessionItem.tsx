@@ -3,6 +3,7 @@ import type { SessionInfo, SessionState } from '../../../shared/types';
 import { CliToolBadge } from '../CliToolBadge';
 import { PaneLocationBadge } from './PaneLocationBadge';
 import { onKeyActivate, stopPropagationOnKey } from '../../utils/a11y';
+import { abbreviatePath } from '../../utils/paths';
 import type { PaneLocation } from '../../lib/layout-tree';
 
 interface SessionItemProps {
@@ -177,6 +178,8 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
     >
       <span
         className={`status-dot status-dot--${getStatusClass(session.state, session.waitingReason, isVisibleInLayout, bangSuppressed)}`}
+        role="status"
+        aria-label={getStatusLabel(session.state, session.waitingReason, isVisibleInLayout, bangSuppressed)}
         title={getStatusTooltip(session.state, session.waitingReason, isVisibleInLayout, bangSuppressed)}
       />
       <div className="session-info">
@@ -377,11 +380,41 @@ function getStatusTooltip(
   return undefined;
 }
 
-function abbreviatePath(p: string): string {
-  const home = window.electronAPI.homeDir;
-  if (home && p.startsWith(home)) {
-    return '~' + p.slice(home.length).replace(/\\/g, '/');
+/**
+ * Always-present screen-reader label for the status dot. Unlike the tooltip
+ * (which only surfaces extra context for waiting/idle), every visual state
+ * gets a spoken label. The bang/waiting-permission affordance — which renders
+ * as a "!" pseudo-element — is announced explicitly as waiting on a permission
+ * prompt so non-sighted users get the same call-out as the visual bang.
+ */
+function getStatusLabel(
+  state: SessionState,
+  waitingReason: 'idle' | 'permission' | undefined,
+  isVisibleInLayout: boolean | undefined,
+  bangSuppressed: boolean | undefined,
+): string {
+  // Mirror getStatusClass: a permission prompt, or an un-acked invisible wait,
+  // shows the bang affordance.
+  const showsBang =
+    (state === 'waiting' || state === 'idle') &&
+    (waitingReason === 'permission' || (isVisibleInLayout === false && !bangSuppressed));
+  if (showsBang) {
+    return waitingReason === 'permission'
+      ? 'Status: waiting on a permission prompt'
+      : 'Status: waiting (not currently visible)';
   }
-  const parts = p.split(/[\\/]/);
-  return parts.length > 2 ? `.../${parts.slice(-2).join('/')}` : p;
+  switch (state) {
+    case 'running':
+    case 'starting':
+      return 'Status: running';
+    case 'waiting':
+      return 'Status: waiting for your input';
+    case 'idle':
+      return 'Status: idle';
+    case 'stopped':
+    case 'dead':
+      return 'Status: stopped';
+    default:
+      return 'Status: idle';
+  }
 }

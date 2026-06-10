@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface VaultLoginPromptDialogProps {
   isOpen: boolean;
@@ -35,6 +36,8 @@ export function VaultLoginPromptDialog({ isOpen, reason, onLoginSuccess, onCance
   };
 
   useEscapeKey(handleCancel, isOpen);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, isOpen);
   if (!isOpen) return null;
 
   const handleLogin = async () => {
@@ -61,10 +64,10 @@ export function VaultLoginPromptDialog({ isOpen, reason, onLoginSuccess, onCance
       role="presentation"
       onClick={(e) => { if (e.target === e.currentTarget) handleCancel(); }}
     >
-      <div className="dialog">
+      <div ref={dialogRef} className="dialog" role="dialog" aria-modal="true" aria-label="Vault login required">
         <div className="dialog-header">
           <span>Vault login required</span>
-          <button className="dialog-close" onClick={handleCancel}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={handleCancel}>&times;</button>
         </div>
         <div className="dialog-body">
           <p className="form-hint" style={{ marginBottom: 8 }}>

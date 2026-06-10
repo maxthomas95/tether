@@ -6,6 +6,7 @@ import type { LayoutAction } from '../hooks/useLayoutState';
 import { DropZoneOverlay } from './DropZoneOverlay';
 import { CliToolBadge } from './CliToolBadge';
 import { PaneStatusStrip } from './PaneStatusStrip';
+import { abbreviatePath } from '../utils/paths';
 
 interface TerminalPaneProps {
   paneId: string;
@@ -288,13 +289,4 @@ function getStatusClass(state?: SessionState): string {
     default:
       return 'idle';
   }
-}
-
-function abbreviatePath(p: string): string {
-  const home = window.electronAPI.homeDir;
-  if (home && p.startsWith(home)) {
-    return '~' + p.slice(home.length).replace(/\\/g, '/');
-  }
-  const parts = p.split(/[\\/]/);
-  return parts.length > 2 ? `.../${parts.slice(-2).join('/')}` : p;
 }
