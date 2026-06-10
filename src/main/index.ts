@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'node:path';
 import squirrelStartup from 'electron-squirrel-startup';
+import { installProcessGuards } from './process-guards';
 import { registerIpcHandlers } from './ipc/handlers';
 import { sessionManager } from './session/session-manager';
 import { quotaService } from './quota/quota-service';
@@ -15,6 +16,11 @@ import { createNotificationService, readPrefsFromConfig } from './notifications/
 import { getLoaderTheme, DEFAULT_LOADER_THEME } from '../shared/loader-themes';
 import { IPC } from '../shared/constants';
 import { createLogger, closeLogger } from './logger';
+
+// Install global error handlers before anything else so that errors thrown
+// during startup (vault resolution, SSH init, etc.) are captured and logged
+// rather than silently crashing the process and killing every PTY session.
+installProcessGuards();
 
 const log = createLogger('app');
 
