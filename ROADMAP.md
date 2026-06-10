@@ -31,7 +31,7 @@ Status legend: **[planned]** not started · **[in progress]** active · **[block
 - [done] **Smarter waiting signals via CLI hooks** — Claude `Notification`/`Stop` hook integration shipped in PR #109: `cli-config/` overlay subsystem merges Tether entries into the user's `~/.claude/settings.json` (additive, sentinel-scoped, scrubbed on shutdown and on next-boot crash recovery), bridged into the status detector via a token-authed local socket with a stdlib-only Node helper bundled as a Forge `extraResource`. Adds a `waitingReason: 'idle' | 'permission'` sub-state plumbed through to a focus-aware amber-with-bang sidebar dot (see-once-then-quiet semantics). Phase 1b polish:
   - [done] Codex `notify` overlay — mirror of the Claude overlay for `~/.codex/config.toml`; hand-rolled TOML merger that only touches the top-level `notify =` line, refuses to displace a user-owned notify, scrubs orphans, and routes through the same `tether-cli-hook` binary (`--codex` mode).
   - [done] Settings UI toggle for `cliHooksEnabled` — opt-in checkbox under Settings → Sessions; default-off; only literal `'true'` enables. Takes effect on next launch.
-  - [planned] SSH / Coder remote installation — remote envs still need the overlay laid down on the box where the CLI runs.
+  - [planned — deferred to 1.x, not in 1.0] SSH / Coder remote installation — remote envs still need the overlay laid down on the box where the CLI runs. Remote sessions fall back to cadence-based status detection until this ships.
   - Known followup: bang re-fires after navigating away from an acked session — to investigate with live tracing.
 
 ### 3. Notifications & error surfacing

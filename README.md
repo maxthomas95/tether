@@ -79,7 +79,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 
 ### Cost & quota
 
-- **Usage tracking** for Claude Code, Codex CLI, and OpenCode — per-session and global, computed from the CLI's own transcripts using a vendored [LiteLLM](https://github.com/BerriAI/litellm) pricing table
+- **Usage tracking** for Claude Code, Codex CLI, and OpenCode — per-session and global, computed from the CLI's own transcripts using a vendored [LiteLLM](https://github.com/BerriAI/litellm) pricing table. Copilot CLI sessions work fully, but cost tracking is blocked upstream until Copilot persists token usage ([copilot-cli#2947](https://github.com/github/copilot-cli/issues/2947))
 - **Usage history dialog** — Daily / Weekly / Monthly rollups with per-environment cost attribution
 - **CSV / JSON export** of usage history for offline analysis
 - **Subscription quota tracking** *(optional)* — surface your Anthropic / OpenAI quota in the sidebar footer
