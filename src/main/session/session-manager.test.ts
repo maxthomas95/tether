@@ -250,4 +250,59 @@ describe('SessionManager', () => {
     expect(transportHarness.state.instances[0].dispose).toHaveBeenCalled();
     expect(cb.onExit).not.toHaveBeenCalled();
   });
+
+  describe('forceKill', () => {
+    async function createHelmSession(cb: ReturnType<typeof callbacks>) {
+      dbState.config.allowHelm = 'true';
+      const helmCleanup = vi.fn();
+      helmHarness.setup.mockImplementation(async () => ({
+        mcpConfigPath: 'C:\\fake\\helm.json',
+        cleanup: helmCleanup,
+      }));
+      await manager.createSession({
+        workingDir: 'C:\\repo\\victim',
+        cliTool: 'claude',
+        helmEnabled: true,
+      }, cb);
+      return { id: manager.listSessions()[0].id, helmCleanup };
+    }
+
+    it('runs exit cleanup itself when the transport exits asynchronously', async () => {
+      const cb = callbacks();
+      const { id, helmCleanup } = await createHelmSession(cb);
+      const transport = transportHarness.state.instances[0];
+
+      manager.forceKill(id);
+
+      expect(transport.kill).toHaveBeenCalled();
+      expect(helmCleanup).toHaveBeenCalledTimes(1);
+      expect(cb.onExit).toHaveBeenCalledTimes(1);
+      expect(cb.onExit).toHaveBeenCalledWith(id, { exitCode: 1 });
+
+      // The PTY's real exit lands later: the transport's onExit handler fires
+      // after forceKill already nulled the transport. It must not double-fire
+      // the exit event or the helm cleanup.
+      const exitHandler = transport.onExit.mock.calls[0][0] as (info: TransportExitInfo) => void;
+      exitHandler({ exitCode: 1 });
+
+      expect(cb.onExit).toHaveBeenCalledTimes(1);
+      expect(helmCleanup).toHaveBeenCalledTimes(1);
+    });
+
+    it('defers to the exit handler when kill() fires onExit synchronously', async () => {
+      const cb = callbacks();
+      const { id, helmCleanup } = await createHelmSession(cb);
+      const transport = transportHarness.state.instances[0];
+      const exitHandler = transport.onExit.mock.calls[0][0] as (info: TransportExitInfo) => void;
+      transport.kill.mockImplementation(() => exitHandler({ exitCode: 0 }));
+
+      manager.forceKill(id);
+
+      // The synchronous onExit ran the normal cleanup path; forceKill must not
+      // repeat it with its own exitCode.
+      expect(cb.onExit).toHaveBeenCalledTimes(1);
+      expect(cb.onExit).toHaveBeenCalledWith(id, { exitCode: 0, signal: undefined });
+      expect(helmCleanup).toHaveBeenCalledTimes(1);
+    });
+  });
 });

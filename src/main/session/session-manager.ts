@@ -958,8 +958,20 @@ export class SessionManager {
     if (session?.transport) {
       log.warn('Force-killing session', { id });
       session.transport.kill();
+      // kill() may fire the transport's onExit synchronously; if it did, the
+      // normal exit handler already ran the full cleanup and nulled the
+      // transport — nothing left to do here.
+      if (!session.transport) return;
+      // Otherwise the transport's onExit will early-return when it eventually
+      // fires (transport already nulled below), so its cleanup must happen
+      // here: without it a force-kill leaks the Helm integration and the
+      // renderer never receives the exit event. No desktop notification on
+      // purpose — a force-kill is user-initiated, not an unexpected exit.
       session.transport = null;
       statusDetector.markExited(id, 1);
+      session.helmIntegration?.cleanup();
+      session.helmIntegration = null;
+      this.callbacksMap.get(id)?.onExit(id, { exitCode: 1 });
     }
   }
 
