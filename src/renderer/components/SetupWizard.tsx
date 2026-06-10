@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import logoSrc from '../assets/logo.png';
 import { MigrateToVaultDialog } from './MigrateToVaultDialog';
 import { VaultPickerDialog } from './VaultPickerDialog';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../utils/vault-path';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 import { themeList, DEFAULT_THEME } from '../styles/themes';
@@ -620,14 +621,16 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
   }, [vaultPickerTarget]);
 
   useEscapeKey(handleClose, isOpen);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, isOpen);
   if (!isOpen) return null;
 
   return (
     <div className="dialog-overlay" role="presentation">
-      <div className="dialog dialog--wide">
+      <div ref={dialogRef} className="dialog dialog--wide" role="dialog" aria-modal="true" aria-label="Setup wizard">
         <div className="dialog-header">
           <span>{stepTitle(step)}</span>
-          <button className="dialog-close" onClick={handleClose}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={handleClose}>&times;</button>
         </div>
 
         <div className="dialog-body">

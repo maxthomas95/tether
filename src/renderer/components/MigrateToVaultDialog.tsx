@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import type { VaultPlaintextSecret } from '../../shared/types';
 
 interface MigrateToVaultDialogProps {
@@ -64,16 +65,18 @@ export function MigrateToVaultDialog({ isOpen, onClose }: MigrateToVaultDialogPr
   };
 
   useEscapeKey(onClose, isOpen);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, isOpen);
   if (!isOpen) return null;
 
   const pendingCount = rows.filter(r => r.status !== 'done').length;
 
   return (
     <div className="dialog-overlay" role="presentation">
-      <div className="dialog dialog--wide">
+      <div ref={dialogRef} className="dialog dialog--wide" role="dialog" aria-modal="true" aria-label="Migrate Secrets to Vault">
         <div className="dialog-header">
           <span>Migrate Secrets to Vault</span>
-          <button className="dialog-close" onClick={onClose}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={onClose}>&times;</button>
         </div>
         <div className="dialog-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
           <p className="form-hint" style={{ marginBottom: 12 }}>

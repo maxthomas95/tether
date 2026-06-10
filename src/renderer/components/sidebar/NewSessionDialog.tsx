@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
 import { HelpAnchor } from '../HelpAnchor';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, AdoProjectInfo, CoderWorkspace, CoderTemplate, CoderTemplateParam, CliToolId } from '../../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import type { CliToolDef } from '../../../shared/cli-tools';
@@ -665,6 +666,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   }, [activeTab, derivedRepoName, selectedRepo, coderClonePath]);
 
   useEscapeKey(() => resetAndClose(), isOpen);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, isOpen);
 
   if (!isOpen) return null;
 
@@ -921,11 +924,11 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
 
   return (
     <div className="dialog-overlay">
-      <div className={dialogClass} role="dialog" aria-modal="true" onKeyDown={handleKeyDown}>
+      <div ref={dialogRef} className={dialogClass} role="dialog" aria-modal="true" aria-label="New session" onKeyDown={handleKeyDown}>
         <div className="dialog-header">
           <span>New session</span>
           <HelpAnchor page="sessions" anchor="creating-sessions" label="Creating sessions" className="dialog-header-help" />
-          <button className="dialog-close" onClick={resetAndClose}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={resetAndClose}>&times;</button>
         </div>
         <div className="dialog-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
           {/* Source tabs */}

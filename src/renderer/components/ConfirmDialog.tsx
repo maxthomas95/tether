@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 export interface ConfirmOptions {
   title: string;
@@ -33,7 +34,9 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const [checked, setChecked] = useState(checkbox?.defaultChecked ?? false);
   useEscapeKey(onCancel, isOpen);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  useFocusTrap(dialogRef, isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -50,10 +53,10 @@ export function ConfirmDialog({
       role="presentation"
       onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
     >
-      <div className="dialog" role="dialog" aria-modal="true" style={{ width: 400 }}>
+      <div ref={dialogRef} className="dialog" role="dialog" aria-modal="true" style={{ width: 400 }}>
         <div className="dialog-header">
           <span>{title}</span>
-          <button className="dialog-close" onClick={onCancel}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={onCancel}>&times;</button>
         </div>
         <div className="dialog-body" style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
           {message}

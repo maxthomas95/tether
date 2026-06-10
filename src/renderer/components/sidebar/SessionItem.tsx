@@ -177,6 +177,8 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
     >
       <span
         className={`status-dot status-dot--${getStatusClass(session.state, session.waitingReason, isVisibleInLayout, bangSuppressed)}`}
+        role="status"
+        aria-label={getStatusLabel(session.state, session.waitingReason, isVisibleInLayout, bangSuppressed)}
         title={getStatusTooltip(session.state, session.waitingReason, isVisibleInLayout, bangSuppressed)}
       />
       <div className="session-info">
@@ -375,6 +377,45 @@ function getStatusTooltip(
   if (waitingReason === 'permission') return 'Waiting on a permission prompt — switch in to respond';
   if (isVisibleInLayout === false && !bangSuppressed) return 'This session is waiting and not currently visible';
   return undefined;
+}
+
+/**
+ * Always-present screen-reader label for the status dot. Unlike the tooltip
+ * (which only surfaces extra context for waiting/idle), every visual state
+ * gets a spoken label. The bang/waiting-permission affordance — which renders
+ * as a "!" pseudo-element — is announced explicitly as waiting on a permission
+ * prompt so non-sighted users get the same call-out as the visual bang.
+ */
+function getStatusLabel(
+  state: SessionState,
+  waitingReason: 'idle' | 'permission' | undefined,
+  isVisibleInLayout: boolean | undefined,
+  bangSuppressed: boolean | undefined,
+): string {
+  // Mirror getStatusClass: a permission prompt, or an un-acked invisible wait,
+  // shows the bang affordance.
+  const showsBang =
+    (state === 'waiting' || state === 'idle') &&
+    (waitingReason === 'permission' || (isVisibleInLayout === false && !bangSuppressed));
+  if (showsBang) {
+    return waitingReason === 'permission'
+      ? 'Status: waiting on a permission prompt'
+      : 'Status: waiting (not currently visible)';
+  }
+  switch (state) {
+    case 'running':
+    case 'starting':
+      return 'Status: running';
+    case 'waiting':
+      return 'Status: waiting for your input';
+    case 'idle':
+      return 'Status: idle';
+    case 'stopped':
+    case 'dead':
+      return 'Status: stopped';
+    default:
+      return 'Status: idle';
+  }
 }
 
 function abbreviatePath(p: string): string {

@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { cleanIdentity, VAULT_REF_PREFIX } from '../utils/vault-path';
 
 interface VaultPickerDialogProps {
@@ -147,6 +148,8 @@ export function VaultPickerDialog({ isOpen, onClose, onSelect }: Readonly<VaultP
   };
 
   useEscapeKey(onClose, isOpen);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, isOpen);
   if (!isOpen) return null;
 
   const folders = entries.filter(isFolderKey);
@@ -154,10 +157,10 @@ export function VaultPickerDialog({ isOpen, onClose, onSelect }: Readonly<VaultP
 
   return (
     <div className="dialog-overlay" role="presentation">
-      <div className="dialog" aria-modal="true" aria-label="Browse Vault">
+      <div ref={dialogRef} className="dialog" role="dialog" aria-modal="true" aria-label="Browse Vault">
         <div className="dialog-header">
           <span>Browse Vault</span>
-          <button className="dialog-close" onClick={onClose}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={onClose}>&times;</button>
         </div>
         <div className="dialog-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
           {!loggedIn && (

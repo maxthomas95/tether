@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { onKeyActivate, stopPropagationOnKey } from '../utils/a11y';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useUsage } from '../hooks/useUsage';
 import { dailyRollups, weeklyRollups, monthlyRollups, windowSummary, type RollupRow, type WindowKind } from '../utils/usage-rollups';
 import { CLI_TOOL_REGISTRY, type CliToolId } from '../../shared/cli-tools';
@@ -65,6 +66,8 @@ function Tile({ label, cost, tokens, sessions }: TileProps) {
 
 export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps) {
   const { usage } = useUsage();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, isOpen);
   const [view, setView] = useState<ViewMode>('daily');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -100,10 +103,10 @@ export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps)
 
   return (
     <div className="dialog-overlay" onClick={onClose} onKeyDown={onKeyActivate(onClose)} role="button" tabIndex={-1}>
-      <div className="dialog dialog--wide" onClick={e => e.stopPropagation()} onKeyDown={stopPropagationOnKey} role="dialog" tabIndex={-1}>
+      <div ref={dialogRef} className="dialog dialog--wide" onClick={e => e.stopPropagation()} onKeyDown={stopPropagationOnKey} role="dialog" aria-modal="true" aria-label="Usage history" tabIndex={-1}>
         <div className="dialog-header">
           <span>Usage history</span>
-          <button className="dialog-close" onClick={onClose}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={onClose}>&times;</button>
         </div>
         <div className="dialog-body">
           <div className="usage-history-tiles">
