@@ -35,10 +35,14 @@ const BUFFER_MAX = 4096;        // Per-session rolling byte buffer for OSC match
 const BELL_COALESCE_MS = 2000;  // Suppress bell notifications fired in this window
 const TURN_SAFETY_TIMEOUT = 10 * 60 * 1000; // 10 min fallback if hook never fires
 
-// CLIs where Tether installs hooks that fire markTurnComplete at end-of-turn.
-// For these CLIs the byte-level idle timeout is suppressed while a turn is in
-// progress — markTurnComplete is the canonical "done" signal. CLIs NOT in this
-// set rely solely on byte-level silence for idle detection.
+// CLIs that *can* drive hook-based turn detection when hooks are actually
+// wired. This is a capability ceiling, not a guarantee: a session only
+// suppresses byte-level cadence inference when it is ALSO `hookCapable` (i.e.
+// the hook env vars were genuinely injected at spawn). A Claude/Codex session
+// with hooks off — global toggle off, overlay install failed, or any
+// SSH/Coder remote session (hooks are local-only today) — is NOT hookCapable
+// and falls back to cadence inference, so it never gets stuck "running" for
+// the full TURN_SAFETY_TIMEOUT.
 const HOOK_ENABLED_CLIS: ReadonlySet<CliToolId> = new Set<CliToolId>(['claude', 'codex']);
 
 // OSC sequences that AI CLIs (notably Claude Code) emit at end-of-turn.
@@ -56,6 +60,14 @@ export class StatusDetector {
   private readonly waitingReasons = new Map<string, WaitingReason>();
   private readonly buffers = new Map<string, string>();
   private readonly cliTools = new Map<string, CliToolId>();
+  /**
+   * Per-session flag: true when this session actually has Tether hooks wired
+   * (env vars injected at spawn). Only hookCapable sessions suppress the
+   * byte-level cadence fallback. Defaults to true at register-time for a
+   * hook-enabled CLI so local hooks-on behavior is unchanged; the session
+   * manager flips it to false for sessions that got no hook env.
+   */
+  private readonly hookCapable = new Map<string, boolean>();
   private readonly waitingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -92,18 +104,63 @@ export class StatusDetector {
     this.bellCallback = callback;
   }
 
-  register(sessionId: string, cliTool: CliToolId = 'claude'): void {
+  /**
+   * Register a session for status tracking.
+   *
+   * `opts.hookCapable` declares whether this session actually has Tether hooks
+   * wired. When omitted it defaults to true for hook-enabled CLIs (preserving
+   * the historical local-hooks-on behavior) and false otherwise. Pass
+   * `hookCapable: false` for a Claude/Codex session whose hook env was never
+   * injected (toggle off, install failed, SSH/Coder remote) so the byte-level
+   * cadence fallback stays engaged.
+   */
+  register(
+    sessionId: string,
+    cliTool: CliToolId = 'claude',
+    opts?: { hookCapable?: boolean },
+  ): void {
     this.states.set(sessionId, 'starting');
     this.cliTools.set(sessionId, cliTool);
-    if (HOOK_ENABLED_CLIS.has(cliTool)) {
+    const capable = opts?.hookCapable ?? HOOK_ENABLED_CLIS.has(cliTool);
+    this.hookCapable.set(sessionId, capable);
+    if (capable) {
       this.hookSignaledDone.set(sessionId, true);
     }
+  }
+
+  /**
+   * Update whether a session currently has hooks wired. Flipping to false
+   * mid-session re-engages the byte-level cadence fallback: we clear the
+   * "turn active" suppression and let the next data chunk arm fresh timers,
+   * so a session that loses its hook wiring never waits out the full
+   * TURN_SAFETY_TIMEOUT. Flipping to true mirrors register's hook-enabled
+   * default (suppress idle until a turn is actually seen).
+   */
+  setHookCapable(sessionId: string, capable: boolean): void {
+    if (!this.states.has(sessionId)) return;
+    this.hookCapable.set(sessionId, capable);
+    if (!capable) {
+      // Drop suppression and the pending safety timer; the next feedData
+      // chunk re-arms the cadence timers immediately.
+      this.hookSignaledDone.set(sessionId, true);
+      this.clearTimer(this.safetyTimers, sessionId);
+    }
+  }
+
+  /**
+   * A session is currently driving its status from hooks when its CLI can
+   * emit them AND its hook env was actually wired this session.
+   */
+  private isHookCapable(sessionId: string): boolean {
+    const cli = this.cliTools.get(sessionId);
+    return !!cli && HOOK_ENABLED_CLIS.has(cli) && this.hookCapable.get(sessionId) === true;
   }
 
   unregister(sessionId: string): void {
     this.states.delete(sessionId);
     this.waitingReasons.delete(sessionId);
     this.cliTools.delete(sessionId);
+    this.hookCapable.delete(sessionId);
     this.buffers.delete(sessionId);
     this.lastBellAt.delete(sessionId);
     this.hookSignaledDone.delete(sessionId);
@@ -146,11 +203,10 @@ export class StatusDetector {
     this.clearTimer(this.waitingTimers, sessionId);
     this.clearTimer(this.idleTimers, sessionId);
 
-    // For hook-enabled CLIs, mark the turn as active (output is flowing,
+    // For hook-capable sessions, mark the turn as active (output is flowing,
     // hook hasn't signaled completion yet). The safety timer caps how long
     // we'll suppress the byte-level idle fallback when the hook is missing.
-    const cliTool = this.cliTools.get(sessionId);
-    if (cliTool && HOOK_ENABLED_CLIS.has(cliTool)) {
+    if (this.isHookCapable(sessionId)) {
       this.hookSignaledDone.set(sessionId, false);
       this.resetSafetyTimer(sessionId);
     }
@@ -173,8 +229,7 @@ export class StatusDetector {
     // For hook-enabled CLIs mid-turn, both transitions are suppressed — the hook
     // is the canonical signal, and silence during an API call is normal.
     this.waitingTimers.set(sessionId, setTimeout(() => {
-      const cli = this.cliTools.get(sessionId);
-      const hookActive = cli && HOOK_ENABLED_CLIS.has(cli) && !this.hookSignaledDone.get(sessionId);
+      const hookActive = this.isHookCapable(sessionId) && !this.hookSignaledDone.get(sessionId);
 
       const currentState = this.states.get(sessionId);
       if ((currentState === 'running' || currentState === 'starting') && !hookActive) {
@@ -308,6 +363,7 @@ export class StatusDetector {
     this.waitingReasons.clear();
     this.buffers.clear();
     this.cliTools.clear();
+    this.hookCapable.clear();
     this.lastBellAt.clear();
     this.hookSignaledDone.clear();
   }
