@@ -1,0 +1,50 @@
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 0
+    groups:
+      npm-security-nonmajors:
+        applies-to: "security-updates"
+        update-types:
+          - "patch"
+          - "minor"
+      npm-security-majors:
+        applies-to: "security-updates"
+        update-types:
+          - "major"
+
+  - package-ecosystem: "npm"
+    directory: "/mcp-servers/tether-helm"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 0
+    groups:
+      tether-helm-security-nonmajors:
+        applies-to: "security-updates"
+        update-types:
+          - "patch"
+          - "minor"
+      tether-helm-security-majors:
+        applies-to: "security-updates"
+        update-types:
+          - "major"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 0
+    groups:
+      github-actions-security-nonmajors:
+        applies-to: "security-updates"
+        update-types:
+          - "patch"
+          - "minor"
+      github-actions-security-majors:
+        applies-to: "security-updates"
+        update-types:
+          - "major"
