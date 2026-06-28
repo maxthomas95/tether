@@ -17,6 +17,9 @@ Thumbs.db
 # Claude Code agent state
 .claude/
 
+# Codex agent state
+.codex/
+
 # Internal docs (not for public repo)
 IDEAS.md
 
