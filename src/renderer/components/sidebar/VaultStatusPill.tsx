@@ -76,7 +76,7 @@ export function VaultStatusPill({ onAuthError }: Readonly<VaultStatusPillProps>)
     try {
       await window.electronAPI.vault.login();
     } catch (err) {
-      // login() rejects on user cancel or server error — let the status event
+      // login() rejects on user cancel or server error â€” let the status event
       // reflect the final state; no inline error UI in the pill.
       onAuthError?.(err);
     } finally {
