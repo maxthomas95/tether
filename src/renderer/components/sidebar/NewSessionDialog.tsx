@@ -7,6 +7,7 @@ import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, 
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import type { CliToolDef } from '../../../shared/cli-tools';
 import { onKeyActivate } from '../../utils/a11y';
+import { shouldHandleDialogEnter } from '../../utils/dialog-keyboard';
 
 type CliFlagsPerTool = Partial<Record<CliToolId, string[]>>;
 
@@ -906,9 +907,27 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     onClose();
   };
 
+  const canCreateLocalSession = Boolean(directory.trim()) && !creatingWorktree;
+  const canCreateNewFolderSession = Boolean(newFolderName.trim())
+    && Boolean(reposRoot)
+    && !creatingNewFolder
+    && (!createOnRemote || (Boolean(remoteProviderId) && (selectedRemoteProvider?.type !== 'ado' || Boolean(selectedAdoProjectId))));
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && activeTab === 'local' && directory.trim()) void handleCreate();
-    if (e.key === 'Enter' && activeTab === 'newfolder' && newFolderName.trim() && reposRoot) void handleCreateNewFolder();
+    if (e.key !== 'Enter' || e.defaultPrevented || e.repeat || !shouldHandleDialogEnter(e.target)) return;
+
+    if (activeTab === 'local' && canCreateLocalSession) {
+      e.preventDefault();
+      e.stopPropagation();
+      void handleCreate();
+      return;
+    }
+
+    if (activeTab === 'newfolder' && canCreateNewFolderSession) {
+      e.preventDefault();
+      e.stopPropagation();
+      void handleCreateNewFolder();
+    }
     // Esc handled by useEscapeKey at document level (works regardless of focus)
   };
 
@@ -1803,7 +1822,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
             <button
               className="form-btn form-btn--primary"
               onClick={() => { void handleCreate(); }}
-              disabled={!directory.trim() || creatingWorktree}
+              disabled={!canCreateLocalSession}
             >
               {creatingWorktree ? 'Creating worktree...' : 'Create Session'}
             </button>
@@ -1811,15 +1830,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
             <button
               className="form-btn form-btn--primary"
               onClick={() => { void handleCreateNewFolder(); }}
-              disabled={(() => {
-                if (creatingNewFolder) return true;
-                if (!newFolderName.trim() || !reposRoot) return true;
-                if (createOnRemote) {
-                  if (!remoteProviderId) return true;
-                  if (selectedRemoteProvider?.type === 'ado' && !selectedAdoProjectId) return true;
-                }
-                return false;
-              })()}
+              disabled={!canCreateNewFolderSession}
             >
               {creatingNewFolder ? 'Creating...' : 'Create Session'}
             </button>
