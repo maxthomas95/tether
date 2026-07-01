@@ -10,6 +10,8 @@ Click **+ New session** or press **Ctrl+N**. The dialog has three tabs for picki
 - **Clone** — clone a remote repo via a configured Git provider (see [Git Providers](git-providers))
 - **New folder** — create an empty folder under your repos root, optionally `git init` and provision an empty remote (see [Git Providers](git-providers#new-folder)). New folder mode is local-only.
 
+On Existing and New folder, pressing **Enter** in a standard text field runs the same primary action as clicking **Create Session**.
+
 Other fields:
 
 - **Environment** — Local, SSH, or Coder (see [Environments](environments))
