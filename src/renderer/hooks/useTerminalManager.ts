@@ -3,6 +3,7 @@ import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { PaneId } from '../../shared/layout-types';
+import { decodeOsc52Write } from '../utils/osc52';
 
 interface ManagedTerminal {
   terminal: Terminal;
@@ -187,6 +188,20 @@ export function useTerminalManager(
     });
     terminal.loadAddon(linksAddon);
 
+    // OSC 52 clipboard bridge. Claude Code's fullscreen rendering (and many
+    // other TUIs) copy to the clipboard by emitting `ESC ] 52` sequences — the
+    // only copy path that reaches the *local* machine over SSH, where the remote
+    // CLI can't touch it directly. xterm.js ships no OSC 52 handler, so without
+    // this the copy is silently dropped. Disposed automatically with the
+    // terminal. Write-only: see decodeOsc52Write.
+    terminal.parser.registerOscHandler(52, (data: string) => {
+      const text = decodeOsc52Write(data);
+      if (text !== null) {
+        window.electronAPI.clipboard.writeText(text);
+      }
+      return true;
+    });
+
     // Wire up input forwarding
     terminal.onData((data: string) => {
       sendInput(sessionId, data);
@@ -209,10 +224,15 @@ export function useTerminalManager(
         return false;
       }
 
-      // Ctrl+V → paste from clipboard
+      // Ctrl+V → paste from clipboard. Route through terminal.paste() rather
+      // than sending the raw string: paste() honors the app's bracketed-paste
+      // mode (DECSET 2004) and normalizes newlines, so multi-line pastes into
+      // Claude Code's fullscreen input land as one block instead of a burst of
+      // submits. It still fires onData → sendInput, so broadcast input keeps
+      // working.
       if (ctrl && e.key === 'v' && e.type === 'keydown') {
         const text = window.electronAPI.clipboard.readText();
-        if (text) sendInput(sessionId, text);
+        if (text) terminal.paste(text);
         return false;
       }
 
