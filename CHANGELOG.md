@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.6.3-beta.2] — 2026-06-30
+
+Beta cut from main's tip, continuing the 0.6.2-beta.1 soak. Headlined by the OSC 52 clipboard bridge — copying from Claude Code's fullscreen TUI over SSH/Coder now reaches your local clipboard — plus a security and dependency hardening pass and a major build-toolchain jump (Vite 8) getting its first soak on the Beta channel.
+
+### New Features
+- **OSC 52 clipboard bridge + smarter Ctrl+V** — copying inside Claude Code's fullscreen TUI (`/tui fullscreen`) now reaches your local clipboard, including over SSH/Coder, via a write-only OSC 52 handler (read requests are ignored so a remote program can't exfiltrate your clipboard). Ctrl+V now routes through xterm's paste path, honoring bracketed-paste mode so multi-line pastes arrive as one block instead of a burst of submits (#185)
+
+### Bug Fixes
+- **Claude launches as root over SSH** — when Tether knowingly launches Claude as root with `--dangerously-skip-permissions` (SSH sudo elevation or root login), it now sets `IS_SANDBOX=1` so Claude's root guard no longer bounces the session back to the shell. A user-provided `IS_SANDBOX`/`CLAUDE_CODE_BUBBLEWRAP` always wins; Coder is not auto-detected (#188)
+- **New Session dialog closes on Enter** — pressing Enter in the folder text fields now submits and closes the dialog consistently instead of leaving the modal open over a background-created session (#184)
+- **J.O.B.S. office server launch fixed** — launches with `node` from PATH instead of `ELECTRON_RUN_AS_NODE`, repairing the local-checkout launcher
+
+### Security
+- **Tightened renderer CSP** — renderer and docs windows now allow their boot style blocks via SHA-256 hashes instead of a broad `unsafe-inline` allowance; first-frame styling unchanged (#186)
+- **Dependency remediation** — `tar` → 7.5.16 (CVE-2026-53655), `undici` → 7.28.0, `hono` bumped in the Helm MCP server, plus a broader Dependabot alert sweep (#187, #180, #179, #183)
+
+### Internal
+- **Build toolchain: Vite 8** — Vite 6 → 8 and `@vitejs/plugin-react` 4 → 6, `esbuild` dropped as a direct dependency; TypeScript switched to bundler module resolution so Vite 8's package exports resolve under `tsc`. First release carrying this — soaking on Beta before it reaches Stable (#178)
+- **Dependabot security-updates config** added (#182)
+- **Codex agent guidelines** doc added for contributors (#181)
+
+---
+
 ## [0.6.2-beta.1] — 2026-06-09
 
 First beta on the new release train: betas are cut from main's tip for the Beta update channel and graduate to stable once soaked. This one carries everything since the 0.6.1 hotfix — headlined by the Ctrl+P session quick switcher and the J.O.B.S. office integration, plus groundwork for remote (SSH/Coder) hooks.
