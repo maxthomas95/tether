@@ -21,6 +21,8 @@ SSH environments need:
 - **Working directory** — default starting directory on the remote
 - **Optional sudo** — if set, every session in this environment runs `sudo -i` after connect
 
+> **Running Claude as root?** Claude Code refuses to start with `--dangerously-skip-permissions` when it detects it's running as root (via sudo, or a `root` login) unless it thinks it's in a sandbox — otherwise it exits straight back to the shell. When Tether launches Claude as root with that flag, it automatically sets `IS_SANDBOX=1` so the flag you asked for takes effect. Set `IS_SANDBOX` (or `CLAUDE_CODE_BUBBLEWRAP`) yourself in the environment's env vars to override this. This guard is POSIX-only, so local Windows sessions are unaffected. (Coder workspaces are not auto-detected — if a workspace runs as root, add `IS_SANDBOX=1` to its env vars manually.)
+
 #### Host key verification
 
 On first connect to a new host, Tether shows a **Host key verification** dialog (TOFU — trust on first use). Approving stores the fingerprint in `data.json` and silently re-verifies on every subsequent connect. If the host key ever changes, the connection is refused and the dialog reopens so you can re-approve or disconnect. Manage known hosts in Settings → Integrations → SSH known hosts.

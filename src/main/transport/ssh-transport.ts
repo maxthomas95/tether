@@ -5,6 +5,7 @@ import { verifyHost } from '../ssh/host-verifier';
 import { hostKeyFingerprints } from '../ssh/fingerprint';
 import { loadSsh2 } from './ssh2-loader';
 import { buildEnvAssignments, buildRemoteCliCommand, quoteRemotePath } from './posix-shell';
+import { withRootSandboxBypass } from './root-sandbox';
 
 const log = createLogger('ssh');
 
@@ -290,11 +291,22 @@ export class SSHTransport implements SessionTransport {
     this.attachSessionSetup(stream, cmd, resolve, reject);
   }
 
+  /**
+   * True when the CLI will run as root: an environment with sudo elevation
+   * (`sudo -i`) or a login whose username is `root` (also Tether's default SSH
+   * username). Drives the Claude root-guard bypass in `buildLaunchCommand`.
+   */
+  private runsAsRoot(): boolean {
+    return this.sshConfig.useSudo === true
+      || (this.sshConfig.username || '').trim().toLowerCase() === 'root';
+  }
+
   private buildLaunchCommand(options: TransportStartOptions): string {
     // Build the command as argv/env tokens rather than shell text.
     // The PTY still receives one shell line, but user-controlled values
     // are quoted before they cross that boundary.
-    const envParts = buildEnvAssignments(options.env);
+    const env = withRootSandboxBypass(options.env, options, this.runsAsRoot());
+    const envParts = buildEnvAssignments(env);
     const cliCmd = buildRemoteCliCommand(options);
     const launchCmd = envParts.length > 0
       ? `env ${envParts.join(' ')} ${cliCmd}`

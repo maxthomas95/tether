@@ -5,6 +5,7 @@ import { createLogger } from '../logger';
 import { buildCliArgsForTool } from '../../shared/cli-tools';
 import { loadPty } from './pty-loader';
 import { tokenizeCliArgEntries } from './cli-args';
+import { withRootSandboxBypass } from './root-sandbox';
 import { assertSafeCmdExeCommand, escapeCmdExeArgForNodePty } from '../../shared/shell-quote';
 
 const log = createLogger('local-pty');
@@ -62,6 +63,11 @@ export class LocalTransport implements SessionTransport {
       ? ['/d', '/c', binary, ...tokenizedArgs.map(escapeCmdExeArgForNodePty)]
       : tokenizedArgs;
 
+    // When running as a local root user (POSIX only — `getuid` is undefined on
+    // Windows, so this is a no-op there today), let Claude's --dangerously-skip-
+    // permissions flag through by signalling a sandbox. Mirrors the SSH-as-root path.
+    const env = withRootSandboxBypass(options.env, options, process.getuid?.() === 0);
+
     log.info('Spawning local PTY', {
       spawnFile,
       cwd: options.workingDir,
@@ -75,7 +81,7 @@ export class LocalTransport implements SessionTransport {
       cwd: options.workingDir,
       env: {
         ...process.env,
-        ...options.env,
+        ...env,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
       } as Record<string, string>,
