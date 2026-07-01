@@ -46,4 +46,17 @@ Window zoom uses `webFrame.setZoomLevel`. Per-pane font size is persisted with t
 
 ## Terminal
 
-All other keyboard input is passed directly to the active terminal session. Tether does not intercept or modify terminal keystrokes — what you type goes straight to the selected CLI. This includes **Ctrl+C** (SIGINT), Ctrl-clicking printed URLs (which Tether opens via `shell.openExternal`), and the CLI's own bindings.
+Most keyboard input is passed straight to the active session — Tether does not intercept or modify terminal keystrokes, so the CLI's own bindings all work. A handful of clipboard shortcuts are handled by Tether:
+
+| Shortcut | Action |
+|----------|--------|
+| **Ctrl+C** | Copy the selection if there is one; otherwise passes through as **SIGINT** |
+| **Ctrl+Shift+C** | Always copy the selection |
+| **Ctrl+V** | Paste. Uses bracketed paste when the app requests it, so a multi-line paste into Claude Code's input arrives as one block instead of a burst of submits |
+| **Ctrl+click** a printed URL | Open it in your browser (via `shell.openExternal`) |
+
+### Selecting text in full-screen apps
+
+Claude Code's full-screen rendering (`/tui fullscreen`, or `CLAUDE_CODE_NO_FLICKER=1`) — like other full-screen TUIs such as vim or htop — turns on **mouse reporting**. That hands your click-and-drag to the app instead of selecting text, so ordinary drag-to-select stops working. To select text natively, **hold Shift while you drag**: that bypasses the app's mouse capture and lets Tether's terminal make the selection, and **Ctrl+C** / **Ctrl+Shift+C** then copy it.
+
+This matters most over **SSH and Coder**, where the remote CLI can't reach your local clipboard on its own. When a CLI copies to the clipboard itself — Claude Code does this over SSH using the OSC 52 escape sequence — Tether forwards it to your local clipboard automatically, so a copy inside the remote session lands on your local machine. (For safety, this is one-way: remote apps can write your clipboard, never read it.)
