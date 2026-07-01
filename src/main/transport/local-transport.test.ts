@@ -122,6 +122,36 @@ describe('LocalTransport', () => {
     }
   });
 
+  it('injects IS_SANDBOX=1 when the local user is root (POSIX) and Claude skips permissions', async () => {
+    platform.set('linux');
+    const originalGetuid = process.getuid;
+    process.getuid = () => 0;
+    try {
+      await new LocalTransport().start(baseOptions({
+        cliArgs: ['--dangerously-skip-permissions'],
+      }));
+      const [, , spawnOpts] = ptySpawnSpy.mock.calls[0];
+      expect(spawnOpts.env.IS_SANDBOX).toBe('1');
+    } finally {
+      process.getuid = originalGetuid;
+    }
+  });
+
+  it('does not inject IS_SANDBOX when the local user is not root', async () => {
+    platform.set('linux');
+    const originalGetuid = process.getuid;
+    process.getuid = () => 1000;
+    try {
+      await new LocalTransport().start(baseOptions({
+        cliArgs: ['--dangerously-skip-permissions'],
+      }));
+      const [, , spawnOpts] = ptySpawnSpy.mock.calls[0];
+      expect(spawnOpts.env.IS_SANDBOX).toBeUndefined();
+    } finally {
+      process.getuid = originalGetuid;
+    }
+  });
+
   it('passes cwd / cols / rows through to spawn', async () => {
     platform.set('linux');
     await new LocalTransport().start(baseOptions({

@@ -225,6 +225,52 @@ describe('SSHTransport', () => {
     expect(writes).toContain(`'custom cli' '--flag' 'value;rm' 'review $(whoami)'`);
   });
 
+  it('injects IS_SANDBOX=1 when a root login runs Claude with --dangerously-skip-permissions', async () => {
+    const t = new SSHTransport(baseConfig({ username: 'root' }));
+    const { stream } = await startConnected(t, baseOptions({
+      cliArgs: ['--dangerously-skip-permissions'],
+    }));
+
+    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    expect(writes).toContain("env 'IS_SANDBOX=1'");
+  });
+
+  it('injects IS_SANDBOX=1 when Claude is elevated to root via sudo', async () => {
+    const t = new SSHTransport(baseConfig({ useSudo: true, username: 'me' }));
+    const start = t.start(baseOptions({ cliArgs: ['--dangerously-skip-permissions'] }));
+    const client = ssh2Harness.current!;
+    client.emit('ready');
+    const stream = new ssh2Harness.FakeStream();
+    client.lastShellCb!(undefined, stream);
+    stream.emitData('me@host:~$ ');    // shell prompt → sends `sudo -i`
+    stream.emitData('root@host:~# ');  // NOPASSWD root shell → sends `stty -echo`
+    stream.emitData('root@host:~# ');  // echo disabled → writes launch cmd + resolves
+    await start;
+
+    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    expect(writes).toContain("env 'IS_SANDBOX=1'");
+  });
+
+  it('does not inject IS_SANDBOX for a non-root login', async () => {
+    const t = new SSHTransport(baseConfig({ username: 'me' }));
+    const { stream } = await startConnected(t, baseOptions({
+      cliArgs: ['--dangerously-skip-permissions'],
+    }));
+
+    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    expect(writes).not.toContain('IS_SANDBOX');
+  });
+
+  it('does not inject IS_SANDBOX for a root login without the skip-permissions flag', async () => {
+    const t = new SSHTransport(baseConfig({ username: 'root' }));
+    const { stream } = await startConnected(t, baseOptions({
+      cliArgs: ['--model', 'sonnet'],
+    }));
+
+    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    expect(writes).not.toContain('IS_SANDBOX');
+  });
+
   it('rejects invalid env names before sending the launch command', async () => {
     const t = new SSHTransport(baseConfig());
     const start = t.start(baseOptions({
