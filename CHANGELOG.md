@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## Unreleased
+
+### Bug Fixes
+- **Terminal colors restored** — renderer and docs CSP now allow runtime style elements and attributes while keeping the boot style hashes, so xterm.js can inject its ANSI color styles instead of rendering terminal output as plain black-and-white text.
+
+---
+
 ## [0.6.3-beta.2] — 2026-06-30
 
 Beta cut from main's tip, continuing the 0.6.2-beta.1 soak. Headlined by the OSC 52 clipboard bridge — copying from Claude Code's fullscreen TUI over SSH/Coder now reaches your local clipboard — plus a security and dependency hardening pass and a major build-toolchain jump (Vite 8) getting its first soak on the Beta channel.
