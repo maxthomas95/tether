@@ -6,8 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+---
+
+## [0.6.4-beta.3] — 2026-07-03
+
+Beta follow-up to `0.6.3-beta.2`, focused on repairing the renderer CSP regression that made xterm.js output lose its ANSI colors.
+
 ### Bug Fixes
 - **Terminal colors restored** — renderer and docs CSP now allow runtime style elements and attributes while keeping the boot style hashes, so xterm.js can inject its ANSI color styles instead of rendering terminal output as plain black-and-white text.
+
+### Security
+- **Electron HTML shell Sonar exclusions** — the static HTML shell files are excluded from Sonar's JavaScript/TypeScript analysis after the CSP regression fix moved the practical CSP coverage into renderer tests.
+
+### Internal
+- **Dependency remediation** — `js-yaml` updated through Dependabot.
 
 ---
 
