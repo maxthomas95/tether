@@ -112,6 +112,8 @@ Unlocks the per-session "Enable Helm" toggle, which lets a designated Claude ses
 
 When on, Tether installs an additive entry in your `~/.claude/settings.json` and `~/.codex/config.toml` so Claude/Codex tell Tether directly when a turn finishes or input is needed. This produces more accurate waiting/idle status detection than passive output observation alone. Takes effect on the next Tether launch.
 
+SSH environments can extend this to their remote hosts, but only with a second, per-environment opt-in — see [CLI status hooks on remote hosts](environments#cli-status-hooks-on-remote-hosts). With the global toggle on and the environment checkbox off, remote sessions stay on cadence-only detection and nothing is written to the host.
+
 ### Enable pane splitting
 
 Turns on drag-to-split and the split pane layout. When off, sessions always open full-screen in the terminal area. See [Getting Started](getting-started#split-panes).

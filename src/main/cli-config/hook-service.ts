@@ -44,6 +44,14 @@ function helperPath(): string {
   return path.resolve(__dirname, '..', '..', 'cli-tools', 'tether-cli-hook', 'index.js');
 }
 
+/**
+ * Local filesystem path of the bundled hook helper. Remote hook agents read
+ * this file and upload it to their hosts byte-for-byte.
+ */
+export function getHelperPath(): string {
+  return helperPath();
+}
+
 function isEnabled(): boolean {
   // Default-off, opt-in: user must explicitly enable via Settings or Setup Wizard.
   return getDb().config?.cliHooksEnabled === 'true';
@@ -139,6 +147,11 @@ export async function stopHookService(): Promise<void> {
  * the bridge isn't running (either disabled or boot failed) so the env
  * spread on the caller side is a no-op.
  *
+ * LOCAL sessions only: the socket path and boot token are meaningless on
+ * another machine (and would wrongly mark a remote session hookCapable).
+ * The session manager dispatches by environment type — SSH/Coder sessions
+ * go through `remote/remote-hook-service.envForRemoteSession` instead.
+ *
  * In dev mode (or whenever TETHER_DEBUG_HOOKS=1 is set in Tether's own
  * env) we also wire TETHER_HOOK_LOG_PATH so the helper appends an
  * invocation trace to a file. Helps diagnose "the hook never fires" /
@@ -158,11 +171,20 @@ export function envForSession(tetherSessionId: string): Record<string, string> {
 }
 
 /**
- * Revoke any per-session hook token for a torn-down session. Harmless today
- * (local sessions all share the boot-global token, which this never touches),
- * but required once remote sessions get per-session scoped tokens — a revoked
- * token must stop authorizing forwarded hook frames immediately. No-op when
- * the bridge isn't running.
+ * The live bridge handle, or null when hooks are disabled or the bridge
+ * failed to boot. Remote hook agents use it to mint/revoke per-session tokens
+ * and to validate frames arriving over forwarded streams — one registry, so a
+ * revoked session stops authorizing frames on every path at once.
+ */
+export function getHookBridge(): HookBridgeHandle | null {
+  return bridge;
+}
+
+/**
+ * Revoke any per-session hook token for a torn-down session. Local sessions
+ * all share the boot-global token, which this never touches; remote sessions
+ * get per-session scoped tokens — a revoked token stops authorizing forwarded
+ * hook frames immediately. No-op when the bridge isn't running.
  */
 export function revokeSessionToken(tetherSessionId: string): void {
   bridge?.revokeSessionToken(tetherSessionId);

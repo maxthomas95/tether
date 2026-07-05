@@ -8,9 +8,16 @@
 //
 // Environment (set by Tether at CLI spawn time, inherited through the CLI
 // process to this helper):
-//   TETHER_HOOK_SOCKET  named-pipe path (Windows) or UDS path (POSIX)
-//   TETHER_HOOK_TOKEN   per-Tether-boot auth token
+//   TETHER_HOOK_SOCKET  named-pipe path (Windows) or UDS path (POSIX);
+//                       `tcp://127.0.0.1:<port>` selects a loopback TCP dial
+//                       (remote hosts where sshd forbids streamlocal forwards)
+//   TETHER_HOOK_TOKEN   per-Tether-boot auth token (per-session on remotes)
 //   TETHER_SESSION_ID   the Tether session id this CLI belongs to
+//
+// Remote sessions instead carry a single pointer:
+//   TETHER_HOOK_ENV_FILE  path to a 0600 file holding the three values above,
+//                         one KEY=VALUE per line. Keeps the token off the
+//                         launch line (which lands in remote shell history).
 //
 // Exit codes:
 //   0  payload accepted (or bridge unavailable — non-fatal for the CLI)
@@ -26,10 +33,28 @@
 const net = require('node:net');
 const fs = require('node:fs');
 
-const SOCKET = process.env.TETHER_HOOK_SOCKET;
-const TOKEN = process.env.TETHER_HOOK_TOKEN;
-const SESSION_ID = process.env.TETHER_SESSION_ID;
+let SOCKET = process.env.TETHER_HOOK_SOCKET;
+let TOKEN = process.env.TETHER_HOOK_TOKEN;
+let SESSION_ID = process.env.TETHER_SESSION_ID;
+const ENV_FILE = process.env.TETHER_HOOK_ENV_FILE;
 const DEBUG_LOG = process.env.TETHER_HOOK_LOG_PATH;
+
+// Remote fallback: when the inline vars are absent but Tether provided an
+// env-file pointer, read the values from the file. Inline vars always win,
+// so local behavior is byte-for-byte unchanged.
+if ((!SOCKET || !TOKEN || !SESSION_ID) && ENV_FILE) {
+  try {
+    for (const line of fs.readFileSync(ENV_FILE, 'utf8').split('\n')) {
+      const eq = line.indexOf('=');
+      if (eq <= 0) continue;
+      const key = line.slice(0, eq).trim();
+      const value = line.slice(eq + 1).trim();
+      if (key === 'TETHER_HOOK_SOCKET' && !SOCKET) SOCKET = value;
+      else if (key === 'TETHER_HOOK_TOKEN' && !TOKEN) TOKEN = value;
+      else if (key === 'TETHER_SESSION_ID' && !SESSION_ID) SESSION_ID = value;
+    }
+  } catch { /* unreadable env file → degrade via the no-env exit below */ }
+}
 
 // Best-effort one-line trace per invocation, controlled by an env var Tether
 // sets in dev mode. Helps debug "the hook never fires" / "the helper
@@ -127,7 +152,16 @@ async function main() {
 
   // Connect, auth, send, exit. Hard 1s timeout on the whole round-trip —
   // if the bridge is down, we don't want to hang Claude's hook pipeline.
-  const sock = net.connect(SOCKET);
+  // A `tcp://127.0.0.1:<port>` socket value selects a loopback TCP dial
+  // (remote TCP-forward fallback); anything else is a pipe/UDS path.
+  let sock;
+  if (SOCKET.startsWith('tcp://')) {
+    const rest = SOCKET.slice('tcp://'.length);
+    const colon = rest.lastIndexOf(':');
+    sock = net.connect(Number(rest.slice(colon + 1)), rest.slice(0, colon));
+  } else {
+    sock = net.connect(SOCKET);
+  }
   const timer = setTimeout(() => {
     dbg('exit-timeout');
     sock.destroy();
@@ -139,7 +173,9 @@ async function main() {
 
   sock.on('connect', () => {
     dbg('connected');
-    sock.write(JSON.stringify({ id: 'auth', method: 'authenticate', token: TOKEN }) + '\n');
+    // The session id scopes per-session tokens (remote sessions). The bridge
+    // ignores it for the boot-global token, so local auth is unchanged.
+    sock.write(JSON.stringify({ id: 'auth', method: 'authenticate', token: TOKEN, tetherSessionId: SESSION_ID }) + '\n');
   });
   sock.on('data', (chunk) => {
     buffer += chunk.toString('utf8');

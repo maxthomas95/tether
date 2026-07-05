@@ -27,6 +27,19 @@ SSH environments need:
 
 On first connect to a new host, Tether shows a **Host key verification** dialog (TOFU — trust on first use). Approving stores the fingerprint in `data.json` and silently re-verifies on every subsequent connect. If the host key ever changes, the connection is refused and the dialog reopens so you can re-approve or disconnect. Manage known hosts in Settings → Integrations → SSH known hosts.
 
+#### CLI status hooks on remote hosts
+
+By default, SSH sessions detect waiting/idle status purely from output cadence. Enabling **Install CLI status hooks on this host** on the environment gives them the same hook-grade detection local sessions get — Claude/Codex on the host tell Tether directly when a turn finishes or input is needed.
+
+While sessions run on the host, Tether keeps a small stdlib-only Node helper under `~/.tether` and adds additive, Tether-tagged hook entries to `~/.claude/settings.json` and `~/.codex/config.toml` there. Events travel back over a dedicated SSH channel on the same credentials and host-key trust as the session itself — no extra ports are opened. Entries and runtime files are removed when the last session in the environment ends; if Tether crashes, the leftovers are inert (the hook exits instantly when Tether is gone) and are cleaned up on the next connect.
+
+Requirements and limits:
+
+- The global **CLI status hooks** toggle in [Settings → Sessions](settings#cli-hooks) must also be on; the per-environment checkbox is a separate consent for writing to that host.
+- The host needs `node` (or `nodejs`) on the PATH — without it, sessions silently fall back to cadence-only detection.
+- Not available for sudo-elevated environments: the CLI runs as root, and Tether does not touch root's config files.
+- If the connection to the host drops, affected sessions immediately fall back to cadence detection; Tether reconnects once and restores hook detection when it succeeds.
+
 ### Coder
 
 Connects to [Coder](https://coder.com/) workspaces. Tether wraps the `coder ssh` command in a local PTY, so auth and routing are handled by the Coder CLI you already have installed.

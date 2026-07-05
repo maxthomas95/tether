@@ -12,6 +12,7 @@ import { getDb, closeDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
 import { markAllRunningAsStopped } from './db/session-repo';
 import { startHookService, stopHookService } from './cli-config/hook-service';
+import { stopRemoteHookService, hasLiveRemoteAgents } from './cli-config/remote/remote-hook-service';
 import { jobsService } from './jobs/jobs-service';
 import { jobsBridge } from './jobs/jobs-bridge';
 import { createNotificationService, readPrefsFromConfig } from './notifications/notification-service';
@@ -357,15 +358,19 @@ if (!gotTheLock) {
     // Hook teardown is async (uninstall settings.json mutation) but
     // before-quit is synchronous. Best-effort: preventDefault long enough
     // for the uninstall + bridge dispose, then re-quit. Capped so a hung
-    // file write doesn't trap the user in the app.
+    // file write doesn't trap the user in the app. Remote hook agents need
+    // SFTP round-trips to scrub overlays on their hosts, so they get a
+    // longer — still bounded — window; anything they miss is scrubbed at
+    // the next connect to that host.
     if (!hookShutdownDone) {
       event.preventDefault();
+      const capMs = hasLiveRemoteAgents() ? 5000 : 2000;
       const timer = setTimeout(() => {
-        log.warn('Hook shutdown exceeded 2s — proceeding with quit anyway');
+        log.warn(`Hook shutdown exceeded ${capMs}ms — proceeding with quit anyway`);
         hookShutdownDone = true;
         app.quit();
-      }, 2000);
-      stopHookService().finally(() => {
+      }, capMs);
+      Promise.allSettled([stopHookService(), stopRemoteHookService()]).then(() => {
         clearTimeout(timer);
         hookShutdownDone = true;
         app.quit();

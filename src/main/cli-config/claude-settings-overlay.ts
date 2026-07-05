@@ -182,7 +182,7 @@ function scrubTetherEntries(settings: SettingsShape): boolean {
  * `platform` selects the quoting rules — defaults to the current platform so
  * local behavior is unchanged; a remote POSIX install passes `'posix'`.
  */
-function helperCommand(
+export function helperCommand(
   helperPath: string,
   cliFlag: '--claude' | '--codex',
   platform?: ShellPlatform,

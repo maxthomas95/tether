@@ -1,8 +1,7 @@
 import { StringDecoder } from 'node:string_decoder';
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
 import { createLogger } from '../logger';
-import { verifyHost } from '../ssh/host-verifier';
-import { hostKeyFingerprints } from '../ssh/fingerprint';
+import { buildSshConnectConfig } from './ssh-connect-config';
 import { loadSsh2 } from './ssh2-loader';
 import { buildEnvAssignments, buildRemoteCliCommand, quoteRemotePath } from './posix-shell';
 import { withRootSandboxBypass } from './root-sandbox';
@@ -196,55 +195,12 @@ export class SSHTransport implements SessionTransport {
   }
 
   private buildConnectConfig(): SshConnectConfig {
-    const fs = require('node:fs');
-    const connectConfig: Record<string, unknown> = {
-      host: this.sshConfig.host,
-      port: this.sshConfig.port || 22,
-      username: this.sshConfig.username,
-      keepaliveInterval: 10000,
-      keepaliveCountMax: 3,
-      readyTimeout: 15000,
-      hostVerifier: (key: string | Buffer, callback: (accept: boolean) => void) => this.verifyHostKey(key, callback),
-    };
-
-    this.applyAuthentication(connectConfig, fs);
-    return connectConfig as SshConnectConfig;
-  }
-
-  private verifyHostKey(key: string | Buffer, callback: (accept: boolean) => void): void {
-    const fingerprints = hostKeyFingerprints(key);
-    verifyHost(
-      this.sshConfig.host,
-      this.sshConfig.port || 22,
-      fingerprints.sha256,
-      this.sshConfig.username,
-      fingerprints.legacySha256Hex,
-    )
-      .then((result) => {
-        if (!result.trust && result.reason) {
-          this.verifyError = result.reason;
-        }
-        callback(result.trust);
-      })
-      .catch((err: Error) => {
-        this.verifyError = err.message || 'Host key verification failed';
-        callback(false);
-      });
-  }
-
-  private applyAuthentication(connectConfig: Record<string, unknown>, fs: typeof import('node:fs')): void {
-    if (this.sshConfig.useAgent) {
-      // Windows OpenSSH agent
-      connectConfig.agent = process.env.SSH_AUTH_SOCK || '\\\\.\\pipe\\openssh-ssh-agent';
-    } else if (this.sshConfig.privateKeyPath) {
-      try {
-        connectConfig.privateKey = fs.readFileSync(this.sshConfig.privateKeyPath);
-      } catch {
-        throw new Error(`Failed to read SSH key: ${this.sshConfig.privateKeyPath}`);
-      }
-    } else if (this.sshConfig.password) {
-      connectConfig.password = this.sshConfig.password;
-    }
+    // Shared with the remote hook agent's control connection — host
+    // verification and the auth cascade must never diverge between the PTY
+    // path and the hooks side-channel.
+    return buildSshConnectConfig(this.sshConfig, (reason) => {
+      this.verifyError = reason;
+    }) as SshConnectConfig;
   }
 
   private openShell(
