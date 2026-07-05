@@ -356,6 +356,8 @@ export interface SessionLifecycleObserver {
   onCreated?(session: Session): void;
   /** Fired after the session's state field has been updated. */
   onStateChanged?(session: Session): void;
+  /** Fired after the status detector coalesces a terminal bell event. */
+  onBell?(session: Session): void;
   onRemoved?(sessionId: string): void;
 }
 
@@ -393,8 +395,9 @@ export class SessionManager {
 
     statusDetector.onBell((sessionId) => {
       const session = this.sessions.get(sessionId);
-      if (!session || !this.notifier) return;
-      this.notifier.fire('bell', this.projectForNotification(session));
+      if (!session) return;
+      if (this.notifier) this.notifier.fire('bell', this.projectForNotification(session));
+      this.notifyLifecycle(o => o.onBell?.(session));
     });
   }
 

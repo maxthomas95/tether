@@ -132,7 +132,7 @@ describe('NotificationService.fire', () => {
   });
 
   it('checks all four kinds against their distinct prefs flags', () => {
-    const prefs: NotificationPrefs = { onWaiting: false, onIdle: true, onError: false, onBell: true, suppressWhenFocused: false };
+    const prefs: NotificationPrefs = { ...DEFAULT_NOTIFICATION_PREFS, onWaiting: false, onIdle: true, onError: false, onBell: true, suppressWhenFocused: false };
     const { service, fakeCreate } = makeServiceWithSpy({ prefs });
     expect(service.fire('waiting', makeSession())).toBe('pref-disabled');
     expect(service.fire('idle', makeSession())).toBe('fired');
@@ -221,9 +221,25 @@ describe('prefs persistence helpers', () => {
       'notifications.onError': 'false',
       'notifications.onBell': 'true',
       'notifications.suppressWhenFocused': 'false',
+      'notifications.webhook.url': ' https://example.test/hook ',
+      'notifications.webhook.onWaiting': 'false',
+      'notifications.webhook.onIdle': 'true',
+      'notifications.webhook.onDead': 'true',
+      'notifications.webhook.onBell': 'false',
     });
     expect(prefs).toEqual({
-      onWaiting: false, onIdle: true, onError: false, onBell: true, suppressWhenFocused: false,
+      onWaiting: false,
+      onIdle: true,
+      onError: false,
+      onBell: true,
+      suppressWhenFocused: false,
+      webhook: {
+        url: 'https://example.test/hook',
+        onWaiting: false,
+        onIdle: true,
+        onDead: true,
+        onBell: false,
+      },
     });
   });
 
@@ -238,11 +254,26 @@ describe('prefs persistence helpers', () => {
 
   it('writePrefsToConfig round-trips through readPrefsFromConfig', () => {
     const original: NotificationPrefs = {
-      onWaiting: false, onIdle: true, onError: false, onBell: true, suppressWhenFocused: false,
+      ...DEFAULT_NOTIFICATION_PREFS,
+      onWaiting: false,
+      onIdle: true,
+      onError: false,
+      onBell: true,
+      suppressWhenFocused: false,
+      webhook: {
+        url: ' https://example.test/hook ',
+        onWaiting: true,
+        onIdle: true,
+        onDead: true,
+        onBell: false,
+      },
     };
     const cfg: Record<string, string> = {};
     writePrefsToConfig(cfg, original);
-    expect(readPrefsFromConfig(cfg)).toEqual(original);
+    expect(readPrefsFromConfig(cfg)).toEqual({
+      ...original,
+      webhook: { ...original.webhook, url: 'https://example.test/hook' },
+    });
   });
 
   it('writePrefsToConfig does not pollute unrelated config keys', () => {

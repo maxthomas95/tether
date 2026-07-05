@@ -242,6 +242,13 @@ export function readPrefsFromConfig(config: Record<string, string | undefined>):
     onError:             readBool(config['notifications.onError'],             DEFAULT_NOTIFICATION_PREFS.onError),
     onBell:              readBool(config['notifications.onBell'],              DEFAULT_NOTIFICATION_PREFS.onBell),
     suppressWhenFocused: readBool(config['notifications.suppressWhenFocused'], DEFAULT_NOTIFICATION_PREFS.suppressWhenFocused),
+    webhook: {
+      url:       (config['notifications.webhook.url'] ?? DEFAULT_NOTIFICATION_PREFS.webhook.url).trim(),
+      onWaiting: readBool(config['notifications.webhook.onWaiting'], DEFAULT_NOTIFICATION_PREFS.webhook.onWaiting),
+      onIdle:    readBool(config['notifications.webhook.onIdle'],    DEFAULT_NOTIFICATION_PREFS.webhook.onIdle),
+      onDead:    readBool(config['notifications.webhook.onDead'],    DEFAULT_NOTIFICATION_PREFS.webhook.onDead),
+      onBell:    readBool(config['notifications.webhook.onBell'],    DEFAULT_NOTIFICATION_PREFS.webhook.onBell),
+    },
   };
 }
 
@@ -254,6 +261,11 @@ export function writePrefsToConfig(
   config['notifications.onError']             = prefs.onError             ? 'true' : 'false';
   config['notifications.onBell']              = prefs.onBell              ? 'true' : 'false';
   config['notifications.suppressWhenFocused'] = prefs.suppressWhenFocused ? 'true' : 'false';
+  config['notifications.webhook.url']         = prefs.webhook.url.trim();
+  config['notifications.webhook.onWaiting']   = prefs.webhook.onWaiting   ? 'true' : 'false';
+  config['notifications.webhook.onIdle']      = prefs.webhook.onIdle      ? 'true' : 'false';
+  config['notifications.webhook.onDead']      = prefs.webhook.onDead      ? 'true' : 'false';
+  config['notifications.webhook.onBell']      = prefs.webhook.onBell      ? 'true' : 'false';
 }
 
 function readBool(raw: string | undefined, fallback: boolean): boolean {

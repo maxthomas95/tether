@@ -227,6 +227,14 @@ export interface NotificationPrefs {
   onBell: boolean;
   /** When true, suppress notifications while the main window is focused. */
   suppressWhenFocused: boolean;
+  /** Generic outbound webhook for session state/event notifications. Blank URL disables posting. */
+  webhook: {
+    url: string;
+    onWaiting: boolean;
+    onIdle: boolean;
+    onDead: boolean;
+    onBell: boolean;
+  };
 }
 
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
@@ -235,6 +243,13 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   onError: false,
   onBell: false,
   suppressWhenFocused: true,
+  webhook: {
+    url: '',
+    onWaiting: true,
+    onIdle: false,
+    onDead: false,
+    onBell: false,
+  },
 };
 
 export interface CreateSessionOptions {
