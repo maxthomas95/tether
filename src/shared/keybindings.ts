@@ -7,6 +7,7 @@ export type KeybindingAction =
   | 'shortcuts.show'
   | 'session.next'
   | 'session.prev'
+  | 'session.nextWaiting'
   | 'session.switch.1'
   | 'session.switch.2'
   | 'session.switch.3'
@@ -41,6 +42,7 @@ export const ALL_ACTIONS: KeybindingAction[] = [
   'shortcuts.show',
   'session.next',
   'session.prev',
+  'session.nextWaiting',
   'session.switch.1',
   'session.switch.2',
   'session.switch.3',
@@ -72,6 +74,7 @@ export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, Chord> = {
   'shortcuts.show': 'ctrl+/',
   'session.next': 'ctrl+arrowdown',
   'session.prev': 'ctrl+arrowup',
+  'session.nextWaiting': 'ctrl+shift+a',
   'session.switch.1': 'ctrl+1',
   'session.switch.2': 'ctrl+2',
   'session.switch.3': 'ctrl+3',
@@ -103,6 +106,7 @@ export const ACTION_LABELS: Record<KeybindingAction, string> = {
   'shortcuts.show': 'Show keyboard shortcuts',
   'session.next': 'Next session',
   'session.prev': 'Previous session',
+  'session.nextWaiting': 'Jump to Next Waiting Session',
   'session.switch.1': 'Switch to session 1',
   'session.switch.2': 'Switch to session 2',
   'session.switch.3': 'Switch to session 3',
@@ -133,6 +137,7 @@ export const ACTION_GROUPS: Record<KeybindingAction, ActionGroup> = {
   'search.open': 'Session',
   'session.next': 'Session',
   'session.prev': 'Session',
+  'session.nextWaiting': 'Session',
   'session.switch.1': 'Switch',
   'session.switch.2': 'Switch',
   'session.switch.3': 'Switch',
