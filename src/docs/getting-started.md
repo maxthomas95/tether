@@ -70,9 +70,9 @@ Once split, use **Alt+Arrow** to focus the neighboring pane (un-maximizing if ne
 
 You can also **broadcast input** to multiple panes at once — toggle targets from the pane status strip. See [Sessions](sessions#broadcast-input).
 
-### Desktop Notifications
+### Notifications
 
-Tether can post OS notifications when a session goes waiting, idle, or exits. Configure triggers in [Settings](settings#notifications), and mute individual sessions from their right-click menu.
+Tether can post OS notifications or generic outbound webhooks when a session goes waiting, idle, rings the terminal bell, or dies unexpectedly. Configure triggers in [Settings](settings#notifications), and mute individual sessions from their right-click menu.
 
 ## Next Steps
 

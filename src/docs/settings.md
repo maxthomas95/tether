@@ -149,15 +149,19 @@ When you create a session and pick a profile, its env vars and CLI flags merge o
 
 ## Notifications
 
-Tether can post OS desktop notifications when a session changes state, so you can step away from the window and still know when something needs attention. Five triggers, each independently toggleable:
+Tether can post OS desktop notifications when a session changes state, and it can also POST a generic outbound webhook to an HTTP endpoint you control. Desktop notifications and webhooks have separate trigger toggles.
 
 | Trigger | When it fires |
 |---------|---------------|
 | **Waiting for input** | The CLI finishes its turn or hits a permission prompt — the moment the sidebar dot goes amber |
 | **Idle** | The session has been silent past the idle timeout |
-| **Unexpected exit** | The CLI exits with a non-zero code. Clean exits (you closed the session) stay quiet |
+| **Unexpected exit / Dead** | The CLI exits with a non-zero code and the session state becomes `dead`. Clean exits (`stopped`) stay quiet |
 | **Terminal bell** | The CLI emits an ASCII BEL (`\x07`). Coalesced so a noisy session won't spam your notification center |
 | **Suppress while focused** | When on, notifications are hidden while Tether's window has focus (the sidebar already tells you) |
+
+The generic webhook is disabled while its URL is blank. When enabled, Tether sends fire-and-forget JSON with the event name, timestamp, and session metadata: id, label, working directory, state, CLI tool, environment id/name when available, and waiting reason when available. It does not include PTY output, environment variables, CLI args, tokens, or secrets. Only `http://` and `https://` URLs are used, and endpoint URLs are not written to logs because they may contain tokens.
+
+Muting a session suppresses both desktop notifications and generic webhook posts for that session.
 
 Individual sessions can be muted from the right-click menu in the sidebar — see [Sessions](sessions#muting-notifications).
 

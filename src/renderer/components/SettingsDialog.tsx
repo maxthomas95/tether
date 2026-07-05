@@ -1301,6 +1301,86 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                 you want the alert even when the window has focus.
               </p>
             </div>
+
+            <div className="form-group" style={{ marginTop: 20 }}>
+              <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+                Generic outbound webhook
+              </label>
+              <p className="form-hint" style={{ marginBottom: 12 }}>
+                POST a small JSON payload to your own HTTP endpoint when selected session events occur.
+                Leave the URL blank to disable webhook delivery.
+              </p>
+
+              <div className="form-group">
+                <label className="form-label">Webhook URL</label>
+                <input
+                  className="form-input"
+                  value={notificationPrefs.webhook.url}
+                  onChange={e => setNotificationPrefs(p => ({
+                    ...p,
+                    webhook: { ...p.webhook, url: e.target.value },
+                  }))}
+                  placeholder="https://example.com/tether-webhook"
+                  spellCheck={false}
+                />
+                <p className="form-hint">
+                  Only http:// and https:// URLs are used. The URL may contain a token, so Tether
+                  does not log it.
+                </p>
+              </div>
+
+              <label className="form-radio-label" style={{ marginTop: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={notificationPrefs.webhook.onWaiting}
+                  onChange={e => setNotificationPrefs(p => ({
+                    ...p,
+                    webhook: { ...p.webhook, onWaiting: e.target.checked },
+                  }))}
+                />
+                Post when a session is waiting for input
+              </label>
+
+              <label className="form-radio-label" style={{ marginTop: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={notificationPrefs.webhook.onIdle}
+                  onChange={e => setNotificationPrefs(p => ({
+                    ...p,
+                    webhook: { ...p.webhook, onIdle: e.target.checked },
+                  }))}
+                />
+                Post when a session goes idle
+              </label>
+
+              <label className="form-radio-label" style={{ marginTop: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={notificationPrefs.webhook.onDead}
+                  onChange={e => setNotificationPrefs(p => ({
+                    ...p,
+                    webhook: { ...p.webhook, onDead: e.target.checked },
+                  }))}
+                />
+                Post when a session dies unexpectedly
+              </label>
+
+              <label className="form-radio-label" style={{ marginTop: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={notificationPrefs.webhook.onBell}
+                  onChange={e => setNotificationPrefs(p => ({
+                    ...p,
+                    webhook: { ...p.webhook, onBell: e.target.checked },
+                  }))}
+                />
+                Post on terminal bell
+              </label>
+              <p className="form-hint">
+                Session mutes suppress both desktop notifications and generic webhook posts for that
+                session.
+              </p>
+            </div>
             </>
           )}
 

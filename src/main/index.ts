@@ -15,6 +15,7 @@ import { startHookService, stopHookService } from './cli-config/hook-service';
 import { jobsService } from './jobs/jobs-service';
 import { jobsBridge } from './jobs/jobs-bridge';
 import { createNotificationService, readPrefsFromConfig } from './notifications/notification-service';
+import { createOutboundWebhookService } from './notifications/outbound-webhook-service';
 import { getLoaderTheme, DEFAULT_LOADER_THEME } from '../shared/loader-themes';
 import { IPC } from '../shared/constants';
 import { createLogger, closeLogger } from './logger';
@@ -38,6 +39,9 @@ if (squirrelStartup) {
 let mainWindow: BrowserWindow | null = null;
 let docsWindow: BrowserWindow | null = null;
 let hookShutdownDone = false;
+const outboundWebhookService = createOutboundWebhookService({
+  getPrefs: () => readPrefsFromConfig(getDb().config),
+});
 
 /** Returns the docs BrowserWindow if open, for theme-change forwarding. */
 export function getDocsWindow(): BrowserWindow | null {
@@ -279,6 +283,7 @@ const createWindow = () => {
     },
   });
   sessionManager.setNotifier(notifier);
+  outboundWebhookService.start();
 
   ipcMain.handle(IPC.DOCS_OPEN, (_e, target?: DocsOpenTarget) => createDocsWindow(target));
 
@@ -368,6 +373,7 @@ if (!gotTheLock) {
       return;
     }
     jobsBridge.dispose();
+    outboundWebhookService.dispose();
     jobsService.dispose();
     usageService.dispose();
     quotaService.dispose();

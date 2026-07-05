@@ -27,7 +27,7 @@ vi.mock('../session/session-manager', () => ({
 }));
 
 import { IPC } from '../../shared/constants';
-import { DEFAULT_NOTIFICATION_PREFS } from '../../shared/types';
+import { DEFAULT_NOTIFICATION_PREFS, type NotificationPrefs } from '../../shared/types';
 import { registerNotificationsHandlers } from './notifications-handlers';
 
 const harness = createHarness(registry);
@@ -55,10 +55,13 @@ describe('notifications-handlers', () => {
       dbState.config['notifications.onWaiting'] = 'false';
       dbState.config['notifications.onBell'] = 'false';
       dbState.config['notifications.suppressWhenFocused'] = 'false';
-      const prefs = await harness.invoke(IPC.NOTIFICATIONS_GET_PREFS) as Record<string, boolean>;
+      dbState.config['notifications.webhook.url'] = ' https://example.test/hook ';
+      dbState.config['notifications.webhook.onIdle'] = 'true';
+      const prefs = await harness.invoke(IPC.NOTIFICATIONS_GET_PREFS) as NotificationPrefs;
       expect(prefs.onWaiting).toBe(false);
       expect(prefs.onBell).toBe(false);
       expect(prefs.suppressWhenFocused).toBe(false);
+      expect(prefs.webhook).toMatchObject({ url: 'https://example.test/hook', onIdle: true });
       // unset keys keep their defaults
       expect(prefs.onIdle).toBe(DEFAULT_NOTIFICATION_PREFS.onIdle);
       expect(prefs.onError).toBe(DEFAULT_NOTIFICATION_PREFS.onError);
@@ -68,18 +71,43 @@ describe('notifications-handlers', () => {
   describe('NOTIFICATIONS_SET_PREFS', () => {
     it('persists every flag as the matching string-encoded config key and saves once', async () => {
       await harness.invoke(IPC.NOTIFICATIONS_SET_PREFS, {
-        onWaiting: false, onIdle: true, onError: false, onBell: true, suppressWhenFocused: false,
+        ...DEFAULT_NOTIFICATION_PREFS,
+        onWaiting: false,
+        onIdle: true,
+        onError: false,
+        onBell: true,
+        suppressWhenFocused: false,
+        webhook: {
+          url: ' https://example.test/hook ',
+          onWaiting: true,
+          onIdle: true,
+          onDead: true,
+          onBell: false,
+        },
       });
       expect(dbState.config['notifications.onWaiting']).toBe('false');
       expect(dbState.config['notifications.onIdle']).toBe('true');
       expect(dbState.config['notifications.onError']).toBe('false');
       expect(dbState.config['notifications.onBell']).toBe('true');
       expect(dbState.config['notifications.suppressWhenFocused']).toBe('false');
+      expect(dbState.config['notifications.webhook.url']).toBe('https://example.test/hook');
+      expect(dbState.config['notifications.webhook.onWaiting']).toBe('true');
+      expect(dbState.config['notifications.webhook.onIdle']).toBe('true');
+      expect(dbState.config['notifications.webhook.onDead']).toBe('true');
+      expect(dbState.config['notifications.webhook.onBell']).toBe('false');
       expect(dbState.saveCount).toBe(1);
     });
 
     it('round-trips through GET after SET', async () => {
-      const original = { onWaiting: false, onIdle: false, onError: true, onBell: true, suppressWhenFocused: true };
+      const original = {
+        ...DEFAULT_NOTIFICATION_PREFS,
+        onWaiting: false,
+        onIdle: false,
+        onError: true,
+        onBell: true,
+        suppressWhenFocused: true,
+        webhook: { url: 'https://example.test/hook', onWaiting: false, onIdle: true, onDead: true, onBell: true },
+      };
       await harness.invoke(IPC.NOTIFICATIONS_SET_PREFS, original);
       expect(await harness.invoke(IPC.NOTIFICATIONS_GET_PREFS)).toEqual(original);
     });
