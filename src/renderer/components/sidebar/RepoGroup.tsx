@@ -56,6 +56,12 @@ interface RepoGroupProps {
    * to delay the enter animation per row. Optional — falls back to 0.
    */
   staggerIndex?: number;
+  /**
+   * Returns the last few lines of a session's terminal buffer for the
+   * hover preview popover, or `[]` if the session has no terminal yet.
+   * Omitted entirely disables the preview.
+   */
+  getPreviewLines?: (sessionId: string) => string[];
 }
 
 export function RepoGroup({
@@ -90,6 +96,7 @@ export function RepoGroup({
   hiddenPaneIds,
   onFocusPane,
   staggerIndex,
+  getPreviewLines,
 }: RepoGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null);
@@ -336,6 +343,7 @@ export function RepoGroup({
             paneLocation={location}
             paneHidden={location ? hiddenPaneIds?.has(location.paneId) : false}
             onFocusPane={onFocusPane}
+            getPreviewLines={getPreviewLines}
             nested
           />
         );

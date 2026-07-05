@@ -45,6 +45,7 @@ import { onKeyActivate, stopPropagationOnKey } from './utils/a11y';
 import { extractErrorMessage, formatSessionExitMessage } from './utils/errors';
 import { nextDuplicateLabel } from './utils/duplicate-label';
 import { selectNextWaiting } from './utils/attention-queue';
+import { readLastLines } from './utils/terminal-preview';
 import type { LayoutNode } from '../shared/layout-types';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, SessionOrderPref, HostVerifyRequest, JobsStatus } from '../shared/types';
 import {
@@ -1574,6 +1575,15 @@ export function App() {
     layoutDispatch({ type: 'SET_FOCUS', paneId });
   }, [layoutState.maximizedPaneId, layoutDispatch]);
 
+  // Sidebar hover preview: read straight from the session's live terminal
+  // buffer (pane-mounted or backgrounded) without creating one. Returns []
+  // when the session has no terminal yet, which tells the caller not to
+  // show a popover.
+  const handleGetPreviewLines = useCallback((sessionId: string): string[] => {
+    const term = termManager.peek(sessionId);
+    return term ? readLastLines(term.buffer.active, 6) : [];
+  }, [termManager]);
+
   // When pane splitting is turned off, collapse multi-pane or empty layouts
   // back to the welcome screen. A single non-empty pane is left alone so the
   // user keeps working in it.
@@ -1910,6 +1920,7 @@ export function App() {
                         paneLocations={paneLocations}
                         hiddenPaneIds={hiddenPaneIds}
                         onFocusPane={handleFocusPane}
+                        getPreviewLines={handleGetPreviewLines}
                       />
                     ));
                   })()
