@@ -99,6 +99,22 @@ Tether ships Windows-only today; macOS and Linux are post-1.0 (see `ROADMAP.md`)
 - Don't store SSH private keys or Vault tokens in plaintext config — reference paths/use the resolver
 - Don't send PTY data for background sessions to the renderer — only the active session(s) stream to the DOM
 
+## Agent Routing
+
+`.claude/agents/` (local, untracked) defines three model-tiered subagents. Route by task shape, not habit:
+
+- `architect` (Opus, effort high) — bounded deep problems: root-causing a specific behavior, design analysis with non-obvious tradeoffs. Returns analysis with file:line evidence; does not usually write production code.
+- `coder` (Sonnet, effort low) — implementation with a clear spec, known files, and a defined done-state. Ambiguous specs bounce back rather than get improvised. Bump to effort medium only if specs get looser.
+- `scout` (Haiku, read-only) — fast lookups, log/transcript digging, quick verifications. Never edits files.
+
+Standing rules:
+
+1. **Discovery-shaped or cross-cutting work stays at the orchestrator level.** Problems nobody has framed yet — status-detection matrix bugs (transport × CLI × hooks), transport lifecycle races, anything spanning main/renderer/IPC — can't be specced for delegation; they're found by top-level whole-system review. When deep work also needs the current conversation's context, prefer a fork of the main session over `architect` — subagents start blank.
+2. Escalate up-tier when a problem resists a bounded framing; never down-tier to save cost on something that keeps bouncing.
+3. For ambiguous multi-step work, prefer a full spawned session (which can pause and ask) over a fire-and-forget subagent.
+
+Implementation work still goes through isolated worktrees when parallel sessions are active; at most, fan out independent well-specced cleanups to parallel `coder` runs.
+
 ## Build & Run
 
 ```bash
