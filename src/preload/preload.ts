@@ -6,7 +6,7 @@ import type {
   CreateEnvironmentOptions, EnvironmentInfo,
   CreateLaunchProfileOptions, LaunchProfileInfo,
   TetherAPI,
-  CreateGitProviderOptions, GitProviderInfo, GitRepoInfo, CloneProgressInfo, AdoProjectInfo, CreateRepoOptions, CoderTemplate, CoderTemplateParam, CreateCoderWorkspaceOptions,
+  CreateGitProviderOptions, GitProviderInfo, GitRepoInfo, CloneProgressInfo, RepoBranchStatus, AdoProjectInfo, CreateRepoOptions, CoderTemplate, CoderTemplateParam, CreateCoderWorkspaceOptions,
   UpdateCheckResult,
   VaultConfig, VaultStatus, VaultPlaintextSecret, MigrateSecretOptions, VaultPreflightResult, VaultExpiryWarning,
   TranscriptInfo,
@@ -138,6 +138,7 @@ const api: TetherAPI = {
     createFolder: (path: string, initGit: boolean): Promise<string> => ipcRenderer.invoke(IPC.GIT_CREATE_FOLDER, path, initGit),
     remoteAdd: (repoPath: string, remoteName: string, remoteUrl: string): Promise<void> => ipcRenderer.invoke(IPC.GIT_REMOTE_ADD, repoPath, remoteName, remoteUrl),
     isRepo: (directory: string): Promise<boolean> => ipcRenderer.invoke(IPC.GIT_IS_REPO, directory),
+    branchStatus: (directory: string): Promise<RepoBranchStatus | null> => ipcRenderer.invoke(IPC.GIT_BRANCH_STATUS, directory),
     worktreeAdd: (opts: { sourceRepo: string; worktreePath: string; branch: string }): Promise<string> => ipcRenderer.invoke(IPC.GIT_WORKTREE_ADD, opts),
     worktreeRemove: (opts: { sourceRepo: string; worktreePath: string; force?: boolean }): Promise<void> =>
       ipcRenderer.invoke(IPC.GIT_WORKTREE_REMOVE, opts),

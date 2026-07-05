@@ -28,6 +28,7 @@ const gitServiceMocks = vi.hoisted(() => ({
   isGitRepo: vi.fn(),
   createFolder: vi.fn(),
   gitRemoteAdd: vi.fn(),
+  gitBranchStatus: vi.fn(),
 }));
 vi.mock('../git/git-service', () => gitServiceMocks);
 
@@ -249,6 +250,19 @@ describe('git-handlers', () => {
       expect(gitServiceMocks.gitRemoteAdd).toHaveBeenCalledWith('/r', 'origin', 'https://x.git');
 
       expect(await harness.invoke(IPC.GIT_IS_REPO, '/d')).toBe(true);
+    });
+
+    it('GIT_BRANCH_STATUS forwards the directory and returns the result shape', async () => {
+      gitServiceMocks.gitBranchStatus.mockResolvedValue({ branch: 'main', dirtyCount: 2 });
+      const result = await harness.invoke(IPC.GIT_BRANCH_STATUS, '/repo');
+      expect(gitServiceMocks.gitBranchStatus).toHaveBeenCalledWith('/repo');
+      expect(result).toEqual({ branch: 'main', dirtyCount: 2 });
+    });
+
+    it('GIT_BRANCH_STATUS forwards a null result', async () => {
+      gitServiceMocks.gitBranchStatus.mockResolvedValue(null);
+      const result = await harness.invoke(IPC.GIT_BRANCH_STATUS, '/not-a-repo');
+      expect(result).toBeNull();
     });
 
     it('GIT_WORKTREE_ADD / GIT_WORKTREE_REMOVE forward opts', async () => {

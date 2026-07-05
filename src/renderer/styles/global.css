@@ -1079,6 +1079,21 @@ textarea:focus-visible,
   font-weight: 500;
 }
 
+.repo-group-branch {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repo-group-dirty {
+  color: var(--status-waiting);
+  margin-left: 2px;
+}
+
 .repo-group-count {
   font-size: var(--text-xs);
   color: var(--text-muted);

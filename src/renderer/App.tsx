@@ -1882,6 +1882,7 @@ export function App() {
                         staggerIndex={idx}
                         repoPath={dir}
                         environmentId={env.id}
+                        environmentType={env.type}
                         sessions={sortSessionsInGroup(env.id, dir, dirSessions)}
                         activeSessionId={activeSessionId}
                         visibleSessionIds={visibleSessionIds}
