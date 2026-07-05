@@ -21,6 +21,22 @@ Each terminal pane shows a footer strip with that session's cumulative cost and 
 
 The bottom of the sidebar shows today's cost and a 7-day sparkline (`GlobalUsageFooter`). Click it to open the **Usage history** dialog.
 
+## Budget Guardrails
+
+[Settings -> Usage](settings#usage) has optional **Daily budget warning (USD)**
+and **Weekly budget warning (USD)** thresholds. Blank or `0` disables a
+guardrail; positive decimal dollar values enable it.
+
+Daily warnings use the current UTC calendar day. Weekly warnings use the current
+ISO week, Monday-Sunday in UTC, matching the weekly usage-history rollups. When
+usage crosses a configured threshold, Tether shows one in-app warning toast for
+that period and turns the global usage footer amber while crossed. The
+last-warning period is saved locally, so restarting Tether does not repeat the
+same daily or weekly warning.
+
+These guardrails use Tether's local API-equivalent cost estimates. They are not
+provider billing data and do not change subscription or API limits.
+
 ## Usage History Dialog
 
 Tiles for **Today / 7d / 30d / All-time** cost and token counts, plus tabbed tables:

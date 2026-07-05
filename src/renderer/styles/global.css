@@ -462,6 +462,25 @@ textarea:focus-visible,
   background: var(--bg-hover);
 }
 
+.global-usage-footer--budget-warning {
+  border-top-color: color-mix(in srgb, var(--status-waiting) 65%, var(--border-color));
+  box-shadow: inset 3px 0 0 var(--status-waiting);
+}
+
+.global-usage-footer--budget-warning .global-usage-value {
+  color: var(--status-waiting);
+}
+
+.settings-inline-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+.settings-inline-fields--usage-budget {
+  margin-top: 12px;
+}
+
 .global-usage-row {
   display: flex;
   align-items: center;

@@ -207,6 +207,12 @@ The **About** dialog has an **Export diagnostics for support** button that bundl
 
 Per-session and global usage stats are computed from Claude Code and Codex CLI transcript JSONL files (plus OpenCode's local DB and the bundled LiteLLM pricing table). Toggle tracking on/off; resync on demand.
 
+### Budget guardrails
+
+Set **Daily budget warning (USD)** or **Weekly budget warning (USD)** to a positive dollar amount to enable local warning guardrails. Blank or `0` disables a guardrail.
+
+When the current UTC day or Monday-Sunday UTC ISO week crosses its threshold, Tether shows one in-app warning for that period and turns the global usage footer amber while crossed.
+
 ### History dialog
 
 Click the global usage footer at the bottom of the sidebar to open a Usage history dialog with Today / 7d / 30d / All-time tiles and tabbed Daily / Weekly / Monthly tables.
