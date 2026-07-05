@@ -41,6 +41,40 @@ features, not terminal renderers.
 - JSON persistence under Electron `userData` is the current storage model;
   SQLite is deferred.
 
+## Agent Routing
+
+`.codex/agents/` (local, untracked) defines three model-tiered Codex
+subagents. Route by task shape, not habit:
+
+- `architect` (`gpt-5.5`, effort high) — bounded deep problems:
+  root-causing a specific behavior, design analysis with non-obvious
+  tradeoffs, and transport/status/IPC lifecycle debugging. Returns analysis
+  with file:line evidence; does not usually write production code.
+- `coder` (`gpt-5.5`, effort low) — implementation with a clear spec, known
+  files, and a defined done-state. Ambiguous specs bounce back rather than get
+  improvised. Bump effort only if the spec gets looser.
+- `scout` (`gpt-5.4-mini`, effort low, read-only) — fast lookups,
+  log/transcript digging, config checks, and quick verifications. Never edits
+  files.
+
+Standing rules:
+
+1. **Discovery-shaped or cross-cutting work stays at the orchestrator level.**
+   Problems nobody has framed yet — status-detection matrix bugs, transport
+   lifecycle races, anything spanning main/renderer/IPC — cannot be specced for
+   delegation until top-level review frames the problem.
+2. Use custom subagents only when the user explicitly asks for subagents,
+   parallel agents, delegation, or this routing behavior. Codex should not spawn
+   them automatically for ordinary single-threaded work.
+3. Escalate up-tier when a problem resists a bounded framing; never down-tier to
+   save cost on something that keeps bouncing.
+4. For ambiguous multi-step work, prefer a full spawned session that can pause
+   and ask over a fire-and-forget subagent.
+
+Implementation work still goes through isolated worktrees when parallel
+sessions are active; at most, fan out independent well-specced cleanups to
+parallel `coder` runs.
+
 ## Development Rules
 
 - Preserve the raw terminal invariant for local, SSH, and Coder sessions.
