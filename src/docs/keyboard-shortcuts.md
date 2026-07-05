@@ -15,8 +15,6 @@ All shortcuts below are the defaults. Every one is **remappable** in [Settings â
 | Shortcut | Action |
 |----------|--------|
 | **Ctrl+1** through **Ctrl+9** | Switch to session by position |
-| **Ctrl+ArrowDown** | Next session |
-| **Ctrl+ArrowUp** | Previous session |
 | **Ctrl+Shift+A** | Jump to next waiting session (see [Attention queue](sessions#attention-queue)) |
 
 ## Split Panes
@@ -24,6 +22,7 @@ All shortcuts below are the defaults. Every one is **remappable** in [Settings â
 | Shortcut | Action |
 |----------|--------|
 | **Alt+Arrow** | Focus the pane in that direction (un-maximizes if needed) |
+| **Ctrl+ArrowDown** / **Ctrl+ArrowUp** | Focus the next / previous pane in layout order |
 | **Alt+Shift+Arrow** | Swap the focused pane with its neighbor |
 
 ## Zoom & Font
