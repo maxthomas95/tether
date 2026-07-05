@@ -97,7 +97,7 @@ Tether ships Windows-only today; macOS and Linux are post-1.0 (see `ROADMAP.md`)
 - Never abstract away the native CLI terminal experience
 - Don't build task management, agent orchestration, or custom rendering
 - Don't store SSH private keys or Vault tokens in plaintext config — reference paths/use the resolver
-- Don't send PTY data for background sessions to the renderer — only the active session(s) stream to the DOM
+- Background sessions' terminals stay live off-DOM (PTY data keeps flowing so scrollback survives re-attach), but only active panes are attached to the DOM — don't add rendering or per-frame work for hidden sessions
 
 ## Agent Routing
 

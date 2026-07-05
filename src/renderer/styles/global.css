@@ -1252,6 +1252,34 @@ textarea:focus-visible,
   margin: 4px 0;
 }
 
+/* Session hover preview popover. `top`/`left` are set inline (position:
+ * fixed, computed from the row's bounding rect) since the popover must
+ * escape the sidebar's scroll container to sit over the terminal pane —
+ * unlike .context-menu, which stays within the sidebar's own width. The
+ * surface styling mirrors .context-menu's elevation recipe. Pointer-only:
+ * aria-hidden, so it never becomes a focus/interaction target. */
+.session-preview-popover {
+  position: fixed;
+  z-index: 100;
+  max-width: 480px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  box-shadow: var(--shadow-dropdown), var(--inner-highlight);
+  pointer-events: none;
+  animation: dropdown-in var(--motion-fast) var(--ease-out-quint);
+}
+
+.session-preview-popover-line {
+  font-family: var(--font-mono-terminal);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Inline rename input */
 .session-rename-input {
   width: 100%;

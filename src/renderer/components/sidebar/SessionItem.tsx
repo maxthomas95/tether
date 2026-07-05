@@ -48,7 +48,16 @@ interface SessionItemProps {
   paneHidden?: boolean;
   /** Focus this session's pane (and un-maximize if needed). */
   onFocusPane?: (paneId: string) => void;
+  /**
+   * Returns the last few lines of this session's terminal buffer for the
+   * hover preview popover, or `[]` if there's nothing to show. Omitted
+   * disables the preview entirely.
+   */
+  getPreviewLines?: (sessionId: string) => string[];
 }
+
+/** Hover-intent delay before the preview popover is requested and shown. */
+const PREVIEW_HOVER_DELAY_MS = 350;
 
 /**
  * Module-local snapshot of the session being dragged for reorder. Set on
@@ -58,13 +67,16 @@ interface SessionItemProps {
  */
 let activeReorderSource: { id: string; environmentId: string | null; workingDir: string } | null = null;
 
-export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppressed, onClick, onStop, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, onToggleNotificationsMuted, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane }: SessionItemProps) {
+export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppressed, onClick, onStop, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, onToggleNotificationsMuted, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane, getPreviewLines }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
   const [reorderDropPosition, setReorderDropPosition] = useState<'above' | 'below' | null>(null);
+  const [preview, setPreview] = useState<{ lines: string[]; top: number; left: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isAlive = session.state !== 'stopped' && session.state !== 'dead';
 
@@ -86,8 +98,50 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showMenu]);
 
+  // Clear any pending hover-intent timer on unmount so it doesn't fire
+  // setPreview after the row is gone.
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current !== null) clearTimeout(hoverTimerRef.current);
+    };
+  }, []);
+
+  const clearHoverTimer = () => {
+    if (hoverTimerRef.current !== null) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
+
+  const hidePreview = () => {
+    clearHoverTimer();
+    setPreview(null);
+  };
+
+  const handleMouseEnterRow = () => {
+    if (!getPreviewLines) return;
+    clearHoverTimer();
+    hoverTimerRef.current = setTimeout(() => {
+      hoverTimerRef.current = null;
+      const lines = getPreviewLines(session.id);
+      if (lines.length === 0) return;
+      const rect = rowRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      // Clamp so a row near the bottom edge can't push the popover
+      // off-screen (~6 lines + padding ≈ 140px).
+      const top = Math.max(8, Math.min(rect.top, window.innerHeight - 140));
+      setPreview({ lines, top, left: rect.right + 8 });
+    }, PREVIEW_HOVER_DELAY_MS);
+  };
+
+  const handleRowClick = () => {
+    hidePreview();
+    onClick();
+  };
+
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
+    hidePreview();
     setShowMenu(true);
   };
 
@@ -121,14 +175,20 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
 
   return (
     <div
+      ref={rowRef}
       className={itemClasses}
-      onClick={onClick}
-      onKeyDown={onKeyActivate(onClick)}
+      onClick={handleRowClick}
+      onKeyDown={onKeyActivate(handleRowClick)}
       role="button"
       tabIndex={0}
       onContextMenu={handleContextMenu}
+      onMouseEnter={handleMouseEnterRow}
+      onMouseLeave={hidePreview}
       draggable
       onDragStart={(e) => {
+        // Drag suppresses the mouseleave that would normally clear the
+        // preview — hide it explicitly so it can't linger over the drag.
+        hidePreview();
         e.dataTransfer.setData('application/tether-session', session.id);
         // Second payload signals reorder intent — separate type so existing
         // pane-drop receivers (TerminalPane / DropZoneOverlay) ignore it.
@@ -327,6 +387,18 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
           >
             Remove
           </div>
+        </div>
+      )}
+
+      {preview && (
+        <div
+          className="session-preview-popover"
+          style={{ top: preview.top, left: preview.left }}
+          aria-hidden="true"
+        >
+          {preview.lines.map((line, i) => (
+            <div key={i} className="session-preview-popover-line">{line}</div>
+          ))}
         </div>
       )}
     </div>

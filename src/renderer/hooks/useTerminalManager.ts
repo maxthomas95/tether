@@ -74,6 +74,7 @@ export function clampScrollback(value: number | undefined | null): number {
 
 export interface TerminalManagerAPI {
   getOrCreate: (sessionId: string) => ManagedTerminal;
+  peek: (sessionId: string) => Terminal | undefined;
   writeData: (sessionId: string, data: string) => void;
   attachToPane: (paneId: PaneId, sessionId: string | null, container: HTMLDivElement) => void;
   detachPane: (paneId: PaneId) => void;
@@ -257,6 +258,18 @@ export function useTerminalManager(
     }
     return managed;
   }, [createTerminal]);
+
+  // Look up the terminal for a session (pane-mounted or backgrounded)
+  // without creating one. For read-only peeks — e.g. the sidebar hover
+  // preview — that must never instantiate a terminal just from a hover.
+  const peek = useCallback((sessionId: string): Terminal | undefined => {
+    const bg = backgroundTerminals.current.get(sessionId);
+    if (bg) return bg.terminal;
+    for (const entry of panes.current.values()) {
+      if (entry.sessionId === sessionId) return entry.terminal;
+    }
+    return undefined;
+  }, []);
 
   // Write data to ALL panes showing this session + background terminal
   const writeData = useCallback((sessionId: string, data: string) => {
@@ -443,6 +456,7 @@ export function useTerminalManager(
 
   return useMemo<TerminalManagerAPI>(() => ({
     getOrCreate,
+    peek,
     writeData,
     attachToPane,
     detachPane,
@@ -451,5 +465,5 @@ export function useTerminalManager(
     setSessionFontSize,
     setBroadcastTargets,
     remove,
-  }), [getOrCreate, writeData, attachToPane, detachPane, fitPane, focusPane, setSessionFontSize, setBroadcastTargets, remove]);
+  }), [getOrCreate, peek, writeData, attachToPane, detachPane, fitPane, focusPane, setSessionFontSize, setBroadcastTargets, remove]);
 }

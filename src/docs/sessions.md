@@ -126,6 +126,8 @@ The pill only appears when at least one session is waiting, and shows the live c
 
 The shortcut is remappable like any other; see [Keyboard Shortcuts](keyboard-shortcuts).
 
+Hover any session row for about a third of a second and a small popover shows its last few terminal lines — a quick way to triage which session actually needs you before you switch to it. It works for any session with terminal output, not just waiting ones, and pairs naturally with the attention queue for draining a busy sidebar.
+
 ## Workspace Persistence
 
 Tether saves open sessions, sidebar order, and pane layout to `{userData}/data.json` when you close the app. On next launch your workspace is restored — same sessions, same positions, same active session. Writes are atomic (tmp file → fsync → rename) and survive AV / OneDrive transient locks via a short retry loop.
