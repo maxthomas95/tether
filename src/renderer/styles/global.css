@@ -413,6 +413,29 @@ textarea:focus-visible,
   background: var(--bg-hover);
 }
 
+/* Attention queue pill — sidebar-header affordance for "N waiting", shown
+ * only when at least one session is blocked on the user. Clicking cycles
+ * through them the same way as the Jump to Next Waiting shortcut/menu item. */
+.attention-queue-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  width: 100%;
+  margin-top: var(--space-1-5);
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--status-waiting);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: var(--hover-transition);
+}
+
+.attention-queue-pill:hover {
+  background: var(--bg-hover);
+}
+
 .sidebar-content {
   flex: 1;
   overflow-y: auto;

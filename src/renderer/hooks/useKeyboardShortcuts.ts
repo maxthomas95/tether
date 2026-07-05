@@ -14,6 +14,7 @@ export interface ShortcutActions {
   onSwitchSession: (index: number) => void;
   onNextSession: () => void;
   onPrevSession: () => void;
+  onNextWaiting: () => void;
   onToggleSidebar: () => void;
   onStopSession: () => void;
   onOpenSettings: () => void;
@@ -43,6 +44,7 @@ function dispatch(action: KeybindingAction, actions: ShortcutActions): void {
     case 'shortcuts.show': actions.onShowShortcuts(); return;
     case 'session.next': actions.onNextSession(); return;
     case 'session.prev': actions.onPrevSession(); return;
+    case 'session.nextWaiting': actions.onNextWaiting(); return;
     case 'session.switch.1': actions.onSwitchSession(0); return;
     case 'session.switch.2': actions.onSwitchSession(1); return;
     case 'session.switch.3': actions.onSwitchSession(2); return;

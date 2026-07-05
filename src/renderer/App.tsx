@@ -44,6 +44,7 @@ import { toolSupportsHistory } from '../shared/cli-tools';
 import { onKeyActivate, stopPropagationOnKey } from './utils/a11y';
 import { extractErrorMessage, formatSessionExitMessage } from './utils/errors';
 import { nextDuplicateLabel } from './utils/duplicate-label';
+import { selectNextWaiting } from './utils/attention-queue';
 import type { LayoutNode } from '../shared/layout-types';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, SessionOrderPref, HostVerifyRequest, JobsStatus } from '../shared/types';
 import {
@@ -169,6 +170,11 @@ export function App() {
   // a silence-fallback re-asserting `waiting` re-bangs an already-acked
   // session. See setAcknowledgedWaitingIds usage below.
   const pendingAckDropTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Timestamp (ms) each session most recently transitioned into `waiting`,
+  // keyed by session id. Feeds selectNextWaiting's oldest-first FIFO order;
+  // maintained in the state-change subscription below and pruned wherever
+  // sessions are removed.
+  const waitingSinceRef = useRef<Map<string, number>>(new Map());
   const sessionsRef = useRef<SessionInfo[]>([]);
   // Gate the persist effect until the restore effect has finished reading the
   // saved workspace. Otherwise the initial-mount persist (with sessions=[])
@@ -662,6 +668,15 @@ export function App() {
           // a fresh ack is needed.
           cancelPendingAckDrop();
         }
+        // Attention queue: stamp the moment a session enters `waiting` so
+        // selectNextWaiting can FIFO-order the queue. Persists across
+        // waitingReason changes while state stays `waiting`; cleared the
+        // instant it leaves waiting for any other state.
+        if (state === 'waiting') {
+          if (old?.state !== 'waiting') waitingSinceRef.current.set(sid, Date.now());
+        } else {
+          waitingSinceRef.current.delete(sid);
+        }
         return prev.map(s => s.id === sid ? { ...s, state, waitingReason } : s);
       });
     });
@@ -806,6 +821,7 @@ export function App() {
         termManager.remove(s.id);
         layoutDispatch({ type: 'REMOVE_SESSION', sessionId: s.id });
         clearPendingAckDrop(s.id);
+        waitingSinceRef.current.delete(s.id);
       }
       await window.electronAPI.environment.delete(env.id);
       setEnvironments(prev => prev.filter(e => e.id !== env.id));
@@ -874,6 +890,7 @@ export function App() {
       layoutDispatch({ type: 'REMOVE_SESSION', sessionId: id });
       setSessions(prev => prev.filter(s => s.id !== id));
       clearPendingAckDrop(id);
+      waitingSinceRef.current.delete(id);
     } catch (err) {
       expectedSessionExitIds.current.delete(id);
       notifyError('Failed to remove session', err);
@@ -964,6 +981,7 @@ export function App() {
         termManager.remove(s.id);
         layoutDispatch({ type: 'REMOVE_SESSION', sessionId: s.id });
         clearPendingAckDrop(s.id);
+        waitingSinceRef.current.delete(s.id);
       } catch (err) {
         expectedSessionExitIds.current.delete(s.id);
         notifyError(`Failed to remove ${s.label}`, err);
@@ -1134,6 +1152,15 @@ export function App() {
     }
     handleSelectSession(sessionId);
   }, [layoutState.root, layoutState.maximizedPaneId, layoutDispatch, handleSelectSession]);
+
+  // Attention queue: count of sessions currently blocked on the user, and the
+  // jump handler shared by the keyboard shortcut, the sidebar pill, and the
+  // Session menu item.
+  const waitingCount = useMemo(() => sessions.filter(s => s.state === 'waiting').length, [sessions]);
+  const handleJumpToNextWaiting = useCallback(() => {
+    const nextId = selectNextWaiting(sessions, waitingSinceRef.current, activeSessionId);
+    if (nextId) handleActivateFromSearch(nextId);
+  }, [sessions, activeSessionId, handleActivateFromSearch]);
 
   const toggleGroup = useCallback((envId: string) => {
     setCollapsedGroups(prev => {
@@ -1431,6 +1458,7 @@ export function App() {
       layoutDispatch({ type: 'SET_FOCUS', paneId: prev.id });
       termManager.focusPane(prev.id);
     },
+    onNextWaiting: handleJumpToNextWaiting,
     onFocusPaneDirection: (direction: 'left' | 'right' | 'up' | 'down') => {
       if (!layoutState.root || !layoutState.focusedPaneId) return;
       const neighborId = getAdjacentPane(layoutState.root, layoutState.focusedPaneId, direction);
@@ -1452,7 +1480,7 @@ export function App() {
         targetPaneId: neighborId,
       });
     },
-  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom]);
+  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom, handleJumpToNextWaiting]);
 
   useKeyboardShortcuts(shortcutActions, resolvedBindings);
 
@@ -1698,6 +1726,7 @@ export function App() {
       label: 'Session',
       items: [
         { label: 'Find Session...', shortcut: formatChord(resolvedBindings['search.open']) || undefined, onClick: () => setSearchOpen(true), disabled: sessions.length === 0 },
+        { label: 'Jump to Next Waiting', shortcut: formatChord(resolvedBindings['session.nextWaiting']) || undefined, onClick: handleJumpToNextWaiting, disabled: waitingCount === 0 },
         { separator: true },
         { label: 'Stop Session', shortcut: formatChord(resolvedBindings['session.stop']) || undefined, onClick: () => { if (activeSessionId) handleStop(activeSessionId); }, disabled: !isAlive },
         { label: 'Duplicate Session', onClick: () => { if (activeSessionId) handleDuplicate(activeSessionId); }, disabled: !activeSession },
@@ -1738,7 +1767,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount]);
 
   return (
     <div className="app-layout">
@@ -1771,6 +1800,20 @@ export function App() {
           >
             Settings
           </button>
+          {waitingCount > 0 && (
+            <button
+              type="button"
+              className="attention-queue-pill"
+              onClick={handleJumpToNextWaiting}
+              title={formatChord(resolvedBindings['session.nextWaiting'])
+                ? `Jump to next waiting session (${formatChord(resolvedBindings['session.nextWaiting'])})`
+                : 'Jump to next waiting session'}
+              aria-label={`${waitingCount} session${waitingCount === 1 ? '' : 's'} waiting — jump to next`}
+            >
+              <span className="status-dot status-dot--waiting" aria-hidden="true" />
+              {waitingCount} waiting
+            </button>
+          )}
         </div>
         <div className="sidebar-content">
           {environments.map(env => {

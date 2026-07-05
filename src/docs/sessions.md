@@ -116,6 +116,14 @@ Press **Ctrl+P** (or **Session → Find Session…**) to open the quick switcher
 
 Opening a session from the switcher behaves exactly like clicking it in the sidebar: if it's already mounted in a pane, that pane is focused (and un-maximized if it was hidden behind a maximized pane); otherwise it replaces the focused/empty pane.
 
+## Attention queue
+
+With several sessions running at once, "which one needs me?" is the recurring question. The attention queue answers it: press **Ctrl+Shift+A** (or click **Session → Jump to Next Waiting**, or the amber **N waiting** pill in the sidebar header) to jump straight to the next session that's amber — **Waiting** — sorted permission prompts first, then oldest-waiting first. Repeated presses cycle through the whole queue, wrapping back to the start once you've seen them all, so it doubles as a "drain the queue" loop across a busy sidebar.
+
+The pill only appears when at least one session is waiting, and shows the live count. Muting a session's notifications doesn't remove it from the queue — muting only silences desktop notifications, so a muted session still surfaces here when it's your turn to look at it.
+
+The shortcut is remappable like any other; see [Keyboard Shortcuts](keyboard-shortcuts).
+
 ## Workspace Persistence
 
 Tether saves open sessions, sidebar order, and pane layout to `{userData}/data.json` when you close the app. On next launch your workspace is restored — same sessions, same positions, same active session. Writes are atomic (tmp file → fsync → rename) and survive AV / OneDrive transient locks via a short retry loop.
