@@ -4,6 +4,7 @@ import { createLogger } from '../../logger';
 import { handleConnection, type HookEventHandler, type TokenValidator } from '../hook-frame-server';
 import { helperCommand, mergeClaudeSettings, scrubClaudeSettings } from '../claude-settings-overlay';
 import { mergeCodexConfig, scrubCodexConfig } from '../codex-config-overlay';
+import { SENTINEL_TOKEN } from '../overlay-common';
 import type { ControlConnection, ControlConnectionFactory, RemoteFileOps } from './control-connection';
 
 const log = createLogger('remote-hook-agent');
@@ -19,15 +20,20 @@ const log = createLogger('remote-hook-agent');
  * Lifecycle (design doc REMOTE_HOOKS_DESIGN.md §Q4):
  *   - lazily connected by the first hooks-enabled session on the env
  *   - refcounted in memory; the last session out uninstalls the overlays and
- *     disconnects
- *   - every connect starts with a scrub pass — the remote equivalent of the
- *     local next-boot crash recovery. Between a crash and the next connect the
- *     orphaned overlay is inert: the helper exits 0 in milliseconds when its
- *     socket is gone.
+ *     disconnects. A teardown that arrives while another session's attach is
+ *     still in flight is deferred until the attach settles.
+ *   - every connect scrubs this boot's stale socket and ages out leftovers of
+ *     crashed prior boots — never fresh files, which may belong to another
+ *     live Tether instance on the same host/user.
  *   - a dropped control connection flips the affected sessions to
- *     cadence-only detection immediately (`setSessionHookCapable(false)`), then
- *     one reconnect attempt restores them; a second drop marks the agent
- *     failed for the boot.
+ *     cadence-only detection immediately (`setSessionHookCapable(false)`),
+ *     then one reconnect attempt restores them; a second drop marks the agent
+ *     failed for the boot. An `epoch` counter fences every async setup step so
+ *     a drop mid-setup can't resurrect state or kill a successor connection.
+ *   - if the connection is already gone when the last session detaches, the
+ *     host keeps its (inert — the helper exits 0 in milliseconds without its
+ *     socket) overlay entries until the next connect's scrub, exactly like the
+ *     local feature's crash-recovery window.
  */
 
 export interface RemoteHookAgentDeps {
@@ -46,8 +52,11 @@ export interface RemoteHookAgentDeps {
   setSessionHookCapable: (sessionId: string, capable: boolean) => void;
 }
 
+/** CLIs whose hooks the remote overlays can drive. */
+type HookCli = 'claude' | 'codex';
+
 interface AttachedSession {
-  cliTool: 'claude' | 'codex';
+  cliTool: HookCli;
   envFilePath: string;
 }
 
@@ -67,6 +76,13 @@ interface RemotePaths {
 
 const RECONNECT_DELAY_MS = 3000;
 
+/** Age (minutes) after which leftover run files from crashed boots are swept. */
+const STALE_RUN_FILE_MINUTES = 24 * 60;
+
+// Shell probe marker: hosts whose non-interactive shells echo rc/motd noise
+// would otherwise shift the positional parse of the probe output.
+const PROBE_MARKER = '__TETHER_PROBE__';
+
 /** POSIX quoting shorthand for exec command assembly. */
 const q = quotePosixShellArg;
 
@@ -79,7 +95,17 @@ export class RemoteHookAgent {
   /** Epoch millis of the last setup failure — retry gating for the service. */
   lastFailureAt = 0;
   private setupPromise: Promise<void> | null = null;
+  /**
+   * Fences async setup steps against connection loss/teardown: bumped by
+   * `handleClose` and `teardown`, checked after every await in `setup` and in
+   * the settle handlers, so a superseded setup can neither mutate agent state
+   * nor end a successor's connection.
+   */
+  private epoch = 0;
   private readonly sessions = new Map<string, AttachedSession>();
+  /** Attaches past the CLI gate but not yet in `sessions` (see detach deferral). */
+  private pendingAttaches = 0;
+  private teardownRequested = false;
   private claudeInstalled = false;
   private codexInstalled = false;
   /** Value for TETHER_HOOK_SOCKET: the remote UDS path, or tcp://127.0.0.1:<port>. */
@@ -110,19 +136,27 @@ export class RemoteHookAgent {
    */
   async envForSession(sessionId: string, cliTool: CliToolId): Promise<Record<string, string>> {
     if (cliTool !== 'claude' && cliTool !== 'codex') return {};
-    await this.ensureReady();
-    if (cliTool === 'claude' && !this.claudeInstalled) return {};
-    if (cliTool === 'codex' && !this.codexInstalled) return {};
-
-    const envFilePath = `${this.paths!.runDir}/s-${sessionId}.env`;
-    await this.writeSessionEnvFile(sessionId, envFilePath);
-    this.sessions.set(sessionId, { cliTool, envFilePath });
-    return { TETHER_HOOK_ENV_FILE: envFilePath };
+    this.pendingAttaches += 1;
+    try {
+      await this.ensureReady();
+      if (!this.cliInstalled(cliTool)) return {};
+      const files = this.files;
+      if (!files) throw new Error('Control connection lost during session attach');
+      const envFilePath = this.envFilePathFor(sessionId);
+      await this.writeSessionEnvFile(files, sessionId, envFilePath);
+      this.sessions.set(sessionId, { cliTool, envFilePath });
+      return { TETHER_HOOK_ENV_FILE: envFilePath };
+    } finally {
+      this.pendingAttaches -= 1;
+      this.runDeferredTeardown();
+    }
   }
 
   /**
    * Detach a session: revoke its token, best-effort delete its env file, and
-   * — when it was the last one — uninstall the overlays and disconnect.
+   * — when it was the last one — uninstall the overlays and disconnect. If
+   * another session's attach is still in flight, the teardown is deferred
+   * until that attach settles (a mid-write teardown would strand it).
    * No-op for sessions that never attached.
    */
   async detachSession(sessionId: string): Promise<void> {
@@ -134,6 +168,10 @@ export class RemoteHookAgent {
       await this.files.unlink(attached.envFilePath);
     }
     if (this.sessions.size === 0 && this.state !== 'disposed') {
+      if (this.pendingAttaches > 0) {
+        this.teardownRequested = true;
+        return;
+      }
       await this.teardown();
     }
   }
@@ -144,49 +182,98 @@ export class RemoteHookAgent {
     for (const sessionId of this.sessions.keys()) {
       this.deps.revokeToken(sessionId);
     }
-    this.sessions.clear();
+    // Teardown before clearing: it removes the remaining sessions' env files.
     await this.teardown();
+    this.sessions.clear();
+  }
+
+  private cliInstalled(cliTool: HookCli): boolean {
+    return cliTool === 'claude' ? this.claudeInstalled : this.codexInstalled;
+  }
+
+  private envFilePathFor(sessionId: string): string {
+    // Naming is mirrored by the stale-file sweep glob in setup() — keep in sync.
+    return `${this.paths!.runDir}/s-${sessionId}.env`;
+  }
+
+  private runDeferredTeardown(): void {
+    if (!this.teardownRequested || this.pendingAttaches > 0) return;
+    if (this.sessions.size > 0 || this.state === 'disposed') {
+      this.teardownRequested = false;
+      return;
+    }
+    this.teardownRequested = false;
+    this.teardown().catch((err) => {
+      log.warn('Deferred remote hook teardown failed', {
+        environmentId: this.deps.environmentId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
   }
 
   private async ensureReady(): Promise<void> {
     if (this.state === 'disposed') throw new Error('Remote hook agent disposed');
     if (this.state === 'ready') return;
     if (this.state === 'failed') throw new Error(this.failReason);
-    this.setupPromise ??= this.setup().then(
-      () => {
-        this.state = 'ready';
-      },
-      (err) => {
-        this.state = 'failed';
-        this.failReason = err instanceof Error ? err.message : String(err);
-        this.lastFailureAt = Date.now();
-        this.setupPromise = null;
-        this.conn?.end();
-        this.conn = null;
-        this.files = null;
-        throw err;
-      },
-    );
+    if (!this.setupPromise) {
+      const attempt = this.epoch;
+      this.setupPromise = this.setup(attempt).then(
+        () => {
+          if (this.epoch !== attempt || this.state === 'disposed') {
+            throw new Error('Remote hook setup superseded by connection loss');
+          }
+          this.state = 'ready';
+        },
+        (err) => {
+          if (this.epoch === attempt && this.state !== 'disposed') {
+            this.state = 'failed';
+            this.failReason = err instanceof Error ? err.message : String(err);
+            this.lastFailureAt = Date.now();
+            this.setupPromise = null;
+            this.conn?.end();
+            this.conn = null;
+            this.files = null;
+          }
+          throw err;
+        },
+      );
+    }
     return this.setupPromise;
   }
 
-  private async setup(): Promise<void> {
+  /** Throws when this setup attempt was superseded (drop/teardown mid-setup). */
+  private assertCurrent(attempt: number): void {
+    if (this.epoch !== attempt || this.state === 'disposed') {
+      throw new Error('Remote hook setup superseded');
+    }
+  }
+
+  private async setup(attempt: number): Promise<void> {
     const conn = await this.deps.connect();
+    if (this.epoch !== attempt || this.state === 'disposed') {
+      conn.end();
+      throw new Error('Remote hook setup superseded');
+    }
     this.conn = conn;
     conn.onClose(() => this.handleClose(conn));
 
     const files = await conn.files();
+    this.assertCurrent(attempt);
     this.files = files;
     const home = await files.realpath('.');
+    this.assertCurrent(attempt);
     this.paths = buildRemotePaths(home, this.deps.bootId);
     const p = this.paths;
 
     // Probe platform + Node in one round-trip. The transports already assume
-    // POSIX remotes; the helper additionally needs a `node` on PATH.
-    const probe = await conn.exec('uname -s; command -v node || command -v nodejs || true');
-    const probeLines = probe.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
-    const uname = probeLines[0] || '';
-    const nodePath = probeLines[1] || '';
+    // POSIX remotes; the helper additionally needs a `node` on PATH. The
+    // marker discards any rc/motd noise the non-interactive shell emits.
+    const probe = await conn.exec(`echo ${PROBE_MARKER}; uname -s; command -v node || command -v nodejs || true`);
+    this.assertCurrent(attempt);
+    const probeLines = probe.stdout.split('\n').map((l) => l.trim());
+    const markerIdx = probeLines.indexOf(PROBE_MARKER);
+    const uname = (markerIdx >= 0 && probeLines[markerIdx + 1]) || '';
+    const nodePath = (markerIdx >= 0 && probeLines[markerIdx + 2]) || '';
     if (uname !== 'Linux' && uname !== 'Darwin') {
       throw new Error(`Unsupported remote platform for CLI hooks: ${uname || 'unknown'}`);
     }
@@ -194,23 +281,33 @@ export class RemoteHookAgent {
       throw new Error('Node.js not found on host — CLI hooks unavailable, sessions stay cadence-only');
     }
 
-    // Directories + connect-time scrub of stale run files (crashed prior
-    // boots leave sockets/env files behind; sshd can also leave a stale
-    // socket file that would make the re-forward bind fail).
     const dirs = await conn.exec(
       `mkdir -p ${q(p.binDir)} ${q(p.runDir)} ${q(p.claudeDir)} ${q(p.codexDir)}` +
-        ` && chmod 700 ${q(p.tetherDir)} ${q(p.runDir)}` +
-        ` && rm -f ${q(p.runDir)}/hook-*.sock ${q(p.runDir)}/s-*.env`,
+        ` && chmod 700 ${q(p.tetherDir)} ${q(p.runDir)}`,
     );
+    this.assertCurrent(attempt);
     if (dirs.code !== 0) {
       throw new Error(`Remote ~/.tether setup failed (exit ${dirs.code}): ${dirs.stderr.trim() || dirs.stdout.trim()}`);
     }
+
+    // Connect-time scrub: remove THIS boot's stale socket (sshd can leave the
+    // inode behind, which would fail the re-bind) and age out run files from
+    // crashed prior boots. Deliberately no fresh-file globbing — another live
+    // Tether instance's socket and env files share this directory.
+    await files.unlink(p.socketPath);
+    await conn.exec(
+      `find ${q(p.runDir)} -maxdepth 1 -type f \\( -name 'hook-*.sock' -o -name 's-*.env' \\)` +
+        ` -mmin +${STALE_RUN_FILE_MINUTES} -delete 2>/dev/null || true`,
+    );
+    this.assertCurrent(attempt);
 
     // Helper upload — unconditional (6 KB), atomic via tmp + rename so an
     // in-flight hook invocation reading the old file is unaffected.
     const tmpPath = `${p.helperPath}.tmp-${this.deps.bootId}`;
     await files.writeFile(tmpPath, this.deps.readHelperSource(), 0o644);
+    this.assertCurrent(attempt);
     await files.rename(tmpPath, p.helperPath);
+    this.assertCurrent(attempt);
 
     // Reverse forward: UDS first (no TCP exposure, filesystem perms as
     // defense-in-depth), loopback TCP as the fallback when sshd forbids
@@ -222,6 +319,7 @@ export class RemoteHookAgent {
       await conn.forwardUnix(p.socketPath, onStream);
       this.socketEnvValue = p.socketPath;
     } catch (err) {
+      this.assertCurrent(attempt);
       log.warn('Streamlocal forward failed — falling back to loopback TCP', {
         environmentId: this.deps.environmentId,
         error: err instanceof Error ? err.message : String(err),
@@ -229,13 +327,34 @@ export class RemoteHookAgent {
       const port = await conn.forwardTcp(onStream);
       this.socketEnvValue = `tcp://127.0.0.1:${port}`;
     }
+    this.assertCurrent(attempt);
 
     // Overlays install independently per CLI, mirroring the local service: a
     // broken settings.json must not cost Codex sessions their hooks (and vice
     // versa). Merge scrubs prior Tether entries first, so this pass is also
-    // the overlay half of crash recovery.
-    this.claudeInstalled = await this.installClaudeOverlay(files, p);
-    this.codexInstalled = await this.installCodexOverlay(files, p);
+    // the overlay half of crash recovery. If NEITHER file could be updated
+    // the host can never serve hooks — fail setup so the connection is not
+    // kept alive for nothing.
+    const [claudeOk, codexOk] = await Promise.all([
+      this.applyOverlay(
+        files,
+        p.claudeSettings,
+        (text) => ({ text: mergeClaudeSettings(text, helperCommand(p.helperPath, '--claude', 'posix')), changed: true }),
+        'Claude hook install failed — Claude sessions stay cadence-only on this env',
+      ),
+      this.applyOverlay(
+        files,
+        p.codexConfig,
+        (text) => mergeCodexConfig(text, p.helperPath),
+        'Codex notify install failed — Codex sessions stay cadence-only on this env',
+      ),
+    ]);
+    this.assertCurrent(attempt);
+    this.claudeInstalled = claudeOk;
+    this.codexInstalled = codexOk;
+    if (!claudeOk && !codexOk) {
+      throw new Error('Neither ~/.claude/settings.json nor ~/.codex/config.toml could be updated on the host');
+    }
 
     log.info('Remote hooks ready', {
       environmentId: this.deps.environmentId,
@@ -245,36 +364,27 @@ export class RemoteHookAgent {
     });
   }
 
-  private async installClaudeOverlay(files: RemoteFileOps, p: RemotePaths): Promise<boolean> {
+  /**
+   * Read → transform → atomic-write one remote CLI config file. Returns false
+   * (logged) on any failure — unparseable existing content throws inside the
+   * transform and lands here too, honoring the never-overwrite-mystery rule.
+   */
+  private async applyOverlay(
+    files: RemoteFileOps,
+    filePath: string,
+    transform: (text: string | null) => { text: string; changed: boolean },
+    failureLabel: string,
+  ): Promise<boolean> {
     try {
-      const text = await files.readFile(p.claudeSettings);
-      // Remote hooks always cross a POSIX login shell, regardless of the
-      // local platform.
-      const merged = mergeClaudeSettings(text, helperCommand(p.helperPath, '--claude', 'posix'));
-      await this.writeAtomic(files, p.claudeSettings, merged);
-      return true;
-    } catch (err) {
-      // Unparseable settings.json → never overwrite mystery content (same
-      // rule as local); SFTP errors (read-only home, quota) land here too.
-      log.warn('Remote Claude hook install failed — Claude sessions stay cadence-only on this env', {
-        environmentId: this.deps.environmentId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return false;
-    }
-  }
-
-  private async installCodexOverlay(files: RemoteFileOps, p: RemotePaths): Promise<boolean> {
-    try {
-      const text = await files.readFile(p.codexConfig);
-      const merged = mergeCodexConfig(text, p.helperPath);
-      if (merged.changed) {
-        await this.writeAtomic(files, p.codexConfig, merged.text);
+      const result = transform(await files.readFile(filePath));
+      if (result.changed) {
+        await this.writeAtomic(files, filePath, result.text);
       }
       return true;
     } catch (err) {
-      log.warn('Remote Codex notify install failed — Codex sessions stay cadence-only on this env', {
+      log.warn(`Remote ${failureLabel}`, {
         environmentId: this.deps.environmentId,
+        filePath,
         error: err instanceof Error ? err.message : String(err),
       });
       return false;
@@ -287,7 +397,7 @@ export class RemoteHookAgent {
     await files.rename(tmpPath, filePath);
   }
 
-  private async writeSessionEnvFile(sessionId: string, envFilePath: string): Promise<void> {
+  private async writeSessionEnvFile(files: RemoteFileOps, sessionId: string, envFilePath: string): Promise<void> {
     const token = this.deps.issueToken(sessionId);
     const content = [
       `TETHER_HOOK_SOCKET=${this.socketEnvValue}`,
@@ -297,18 +407,20 @@ export class RemoteHookAgent {
     ].join('\n');
     // 0600 at create; chmod again in case the server applied its umask over
     // the requested open mode.
-    await this.files!.writeFile(envFilePath, content, 0o600);
-    await this.files!.chmod(envFilePath, 0o600);
+    await files.writeFile(envFilePath, content, 0o600);
+    await files.chmod(envFilePath, 0o600);
   }
 
   /**
-   * Uninstall overlays, remove run files, drop the connection. The scrub is
-   * best-effort — a dead connection just means the next connect's scrub pass
-   * does the cleanup instead.
+   * Uninstall overlays, remove this agent's run files, drop the connection.
+   * The scrub is best-effort — and when the connection is already gone, the
+   * host keeps its inert entries until the next connect's scrub, the same
+   * window the local feature accepts after a crash.
    */
   private async teardown(): Promise<void> {
     const wasReady = this.state === 'ready';
     this.state = 'disposed';
+    this.epoch += 1;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -322,7 +434,10 @@ export class RemoteHookAgent {
     if (wasReady && files && p) {
       try {
         await this.scrubOverlays(files, p);
-        await conn.exec(`rm -f ${q(p.runDir)}/hook-*.sock ${q(p.runDir)}/s-*.env`);
+        for (const attached of this.sessions.values()) {
+          await files.unlink(attached.envFilePath);
+        }
+        await files.unlink(p.socketPath);
       } catch (err) {
         log.warn('Remote hook scrub failed during teardown — next connect will clean up', {
           environmentId: this.deps.environmentId,
@@ -335,30 +450,10 @@ export class RemoteHookAgent {
   }
 
   private async scrubOverlays(files: RemoteFileOps, p: RemotePaths): Promise<void> {
-    try {
-      const claudeText = await files.readFile(p.claudeSettings);
-      if (claudeText !== null) {
-        const scrubbed = scrubClaudeSettings(claudeText);
-        if (scrubbed.changed) await this.writeAtomic(files, p.claudeSettings, scrubbed.text);
-      }
-    } catch (err) {
-      log.warn('Remote Claude overlay scrub failed', {
-        environmentId: this.deps.environmentId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    try {
-      const codexText = await files.readFile(p.codexConfig);
-      if (codexText !== null) {
-        const scrubbed = scrubCodexConfig(codexText);
-        if (scrubbed.changed) await this.writeAtomic(files, p.codexConfig, scrubbed.text);
-      }
-    } catch (err) {
-      log.warn('Remote Codex overlay scrub failed', {
-        environmentId: this.deps.environmentId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    await Promise.all([
+      this.applyOverlay(files, p.claudeSettings, scrubClaudeSettings, 'Claude overlay scrub failed'),
+      this.applyOverlay(files, p.codexConfig, scrubCodexConfig, 'Codex overlay scrub failed'),
+    ]);
   }
 
   /**
@@ -371,6 +466,7 @@ export class RemoteHookAgent {
    */
   private handleClose(conn: ControlConnection): void {
     if (this.conn !== conn || this.state === 'disposed') return;
+    this.epoch += 1;
     this.conn = null;
     this.files = null;
     this.setupPromise = null;
@@ -405,10 +501,11 @@ export class RemoteHookAgent {
     if (this.state === 'disposed') return;
     try {
       await this.ensureReady();
+      const files = this.files;
+      if (!files) throw new Error('Control connection lost again during reconnect');
       for (const [sessionId, attached] of this.sessions) {
-        await this.writeSessionEnvFile(sessionId, attached.envFilePath);
-        const installed = attached.cliTool === 'claude' ? this.claudeInstalled : this.codexInstalled;
-        this.deps.setSessionHookCapable(sessionId, installed);
+        await this.writeSessionEnvFile(files, sessionId, attached.envFilePath);
+        this.deps.setSessionHookCapable(sessionId, this.cliInstalled(attached.cliTool));
       }
       // A clean recovery earns the next drop its own reconnect attempt.
       this.reconnectSpent = false;
@@ -427,10 +524,10 @@ function buildRemotePaths(home: string, bootId: string): RemotePaths {
   const base = `${home}/.tether`;
   return {
     tetherDir: base,
-    // The path carries the `tether-cli-hook` sentinel substring, so the
-    // overlay scrub recognizes remote-managed entries with zero changes.
-    binDir: `${base}/bin/tether-cli-hook`,
-    helperPath: `${base}/bin/tether-cli-hook/index.js`,
+    // Composed from SENTINEL_TOKEN so the helper path always carries the
+    // substring the overlay scrub matches remote-managed entries by.
+    binDir: `${base}/bin/${SENTINEL_TOKEN}`,
+    helperPath: `${base}/bin/${SENTINEL_TOKEN}/index.js`,
     runDir: `${base}/run`,
     socketPath: `${base}/run/hook-${bootId}.sock`,
     claudeDir: `${home}/.claude`,

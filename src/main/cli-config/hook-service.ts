@@ -34,7 +34,11 @@ const log = createLogger('hook-service');
 let bridge: HookBridgeHandle | null = null;
 let installed = false;
 
-function helperPath(): string {
+/**
+ * Local filesystem path of the bundled hook helper. Remote hook agents read
+ * this file and upload it to their hosts byte-for-byte.
+ */
+export function getHelperPath(): string {
   // Packaged: shipped under <resources>/tether-cli-hook/ via Forge's
   // extraResource list. Dev: read from repo at cli-tools/tether-cli-hook/.
   if (app.isPackaged) {
@@ -44,21 +48,13 @@ function helperPath(): string {
   return path.resolve(__dirname, '..', '..', 'cli-tools', 'tether-cli-hook', 'index.js');
 }
 
-/**
- * Local filesystem path of the bundled hook helper. Remote hook agents read
- * this file and upload it to their hosts byte-for-byte.
- */
-export function getHelperPath(): string {
-  return helperPath();
-}
-
 function isEnabled(): boolean {
   // Default-off, opt-in: user must explicitly enable via Settings or Setup Wizard.
   return getDb().config?.cliHooksEnabled === 'true';
 }
 
 export async function startHookService(): Promise<void> {
-  const helper = helperPath();
+  const helper = getHelperPath();
   if (!fs.existsSync(helper)) {
     log.warn('Hook helper not found — CLI hooks disabled this session', { helper });
     return;
@@ -117,7 +113,7 @@ export async function startHookService(): Promise<void> {
 
 export async function stopHookService(): Promise<void> {
   if (installed) {
-    const helper = helperPath();
+    const helper = getHelperPath();
     try {
       await uninstallClaudeHooks({ helperPath: helper });
     } catch (err) {

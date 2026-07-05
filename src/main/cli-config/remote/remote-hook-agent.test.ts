@@ -28,9 +28,14 @@ class FakeHost {
   // knobs
   nodePresent = true;
   uname = 'Linux';
+  /** Lines a noisy bashrc would echo before the probe marker. */
+  probeNoise: string[] = [];
   failUnixForward = false;
   failTcpForward = false;
   failConnectFrom = Infinity; // connect attempts >= this throw
+  failWritePrefixes: string[] = [];
+  /** Writes to paths under `prefix` block until `promise` resolves. */
+  writeGate: { prefix: string; promise: Promise<void> } | null = null;
 
   private closeCbs: Array<() => void> = [];
   unixForwardPath: string | null = null;
@@ -54,6 +59,11 @@ class FakeHost {
       realpath: async (p) => (p === '.' ? HOME : p),
       readFile: async (p) => this.files.get(p)?.content ?? null,
       writeFile: async (p, data, mode) => {
+        const gate = this.writeGate;
+        if (gate && p.startsWith(gate.prefix)) await gate.promise;
+        if (this.failWritePrefixes.some((prefix) => p.startsWith(prefix))) {
+          throw new Error(`write refused: ${p} (test knob)`);
+        }
         this.files.set(p, { content: data, mode });
       },
       rename: async (from, to) => {
@@ -76,19 +86,12 @@ class FakeHost {
     return {
       exec: async (cmd): Promise<RemoteExecResult> => {
         this.execLog.push(cmd);
-        if (cmd.startsWith('uname')) {
-          const lines = [this.uname];
+        if (cmd.includes('__TETHER_PROBE__')) {
+          const lines = [...this.probeNoise, '__TETHER_PROBE__', this.uname];
           if (this.nodePresent) lines.push('/usr/bin/node');
           return { code: 0, stdout: lines.join('\n') + '\n', stderr: '' };
         }
-        if (cmd.startsWith('rm -f')) {
-          // Emulate the run-file scrub for teardown assertions.
-          for (const key of Array.from(this.files.keys())) {
-            if (key.startsWith(`${RUN_DIR}/hook-`) || key.startsWith(`${RUN_DIR}/s-`)) {
-              this.files.delete(key);
-            }
-          }
-        }
+        // mkdir/chmod and the age-based find sweep both succeed silently.
         return { code: 0, stdout: '', stderr: '' };
       },
       files: async () => this.fileOps(),
@@ -142,6 +145,8 @@ function fileContent(host: FakeHost, p: string): string {
   return entry!.content;
 }
 
+const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
 describe('RemoteHookAgent setup', () => {
   it('uploads the helper, installs both overlays, and returns an env-file pointer', async () => {
     const { host, agent } = makeHarness();
@@ -189,6 +194,26 @@ describe('RemoteHookAgent setup', () => {
     await expect(agent.envForSession('s1', 'claude')).rejects.toThrow(/Unsupported remote platform/);
   });
 
+  it('tolerates rc/motd noise ahead of the probe output', async () => {
+    const { host, agent } = makeHarness();
+    host.probeNoise = ['Welcome to Ubuntu 24.04!', 'nvm: version manager loaded'];
+    const env = await agent.envForSession('s1', 'claude');
+    expect(env.TETHER_HOOK_ENV_FILE).toBe(`${RUN_DIR}/s-s1.env`);
+  });
+
+  it('leaves another instance\'s fresh socket and env files alone at connect time', async () => {
+    const { host, agent } = makeHarness();
+    host.files.set(`${RUN_DIR}/hook-otherboot.sock`, { content: '' });
+    host.files.set(`${RUN_DIR}/s-foreign.env`, { content: 'TETHER_HOOK_TOKEN=theirs' });
+
+    await agent.envForSession('s1', 'claude');
+
+    // No fresh-file glob wipe — only this boot's socket plus an age-gated sweep.
+    expect(host.files.has(`${RUN_DIR}/hook-otherboot.sock`)).toBe(true);
+    expect(host.files.has(`${RUN_DIR}/s-foreign.env`)).toBe(true);
+    expect(host.execLog.some((cmd) => cmd.includes('find') && cmd.includes('-mmin'))).toBe(true);
+  });
+
   it('falls back to a loopback TCP forward when streamlocal is forbidden', async () => {
     const { host, agent } = makeHarness();
     host.failUnixForward = true;
@@ -207,6 +232,16 @@ describe('RemoteHookAgent setup', () => {
     const env = await agent.envForSession('s2', 'codex');
     expect(env.TETHER_HOOK_ENV_FILE).toBe(`${RUN_DIR}/s-s2.env`);
     expect(fileContent(host, CODEX_CONFIG)).toContain('tether-cli-hook');
+  });
+
+  it('fails setup when neither overlay can be installed (no idle connection kept)', async () => {
+    const { host, agent } = makeHarness();
+    host.files.set(CLAUDE_SETTINGS, { content: '{ broken json' });
+    host.failWritePrefixes = [CODEX_CONFIG];
+
+    await expect(agent.envForSession('s1', 'claude')).rejects.toThrow(/Neither/);
+    expect(agent.currentState).toBe('failed');
+    expect(host.ended).toBe(1);
   });
 
   it('reuses one control connection for many sessions', async () => {
@@ -239,6 +274,32 @@ describe('RemoteHookAgent refcount + teardown', () => {
     expect(agent.currentState).toBe('disposed');
   });
 
+  it('defers a last-session teardown while another attach is in flight', async () => {
+    const { host, agent } = makeHarness();
+    await agent.envForSession('s1', 'claude');
+
+    // Block s2's env-file write mid-attach, then detach the last session.
+    let release!: () => void;
+    host.writeGate = { prefix: `${RUN_DIR}/s-s2.env`, promise: new Promise((r) => { release = r; }) };
+    const attach = agent.envForSession('s2', 'codex');
+    await tick();
+
+    await agent.detachSession('s1');
+    // Teardown must not have run — s2's attach would be stranded mid-write.
+    expect(host.ended).toBe(0);
+    expect(fileContent(host, CODEX_CONFIG)).toContain('tether-cli-hook');
+
+    release();
+    const env = await attach;
+    expect(env.TETHER_HOOK_ENV_FILE).toBe(`${RUN_DIR}/s-s2.env`);
+    expect(agent.sessionCount).toBe(1);
+    expect(agent.currentState).toBe('ready');
+
+    await agent.detachSession('s2');
+    expect(host.ended).toBe(1);
+    expect(agent.currentState).toBe('disposed');
+  });
+
   it('detach is a no-op for sessions that never attached', async () => {
     const { host, agent } = makeHarness();
     await agent.detachSession('ghost');
@@ -253,10 +314,30 @@ describe('RemoteHookAgent refcount + teardown', () => {
     await agent.dispose();
     expect(revoked.sort()).toEqual(['s1', 's2']);
     expect(fileContent(host, CLAUDE_SETTINGS)).not.toContain('tether-cli-hook');
+    expect(host.files.has(`${RUN_DIR}/s-s1.env`)).toBe(false);
+    expect(host.files.has(`${RUN_DIR}/s-s2.env`)).toBe(false);
     expect(host.ended).toBe(1);
     // Idempotent.
     await agent.dispose();
     expect(host.ended).toBe(1);
+  });
+});
+
+describe('RemoteHookAgent connection loss', () => {
+  it('a drop mid-setup rejects the attach without corrupting agent state', async () => {
+    const { host, agent } = makeHarness();
+    let release!: () => void;
+    // Gate the helper upload so the drop lands mid-setup.
+    host.writeGate = { prefix: `${HOME}/.tether/bin`, promise: new Promise((r) => { release = r; }) };
+
+    const attach = agent.envForSession('s1', 'claude');
+    await tick();
+    host.dropConnection();
+    release();
+
+    await expect(attach).rejects.toThrow();
+    expect(agent.currentState).toBe('failed');
+    expect(agent.sessionCount).toBe(0);
   });
 });
 

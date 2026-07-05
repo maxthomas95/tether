@@ -154,13 +154,20 @@ async function main() {
   // if the bridge is down, we don't want to hang Claude's hook pipeline.
   // A `tcp://127.0.0.1:<port>` socket value selects a loopback TCP dial
   // (remote TCP-forward fallback); anything else is a pipe/UDS path.
+  // A malformed value must degrade (exit 0), never crash the CLI's hook
+  // pipeline — net.connect throws synchronously on e.g. a NaN port.
   let sock;
-  if (SOCKET.startsWith('tcp://')) {
-    const rest = SOCKET.slice('tcp://'.length);
-    const colon = rest.lastIndexOf(':');
-    sock = net.connect(Number(rest.slice(colon + 1)), rest.slice(0, colon));
-  } else {
-    sock = net.connect(SOCKET);
+  try {
+    if (SOCKET.startsWith('tcp://')) {
+      const rest = SOCKET.slice('tcp://'.length);
+      const colon = rest.lastIndexOf(':');
+      sock = net.connect(Number(rest.slice(colon + 1)), rest.slice(0, colon));
+    } else {
+      sock = net.connect(SOCKET);
+    }
+  } catch (err) {
+    dbg('exit-dial-error', { err: err && err.message });
+    process.exit(0);
   }
   const timer = setTimeout(() => {
     dbg('exit-timeout');

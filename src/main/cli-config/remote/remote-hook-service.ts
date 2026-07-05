@@ -1,13 +1,12 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { getEnvironment } from '../../db/environment-repo';
-import { getDb } from '../../db/database';
+import { getDb, type EnvironmentRow } from '../../db/database';
 import { statusDetector } from '../../status/status-detector';
 import { getHookBridge, getHelperPath } from '../hook-service';
 import { resolveSshConfig } from '../../ssh/resolve-ssh-config';
 import { createLogger } from '../../logger';
 import type { CliToolId } from '../../../shared/types';
-import type { HookEventHandler } from '../hook-frame-server';
 import { connectSshControl } from './ssh-control-connection';
 import { RemoteHookAgent } from './remote-hook-agent';
 
@@ -73,15 +72,6 @@ function getOrCreateAgent(environmentId: string): RemoteHookAgent {
   const bridge = getHookBridge();
   if (!bridge) throw new Error('Hook bridge is not running');
 
-  const onEvent: HookEventHandler = (event) => {
-    // Lazy import: session-manager imports this module, so a top-level import
-    // back would create a module-init cycle. Runtime lookup is safe — events
-    // only flow long after boot.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { sessionManager } = require('../../session/session-manager') as typeof import('../../session/session-manager');
-    sessionManager.handleHookEvent(event.tetherSessionId, event.type);
-  };
-
   const agent = new RemoteHookAgent({
     environmentId,
     connect: async () => {
@@ -96,7 +86,9 @@ function getOrCreateAgent(environmentId: string): RemoteHookAgent {
     },
     readHelperSource: () => fs.readFileSync(getHelperPath(), 'utf8'),
     bootId,
-    onEvent,
+    // Forwarded frames feed the same sink the local bridge dispatches to —
+    // one event path for local and remote sessions alike.
+    onEvent: bridge.dispatchEvent,
     validate: bridge.validate,
     issueToken: (sessionId) => bridge.issueSessionToken(sessionId),
     revokeToken: (sessionId) => bridge.revokeSessionToken(sessionId),
@@ -121,18 +113,19 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  * when remote hooks apply and host setup succeeds within the timeout, `{}` in
  * every other case (session launches cadence-only; never throws). On timeout
  * the setup keeps running in the background so the *next* session on the env
- * gets hooks without paying the connect cost again.
+ * gets hooks without paying the connect cost again — but THIS session's
+ * abandoned attach is undone when it eventually lands, since its CLI launched
+ * without the env-file pointer and must never be flipped hookCapable.
  */
 export async function envForRemoteSession(
   sessionId: string,
-  environmentId: string,
+  envRow: EnvironmentRow,
   cliTool: CliToolId,
 ): Promise<Record<string, string>> {
+  const environmentId = envRow.id;
   try {
     if (getDb().config?.cliHooksEnabled !== 'true') return {};
     if (!getHookBridge()) return {};
-    const envRow = getEnvironment(environmentId);
-    if (!envRow) return {};
     let config: Record<string, unknown>;
     try {
       config = JSON.parse(envRow.config) as Record<string, unknown>;
@@ -142,11 +135,21 @@ export async function envForRemoteSession(
     if (!remoteHooksEligible(envRow.type, config, cliTool)) return {};
 
     const agent = getOrCreateAgent(environmentId);
-    return await withTimeout(
-      agent.envForSession(sessionId, cliTool),
-      ENV_SETUP_TIMEOUT_MS,
-      `Remote hook setup exceeded ${ENV_SETUP_TIMEOUT_MS}ms`,
-    );
+    const envPromise = agent.envForSession(sessionId, cliTool);
+    try {
+      return await withTimeout(
+        envPromise,
+        ENV_SETUP_TIMEOUT_MS,
+        `Remote hook setup exceeded ${ENV_SETUP_TIMEOUT_MS}ms`,
+      );
+    } catch (err) {
+      // Undo the phantom attach if the abandoned call completes later; when
+      // it failed outright there is nothing attached and detach no-ops.
+      envPromise
+        .then(() => agent.detachSession(sessionId))
+        .catch(() => { /* setup failed — nothing attached */ });
+      throw err;
+    }
   } catch (err) {
     if (!failureLogged.has(environmentId)) {
       failureLogged.add(environmentId);

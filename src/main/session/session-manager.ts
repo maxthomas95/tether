@@ -512,7 +512,14 @@ export class SessionManager {
     const hookEnvRow = opts.environmentId ? getEnvironment(opts.environmentId) : null;
     const hookEnv = !hookEnvRow || hookEnvRow.type === 'local'
       ? hookEnvForSession(id)
-      : await envForRemoteSession(id, hookEnvRow.id, cliTool);
+      : await envForRemoteSession(id, hookEnvRow, cliTool);
+    // The await above can span seconds for remote envs. If the session was
+    // removed while we waited, abort before registering the detector or
+    // spawning a transport nothing could ever dispose.
+    if (!this.sessions.has(id)) {
+      detachRemoteSession(id);
+      throw new Error('Session was removed while it was being created');
+    }
     const hookCapable = Object.keys(hookEnv).length > 0;
 
     // Sessions with no hook env (toggle off, install failed, remote transport)

@@ -396,9 +396,12 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
 
               <div className="form-group">
                 <label className="form-radio-label">
+                  {/* `checked` must mirror what handleSubmit persists (consent
+                      survives the global toggle being off; sudo clears it) —
+                      otherwise the dialog shows one state and saves another. */}
                   <input
                     type="checkbox"
-                    checked={remoteCliHooks && globalHooksOn && !useSudo}
+                    checked={remoteCliHooks && !useSudo}
                     disabled={!globalHooksOn || useSudo}
                     onChange={e => setRemoteCliHooks(e.target.checked)}
                   />
