@@ -2,7 +2,7 @@ import { ipcMain } from 'electron';
 import { IPC } from '../../shared/constants';
 import type { GitProviderInfo, CreateGitProviderOptions, CreateRepoOptions } from '../../shared/types';
 import * as gitProviderRepo from '../db/git-provider-repo';
-import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo, createFolder, gitRemoteAdd } from '../git/git-service';
+import { gitClone, gitInit, gitWorktreeAdd, gitWorktreeRemove, isGitRepo, createFolder, gitRemoteAdd, gitBranchStatus } from '../git/git-service';
 import { GiteaClient } from '../git/providers/gitea-client';
 import { AdoClient } from '../git/providers/ado-client';
 import { GitHubClient } from '../git/providers/github-client';
@@ -149,6 +149,8 @@ export function registerGitHandlers(ctx: HandlerContext): void {
   });
 
   ipcMain.handle(IPC.GIT_IS_REPO, async (_event, directory: string) => isGitRepo(directory));
+
+  ipcMain.handle(IPC.GIT_BRANCH_STATUS, async (_event, directory: string) => gitBranchStatus(directory));
 
   ipcMain.handle(IPC.GIT_WORKTREE_ADD, async (_event, opts: { sourceRepo: string; worktreePath: string; branch: string }) => {
     log.info('Git worktree add', opts);

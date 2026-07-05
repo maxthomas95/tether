@@ -105,6 +105,8 @@ A session can be designated as a **Helm** parent that dispatches pre-briefed chi
 
 Sessions are grouped by environment in the sidebar (Local, then each SSH host, then each Coder deployment). Within each environment they are further grouped by working directory. Groups are collapsible and reorderable.
 
+For **local** repo groups, the header also shows the current git branch and, if there are uncommitted changes, a dot with the count (e.g. `main ●2`). This refreshes when the window regains focus and periodically in the background. Not shown for SSH or Coder groups.
+
 ## Finding a Session
 
 Press **Ctrl+P** (or **Session → Find Session…**) to open the quick switcher — a VS Code-style finder for jumping straight to any session without scrolling the sidebar. Start typing to fuzzy-match across the session label, working directory, environment name, and CLI tool. Matching is forgiving: the characters you type just have to appear in order, so `apsv` finds *api-server*. Results rank label hits above directory hits, contiguous matches above scattered ones, and start-of-word matches above mid-word ones.

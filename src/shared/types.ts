@@ -104,6 +104,11 @@ export interface CloneProgressInfo {
   message: string;
 }
 
+export interface RepoBranchStatus {
+  branch: string;
+  dirtyCount: number;
+}
+
 export interface CreateGitProviderOptions {
   name: string;
   type: GitProviderType;
@@ -607,6 +612,7 @@ export interface TetherAPI {
     createFolder(path: string, initGit: boolean): Promise<string>;
     remoteAdd(repoPath: string, remoteName: string, remoteUrl: string): Promise<void>;
     isRepo(directory: string): Promise<boolean>;
+    branchStatus(directory: string): Promise<RepoBranchStatus | null>;
     worktreeAdd(opts: { sourceRepo: string; worktreePath: string; branch: string }): Promise<string>;
     worktreeRemove(opts: { sourceRepo: string; worktreePath: string; force?: boolean }): Promise<void>;
     onCloneProgress(cb: (info: CloneProgressInfo) => void): () => void;

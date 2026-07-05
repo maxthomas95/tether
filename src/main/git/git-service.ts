@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import type { CloneProgressInfo } from '../../shared/types';
+import type { CloneProgressInfo, RepoBranchStatus } from '../../shared/types';
 import { gitProtocolEnv, validateGitRemoteUrl } from './git-url';
 
 export interface CloneOptions {
@@ -163,6 +163,61 @@ export function isGitRepo(directory: string): boolean {
   } catch {
     return false;
   }
+}
+
+const BRANCH_STATUS_TIMEOUT_MS = 5_000;
+
+/** Parses `git status --porcelain=v2 --branch` output. Exported for tests. */
+export function parsePorcelainStatus(stdout: string): RepoBranchStatus {
+  let branch = '';
+  let dirtyCount = 0;
+
+  for (const line of stdout.split('\n')) {
+    if (!line) continue;
+    if (line.startsWith('#')) {
+      if (line.startsWith('# branch.head ')) {
+        branch = line.slice('# branch.head '.length).trim();
+      }
+      continue;
+    }
+    dirtyCount++;
+  }
+
+  return { branch, dirtyCount };
+}
+
+/**
+ * Reads branch + uncommitted-change count for a local repo. Resolves null on
+ * any failure (not a repo, spawn error, non-zero exit, timeout) — this is a
+ * best-effort sidebar decoration, never worth surfacing an error for.
+ */
+export function gitBranchStatus(repoPath: string): Promise<RepoBranchStatus | null> {
+  return new Promise((resolve) => {
+    const proc = spawn('git', ['-C', repoPath, 'status', '--porcelain=v2', '--branch'], { // NOSONAR(typescript:S4036)
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let settled = false;
+
+    const finish = (result: RepoBranchStatus | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+
+    const timer = setTimeout(() => {
+      proc.kill();
+      finish(null);
+    }, BRANCH_STATUS_TIMEOUT_MS);
+
+    proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+    proc.on('close', (code) => {
+      finish(code === 0 ? parsePorcelainStatus(stdout) : null);
+    });
+    proc.on('error', () => finish(null));
+  });
 }
 
 export interface WorktreeAddOptions {

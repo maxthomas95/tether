@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import { SessionItem } from './SessionItem';
-import type { SessionInfo } from '../../../shared/types';
+import type { SessionInfo, EnvironmentType } from '../../../shared/types';
 import { onKeyActivate, stopPropagationOnKey } from '../../utils/a11y';
 import type { PaneLocation } from '../../lib/layout-tree';
+import { useBranchStatus } from '../../hooks/useBranchStatus';
 
 interface RepoGroupProps {
   repoPath: string;
   environmentId: string;
+  /** Local repo groups get a branch + uncommitted-change badge; SSH/Coder never do. */
+  environmentType: EnvironmentType;
   sessions: SessionInfo[];
   activeSessionId: string | null;
   /** Set of session ids currently visible in some pane (i.e. mounted and not
@@ -58,6 +61,7 @@ interface RepoGroupProps {
 export function RepoGroup({
   repoPath,
   environmentId,
+  environmentType,
   sessions,
   activeSessionId,
   visibleSessionIds,
@@ -91,6 +95,7 @@ export function RepoGroup({
   const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const branchStatus = useBranchStatus(repoPath, environmentType === 'local');
 
   // Close context menu on outside click
   useEffect(() => {
@@ -185,6 +190,15 @@ export function RepoGroup({
           {collapsed ? '\u25b8' : '\u25be'}
         </span>
         <span className="repo-group-name">{dirName}</span>
+        {branchStatus && (
+          <span
+            className="repo-group-branch"
+            title={`Branch ${branchStatus.branch}${branchStatus.dirtyCount > 0 ? ` — ${branchStatus.dirtyCount} uncommitted change(s)` : ''}`}
+          >
+            {branchStatus.branch}
+            {branchStatus.dirtyCount > 0 && <span className="repo-group-dirty">●{branchStatus.dirtyCount}</span>}
+          </span>
+        )}
         <span className="repo-group-count">
           {sessions.length}
           {runningCount > 0 && (

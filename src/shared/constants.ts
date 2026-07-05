@@ -60,6 +60,7 @@ export const IPC = {
   GIT_WORKTREE_ADD: 'git:worktree-add',
   GIT_WORKTREE_REMOVE: 'git:worktree-remove',
   GIT_IS_REPO: 'git:is-repo',
+  GIT_BRANCH_STATUS: 'git:branchStatus',
 
   // Vault
   VAULT_GET_CONFIG: 'vault:get-config',
