@@ -20,6 +20,8 @@ import { HostKeyVerifyDialog } from './components/HostKeyVerifyDialog';
 import { SetupWizard } from './components/SetupWizard';
 import { Notifications, useNotifications } from './components/Notifications';
 import { ConfirmDialog, useConfirmDialog } from './components/ConfirmDialog';
+import type { UsageBudgetAlert } from './utils/usage-budget';
+import { formatCost } from './utils/usage-format';
 import { useTerminalManager } from './hooks/useTerminalManager';
 import type { TerminalCursorStyle } from './hooks/useTerminalManager';
 import { useLayoutState } from './hooks/useLayoutState';
@@ -161,6 +163,18 @@ export function App() {
     const message = extractErrorMessage(err);
     if (/cancel/i.test(message)) return;
     notify({ type: 'error', title: 'Vault login failed', message });
+  }, [notify]);
+  const notifyBudgetCrossed = useCallback((alert: UsageBudgetAlert) => {
+    const label = alert.period === 'daily' ? 'Daily' : 'Weekly';
+    notify({
+      type: 'warning',
+      title: `${label} usage budget crossed`,
+      message: `${formatCost(alert.cost)} used of ${formatCost(alert.threshold)} ${alert.period} budget.`,
+      action: {
+        label: 'Open usage history',
+        onClick: () => setUsageHistoryOpen(true),
+      },
+    });
   }, [notify]);
   const { confirm: confirmDialog, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [vaultPrompt, setVaultPrompt] = useState<{ reason?: string; onDone: (loggedIn: boolean) => void } | null>(null);
@@ -1937,7 +1951,11 @@ export function App() {
             );
           })}
         </div>
-        <GlobalUsageFooter environments={environments} onOpenHistory={() => setUsageHistoryOpen(true)} />
+        <GlobalUsageFooter
+          environments={environments}
+          onOpenHistory={() => setUsageHistoryOpen(true)}
+          onBudgetCrossed={notifyBudgetCrossed}
+        />
         <QuotaFooter />
         <VaultStatusPill onAuthError={notifyVaultAuthError} />
         <JobsOfficePill status={jobsStatus} active={officeOpen} onToggle={() => setOfficeOpen(v => !v)} />

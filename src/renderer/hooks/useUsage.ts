@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { UsageInfo } from '../../shared/types';
+import { parseBudgetThreshold, type UsageBudgetThresholds } from '../utils/usage-budget';
 
 /**
  * Subscribes to global usage updates (across all tracked sessions).
@@ -8,10 +9,11 @@ import type { UsageInfo } from '../../shared/types';
  * `cliToolBreakdownEnabled` is a separate, default-off toggle gating the
  * per-CLI-tool footer breakdown (visible "today" subline + tooltip section).
  */
-export function useUsage(): { usage: UsageInfo | null; enabled: boolean; cliToolBreakdownEnabled: boolean } {
+export function useUsage(): { usage: UsageInfo | null; enabled: boolean; cliToolBreakdownEnabled: boolean; budgetThresholds: UsageBudgetThresholds } {
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [enabled, setEnabled] = useState(true);
   const [cliToolBreakdownEnabled, setCliToolBreakdownEnabled] = useState(false);
+  const [budgetThresholds, setBudgetThresholds] = useState<UsageBudgetThresholds>({ dailyUsd: null, weeklyUsd: null });
 
   // Read toggle setting and re-read on settings changes
   useEffect(() => {
@@ -21,6 +23,15 @@ export function useUsage(): { usage: UsageInfo | null; enabled: boolean; cliTool
       });
       window.electronAPI.config.get('cliToolBreakdownEnabled').then(val => {
         setCliToolBreakdownEnabled(val === 'true');
+      });
+      Promise.all([
+        window.electronAPI.config.get('usageBudget.dailyUsd').catch(() => null),
+        window.electronAPI.config.get('usageBudget.weeklyUsd').catch(() => null),
+      ]).then(([dailyUsd, weeklyUsd]) => {
+        setBudgetThresholds({
+          dailyUsd: parseBudgetThreshold(dailyUsd),
+          weeklyUsd: parseBudgetThreshold(weeklyUsd),
+        });
       });
     };
     refresh();
@@ -40,5 +51,5 @@ export function useUsage(): { usage: UsageInfo | null; enabled: boolean; cliTool
     return () => remove();
   }, [enabled]);
 
-  return { usage, enabled, cliToolBreakdownEnabled };
+  return { usage, enabled, cliToolBreakdownEnabled, budgetThresholds };
 }

@@ -172,6 +172,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [usageStripEnabled, setUsageStripEnabled] = useState(true);
   const [globalUsageEnabled, setGlobalUsageEnabled] = useState(true);
   const [cliToolBreakdownEnabled, setCliToolBreakdownEnabled] = useState(false);
+  const [dailyBudgetUsd, setDailyBudgetUsd] = useState('');
+  const [weeklyBudgetUsd, setWeeklyBudgetUsd] = useState('');
   // J.O.B.S. office integration
   const [jobsEnabled, setJobsEnabled] = useState(true);
   const [jobsUrl, setJobsUrl] = useState('');
@@ -250,6 +252,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       window.electronAPI.config.get?.('usageStripEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('globalUsageEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('cliToolBreakdownEnabled')?.catch(() => null),
+      window.electronAPI.config.get?.('usageBudget.dailyUsd')?.catch(() => null),
+      window.electronAPI.config.get?.('usageBudget.weeklyUsd')?.catch(() => null),
       window.electronAPI.config.get?.('hideTerminalCursor')?.catch(() => null),
       window.electronAPI.config.get?.('allowHelm')?.catch(() => null),
       window.electronAPI.config.get?.('terminalFontSize')?.catch(() => null),
@@ -264,7 +268,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       window.electronAPI.config.get?.('jobsUrl')?.catch(() => null),
       window.electronAPI.config.get?.('jobsToken')?.catch(() => null),
       window.electronAPI.config.get?.('jobsPath')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, updateCh, jobsEnabledValue, jobsUrlValue, jobsTokenValue, jobsPathValue]) => {
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, dailyBudget, weeklyBudget, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, updateCh, jobsEnabledValue, jobsUrlValue, jobsTokenValue, jobsPathValue]) => {
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -280,6 +284,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       setUsageStripEnabled(usageStrip !== 'false');
       setGlobalUsageEnabled(globalUsage !== 'false');
       setCliToolBreakdownEnabled(cliBreakdown === 'true');
+      setDailyBudgetUsd(typeof dailyBudget === 'string' ? dailyBudget : '');
+      setWeeklyBudgetUsd(typeof weeklyBudget === 'string' ? weeklyBudget : '');
       setHideTerminalCursor(hideCursor !== 'false');
       setAllowHelm(helm === 'true');
       const parsedFontSize = fontSize ? parseInt(fontSize, 10) : NaN;
@@ -342,6 +348,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     await window.electronAPI.config.set?.('usageStripEnabled', usageStripEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('globalUsageEnabled', globalUsageEnabled ? 'true' : 'false');
     await window.electronAPI.config.set?.('cliToolBreakdownEnabled', cliToolBreakdownEnabled ? 'true' : 'false');
+    await window.electronAPI.config.set?.('usageBudget.dailyUsd', dailyBudgetUsd.trim());
+    await window.electronAPI.config.set?.('usageBudget.weeklyUsd', weeklyBudgetUsd.trim());
     await window.electronAPI.config.set?.('hideTerminalCursor', hideTerminalCursor ? 'true' : 'false');
     await window.electronAPI.config.set?.('terminalCursorStyle', terminalCursorStyle);
     await window.electronAPI.config.set?.('terminalCursorBlink', terminalCursorBlink ? 'true' : 'false');
@@ -369,7 +377,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     // Re-probe with the fresh config — fire-and-forget so save never blocks on a slow probe.
     window.electronAPI.jobs.refresh().catch(() => {});
     onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, updateChannel, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsEnabled, jobsUrl, jobsToken, jobsPath, onClose]);
+  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, updateChannel, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, dailyBudgetUsd, weeklyBudgetUsd, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsEnabled, jobsUrl, jobsToken, jobsPath, onClose]);
 
   /**
    * Persist the jobs* keys and re-probe immediately so the user gets feedback
@@ -1942,6 +1950,37 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             </label>
             <p className="form-hint">
               Splits today's spend by CLI tool (Claude, Codex, etc.) and adds a per-tool section to the footer tooltip.
+            </p>
+            <div className="settings-inline-fields settings-inline-fields--usage-budget">
+              <label className="form-label">
+                Daily budget warning (USD)
+                <input
+                  className="form-input"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  placeholder="Disabled"
+                  value={dailyBudgetUsd}
+                  onChange={e => setDailyBudgetUsd(e.target.value)}
+                />
+              </label>
+              <label className="form-label">
+                Weekly budget warning (USD)
+                <input
+                  className="form-input"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  placeholder="Disabled"
+                  value={weeklyBudgetUsd}
+                  onChange={e => setWeeklyBudgetUsd(e.target.value)}
+                />
+              </label>
+            </div>
+            <p className="form-hint">
+              Blank or 0 disables a guardrail. Warnings use UTC calendar days and Monday-Sunday UTC weeks.
             </p>
           </div>
 

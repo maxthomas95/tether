@@ -1,9 +1,14 @@
-import React from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useUsage } from '../../hooks/useUsage';
 import type { CliToolUsage, DailyUsage, EnvironmentInfo, EnvironmentUsage } from '../../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import type { CliToolId } from '../../../shared/cli-tools';
 import { formatCost, formatTokens } from '../../utils/usage-format';
+import {
+  computeUsageBudgetStatus,
+  usageBudgetAlertsDue,
+  type UsageBudgetAlert,
+} from '../../utils/usage-budget';
 
 function todayDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -40,6 +45,7 @@ function sumWindow(days: DailyUsage[]): { cost: number; tokens: number; sessions
 
 interface GlobalUsageFooterProps {
   onOpenHistory?: () => void;
+  onBudgetCrossed?: (alert: UsageBudgetAlert) => void;
   /**
    * Environments list for resolving display names in the per-environment
    * tooltip section. Pass-through from App; if omitted, env rows render as
@@ -107,10 +113,53 @@ function computeTodayByCliTool(
   return out;
 }
 
-export function GlobalUsageFooter({ onOpenHistory, environments }: GlobalUsageFooterProps = {}) {
-  const { usage, enabled, cliToolBreakdownEnabled } = useUsage();
+export function GlobalUsageFooter({ onOpenHistory, onBudgetCrossed, environments }: GlobalUsageFooterProps = {}) {
+  const { usage, enabled, cliToolBreakdownEnabled, budgetThresholds } = useUsage();
+  const inFlightAlerts = useRef<Set<string>>(new Set());
+  const announcedAlerts = useRef<Set<string>>(new Set());
 
-  if (!enabled || !usage) return null;
+  const budgetStatus = useMemo(
+    () => usage ? computeUsageBudgetStatus(usage.daily, budgetThresholds) : null,
+    [usage, budgetThresholds],
+  );
+
+  useEffect(() => {
+    if (!enabled || !budgetStatus || !onBudgetCrossed) return;
+    let cancelled = false;
+    const markerKeys = {
+      daily: 'usageBudget.lastDailyWarningPeriod',
+      weekly: 'usageBudget.lastWeeklyWarningPeriod',
+    };
+
+    Promise.all([
+      window.electronAPI.config.get(markerKeys.daily).catch(() => null),
+      window.electronAPI.config.get(markerKeys.weekly).catch(() => null),
+    ]).then(([dailyMarker, weeklyMarker]) => {
+      if (cancelled) return;
+      const due = usageBudgetAlertsDue(budgetStatus, { daily: dailyMarker, weekly: weeklyMarker });
+      for (const alert of due) {
+        const inFlightKey = `${alert.period}:${alert.periodKey}`;
+        if (inFlightAlerts.current.has(inFlightKey)) continue;
+        if (announcedAlerts.current.has(inFlightKey)) continue;
+        inFlightAlerts.current.add(inFlightKey);
+        announcedAlerts.current.add(inFlightKey);
+        try {
+          onBudgetCrossed(alert);
+        } catch {
+          // UI alert callbacks are best-effort; marker persistence still prevents loops.
+        }
+        window.electronAPI.config.set(markerKeys[alert.period], alert.periodKey)
+          .catch(() => {})
+          .finally(() => {
+            inFlightAlerts.current.delete(inFlightKey);
+          });
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [enabled, budgetStatus, onBudgetCrossed]);
+
+  if (!enabled || !usage || !budgetStatus) return null;
 
   const envMap = new Map<string, string>();
   for (const env of environments ?? []) envMap.set(env.id, env.name);
@@ -170,6 +219,18 @@ export function GlobalUsageFooter({ onOpenHistory, environments }: GlobalUsageFo
     `7 days:   ${formatCost(week.cost)}  (${week.sessions} sessions, ${formatTokens(week.tokens)} tokens)`,
     `30 days:  ${formatCost(month.cost)}  (${month.sessions} sessions, ${formatTokens(month.tokens)} tokens)`,
     `All-time: ${formatCost(usage.totalCost)}`,
+    ...(budgetStatus.daily.threshold !== null || budgetStatus.weekly.threshold !== null
+      ? [
+          '',
+          'Budget guardrails:',
+          ...(budgetStatus.daily.threshold !== null
+            ? [`  Daily:  ${formatCost(budgetStatus.daily.cost)} / ${formatCost(budgetStatus.daily.threshold)}${budgetStatus.daily.crossed ? ' crossed' : ''}`]
+            : []),
+          ...(budgetStatus.weekly.threshold !== null
+            ? [`  Weekly: ${formatCost(budgetStatus.weekly.cost)} / ${formatCost(budgetStatus.weekly.threshold)}${budgetStatus.weekly.crossed ? ' crossed' : ''}`]
+            : []),
+        ]
+      : []),
     '',
     'Last 7 days:',
     dayList,
@@ -180,11 +241,12 @@ export function GlobalUsageFooter({ onOpenHistory, environments }: GlobalUsageFo
   ].join('\n');
 
   const tooltipWithHint = onOpenHistory ? `${tooltip}\n\nClick for full history.` : tooltip;
+  const budgetCrossed = budgetStatus.daily.crossed || budgetStatus.weekly.crossed;
 
   return (
     <button
       type="button"
-      className="global-usage-footer"
+      className={`global-usage-footer ${budgetCrossed ? 'global-usage-footer--budget-warning' : ''}`}
       title={tooltipWithHint}
       onClick={onOpenHistory}
       disabled={!onOpenHistory}
