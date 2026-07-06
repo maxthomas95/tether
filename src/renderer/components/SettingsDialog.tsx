@@ -932,7 +932,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               <code> ~/.codex/config.toml </code>
               so Claude/Codex tell us directly when a turn finishes or input is needed.
               When off, Tether falls back to passive output observation only.
-              Takes effect on the next Tether launch.
+              Takes effect on the next Tether launch. SSH environments additionally
+              need &ldquo;Install CLI status hooks on this host&rdquo; enabled per
+              environment — Tether never writes to a remote host without that opt-in.
             </p>
           </div>
 

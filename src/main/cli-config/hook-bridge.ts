@@ -8,6 +8,7 @@ import {
   HookTokenRegistry,
   type HookEvent,
   type HookEventHandler,
+  type TokenValidator,
 } from './hook-frame-server';
 
 const log = createLogger('hook-bridge');
@@ -53,6 +54,18 @@ export interface HookBridgeHandle {
   issueSessionToken(sessionId: string): string;
   /** Revoke a per-session token. Subsequent frames bearing it are rejected. */
   revokeSessionToken(sessionId: string): void;
+  /**
+   * The bridge's token validator (boot-global + per-session registry). Remote
+   * hook agents pass forwarded streams through `handleConnection` with this
+   * validator so token issue/revoke applies identically to remote frames.
+   */
+  readonly validate: TokenValidator;
+  /**
+   * The event sink wired at bridge creation (session-manager dispatch).
+   * Remote hook agents feed forwarded frames through this so local and
+   * remote events share exactly one handling path.
+   */
+  readonly dispatchEvent: HookEventHandler;
   /** Tears down the listener and removes the POSIX socket file. Idempotent. */
   dispose(): Promise<void>;
 }
@@ -122,6 +135,8 @@ export async function createHookBridge(onEvent: HookEventHandler): Promise<HookB
     token,
     issueSessionToken: (sessionId: string) => tokens.issueSessionToken(sessionId),
     revokeSessionToken: (sessionId: string) => tokens.revokeSessionToken(sessionId),
+    validate: tokens.validate,
+    dispatchEvent: onEvent,
     async dispose() {
       if (disposed) return;
       disposed = true;

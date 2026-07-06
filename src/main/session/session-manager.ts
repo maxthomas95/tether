@@ -1,16 +1,15 @@
 import { v4 as uuidv4 } from 'uuid';
-import { safeStorage } from 'electron';
 import { LocalTransport } from '../transport/local-transport';
 import { SSHTransport } from '../transport/ssh-transport';
 import { CoderTransport } from '../transport/coder-transport';
 import type { SessionTransport } from '../transport/types';
-import type { SSHConfig } from '../transport/ssh-transport';
+import { resolveSshConfig } from '../ssh/resolve-ssh-config';
 import { statusDetector } from '../status/status-detector';
 import { classifyExit, classifyTransition, type NotificationService, type NotifiedSession } from '../notifications/notification-service';
 import { getEnvironment, listEnvironments } from '../db/environment-repo';
 import { getProfile, listProfiles } from '../db/profile-repo';
 import { decryptEnvVarsRecord } from '../db/secret-storage';
-import { isVaultRef, resolveRef, resolveAll } from '../vault/vault-resolver';
+import { isVaultRef, resolveAll } from '../vault/vault-resolver';
 import { transcriptExists } from '../claude/transcripts';
 import { codexTranscriptExists } from '../codex/transcripts';
 import { detectNewCodexSession, releaseCodexSessionClaim } from '../codex/session-watcher';
@@ -22,6 +21,7 @@ import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId, Sessio
 import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
 import { envForSession as hookEnvForSession, revokeSessionToken as revokeHookSessionToken } from '../cli-config/hook-service';
+import { envForRemoteSession, detachRemoteSession } from '../cli-config/remote/remote-hook-service';
 import { usageService } from '../usage/usage-service';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { createLogger } from '../logger';
@@ -316,24 +316,7 @@ async function createTransport(environmentId?: string): Promise<SessionTransport
 
   if (env.type === 'ssh') {
     const raw = JSON.parse(env.config) as Record<string, unknown>;
-    // Resolve password: vault ref → resolved string, encrypted-at-rest → decrypted string
-    let password = raw.password as string | undefined;
-    if (typeof password === 'string' && isVaultRef(password)) {
-      // Vault refs are stored as-is (encryptConfigPassword leaves them alone)
-      password = await resolveRef(password);
-    } else if (raw.passwordEncrypted && typeof password === 'string' && safeStorage.isEncryptionAvailable()) {
-      password = safeStorage.decryptString(Buffer.from(password, 'base64'));
-    }
-    const config = raw as Partial<SSHConfig>;
-    return new SSHTransport({
-      host: config.host || 'localhost',
-      port: config.port || 22,
-      username: config.username || 'root',
-      privateKeyPath: config.privateKeyPath,
-      useAgent: config.useAgent ?? (!config.privateKeyPath && !password),
-      password,
-      useSudo: !!raw.useSudo,
-    });
+    return new SSHTransport(await resolveSshConfig(raw));
   }
 
   if (env.type === 'coder') {
@@ -515,13 +498,28 @@ export class SessionManager {
     this.sessions.set(id, session);
     this.callbacksMap.set(id, callbacks);
 
-    // Compute the hook-bridge env up front so we know whether this session is
-    // actually hook-wired before we register it with the status detector. The
-    // env is keyed only on `id` (no transport/resolved-env dependency), so it's
-    // safe to compute here. Returns `{}` when hooks are off, the bridge failed
-    // to boot, or the helper is missing — and is always empty for SSH/Coder
-    // remotes, since the bridge is local-only today.
-    const hookEnv = hookEnvForSession(id);
+    // Compute the hook env up front so we know whether this session is
+    // actually hook-wired before we register it with the status detector.
+    // Dispatch is environment-aware: local sessions get the bridge env
+    // directly (keyed only on `id`, so safe to compute here); SSH/Coder
+    // sessions must never inherit the local socket/token (the CLI runs on
+    // another machine where that address is meaningless — and a non-empty env
+    // would wrongly mark them hookCapable). They consult the remote hook
+    // service instead, which installs the overlay + helper on opted-in SSH
+    // hosts and returns an env-file pointer. That call is bounded (~8s) and
+    // never throws — on timeout/failure it returns `{}` and the session
+    // launches with cadence-only detection.
+    const hookEnvRow = opts.environmentId ? getEnvironment(opts.environmentId) : null;
+    const hookEnv = !hookEnvRow || hookEnvRow.type === 'local'
+      ? hookEnvForSession(id)
+      : await envForRemoteSession(id, hookEnvRow, cliTool);
+    // The await above can span seconds for remote envs. If the session was
+    // removed while we waited, abort before registering the detector or
+    // spawning a transport nothing could ever dispose.
+    if (!this.sessions.has(id)) {
+      detachRemoteSession(id);
+      throw new Error('Session was removed while it was being created');
+    }
     const hookCapable = Object.keys(hookEnv).length > 0;
 
     // Sessions with no hook env (toggle off, install failed, remote transport)
@@ -536,6 +534,7 @@ export class SessionManager {
     } catch (err) {
       log.error('Transport creation failed', { id, error: err instanceof Error ? err.message : String(err) });
       statusDetector.unregister(id);
+      detachRemoteSession(id);
       this.sessions.delete(id);
       this.callbacksMap.delete(id);
       throw err;
@@ -608,6 +607,7 @@ export class SessionManager {
     } catch (err) {
       log.error('Env var resolution failed', { id, error: err instanceof Error ? err.message : String(err) });
       statusDetector.unregister(id);
+      detachRemoteSession(id);
       transport.dispose();
       this.sessions.delete(id);
       this.callbacksMap.delete(id);
@@ -804,6 +804,7 @@ export class SessionManager {
     } catch (err) {
       log.error('Transport start failed', { id, error: err instanceof Error ? err.message : String(err) });
       statusDetector.unregister(id);
+      detachRemoteSession(id);
       session.helmIntegration?.cleanup();
       session.helmIntegration = null;
       session.transport = null;
@@ -902,9 +903,12 @@ export class SessionManager {
       log.info('Removing session', { id });
       statusDetector.unregister(id);
       // Revoke any per-session hook token. No-op for local sessions (they use
-      // the boot-global token); required once remote sessions get scoped
-      // tokens so a torn-down session can't keep authorizing hook frames.
+      // the boot-global token); remote sessions get scoped tokens, so a
+      // torn-down session can't keep authorizing hook frames.
       revokeHookSessionToken(id);
+      // Detach from the remote hook agent (refcount−−; the last session on an
+      // env uninstalls the host's overlays and drops the control connection).
+      detachRemoteSession(id);
       session.codexDetectCancel?.();
       session.copilotDetectCancel?.();
       session.opencodeDetectCancel?.();

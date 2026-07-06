@@ -53,7 +53,7 @@ Each session has a state, shown by the colored dot in the sidebar:
 | **Stopped** | Gray (dim) | Session was stopped gracefully |
 | **Dead** | Red | The CLI process exited |
 
-State detection is passive — Tether watches output cadence; it does not parse or filter the terminal stream.
+State detection is passive — Tether watches output cadence; it does not parse or filter the terminal stream. With [CLI hooks](settings#cli-hooks) enabled, Claude/Codex sessions get hook-grade detection on top: local sessions automatically, SSH sessions when their environment opts in via [CLI status hooks on remote hosts](environments#cli-status-hooks-on-remote-hosts). Coder sessions are cadence-only for now.
 
 ## Managing Sessions
 

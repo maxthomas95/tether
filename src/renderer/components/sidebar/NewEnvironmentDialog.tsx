@@ -33,6 +33,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
   const [authMethod, setAuthMethod] = useState<'agent' | 'key' | 'password'>('agent');
   const [defaultDir, setDefaultDir] = useState('~');
   const [useSudo, setUseSudo] = useState(false);
+  const [remoteCliHooks, setRemoteCliHooks] = useState(false);
+  const [globalHooksOn, setGlobalHooksOn] = useState(false);
   const [coderBinary, setCoderBinary] = useState('coder');
   const [coderAllowInsecureTls, setCoderAllowInsecureTls] = useState(false);
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
@@ -56,6 +58,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
       setUsername((cfg.username as string) || '');
       setDefaultDir((cfg.defaultDir as string) || '~');
       setUseSudo(!!(cfg.useSudo));
+      setRemoteCliHooks(cfg.remoteCliHooks === true);
       if (cfg.useAgent) {
         setAuthMethod('agent');
       } else if (cfg.privateKeyPath) {
@@ -81,6 +84,10 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
       setVaultIdentity(s.identity);
     }).catch(() => setVaultConnected(false));
     window.electronAPI.vault.getConfig().then(c => { if (c.mount) setVaultMount(c.mount); }).catch(() => {});
+    // Remote hooks are only offered while the global CLI-hooks toggle is on.
+    window.electronAPI.config.get?.('cliHooksEnabled')
+      .then(v => setGlobalHooksOn(v === 'true'))
+      .catch(() => setGlobalHooksOn(false));
   }, [isOpen]);
 
   // Preselect environment type when caller (e.g. welcome pane) requests it.
@@ -148,6 +155,9 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
       if (useSudo) {
         config.useSudo = true;
       }
+      if (remoteCliHooks && !useSudo) {
+        config.remoteCliHooks = true;
+      }
     } else if (type === 'coder') {
       config.binaryPath = coderBinary.trim() || 'coder';
       if (coderAllowInsecureTls) {
@@ -169,6 +179,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
     setName(''); setHost(''); setPort('22'); setUsername('');
     setKeyPath(''); setPassword(''); setAuthMethod('agent'); setDefaultDir('~'); setEnvVars({});
     setStoreInVault(false); setVaultPath(''); setCreateError(null); setCreating(false); setUseSudo(false);
+    setRemoteCliHooks(false);
     setCoderBinary('coder'); setCoderAllowInsecureTls(false);
   };
 
@@ -382,6 +393,28 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
                   </span>
                 </div>
               )}
+
+              <div className="form-group">
+                <label className="form-radio-label">
+                  {/* `checked` must mirror what handleSubmit persists (consent
+                      survives the global toggle being off; sudo clears it) —
+                      otherwise the dialog shows one state and saves another. */}
+                  <input
+                    type="checkbox"
+                    checked={remoteCliHooks && !useSudo}
+                    disabled={!globalHooksOn || useSudo}
+                    onChange={e => setRemoteCliHooks(e.target.checked)}
+                  />
+                  Install CLI status hooks on this host
+                </label>
+                <span className="form-hint">
+                  {!globalHooksOn
+                    ? 'Requires the global "CLI status hooks" toggle in Settings → Sessions.'
+                    : useSudo
+                      ? 'Not available for sudo-elevated environments — the CLI runs as root, whose config files Tether does not touch.'
+                      : 'Tether will keep a small helper under ~/.tether and add hook entries to ~/.claude/settings.json and ~/.codex/config.toml on this host while sessions run. Entries are removed when the last session ends. Requires Node.js on the host.'}
+                </span>
+              </div>
             </>
           )}
 
