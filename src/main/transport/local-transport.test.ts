@@ -1,6 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTransportOptions, getPtySpawnSpy, setupPtyTransportTest } from './transport-test-utils.test-helper';
 
+// Exercise the transport's win32 branching (direct spawn vs cmd.exe wrapper)
+// without depending on real cross-platform PATH resolution: process.execPath
+// resolves "direct"; every other name is treated as an unresolved shell
+// launch. Real resolution is covered by win-binary-resolver.test.ts.
+vi.mock('./win-binary-resolver', () => ({
+  resolveWindowsLaunch: (binary: string) =>
+    binary === process.execPath
+      ? { kind: 'direct', file: binary }
+      : { kind: 'shell', file: binary },
+}));
+
 import { LocalTransport } from './local-transport';
 
 const baseOptions = createTransportOptions('C:\\repo\\tether');
@@ -20,12 +31,20 @@ describe('LocalTransport', () => {
     expect(t.connected).toBe(true);
   });
 
-  it('on win32, wraps the binary in cmd.exe /c', async () => {
+  it('on win32, launches a resolved executable directly', async () => {
     platform.set('win32');
-    await new LocalTransport().start(baseOptions({ binaryName: 'claude' }));
+    await new LocalTransport().start(baseOptions({ binaryName: process.execPath }));
+    const [file, args] = ptySpawnSpy.mock.calls[0];
+    expect(file).toBe(process.execPath);
+    expect(args).toEqual([]);
+  });
+
+  it('on win32, uses cmd.exe for an unresolved command', async () => {
+    platform.set('win32');
+    await new LocalTransport().start(baseOptions({ binaryName: 'tether-test-missing-cli' }));
     const [file, args] = ptySpawnSpy.mock.calls[0];
     expect(file).toBe('cmd.exe');
-    expect(args).toEqual(['/d', '/c', 'claude']);
+    expect(args).toEqual(['/d', '/c', 'tether-test-missing-cli']);
   });
 
   it('on win32, rejects unsafe command-position binary values', async () => {
@@ -38,13 +57,21 @@ describe('LocalTransport', () => {
   it('on win32, escapes cmd.exe expansion metacharacters in args', async () => {
     platform.set('win32');
     await new LocalTransport().start(baseOptions({
-      binaryName: 'claude',
+      binaryName: 'tether-test-missing-cli',
       cliArgs: ['--model', 'sonnet%PATH%', 'caret^x', 'fix&calc'],
     }));
     const [, args] = ptySpawnSpy.mock.calls[0];
-    expect(args).toEqual(['/d', '/c', 'claude', '--model', 'sonnet^%PATH^%', 'caret^^x', 'fix^&calc']);
+    expect(args).toEqual(['/d', '/c', 'tether-test-missing-cli', '--model', 'sonnet^%PATH^%', 'caret^^x', 'fix^&calc']);
   });
 
+  it('on win32, rejects quoted args for the batch-shim fallback', async () => {
+    platform.set('win32');
+    await expect(new LocalTransport().start(baseOptions({
+      binaryName: 'tether-test-missing-cli',
+      initialPrompt: 'foo"bar',
+    }))).rejects.toThrow(/double quotes/);
+    expect(ptySpawnSpy).not.toHaveBeenCalled();
+  });
   it('on POSIX, spawns the binary directly', async () => {
     platform.set('linux');
     await new LocalTransport().start(baseOptions({ binaryName: 'claude' }));

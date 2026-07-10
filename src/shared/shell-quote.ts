@@ -9,7 +9,6 @@ const POSIX_SINGLE_QUOTE_ESCAPE = String.raw`'\''`;
 const POSIX_ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const CMD_EXE_COMMAND_META_RE = /[&|<>()^%!]/;
 const CMD_EXE_ARG_META_RE = /[&|<>()]/;
-const CMD_EXE_WHITESPACE_RE = /\s/;
 
 function assertNoNul(value: string, label: string): void {
   if (value.includes('\0')) {
@@ -77,7 +76,9 @@ function assertNoCmdLineBreak(value: string, label: string): void {
 export function escapeCmdExeArgForNodePty(value: string): string {
   assertNoNul(value, 'cmd.exe argument');
   assertNoCmdLineBreak(value, 'cmd.exe argument');
-  const hasWhitespace = CMD_EXE_WHITESPACE_RE.test(value);
+  if (value.includes('"')) {
+    throw new Error('cmd.exe arguments with double quotes are not supported here');
+  }
 
   let out = '';
   for (const ch of value) {
@@ -85,7 +86,7 @@ export function escapeCmdExeArgForNodePty(value: string): string {
       out += '^^';
     } else if (ch === '%') {
       out += '^%';
-    } else if (!hasWhitespace && CMD_EXE_ARG_META_RE.test(ch)) {
+    } else if (CMD_EXE_ARG_META_RE.test(ch)) {
       out += `^${ch}`;
     } else {
       out += ch;

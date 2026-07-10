@@ -1,6 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTransportOptions, getPtySpawnSpy, setupPtyTransportTest } from './transport-test-utils.test-helper';
 
+// See local-transport.test.ts: mock resolution so win32 branch tests are
+// host-independent. process.execPath resolves "direct"; anything else is an
+// unresolved shell launch. Real resolution is covered by its own unit test.
+vi.mock('./win-binary-resolver', () => ({
+  resolveWindowsLaunch: (binary: string) =>
+    binary === process.execPath
+      ? { kind: 'direct', file: binary }
+      : { kind: 'shell', file: binary },
+}));
+
 import { CoderTransport } from './coder-transport';
 
 const baseOptions = createTransportOptions('workspace1');
@@ -47,12 +57,20 @@ describe('CoderTransport', () => {
     expect(writes).not.toContain('cd ');
   });
 
-  it('on win32, wraps the binary in cmd.exe /c', async () => {
+  it('on win32, launches a resolved executable directly', async () => {
     platform.set('win32');
-    await new CoderTransport().start(baseOptions({ workingDir: 'ws' }));
+    await new CoderTransport({ binaryPath: process.execPath }).start(baseOptions({ workingDir: 'ws' }));
+    const [file, args] = ptySpawnSpy.mock.calls[0];
+    expect(file).toBe(process.execPath);
+    expect(args).toEqual(['ssh', 'ws']);
+  });
+
+  it('on win32, uses cmd.exe for an unresolved command', async () => {
+    platform.set('win32');
+    await new CoderTransport({ binaryPath: 'tether-test-missing-coder' }).start(baseOptions({ workingDir: 'ws' }));
     const [file, args] = ptySpawnSpy.mock.calls[0];
     expect(file).toBe('cmd.exe');
-    expect(args).toEqual(['/d', '/c', 'coder', 'ssh', 'ws']);
+    expect(args).toEqual(['/d', '/c', 'tether-test-missing-coder', 'ssh', 'ws']);
   });
 
   it('on win32, rejects unsafe coder binary values', async () => {
@@ -64,11 +82,18 @@ describe('CoderTransport', () => {
 
   it('on win32, escapes workspace names before passing through cmd.exe', async () => {
     platform.set('win32');
-    await new CoderTransport().start(baseOptions({ workingDir: 'ws%PATH%&calc' }));
+    await new CoderTransport({ binaryPath: 'tether-test-missing-coder' }).start(baseOptions({ workingDir: 'ws%PATH%&calc' }));
     const [, args] = ptySpawnSpy.mock.calls[0];
-    expect(args).toEqual(['/d', '/c', 'coder', 'ssh', 'ws^%PATH^%^&calc']);
+    expect(args).toEqual(['/d', '/c', 'tether-test-missing-coder', 'ssh', 'ws^%PATH^%^&calc']);
   });
 
+  it('on win32, rejects quoted workspace names for the batch-shim fallback', async () => {
+    platform.set('win32');
+    await expect(new CoderTransport({ binaryPath: 'tether-test-missing-coder' }).start(baseOptions({
+      workingDir: 'ws"name',
+    }))).rejects.toThrow(/double quotes/);
+    expect(ptySpawnSpy).not.toHaveBeenCalled();
+  });
   it('preserves a leading ~ in the subdir path (for remote shell expansion)', async () => {
     platform.set('linux');
     await new CoderTransport().start(baseOptions({ workingDir: 'ws::~/code/foo' }));

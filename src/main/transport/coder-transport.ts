@@ -7,6 +7,7 @@ import { loadPty } from './pty-loader';
 import { buildEnvAssignments, buildRemoteCliCommand, quotePosixShellArg, quoteRemotePath } from './posix-shell';
 import { assertSafeCmdExeCommand, escapeCmdExeArgForNodePty } from '../../shared/shell-quote';
 import { validateGitRemoteUrl } from '../git/git-url';
+import { resolveWindowsLaunch } from './win-binary-resolver';
 
 const log = createLogger('coder-pty');
 
@@ -65,17 +66,18 @@ export class CoderTransport implements SessionTransport {
     const chain = [cloneStep, cdStep, baseCmd].filter(Boolean).join(' && ');
     const cmd = `${chain}\n`;
 
-    // On Windows, node-pty's CreateProcess call doesn't resolve PATHEXT, so
-    // bare names like "coder" need a cmd.exe wrapper.
+    // Native Windows executables receive argv directly. cmd.exe is retained
+    // only for batch shims and unresolved names that require its PATH/PATHEXT
+    // fallback.
     const isWin32 = process.platform === 'win32';
-    if (isWin32) {
-      assertSafeCmdExeCommand(this.binaryPath, 'Coder binary');
-    }
-    const shell = isWin32 ? 'cmd.exe' : this.binaryPath;
-    const spawnArgs = isWin32
-      ? ['/d', '/c', this.binaryPath, 'ssh', escapeCmdExeArgForNodePty(workspaceName)]
+    const plan = isWin32 ? resolveWindowsLaunch(this.binaryPath) : null;
+    const shell = plan?.kind === 'direct' ? plan.file : isWin32 ? 'cmd.exe' : this.binaryPath;
+    const spawnArgs = plan?.kind === 'shell'
+      ? ['/d', '/c', plan.file, 'ssh', escapeCmdExeArgForNodePty(workspaceName)]
       : ['ssh', workspaceName];
-
+    if (plan?.kind === 'shell') {
+      assertSafeCmdExeCommand(plan.file, 'Coder binary');
+    }
     log.info('Spawning coder ssh', { shell, binaryPath: this.binaryPath, workspaceName, hasSubDir: Boolean(subDir) });
 
     this.ptyProcess = pty.spawn(shell, spawnArgs, {
