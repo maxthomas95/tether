@@ -127,7 +127,7 @@ npx tsc --noEmit     # Type check (preferred over full builds during dev)
 npm test             # Vitest unit tests
 ```
 
-**Note:** Native modules (node-pty) have ABI issues with VS 2025 + Electron 41. Workarounds: lazy node-pty import, JSON persistence instead of SQLite. `better-sqlite3` is in package.json but unused — JSON file storage is the current persistence layer.
+**Note:** Native modules (node-pty) have ABI issues with VS 2025 + Electron 41. Workarounds: lazy node-pty import and JSON persistence for app state. Crush/OpenCode usage reads its local database through Node's built-in, experimental `node:sqlite`; JSON file storage is the current persistence layer.
 
 ## File Structure
 

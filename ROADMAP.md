@@ -91,7 +91,7 @@ A lot has shipped recently (Helm, Vault, GitHub provider, OpenCode / Copilot CLI
 These are deferred on purpose. We'll revisit when 1.0 has soaked.
 
 - **Cross-platform builds** — macOS first (signing infra is the lift), then Linux. node-pty / ssh2 / Coder REST are already platform-agnostic; the work is at the build / sign / install / auto-update layer.
-- **SQLite migration** — only if usage history scale or query performance starts to bite. Likely path is hybrid: config stays in JSON, usage/transcript index moves to SQLite. `better-sqlite3@^12.8.0` may have eased the original Electron-41 ABI pain — to be verified when it matters.
+- **SQLite migration** — only if usage history scale or query performance starts to bite. Likely path is hybrid: config stays in JSON, usage/transcript index moves to SQLite through built-in `node:sqlite`, avoiding a native Electron ABI dependency.
 - **Pin sessions** — pin a session to the top of its group.
 
 ---

@@ -354,7 +354,7 @@ SQLite via `better-sqlite3` was the original plan for its atomic writes and quer
 - Zero native dependencies — no ABI issues
 - Simple to debug (human-readable file)
 - In-memory object with save-on-mutate is fast enough for the current scale
-- `better-sqlite3` remains in `package.json` for future migration when toolchain issues are resolved
+- A future SQLite migration can use built-in `node:sqlite`, avoiding native ABI issues; JSON persistence remains unchanged today
 
 ### Why not the Claude Agent SDK for session management
 
