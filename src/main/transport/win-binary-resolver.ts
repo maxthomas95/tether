@@ -1,6 +1,12 @@
 import { existsSync as fileExistsSync } from 'node:fs';
 import path from 'node:path';
 
+// This resolver models Windows command resolution, so it uses path.win32
+// throughout — that keeps its behavior identical whether it runs on a Windows
+// host (production) or a POSIX CI runner (tests). It is only ever invoked from
+// the win32 launch path in the transports.
+const win = path.win32;
+
 export type WinLaunchPlan =
   | { kind: 'direct'; file: string }
   | { kind: 'shell'; file: string };
@@ -25,7 +31,7 @@ function pathExts(pathExt: string | undefined): string[] {
 }
 
 function planForResolvedFile(file: string): WinLaunchPlan {
-  const extension = path.extname(file).toLowerCase();
+  const extension = win.extname(file).toLowerCase();
   if (extension === '.cmd' || extension === '.bat') {
     return { kind: 'shell', file };
   }
@@ -42,13 +48,16 @@ export function resolveWindowsLaunch(binary: string, opts: ResolveWindowsLaunchO
   const isExplicitPath = /[\\/]/.test(binary) || /^[A-Za-z]:/.test(binary);
 
   if (isExplicitPath) {
-    const explicitFile = path.resolve(binary);
-    if (path.extname(explicitFile)) {
+    const explicitFile = win.resolve(binary);
+    if (win.extname(explicitFile)) {
       return existsSync(explicitFile)
         ? planForResolvedFile(explicitFile)
         : { kind: 'shell', file: binary };
     }
 
+    // No extension: an extensionless file that exists as-is launches directly;
+    // otherwise try each PATHEXT candidate.
+    if (existsSync(explicitFile)) return planForResolvedFile(explicitFile);
     for (const extension of extensions) {
       const candidate = `${explicitFile}${extension}`;
       if (existsSync(candidate)) return planForResolvedFile(candidate);
@@ -57,13 +66,13 @@ export function resolveWindowsLaunch(binary: string, opts: ResolveWindowsLaunchO
   }
 
   const pathEntries = (opts.pathEnv ?? process.env.PATH ?? '')
-    .split(path.delimiter)
+    .split(win.delimiter)
     .map(entry => entry.trim().replace(/^"|"$/g, ''))
     .filter(Boolean);
 
   for (const directory of pathEntries) {
     for (const extension of ['', ...extensions]) {
-      const candidate = path.resolve(directory, `${binary}${extension}`);
+      const candidate = win.resolve(directory, `${binary}${extension}`);
       if (existsSync(candidate)) return planForResolvedFile(candidate);
     }
   }

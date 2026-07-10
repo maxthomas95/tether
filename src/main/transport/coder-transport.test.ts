@@ -1,6 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTransportOptions, getPtySpawnSpy, setupPtyTransportTest } from './transport-test-utils.test-helper';
 
+// See local-transport.test.ts: mock resolution so win32 branch tests are
+// host-independent. process.execPath resolves "direct"; anything else is an
+// unresolved shell launch. Real resolution is covered by its own unit test.
+vi.mock('./win-binary-resolver', () => ({
+  resolveWindowsLaunch: (binary: string) =>
+    binary === process.execPath
+      ? { kind: 'direct', file: binary }
+      : { kind: 'shell', file: binary },
+}));
+
 import { CoderTransport } from './coder-transport';
 
 const baseOptions = createTransportOptions('workspace1');

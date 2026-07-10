@@ -1,6 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTransportOptions, getPtySpawnSpy, setupPtyTransportTest } from './transport-test-utils.test-helper';
 
+// Exercise the transport's win32 branching (direct spawn vs cmd.exe wrapper)
+// without depending on real cross-platform PATH resolution: process.execPath
+// resolves "direct"; every other name is treated as an unresolved shell
+// launch. Real resolution is covered by win-binary-resolver.test.ts.
+vi.mock('./win-binary-resolver', () => ({
+  resolveWindowsLaunch: (binary: string) =>
+    binary === process.execPath
+      ? { kind: 'direct', file: binary }
+      : { kind: 'shell', file: binary },
+}));
+
 import { LocalTransport } from './local-transport';
 
 const baseOptions = createTransportOptions('C:\\repo\\tether');
