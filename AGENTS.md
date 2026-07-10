@@ -78,8 +78,9 @@ parallel `coder` runs.
 ## Development Rules
 
 - Preserve the raw terminal invariant for local, SSH, and Coder sessions.
-- Do not send PTY data for background sessions to the renderer; only active
-  panes stream to the DOM.
+- Background sessions keep their PTY connections live off-DOM with data flowing
+  over IPC to the renderer, so scrollback survives re-attach; only active panes
+  attach to the DOM. Do not add rendering or per-frame work for hidden sessions.
 - Do not store private keys, passphrases, Vault tokens, API tokens, or other
   secrets in plaintext files or logs.
 - Keep SSH host-key TOFU and known-host behavior secure from the first contact.

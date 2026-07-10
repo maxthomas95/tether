@@ -10,7 +10,7 @@ For each provider you need:
 - **API base URL** — `https://api.github.com`, `https://dev.azure.com/<org>`, or your self-hosted Gitea URL
 - **Auth token** — a personal access token with `repo`-equivalent scope on that provider
 
-Tokens are stored in `data.json`. For best practice, store the token in [Vault](vault) and reference it from the provider config.
+Tokens are encrypted at rest in `data.json` via the OS keychain (safeStorage). Vault references are supported for centralized secrets management.
 
 ### GitHub
 
@@ -63,7 +63,7 @@ If you've picked a **default project** in the ADO provider config, it's pre-sele
 In `data.json`:
 
 - Provider display name, API base URL, auth method
-- Token (plaintext **unless** you used a Vault reference)
+- Token (encrypted at rest via OS keychain; Vault references also supported)
 - Per-provider preferences like ADO default project
 
 Tokens are scrubbed from the [diagnostics export](settings#diagnostics-export) for support bundles.
