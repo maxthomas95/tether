@@ -14,15 +14,23 @@ concurrency:
 
 jobs:
   test:
-    name: tests
+    name: typecheck · lint · tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Node 24 matches Electron 41's runtime and provides the built-in
+          # node:sqlite the Crush usage reader uses.
+          node-version: '24'
           cache: 'npm'
-      - run: npm install --no-audit --no-fund
+      # Node 24 bundles npm 11, whose arborist trips on this dependency tree
+      # during `npm ci` ("Invalid Version"). Pin npm 10 until that is fixed
+      # upstream; 10.9.x supports Node >=20.5.
+      - run: npm i -g npm@10.9.2
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
       - run: npm test
 
   audit:
@@ -32,5 +40,44 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      - run: npm audit --audit-level=critical
+          node-version: '24'
+      # Fail on high/critical advisories, for both the full tree and the
+      # production-only dependency graph.
+      - run: npm audit --audit-level=high
+      - run: npm audit --omit=dev --audit-level=high
+
+  helm:
+    name: helm build · audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-servers/tether-helm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: mcp-servers/tether-helm/package-lock.json
+      - run: npm i -g npm@10.9.2
+      - run: npm ci
+      - run: npm run build
+      - run: npm audit --audit-level=high
+
+  package:
+    name: windows package + verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm i -g npm@10.9.2
+      - run: npm ci
+      # Produce a real package and assert its ASAR/resources are complete.
+      # A bare `npm run package` success does not prove the packaged app is
+      # functional; verify:package opens the asar and checks that every
+      # bare-required module, native binding, and extra resource is present.
+      - run: npm run package
+      - run: npm run verify:package
