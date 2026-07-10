@@ -101,11 +101,13 @@ Tether ships Windows-only today; macOS and Linux are post-1.0 (see `ROADMAP.md`)
 
 ## Agent Routing
 
-`.claude/agents/` (local, untracked) defines three model-tiered subagents. Route by task shape, not habit:
+The `codex-crew` plugin (`maxthomas95/codex-crew`, installed user-scope) defines three Codex-backed subagents: each is a thin forwarder that hands the task to OpenAI Codex CLI (`codex exec`) with pinned model/effort/sandbox and relays the report back verbatim. Route by task shape, not habit:
 
-- `architect` (Opus, effort high) — bounded deep problems: root-causing a specific behavior, design analysis with non-obvious tradeoffs. Returns analysis with file:line evidence; does not usually write production code.
-- `coder` (Sonnet, effort low) — implementation with a clear spec, known files, and a defined done-state. Ambiguous specs bounce back rather than get improvised. Bump to effort medium only if specs get looser.
-- `scout` (Haiku, read-only) — fast lookups, log/transcript digging, quick verifications. Never edits files.
+- `architect` (Codex `gpt-5.6-sol`, effort xhigh, read-only sandbox) — bounded deep problems: root-causing a specific behavior, design analysis with non-obvious tradeoffs. Returns analysis with file:line evidence; cannot write files.
+- `coder` (Codex `gpt-5.6-terra`, effort medium, workspace-write sandbox) — implementation with a clear spec, known files, and a defined done-state. Ambiguous specs bounce back rather than get improvised. Name the worktree path in the task when one is assigned — the forwarder targets `codex exec -C` at it.
+- `scout` (Codex `gpt-5.6-luna`, effort low, read-only sandbox) — fast lookups, log/transcript digging, quick verifications. Never edits files.
+
+Delegated Codex runs read this repo's AGENTS.md and CLAUDE.md, so the conventions here bind them too. Model/effort pins live in the plugin repo, not here.
 
 Standing rules:
 
