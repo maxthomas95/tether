@@ -1,8 +1,19 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { createRequire } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// node:sqlite is a built-in only from Node 22.5+ (Electron 41 runs Node 24).
+// Load it lazily so this file doesn't hard-fail to import on older Node (e.g.
+// a Node 20 CI runner); the suite skips there rather than erroring.
+const require = createRequire(import.meta.url);
+let DatabaseSync: typeof import('node:sqlite').DatabaseSync | undefined;
+try {
+  ({ DatabaseSync } = require('node:sqlite'));
+} catch {
+  DatabaseSync = undefined;
+}
 
 const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-opencode-home-'));
 const warnings: Array<{ message: string; data?: Record<string, unknown> }> = [];
@@ -31,7 +42,7 @@ function makeTempDir(): string {
 }
 
 function createCrushDb(dir: string): void {
-  const db = new DatabaseSync(path.join(dir, 'crush.db'));
+  const db = new DatabaseSync!(path.join(dir, 'crush.db'));
   db.exec(`
     CREATE TABLE sessions (
       id TEXT PRIMARY KEY,
@@ -79,7 +90,7 @@ afterEach(() => {
   }
 });
 
-describe('readCrushSessions', () => {
+describe.skipIf(!DatabaseSync)('readCrushSessions', () => {
   it('maps parent sessions and uses the latest non-summary assistant message', () => {
     const dir = makeTempDir();
     createCrushDb(dir);
