@@ -6,10 +6,15 @@ Tether is a desktop session multiplexer for Claude Code, Codex CLI, OpenCode, an
 
 The Setup Wizard runs on first launch and walks you through:
 
-1. **Repos root** — a parent directory Tether uses when cloning new projects and creating folders. You can change this later from **New Session**.
-2. **Vault** — optional HashiCorp Vault configuration, login, and plaintext-secret migration.
-3. **Environment and CLI** — Local is ready automatically; you can also add SSH or Coder and choose the default CLI tool for new sessions.
-4. **Git provider** — optional GitHub, Azure DevOps, or Gitea credentials for repo browse, clone, and remote-create.
+1. **Welcome** — introduction and launch option.
+2. **Projects root** — a parent directory Tether uses when cloning new projects and creating folders. You can change this later from **New Session**.
+3. **Theme** — visual theme selection (Catppuccin, Brass, Tether, etc.).
+4. **Vault** — optional HashiCorp Vault configuration, login, and plaintext-secret migration.
+5. **Environment and CLI** — Local is ready automatically; you can also add SSH or Coder and choose the default CLI tool for new sessions.
+6. **CLI status hooks** — opt-in for higher-fidelity session status detection via Claude Code and Codex CLI integration.
+7. **Notifications** — configure desktop notifications and session muting preferences.
+8. **Git provider** — optional GitHub, Azure DevOps, or Gitea credentials for repo browse, clone, and remote-create.
+9. **Ready** — setup complete; start using Tether.
 
 The wizard only marks setup complete when you click **Skip Setup**, **Start Using Tether**, or **Create First Session**. Closing it with **Esc** or **X** just dismisses it for this app run.
 

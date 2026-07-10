@@ -27,7 +27,7 @@ When the Existing tab points to a git repository, a **Create as new git worktree
 
 ## Resume Conversation
 
-When you create a Local Claude Code or Codex CLI session in a directory with existing transcripts, Tether offers to resume a previous conversation. Click a transcript preview to start from where you left off (uses `claude --resume` / `codex resume <id>` under the hood). Resume is not currently supported for Coder sessions because transcripts live inside the workspace.
+When you create a Local Claude Code, Codex CLI, or OpenCode session in a directory with existing transcripts, Tether offers to resume a previous conversation. Click a transcript preview to start from where you left off (uses `claude --resume` / `codex resume <id>` / `opencode --session <id>` under the hood). Resume is not currently supported for Coder sessions because transcripts live inside the workspace.
 
 ## Multi-CLI Support
 
@@ -38,7 +38,7 @@ Tether is CLI-agnostic. The CLI registry lives in `src/shared/cli-tools.ts`; per
 | **Claude Code** | Full integration: resume (`--resume`, `--session-id`), transcript browsing, hooks-based status detection. |
 | **Codex CLI** | Full integration: `codex resume <id>`, transcript browsing, session-id watcher captures `sessionId` at spawn, hooks-based status detection. |
 | **GitHub Copilot CLI** | Resume support, transcript browsing. |
-| **OpenCode** | Cost tracking from OpenCode's local DB. No transcript-based resume. |
+| **OpenCode** | Full integration: resume (`--session <id>`), transcript browsing, cost tracking from OpenCode's local DB. |
 | **Custom** | Any binary you specify. No resume, no transcript reader. |
 
 ## Session States

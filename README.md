@@ -68,7 +68,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Status indicators** — green (running), amber (waiting), gray (idle), red (dead) — passive PTY tap, no ANSI parsing; optional CLI hook integration for higher-fidelity detection
 - **Workspace persistence** — sessions save on quit and restore on launch; writes are atomic (tmp → fsync → rename)
 - **Resume previous chats** — pick up a prior Claude Code, Codex CLI, OpenCode, or Copilot CLI transcript on session create
-- **First-run Setup Wizard** — guided setup for projects, Vault, environments, CLI defaults, and Git providers
+- **First-run Setup Wizard** — guided setup for projects, theme, Vault, environments, CLI defaults, CLI status hooks, notifications, and Git providers
 
 ### Environments
 
@@ -120,10 +120,10 @@ Tether is a dumb-pipe PTY multiplexer for interactive coding CLIs. You can selec
 - **Claude Code** (`claude`) — full support including session resume and transcript browsing
 - **Codex CLI** (`codex`) — OpenAI's coding agent, with session resume and transcript browsing for local sessions
 - **GitHub Copilot CLI** (`copilot`) — session resume via `--resume`
-- **OpenCode** (`opencode`)
+- **OpenCode** (`opencode`) — session resume and transcript browsing support
 - **Custom** — any binary you specify
 
-OpenCode and custom tools run as raw PTY sessions without tool-specific resume support.
+Custom tools run as raw PTY sessions without tool-specific resume support. OpenCode has session resume and transcript browsing support.
 
 ## Quick Start
 

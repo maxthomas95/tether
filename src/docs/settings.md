@@ -130,7 +130,7 @@ Key-value pairs applied as the **global defaults** for every new session. Common
 - `OPENAI_API_KEY` — for Codex CLI
 - Project-specific tokens, proxy settings, etc.
 
-Values can be `vault://` references — see [Vault](vault#vault-references). Plaintext values are stored in `data.json`; prefer Vault for anything sensitive.
+Sensitive env-var names (API_KEY, TOKEN, SECRET, PASSWORD, etc.) are encrypted at rest via OS keychain storage; other values are stored plaintext in `data.json`. For best practice, store sensitive values in [Vault](vault) and reference them instead.
 
 ### Default CLI flags (per tool)
 
@@ -201,7 +201,7 @@ Settings:
 
 ### Diagnostics export
 
-The **About** dialog has an **Export diagnostics for support** button that bundles a scrubbed copy of `data.json` (SSH passwords, plaintext tokens, sensitive env-var values, and the Vault token are redacted; Vault references are preserved) plus rotated logs (with light scrubbing for known API key prefixes) into a single zip. Share that file when filing an issue.
+The **About** dialog has an **Export diagnostics for support** button that bundles a scrubbed copy of `data.json` (provider tokens, SSH passwords, sensitive env-var values, and the Vault token are redacted; Vault references are preserved) plus rotated logs (with light scrubbing for known API key prefixes) into a single zip. Share that file when filing an issue.
 
 ## Usage
 
