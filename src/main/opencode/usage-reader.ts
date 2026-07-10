@@ -18,6 +18,20 @@ export interface OpenCodeSessionUsage {
   provider?: string;
 }
 
+interface CrushSessionRow {
+  id: string;
+  title: string;
+  directory: string | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost: number;
+  message_count: number;
+  created_at: number;
+  updated_at: number;
+  model: string | null;
+  provider: string | null;
+}
+
 /**
  * Locate the Crush (formerly OpenCode) SQLite database.
  *
@@ -80,14 +94,13 @@ export function readCrushSessions(): OpenCodeSessionUsage[] {
     return [];
   }
 
-  // Lazy require to avoid loading better-sqlite3 at module init time.
-  // The native module ABI can be fragile with Electron.
-  let Database: typeof import('better-sqlite3');
+  // Lazy require because node:sqlite is still experimental.
+  let DatabaseSync: typeof import('node:sqlite').DatabaseSync;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    Database = require('better-sqlite3');
+    ({ DatabaseSync } = require('node:sqlite'));
   } catch (err) {
-    log.warn('better-sqlite3 not available, skipping Crush usage read', {
+    log.warn('node:sqlite not available, skipping Crush usage read', {
       error: err instanceof Error ? err.message : String(err),
     });
     return [];
@@ -98,9 +111,9 @@ export function readCrushSessions(): OpenCodeSessionUsage[] {
     return [];
   }
 
-  let db: import('better-sqlite3').Database;
+  let db: import('node:sqlite').DatabaseSync;
   try {
-    db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    db = new DatabaseSync(dbPath, { readOnly: true });
   } catch (err) {
     log.warn('Failed to open crush.db', {
       path: dbPath,
@@ -135,19 +148,7 @@ export function readCrushSessions(): OpenCodeSessionUsage[] {
       )
       WHERE s.parent_session_id IS NULL
       ORDER BY s.updated_at DESC
-    `).all() as Array<{
-      id: string;
-      title: string;
-      directory: string | null;
-      prompt_tokens: number;
-      completion_tokens: number;
-      cost: number;
-      message_count: number;
-      created_at: number;
-      updated_at: number;
-      model: string | null;
-      provider: string | null;
-    }>;
+    `).all() as unknown as CrushSessionRow[];
 
     return rows.map(row => ({
       id: row.id,
