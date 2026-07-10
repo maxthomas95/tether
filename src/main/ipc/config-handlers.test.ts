@@ -66,6 +66,24 @@ describe('config-handlers', () => {
     });
   });
 
+    it('encrypts secret config values at rest and decrypts them on read', async () => {
+      await harness.invoke(IPC.CONFIG_SET, 'jobsToken', 'jobs-secret');
+      expect(dbState.config.jobsToken).toBe('tether-safe:v1:ZW5jOmpvYnMtc2VjcmV0');
+      await expect(harness.invoke(IPC.CONFIG_GET, 'jobsToken')).resolves.toBe('jobs-secret');
+    });
+
+    it('rejects secret writes when the OS keychain is unavailable', async () => {
+      safeStorageMock.isEncryptionAvailable.mockReturnValueOnce(false);
+      await expect(harness.invoke(IPC.CONFIG_SET, 'notifications.webhook.token', 'secret'))
+        .rejects.toThrow('OS keychain is not available; cannot persist setting notifications.webhook.token');
+      expect(dbState.config['notifications.webhook.token']).toBeUndefined();
+    });
+
+    it('does not treat boolean preference values as secrets', async () => {
+      await harness.invoke(IPC.CONFIG_SET, 'notifications.tokenEnabled', 'true');
+      expect(dbState.config['notifications.tokenEnabled']).toBe('true');
+    });
+
   describe('default CLI flags', () => {
     it('GET returns the stored array', async () => {
       dbState.defaultCliFlags = ['--model', 'sonnet'];

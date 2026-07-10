@@ -230,6 +230,8 @@ export interface NotificationPrefs {
   /** Generic outbound webhook for session state/event notifications. Blank URL disables posting. */
   webhook: {
     url: string;
+    /** Optional Bearer token for the generic webhook. Stored encrypted at rest. */
+    token?: string;
     onWaiting: boolean;
     onIdle: boolean;
     onDead: boolean;
@@ -244,6 +246,7 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   onBell: false,
   suppressWhenFocused: true,
   webhook: {
+    token: '',
     url: '',
     onWaiting: true,
     onIdle: false,

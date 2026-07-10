@@ -17,9 +17,11 @@ SSH environments need:
 - **Host** — hostname or IP
 - **Port** — SSH port (default 22)
 - **Username** — your SSH user
-- **Authentication** — private key path **or** password. Tether stores the *path* to the key, never the key itself. Passwords are persisted in `data.json`; prefer keys.
+- **Authentication** — private key path **or** password. Tether stores the *path* to the key, never the key itself. Passwords are encrypted at rest in `data.json` via the OS keychain; a private key is still preferred.
 - **Working directory** — default starting directory on the remote
 - **Optional sudo** — if set, every session in this environment runs `sudo -i` after connect
+
+If the OS keychain is unavailable, Tether refuses to save or read a stored password rather than falling back to plaintext.
 
 > **Running Claude as root?** Claude Code refuses to start with `--dangerously-skip-permissions` when it detects it's running as root (via sudo, or a `root` login) unless it thinks it's in a sandbox — otherwise it exits straight back to the shell. When Tether launches Claude as root with that flag, it automatically sets `IS_SANDBOX=1` so the flag you asked for takes effect. Set `IS_SANDBOX` (or `CLAUDE_CODE_BUBBLEWRAP`) yourself in the environment's env vars to override this. This guard is POSIX-only, so local Windows sessions are unaffected. (Coder workspaces are not auto-detected — if a workspace runs as root, add `IS_SANDBOX=1` to its env vars manually.)
 

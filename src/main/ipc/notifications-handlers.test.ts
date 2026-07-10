@@ -5,6 +5,11 @@ const registry = vi.hoisted<IpcRegistry>(() => ({ handlers: new Map(), listeners
 vi.mock('electron', () => ({
   ...makeElectronMockBase(registry),
   Notification: { isSupported: () => true },
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from('enc:' + value),
+    decryptString: (value: Buffer) => value.toString('utf8').replace(/^enc:/, ''),
+  },
 }));
 
 const dbState = vi.hoisted(() => ({
@@ -79,6 +84,7 @@ describe('notifications-handlers', () => {
         suppressWhenFocused: false,
         webhook: {
           url: ' https://example.test/hook ',
+          token: 'webhook-secret',
           onWaiting: true,
           onIdle: true,
           onDead: true,
@@ -91,6 +97,7 @@ describe('notifications-handlers', () => {
       expect(dbState.config['notifications.onBell']).toBe('true');
       expect(dbState.config['notifications.suppressWhenFocused']).toBe('false');
       expect(dbState.config['notifications.webhook.url']).toBe('https://example.test/hook');
+      expect(dbState.config['notifications.webhook.token']).toBe('tether-safe:v1:ZW5jOndlYmhvb2stc2VjcmV0');
       expect(dbState.config['notifications.webhook.onWaiting']).toBe('true');
       expect(dbState.config['notifications.webhook.onIdle']).toBe('true');
       expect(dbState.config['notifications.webhook.onDead']).toBe('true');
@@ -106,7 +113,7 @@ describe('notifications-handlers', () => {
         onError: true,
         onBell: true,
         suppressWhenFocused: true,
-        webhook: { url: 'https://example.test/hook', onWaiting: false, onIdle: true, onDead: true, onBell: true },
+        webhook: { url: 'https://example.test/hook', token: 'webhook-secret', onWaiting: false, onIdle: true, onDead: true, onBell: true },
       };
       await harness.invoke(IPC.NOTIFICATIONS_SET_PREFS, original);
       expect(await harness.invoke(IPC.NOTIFICATIONS_GET_PREFS)).toEqual(original);
