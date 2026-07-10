@@ -117,14 +117,13 @@ class LocalTransport implements SessionTransport {
     // "--permission-mode plan" become separate process args.
     const tokenized = cliArgs.flatMap(a => a.split(/\s+/).filter(Boolean));
 
-    // On Unix: spawn the binary directly (no shell — avoids metachar interpretation).
-    // On Windows: keep the cmd.exe wrapper for proper PTY semantics with node-pty.
+    // Spawn resolved native binaries directly (no shell; avoids metachar interpretation).
+    // On Windows, cmd.exe is a fallback only for batch shims or unresolved names;
+    // batch-launch arguments with double quotes are rejected.
     const binary = options.binaryName || 'claude';
-    const spawnFile = process.platform === 'win32' ? 'cmd.exe' : binary;
-    const spawnArgs = process.platform === 'win32'
-      ? ['/c', binary, ...tokenized]
-      : tokenized;
-
+    const plan = process.platform === 'win32' ? resolveWindowsLaunch(binary) : null;
+    const spawnFile = plan?.kind === 'direct' ? plan.file : plan?.kind === 'shell' ? 'cmd.exe' : binary;
+    const spawnArgs = plan?.kind === 'shell' ? ['/d', '/c', plan.file, ...tokenized] : tokenized;
     this.pty = nodePty.spawn(spawnFile, spawnArgs, {
       name: 'xterm-256color',
       cols: options.cols,

@@ -156,7 +156,7 @@ All adapters implement a common interface (detailed in [Transport Design](TRANSP
 
 **Local Adapter** (`local-transport.ts`)
 - Spawns the configured CLI binary (`claude`, `codex`, `opencode`, or custom) via `node-pty` with configured env vars
-- On Unix the binary is spawned directly; on Windows it goes through `cmd.exe /c` for proper PTY semantics
+- Native binaries are spawned directly on every platform; on Windows, `cmd.exe /c` is retained only for batch shims or unresolved command names that require its PATH/PATHEXT fallback. Batch-launch arguments cannot contain double quotes.
 - CLI flag entries are tokenized on whitespace before spawn so multi-token presets like `--permission-mode plan` work
 - PTY process is a direct child of the Electron main process
 - Resize events propagated via `pty.resize(cols, rows)`

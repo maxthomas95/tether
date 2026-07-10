@@ -7,6 +7,7 @@ import { loadPty } from './pty-loader';
 import { tokenizeCliArgEntries } from './cli-args';
 import { withRootSandboxBypass } from './root-sandbox';
 import { assertSafeCmdExeCommand, escapeCmdExeArgForNodePty } from '../../shared/shell-quote';
+import { resolveWindowsLaunch } from './win-binary-resolver';
 
 const log = createLogger('local-pty');
 
@@ -51,18 +52,18 @@ export class LocalTransport implements SessionTransport {
       tokenizedArgs.push(options.initialPrompt);
     }
 
-    // Spawn the CLI binary directly on Unix instead of `sh -c "${binary} ${cliArgs.join(' ')}"`,
-    // which would interpret shell metachars in cliArgs. Windows keeps the cmd.exe wrapper
-    // because node-pty's Windows host expects it for proper PTY semantics.
+    // Spawn native binaries directly so every value stays a distinct argv entry.
+    // Windows uses cmd.exe only for batch shims or commands that PATH/PATHEXT
+    // resolution cannot identify, where the shell boundary is unavoidable.
     const isWin32 = process.platform === 'win32';
-    if (isWin32) {
-      assertSafeCmdExeCommand(binary, 'CLI binary');
-    }
-    const spawnFile = isWin32 ? 'cmd.exe' : binary;
-    const spawnArgs = isWin32
-      ? ['/d', '/c', binary, ...tokenizedArgs.map(escapeCmdExeArgForNodePty)]
+    const plan = isWin32 ? resolveWindowsLaunch(binary) : null;
+    const spawnFile = plan?.kind === 'direct' ? plan.file : isWin32 ? 'cmd.exe' : binary;
+    const spawnArgs = plan?.kind === 'shell'
+      ? ['/d', '/c', plan.file, ...tokenizedArgs.map(escapeCmdExeArgForNodePty)]
       : tokenizedArgs;
-
+    if (plan?.kind === 'shell') {
+      assertSafeCmdExeCommand(plan.file, 'CLI binary');
+    }
     // When running as a local root user (POSIX only — `getuid` is undefined on
     // Windows, so this is a no-op there today), let Claude's --dangerously-skip-
     // permissions flag through by signalling a sandbox. Mirrors the SSH-as-root path.

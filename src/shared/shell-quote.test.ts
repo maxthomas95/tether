@@ -49,8 +49,12 @@ describe('shell quote helpers', () => {
     expect(escapeCmdExeArgForNodePty('fix&calc')).toBe('fix^&calc');
   });
 
-  it('does not caret-escape ampersands inside whitespace args that node-pty quotes', () => {
-    expect(escapeCmdExeArgForNodePty('fix & explain')).toBe('fix & explain');
+  it('caret-escapes cmd.exe metacharacters even inside whitespace args', () => {
+    expect(escapeCmdExeArgForNodePty('fix & explain')).toBe('fix ^& explain');
+  });
+
+  it('rejects cmd.exe argv values with embedded double quotes', () => {
+    expect(() => escapeCmdExeArgForNodePty('foo"bar')).toThrow(/double quotes/);
   });
 
   it('rejects unsafe cmd.exe command-position values', () => {
