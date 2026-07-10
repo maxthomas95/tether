@@ -8,6 +8,7 @@
 
 import type { DbData } from '../db/database';
 import { isVaultRef } from '../vault/vault-resolver';
+import { isEncryptedSecret } from '../db/secret-storage';
 
 const REDACTED = '[REDACTED]';
 const SENSITIVE_KEY_PATTERN = /key|secret|token|password|credential|auth/i;
@@ -33,6 +34,28 @@ const API_KEY_PATTERNS: ReadonlyArray<RegExp> = [
  */
 function looksSensitive(key: string): boolean {
   return SENSITIVE_KEY_PATTERN.test(key);
+}
+
+function scrubUrlValue(value: string): string | null {
+  try {
+    const url = new URL(value);
+    // Only treat real web URLs as URLs. Other `scheme:rest` strings (notably
+    // the `tether-safe:v1:` encrypted-secret prefix) also parse via new URL()
+    // but must not be URL-processed — they're handled by the redaction rules.
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    url.username = '';
+    url.password = '';
+    for (const [key] of url.searchParams) {
+      if (looksSensitive(key)) url.searchParams.set(key, 'REDACTED');
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isLiteralBoolean(value: string): boolean {
+  return value === 'true' || value === 'false';
 }
 
 function looksSensitiveValue(value: string): boolean {
@@ -113,8 +136,22 @@ export function scrubDbData(input: DbData): DbData {
 
   // Vault token (encrypted in storage but redact regardless — diagnostics
   // shouldn't carry any auth material, encrypted or not).
-  if (db.config.vaultToken) {
-    db.config.vaultToken = REDACTED;
+  for (const [key, value] of Object.entries(db.config)) {
+    if (typeof value !== 'string' || isLiteralBoolean(value) || isVaultRef(value)) continue;
+    // Encrypted secrets and secret-named keys are redacted outright, ahead of
+    // URL handling. Real web URLs are then scrubbed (userinfo stripped,
+    // sensitive query params redacted) so they stay readable for debugging.
+    // Everything else falls back to value-pattern redaction (API keys, etc.).
+    if (isEncryptedSecret(value) || looksSensitive(key)) {
+      db.config[key] = REDACTED;
+      continue;
+    }
+    const scrubbedUrl = scrubUrlValue(value);
+    if (scrubbedUrl !== null) {
+      db.config[key] = scrubbedUrl;
+    } else if (looksSensitiveValue(value)) {
+      db.config[key] = REDACTED;
+    }
   }
 
   // Default env vars.

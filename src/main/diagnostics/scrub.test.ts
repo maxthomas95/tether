@@ -213,6 +213,24 @@ describe('scrubDbData', () => {
 });
 
 describe('scrubLogLine', () => {
+  it('scrubs arbitrary config secrets and URL credentials while preserving booleans and vault refs', () => {
+    const out = scrubDbData(emptyDb({
+      config: {
+        jobsToken: 'plain-jobs-token',
+        encryptedJobsToken: 'tether-safe:v1:blob',
+        'notifications.webhook.url': 'https://user:pass@example.test/hook?token=abc&mode=debug',
+        'notifications.webhook.token': 'webhook-token',
+        featureTokenEnabled: 'true',
+        vaultToken: 'vault://secret/tether#token',
+      },
+    })).config;
+    expect(out.jobsToken).toBe('[REDACTED]');
+    expect(out.encryptedJobsToken).toBe('[REDACTED]');
+    expect(out['notifications.webhook.token']).toBe('[REDACTED]');
+    expect(out['notifications.webhook.url']).toBe('https://example.test/hook?token=REDACTED&mode=debug');
+    expect(out.featureTokenEnabled).toBe('true');
+    expect(out.vaultToken).toBe('vault://secret/tether#token');
+  });
   it('redacts an Anthropic API key', () => {
     expect(scrubLogLine('using key sk-ant-abcdef1234567890XYZ')).toBe('using key [REDACTED-API-KEY]');
   });

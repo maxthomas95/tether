@@ -76,6 +76,14 @@ describe('env-handlers', () => {
     expect(result.id).toBe('e3');
   });
 
+
+  it('surfaces an unavailable keychain when saving a plaintext SSH password', async () => {
+    await expect(harness.invoke(IPC.ENV_CREATE, {
+      name: 'SSH', type: 'ssh', config: { host: 'box', password: 'secret' }, envVars: {},
+    })).rejects.toThrow('OS keychain is not available; cannot persist SSH password');
+    expect(envMocks.createEnvironment).not.toHaveBeenCalled();
+  });
+
   it('ENV_UPDATE forwards id and opts', async () => {
     await harness.invoke(IPC.ENV_UPDATE, 'e1', { name: 'Renamed' });
     expect(envMocks.updateEnvironment).toHaveBeenCalledWith('e1', expect.objectContaining({ name: 'Renamed' }));

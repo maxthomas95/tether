@@ -86,9 +86,11 @@ export class OutboundWebhookService {
       if (session.notificationsMuted) return false;
 
       const payload = this.buildPayload(event, session);
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (prefs.webhook.token) headers.Authorization = `Bearer ${prefs.webhook.token}`;
       const res = await this.fetchImpl(url.toString(), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(POST_TIMEOUT_MS),
       });

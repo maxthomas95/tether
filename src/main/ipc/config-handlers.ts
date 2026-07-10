@@ -1,6 +1,31 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/constants';
 import type { HandlerContext } from './helpers';
+import { decryptSecretFromStorage, encryptSecretForStorage } from '../db/secret-storage';
+
+export const SECRET_CONFIG_KEYS: ReadonlySet<string> = new Set([
+  'jobsToken',
+  'notifications.webhook.token',
+]);
+
+const SENSITIVE_CONFIG_KEY_PATTERN = /token|secret|password|credential|apikey|api_key/i;
+
+export function isSecretConfigValue(key: string, value: string): boolean {
+  return value !== 'true' && value !== 'false' &&
+    (SECRET_CONFIG_KEYS.has(key) || SENSITIVE_CONFIG_KEY_PATTERN.test(key));
+}
+
+export function encryptConfigValue(key: string, value: string): string {
+  return isSecretConfigValue(key, value)
+    ? encryptSecretForStorage(value, `setting ${key}`)
+    : value;
+}
+
+export function decryptConfigValue(key: string, value: string): string {
+  return isSecretConfigValue(key, value)
+    ? decryptSecretFromStorage(value, `setting ${key}`)
+    : value;
+}
 
 export function registerConfigHandlers(ctx: HandlerContext): void {
   const { mainWindow } = ctx;
@@ -9,12 +34,13 @@ export function registerConfigHandlers(ctx: HandlerContext): void {
 
   ipcMain.handle(IPC.CONFIG_GET, async (_event, key: string) => {
     const { getDb } = await import('../db/database');
-    return getDb().config[key] ?? null;
+    const value = getDb().config[key];
+    return value === undefined ? null : decryptConfigValue(key, value);
   });
 
   ipcMain.handle(IPC.CONFIG_SET, async (_event, key: string, value: string) => {
     const { getDb, saveDb } = await import('../db/database');
-    getDb().config[key] = value;
+    getDb().config[key] = encryptConfigValue(key, value);
     saveDb();
     // Forward theme changes to the docs window so it stays in sync.
     if (key === 'theme') {

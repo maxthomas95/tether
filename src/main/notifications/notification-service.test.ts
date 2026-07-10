@@ -235,6 +235,7 @@ describe('prefs persistence helpers', () => {
       suppressWhenFocused: false,
       webhook: {
         url: 'https://example.test/hook',
+        token: '',
         onWaiting: false,
         onIdle: true,
         onDead: true,
@@ -262,6 +263,7 @@ describe('prefs persistence helpers', () => {
       suppressWhenFocused: false,
       webhook: {
         url: ' https://example.test/hook ',
+        token: '',
         onWaiting: true,
         onIdle: true,
         onDead: true,

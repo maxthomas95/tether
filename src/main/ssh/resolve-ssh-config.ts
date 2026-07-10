@@ -1,5 +1,5 @@
-import { safeStorage } from 'electron';
 import { isVaultRef, resolveRef } from '../vault/vault-resolver';
+import { decryptConfigPassword } from '../ipc/helpers';
 import type { SSHConfig } from '../transport/ssh-transport';
 
 /**
@@ -11,14 +11,13 @@ import type { SSHConfig } from '../transport/ssh-transport';
  */
 export async function resolveSshConfig(raw: Record<string, unknown>): Promise<SSHConfig> {
   // Resolve password: vault ref → resolved string, encrypted-at-rest → decrypted string
-  let password = raw.password as string | undefined;
+  const decrypted = decryptConfigPassword(raw);
+  let password = decrypted.password as string | undefined;
   if (typeof password === 'string' && isVaultRef(password)) {
     // Vault refs are stored as-is (encryptConfigPassword leaves them alone)
     password = await resolveRef(password);
-  } else if (raw.passwordEncrypted && typeof password === 'string' && safeStorage.isEncryptionAvailable()) {
-    password = safeStorage.decryptString(Buffer.from(password, 'base64'));
   }
-  const config = raw as Partial<SSHConfig>;
+  const config = decrypted as Partial<SSHConfig>;
   return {
     host: config.host || 'localhost',
     port: config.port || 22,
@@ -26,6 +25,6 @@ export async function resolveSshConfig(raw: Record<string, unknown>): Promise<SS
     privateKeyPath: config.privateKeyPath,
     useAgent: config.useAgent ?? (!config.privateKeyPath && !password),
     password,
-    useSudo: !!raw.useSudo,
+    useSudo: !!decrypted.useSudo,
   };
 }

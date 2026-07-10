@@ -1334,8 +1334,26 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                   spellCheck={false}
                 />
                 <p className="form-hint">
-                  Only http:// and https:// URLs are used. The URL may contain a token, so Tether
-                  does not log it.
+                  Only http:// and https:// URLs are used. Use the token field below instead of
+                  embedding credentials in the URL.
+                </p>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Webhook token (optional)</label>
+                <input
+                  className="form-input"
+                  type="password"
+                  value={notificationPrefs.webhook.token ?? ''}
+                  onChange={e => setNotificationPrefs(p => ({
+                    ...p,
+                    webhook: { ...p.webhook, token: e.target.value },
+                  }))}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <p className="form-hint">
+                  Sent as Bearer authentication and encrypted with the OS keychain.
                 </p>
               </div>
 

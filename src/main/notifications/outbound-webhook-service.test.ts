@@ -96,6 +96,7 @@ describe('OutboundWebhookService', () => {
   });
 
   it('gates posts by per-event prefs', async () => {
+
     const fetchImpl = vi.fn(async () => ({ ok: true } as Response));
     const service = new OutboundWebhookService({
       getPrefs: () => prefs({ onWaiting: false, onIdle: true }),
@@ -106,6 +107,21 @@ describe('OutboundWebhookService', () => {
     await service.fire('idle', session({ state: 'idle', waitingReason: undefined }));
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+  it('adds Bearer auth only when a webhook token is configured', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true } as Response));
+    const service = new OutboundWebhookService({
+      getPrefs: () => prefs({ token: 'webhook-secret' }), fetchImpl,
+    });
+    await service.fire('waiting', session());
+    expect(fetchImpl.mock.calls[0][1].headers).toEqual({
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer webhook-secret',
+    });
+
+    const withoutToken = new OutboundWebhookService({ getPrefs: () => prefs({ token: '' }), fetchImpl });
+    await withoutToken.fire('waiting', session());
+    expect(fetchImpl.mock.calls[1][1].headers).toEqual({ 'Content-Type': 'application/json' });
   });
 
   it('suppresses posts for muted sessions', async () => {

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createLogger } from '../logger';
 import type { NotificationPrefs, SessionState, WaitingReason } from '../../shared/types';
 import { DEFAULT_NOTIFICATION_PREFS } from '../../shared/types';
+import { decryptConfigValue, encryptConfigValue } from '../ipc/config-handlers';
 
 const log = createLogger('notifications');
 
@@ -244,6 +245,7 @@ export function readPrefsFromConfig(config: Record<string, string | undefined>):
     suppressWhenFocused: readBool(config['notifications.suppressWhenFocused'], DEFAULT_NOTIFICATION_PREFS.suppressWhenFocused),
     webhook: {
       url:       (config['notifications.webhook.url'] ?? DEFAULT_NOTIFICATION_PREFS.webhook.url).trim(),
+      token:     decryptConfigValue('notifications.webhook.token', config['notifications.webhook.token'] ?? '').trim(),
       onWaiting: readBool(config['notifications.webhook.onWaiting'], DEFAULT_NOTIFICATION_PREFS.webhook.onWaiting),
       onIdle:    readBool(config['notifications.webhook.onIdle'],    DEFAULT_NOTIFICATION_PREFS.webhook.onIdle),
       onDead:    readBool(config['notifications.webhook.onDead'],    DEFAULT_NOTIFICATION_PREFS.webhook.onDead),
@@ -262,6 +264,7 @@ export function writePrefsToConfig(
   config['notifications.onBell']              = prefs.onBell              ? 'true' : 'false';
   config['notifications.suppressWhenFocused'] = prefs.suppressWhenFocused ? 'true' : 'false';
   config['notifications.webhook.url']         = prefs.webhook.url.trim();
+  config['notifications.webhook.token']       = encryptConfigValue('notifications.webhook.token', prefs.webhook.token?.trim() ?? '');
   config['notifications.webhook.onWaiting']   = prefs.webhook.onWaiting   ? 'true' : 'false';
   config['notifications.webhook.onIdle']      = prefs.webhook.onIdle      ? 'true' : 'false';
   config['notifications.webhook.onDead']      = prefs.webhook.onDead      ? 'true' : 'false';

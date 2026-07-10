@@ -16,10 +16,11 @@ export function encryptConfigPassword(config: Record<string, unknown> | undefine
     delete copy.passwordEncrypted;
     return copy;
   }
-  if (safeStorage.isEncryptionAvailable()) {
-    copy.password = safeStorage.encryptString(copy.password as string).toString('base64');
-    copy.passwordEncrypted = true;
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('OS keychain is not available; cannot persist SSH password');
   }
+  copy.password = safeStorage.encryptString(copy.password as string).toString('base64');
+  copy.passwordEncrypted = true;
   return copy;
 }
 
@@ -29,9 +30,10 @@ export function decryptConfigPassword(config: Record<string, unknown>): Record<s
   if (isVaultRef(config.password)) return config;
   if (!config.passwordEncrypted) return config;
   const copy = { ...config };
-  if (safeStorage.isEncryptionAvailable()) {
-    copy.password = safeStorage.decryptString(Buffer.from(copy.password as string, 'base64'));
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('OS keychain is not available; cannot read SSH password');
   }
+  copy.password = safeStorage.decryptString(Buffer.from(copy.password as string, 'base64'));
   delete copy.passwordEncrypted;
   return copy;
 }

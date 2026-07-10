@@ -2,6 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDb } from '../db/database';
+import { decryptConfigValue } from '../ipc/config-handlers';
 import { createLogger } from '../logger';
 import type { JobsEnabledMode, JobsStatus } from '../../shared/types';
 
@@ -36,7 +37,7 @@ export function readJobsConfig(): JobsConfig {
   return {
     enabled: cfg.jobsEnabled === 'off' ? 'off' : 'auto',
     url: stripTrailingSlashes(cfg.jobsUrl || JOBS_DEFAULT_URL),
-    token: cfg.jobsToken || undefined,
+    token: cfg.jobsToken ? decryptConfigValue('jobsToken', cfg.jobsToken) || undefined : undefined,
     path: cfg.jobsPath || undefined,
   };
 }

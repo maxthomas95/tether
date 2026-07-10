@@ -163,6 +163,8 @@ Tether can post OS desktop notifications when a session changes state, and it ca
 
 The generic webhook is disabled while its URL is blank. When enabled, Tether sends fire-and-forget JSON with the event name, timestamp, and session metadata: id, label, working directory, state, CLI tool, environment id/name when available, and waiting reason when available. It does not include PTY output, environment variables, CLI args, tokens, or secrets. Only `http://` and `https://` URLs are used, and endpoint URLs are not written to logs because they may contain tokens.
 
+Configure the optional **Webhook token** separately instead of embedding credentials in the endpoint URL. Tether sends it as a Bearer token and stores it encrypted with the OS keychain; saving it fails rather than falling back to plaintext when the keychain is unavailable.
+
 Muting a session suppresses both desktop notifications and generic webhook posts for that session.
 
 Individual sessions can be muted from the right-click menu in the sidebar — see [Sessions](sessions#muting-notifications).
@@ -197,6 +199,8 @@ Settings:
 - **Server URL** — where to probe (default `http://localhost:8780`).
 - **Token** — sent as Bearer auth on webhook posts; also injected as `JOBS_TOKEN`/`WEBHOOK_TOKEN` when Tether launches the server.
 - **Local JOBS folder** — optional path to a JOBS checkout. When set and nothing answers the probe, Tether launches the built server (`dist-server/`) from that folder using Node.js from your PATH, and stops it on quit. An instance Tether didn't start is never touched. The folder must be built first (`npm install && npm run build`) — which means Node is already installed on any machine where this works.
+
+The J.O.B.S. token is also stored encrypted with the OS keychain. Tether refuses to save it if the keychain is unavailable.
 - **Test now** — saves the fields above and re-probes immediately.
 
 ### Diagnostics export
