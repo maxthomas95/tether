@@ -15,6 +15,7 @@
     "build:helm": "npm --prefix mcp-servers/tether-helm run build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,tsx}\""
   },
   "author": {
