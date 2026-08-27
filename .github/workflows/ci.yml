@@ -30,8 +30,13 @@ jobs:
       # upstream; 10.9.x supports Node >=20.5.
       - run: npm i -g npm@10.9.4 --ignore-scripts
       - run: npm ci --ignore-scripts
-      # Tests import Electron; run only the pinned lifecycle setup they need.
-      - run: node node_modules/electron/install.js
+      # Tests import Electron and node-pty; run only their pinned setup.
+      - name: Prepare pinned native test dependencies
+        run: |
+          node node_modules/electron/install.js
+          cd node_modules/node-pty
+          node scripts/prebuild.js || ../.bin/node-gyp rebuild
+          node scripts/post-install.js
       - run: npm run postinstall
       - run: npm run typecheck
       - run: npm run lint
