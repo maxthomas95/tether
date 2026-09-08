@@ -6,11 +6,11 @@ A **session** in Tether is a running CLI process in a specific directory and env
 
 Click **+ New session** or press **Ctrl+N**. The dialog has three tabs for picking a working directory:
 
-- **Existing** — browse to or paste a path you already use
+- **Existing directory** — browse to or paste a path you already use
 - **Clone** — clone a remote repo via a configured Git provider (see [Git Providers](git-providers))
 - **New folder** — create an empty folder under your repos root, optionally `git init` and provision an empty remote (see [Git Providers](git-providers#new-folder)). New folder mode is local-only.
 
-On Existing and New folder, pressing **Enter** in a standard text field runs the same primary action as clicking **Create Session**.
+On Existing directory and New folder, pressing **Enter** in a standard text field runs the same primary action as clicking **Create session**.
 
 Other fields:
 
@@ -21,9 +21,13 @@ Other fields:
 - **Environment variables** — key-value pairs passed to the CLI process. Values can be `vault://` references; see [Vault](vault).
 - **CLI flags** — additional command-line arguments. Multi-token flags like `--permission-mode plan` are tokenized at the transport boundary.
 
+### Resume from the launcher
+
+On **Existing directory**, choose a local directory and a CLI with conversation history, then click **Resume conversation**. Pick a conversation to launch a session that resumes it with the selected profile and flags. Escape closes the picker and returns to the launch form. Resume is unavailable for SSH, Coder, Custom tools, or while creating a new worktree, and respects the conversation-resume setting.
+
 ### Git worktrees (local only)
 
-When the Existing tab points to a git repository, a **Create as new git worktree** checkbox appears. Check it, type a branch name, and Tether will `git worktree add` a new working tree alongside the repo before spawning the session. The worktree path auto-fills from the branch name but can be edited. Useful for running parallel agent sessions on different branches of the same repo without juggling stashes or clones.
+When the Existing directory tab points to a git repository, a **Create as new git worktree** checkbox appears. Check it, type a branch name, and Tether will `git worktree add` a new working tree alongside the repo before spawning the session. The worktree path auto-fills from the branch name but can be edited. Useful for running parallel agent sessions on different branches of the same repo without juggling stashes or clones.
 
 ## Resume Conversation
 
@@ -56,6 +60,10 @@ Each session has a state, shown by the colored dot in the sidebar:
 State detection is passive — Tether watches output cadence; it does not parse or filter the terminal stream. With [CLI hooks](settings#cli-hooks) enabled, Claude/Codex sessions get hook-grade detection on top: local sessions automatically, SSH sessions when their environment opts in via [CLI status hooks on remote hosts](environments#cli-status-hooks-on-remote-hosts). Coder sessions are cadence-only for now.
 
 ## Managing Sessions
+
+Each session has a visible **Actions** (…) button; the same actions remain available by right-click. With a session row focused, **Shift+F10** opens its menu. Use arrow keys to move through actions and **Escape** to close it.
+
+Pane headers show the environment alongside the session label, including when the sidebar is hidden. The broadcast, maximize/restore, and close buttons remain visible. A placeholder pane's **Choose a session** action opens the session switcher.
 
 ### Renaming
 

@@ -107,10 +107,11 @@ function formatExpiry(expiresAt?: string): string {
   return `in ${Math.round(hours / 24)}d`;
 }
 
-type SettingsSection = 'general' | 'terminal' | 'sessions' | 'notifications' | 'shortcuts' | 'integrations' | 'usage';
+type SettingsSection = 'appearance' | 'general' | 'terminal' | 'sessions' | 'notifications' | 'shortcuts' | 'integrations' | 'usage';
 
 const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
   { id: 'general', label: 'General' },
+  { id: 'appearance', label: 'Appearance' },
   { id: 'terminal', label: 'Terminal' },
   { id: 'sessions', label: 'Sessions' },
   { id: 'notifications', label: 'Notifications' },
@@ -121,6 +122,7 @@ const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
 
 /** Per-section docs deep-link target, used by the (?) help icon. */
 const SECTION_HELP: Record<SettingsSection, { title: string; anchor: string }> = {
+  appearance:    { title: 'Appearance', anchor: 'appearance' },
   general:       { title: 'General',       anchor: 'general' },
   terminal:      { title: 'Terminal',      anchor: 'terminal' },
   sessions:      { title: 'Sessions',      anchor: 'sessions' },
@@ -190,6 +192,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   const [terminalScrollback, setTerminalScrollback] = useState(10000);
   const [terminalFontFamily, setTerminalFontFamily] = useState<string>('');
   const [uiFontFamily, setUiFontFamily] = useState<string>('');
+  const [uiDensity, setUiDensity] = useState('comfortable');
+  const openingTheme = useRef<string | null>(null);
+  const [sectionQuery, setSectionQuery] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
 
@@ -236,6 +243,8 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
   useEffect(() => {
     if (!isOpen) { setLoaded(false); return; }
+    let cancelled = false;
+    setSaveError('');
     Promise.all([
       window.electronAPI.config.getDefaultEnvVars?.()?.catch(() => ({})),
       window.electronAPI.config.get?.('restoreOnLaunch')?.catch(() => null),
@@ -268,7 +277,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       window.electronAPI.config.get?.('jobsUrl')?.catch(() => null),
       window.electronAPI.config.get?.('jobsToken')?.catch(() => null),
       window.electronAPI.config.get?.('jobsPath')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, dailyBudget, weeklyBudget, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, updateCh, jobsEnabledValue, jobsUrlValue, jobsTokenValue, jobsPathValue]) => {
+      window.electronAPI.config.get('uiDensity').catch(() => null),
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, dailyBudget, weeklyBudget, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, updateCh, jobsEnabledValue, jobsUrlValue, jobsTokenValue, jobsPathValue, densityValue]) => {
+      if (cancelled) return;
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
@@ -313,6 +324,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       setJobsUrl(jobsUrlValue || '');
       setJobsToken(jobsTokenValue || '');
       setJobsPath(jobsPathValue || '');
+      setUiDensity(densityValue === 'compact' ? 'compact' : 'comfortable');
       setLoaded(true);
     });
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
@@ -324,7 +336,20 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     window.electronAPI.notifications.getPrefs()
       .then(p => { if (p) setNotificationPrefs(p); })
       .catch(() => { /* leave defaults */ });
+    return () => { cancelled = true; };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && openingTheme.current === null) openingTheme.current = currentTheme;
+    if (!isOpen) openingTheme.current = null;
+  }, [isOpen, currentTheme]);
+
+  const handleCancel = useCallback(() => {
+    if (saving) return;
+    if (openingTheme.current) onThemeChange(openingTheme.current);
+    setSectionQuery('');
+    onClose();
+  }, [onClose, onThemeChange, saving]);
 
   // Live status updates from main
   useEffect(() => {
@@ -334,50 +359,62 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
   }, []);
 
   const handleSave = useCallback(async () => {
-    await window.electronAPI.config.setDefaultEnvVars?.(envVars);
-    await window.electronAPI.config.set?.('restoreOnLaunch', restoreOnLaunch ? 'true' : 'false');
-    await window.electronAPI.config.set?.('resumePreviousChats', resumePreviousChats ? 'true' : 'false');
-    await window.electronAPI.config.set?.('showResumeBadge', showResumeBadge ? 'true' : 'false');
-    await window.electronAPI.config.set?.('enableResumePicker', enableResumePicker ? 'true' : 'false');
-    await window.electronAPI.config.set?.('enablePaneSplitting', enablePaneSplitting ? 'true' : 'false');
-    await window.electronAPI.config.set?.('maxPanes', String(maxPanes));
-    await window.electronAPI.config.set?.('updateCheckEnabled', updateCheckEnabled ? 'true' : 'false');
-    await window.electronAPI.config.set?.('updateChannel', updateChannel);
-    await window.electronAPI.config.set?.('quotaEnabled', quotaEnabled ? 'true' : 'false');
-    await window.electronAPI.quota.setEnabled(quotaEnabled);
-    await window.electronAPI.config.set?.('usageStripEnabled', usageStripEnabled ? 'true' : 'false');
-    await window.electronAPI.config.set?.('globalUsageEnabled', globalUsageEnabled ? 'true' : 'false');
-    await window.electronAPI.config.set?.('cliToolBreakdownEnabled', cliToolBreakdownEnabled ? 'true' : 'false');
-    await window.electronAPI.config.set?.('usageBudget.dailyUsd', dailyBudgetUsd.trim());
-    await window.electronAPI.config.set?.('usageBudget.weeklyUsd', weeklyBudgetUsd.trim());
-    await window.electronAPI.config.set?.('hideTerminalCursor', hideTerminalCursor ? 'true' : 'false');
-    await window.electronAPI.config.set?.('terminalCursorStyle', terminalCursorStyle);
-    await window.electronAPI.config.set?.('terminalCursorBlink', terminalCursorBlink ? 'true' : 'false');
-    await window.electronAPI.config.set?.('allowHelm', allowHelm ? 'true' : 'false');
-    // Write the literal string the read-side compares against. Default-off,
-    // opt-in semantics live on the read side: only the exact string 'true'
-    // enables CLI hooks. Missing key / any other value counts as disabled.
-    await window.electronAPI.config.set?.('cliHooksEnabled', cliHooksEnabled ? 'true' : 'false');
-    await window.electronAPI.config.set?.('terminalFontSize', String(terminalFontSize));
-    await window.electronAPI.config.set?.('terminalScrollback', String(terminalScrollback));
-    await window.electronAPI.config.set?.('terminalFontFamily', terminalFontFamily);
-    await window.electronAPI.config.set?.('uiFontFamily', uiFontFamily);
-    await window.electronAPI.config.set?.('defaultCliTool', defaultCliTool);
-    await window.electronAPI.config.set?.('defaultCustomCliBinary', defaultCliTool === 'custom' ? defaultCustomCliBinary.trim() : '');
-    window.dispatchEvent(new CustomEvent('tether:settings-changed'));
-    for (const toolId of FLAG_TOOLS) {
-      await window.electronAPI.config.setDefaultCliFlagsForTool?.(toolId, cliFlagsPerTool[toolId] || []);
+    if (saving || !loaded) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await window.electronAPI.config.setDefaultEnvVars?.(envVars);
+      await window.electronAPI.config.set?.('restoreOnLaunch', restoreOnLaunch ? 'true' : 'false');
+      await window.electronAPI.config.set?.('resumePreviousChats', resumePreviousChats ? 'true' : 'false');
+      await window.electronAPI.config.set?.('showResumeBadge', showResumeBadge ? 'true' : 'false');
+      await window.electronAPI.config.set?.('enableResumePicker', enableResumePicker ? 'true' : 'false');
+      await window.electronAPI.config.set?.('enablePaneSplitting', enablePaneSplitting ? 'true' : 'false');
+      await window.electronAPI.config.set?.('maxPanes', String(maxPanes));
+      await window.electronAPI.config.set?.('updateCheckEnabled', updateCheckEnabled ? 'true' : 'false');
+      await window.electronAPI.config.set?.('updateChannel', updateChannel);
+      await window.electronAPI.config.set?.('quotaEnabled', quotaEnabled ? 'true' : 'false');
+      await window.electronAPI.quota.setEnabled(quotaEnabled);
+      await window.electronAPI.config.set?.('usageStripEnabled', usageStripEnabled ? 'true' : 'false');
+      await window.electronAPI.config.set?.('globalUsageEnabled', globalUsageEnabled ? 'true' : 'false');
+      await window.electronAPI.config.set?.('cliToolBreakdownEnabled', cliToolBreakdownEnabled ? 'true' : 'false');
+      await window.electronAPI.config.set?.('usageBudget.dailyUsd', dailyBudgetUsd.trim());
+      await window.electronAPI.config.set?.('usageBudget.weeklyUsd', weeklyBudgetUsd.trim());
+      await window.electronAPI.config.set?.('hideTerminalCursor', hideTerminalCursor ? 'true' : 'false');
+      await window.electronAPI.config.set?.('terminalCursorStyle', terminalCursorStyle);
+      await window.electronAPI.config.set?.('terminalCursorBlink', terminalCursorBlink ? 'true' : 'false');
+      await window.electronAPI.config.set?.('allowHelm', allowHelm ? 'true' : 'false');
+      // Write the literal string the read-side compares against. Default-off,
+      // opt-in semantics live on the read side: only the exact string 'true'
+      // enables CLI hooks. Missing key / any other value counts as disabled.
+      await window.electronAPI.config.set?.('cliHooksEnabled', cliHooksEnabled ? 'true' : 'false');
+      await window.electronAPI.config.set?.('terminalFontSize', String(terminalFontSize));
+      await window.electronAPI.config.set?.('terminalScrollback', String(terminalScrollback));
+      await window.electronAPI.config.set?.('terminalFontFamily', terminalFontFamily);
+      await window.electronAPI.config.set?.('uiFontFamily', uiFontFamily);
+      await window.electronAPI.config.set?.('defaultCliTool', defaultCliTool);
+      await window.electronAPI.config.set?.('defaultCustomCliBinary', defaultCliTool === 'custom' ? defaultCustomCliBinary.trim() : '');
+      for (const toolId of FLAG_TOOLS) {
+        await window.electronAPI.config.setDefaultCliFlagsForTool?.(toolId, cliFlagsPerTool[toolId] || []);
+      }
+      await window.electronAPI.vault.setConfig(vaultConfig);
+      await window.electronAPI.notifications.setPrefs(notificationPrefs);
+      await window.electronAPI.config.set?.('jobsEnabled', jobsEnabled ? 'auto' : 'off');
+      await window.electronAPI.config.set?.('jobsUrl', jobsUrl.trim());
+      await window.electronAPI.config.set?.('jobsToken', jobsToken.trim());
+      await window.electronAPI.config.set?.('jobsPath', jobsPath.trim());
+      // Re-probe with the fresh config — fire-and-forget so save never blocks on a slow probe.
+      window.electronAPI.jobs.refresh().catch(() => {});
+      await window.electronAPI.config.set('uiDensity', uiDensity);
+      await window.electronAPI.config.set('theme', currentTheme);
+      window.dispatchEvent(new CustomEvent('tether:settings-changed'));
+      setSectionQuery('');
+      onClose();
+    } catch {
+      setSaveError('Some settings could not be saved. Your other changes may already be saved. Please try again.');
+    } finally {
+      setSaving(false);
     }
-    await window.electronAPI.vault.setConfig(vaultConfig);
-    await window.electronAPI.notifications.setPrefs(notificationPrefs);
-    await window.electronAPI.config.set?.('jobsEnabled', jobsEnabled ? 'auto' : 'off');
-    await window.electronAPI.config.set?.('jobsUrl', jobsUrl.trim());
-    await window.electronAPI.config.set?.('jobsToken', jobsToken.trim());
-    await window.electronAPI.config.set?.('jobsPath', jobsPath.trim());
-    // Re-probe with the fresh config — fire-and-forget so save never blocks on a slow probe.
-    window.electronAPI.jobs.refresh().catch(() => {});
-    onClose();
-  }, [envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, updateChannel, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, dailyBudgetUsd, weeklyBudgetUsd, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsEnabled, jobsUrl, jobsToken, jobsPath, onClose]);
+  }, [saving, loaded, currentTheme, uiDensity, envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, updateChannel, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, dailyBudgetUsd, weeklyBudgetUsd, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsEnabled, jobsUrl, jobsToken, jobsPath, onClose]);
 
   /**
    * Persist the jobs* keys and re-probe immediately so the user gets feedback
@@ -538,18 +575,38 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
     setProviderTestResult(prev => ({ ...prev, [id]: result }));
   };
 
-  useEscapeKey(onClose, isOpen);
+  useEscapeKey(handleCancel, isOpen);
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, isOpen);
+
+
+  const sectionTerms: Record<SettingsSection, string> = {
+    appearance: 'theme color dark light font interface density comfortable compact',
+    general: 'restore resume startup launch update folder logs',
+    terminal: 'terminal cursor font size scrollback blink',
+    sessions: 'cli tool default flags profiles environment variables helm hooks splitting maximum panes advanced',
+    notifications: 'notifications alerts sound waiting idle webhook',
+    shortcuts: 'shortcuts keyboard keybindings remap',
+    integrations: 'integrations git github ado gitea vault ssh known hosts jobs office',
+    usage: 'usage quota tokens cost budget export',
+  };
+  const matchingSections = SECTIONS.filter(section =>
+    `${section.label} ${sectionTerms[section.id]}`.toLowerCase().includes(sectionQuery.trim().toLowerCase()));
+  const handleSectionSearch = (query: string) => {
+    setSectionQuery(query);
+    const match = SECTIONS.find(section => `${section.label} ${sectionTerms[section.id]}`.toLowerCase().includes(query.trim().toLowerCase()));
+    if (match) setActiveSection(match.id);
+  };
 
   // Keyboard navigation for the section tablist (ArrowUp/ArrowDown move
   // between tabs and move focus, per the WAI-ARIA tablist pattern).
   const handleTablistKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     e.preventDefault();
-    const idx = SECTIONS.findIndex(s => s.id === activeSection);
+    if (matchingSections.length === 0) return;
+    const idx = matchingSections.findIndex(s => s.id === activeSection);
     const delta = e.key === 'ArrowDown' ? 1 : -1;
-    const next = SECTIONS[(idx + delta + SECTIONS.length) % SECTIONS.length];
+    const next = matchingSections[(idx + delta + matchingSections.length) % matchingSections.length];
     setActiveSection(next.id);
     document.getElementById(`settings-tab-${next.id}`)?.focus();
   };
@@ -566,12 +623,13 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
       <div ref={dialogRef} className="dialog dialog--settings" role="dialog" aria-modal="true" aria-label="Settings">
         <div className="dialog-header">
           <span>Settings</span>
-          <button className="dialog-close" aria-label="Close dialog" onClick={onClose}>&times;</button>
+          <button className="dialog-close" aria-label="Close dialog" onClick={handleCancel} disabled={saving}>&times;</button>
         </div>
         <div className="dialog-body">
+        <div className="settings-search"><input className="form-input" type="search" aria-label="Find settings sections" placeholder="Find a settings section…" value={sectionQuery} onChange={e => handleSectionSearch(e.target.value)} /></div>
         <div className="settings-layout">
           <aside className="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections" onKeyDown={handleTablistKeyDown}>
-            {SECTIONS.map(s => (
+            {matchingSections.map(s => (
               <button
                 key={s.id}
                 id={`settings-tab-${s.id}`}
@@ -590,27 +648,65 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             className="settings-content"
             role="tabpanel"
             id="settings-tabpanel"
-            aria-labelledby={`settings-tab-${activeSection}`}
+            aria-labelledby={matchingSections.length ? `settings-tab-${activeSection}` : undefined}
+            aria-label={matchingSections.length ? undefined : 'Settings search results'}
           >
 
-          {activeSection === 'general' && (
+
+          {matchingSections.length === 0 && <p className="form-hint" role="status">No settings sections match “{sectionQuery}”. Try “theme”, “hooks”, or “usage”.</p>}
+          {activeSection === 'appearance' && matchingSections.length > 0 && (
             <>
-          <SectionHeader section="general" />
+              <SectionHeader section="appearance" />
+              <fieldset className="appearance-themes">
+                <legend className="form-label">Theme</legend>
+                <p className="form-hint">Preview a theme. Save keeps it; Cancel restores your previous theme.</p>
+                <div className="theme-grid">
+                  {themeList.map(theme => (
+                    <button key={theme.name} type="button" className={`theme-option ${currentTheme === theme.name ? 'theme-option--selected' : ''}`} aria-label={theme.label} aria-pressed={currentTheme === theme.name} disabled={saving} onClick={() => onThemeChange(theme.name)}>
+                      <span className="theme-option-preview" style={{ background: theme.css['--bg-primary'], borderColor: theme.css['--border-color'] }} aria-hidden="true">
+                        <span style={{ background: theme.css['--bg-sidebar'] }} />
+                        <span style={{ color: theme.css['--text-primary'] }}>Aa <i style={{ background: theme.css['--accent'] }} /></span>
+                      </span>
+                      <span>{theme.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
           <div className="form-group">
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
-              Theme
+            <label className="form-label" htmlFor="ui-font-family-select">
+              UI font family
             </label>
             <select
+              id="ui-font-family-select"
               className="form-input"
-              value={currentTheme}
-              onChange={e => onThemeChange(e.target.value)}
+              value={uiFontFamily}
+              onChange={e => setUiFontFamily(e.target.value)}
             >
-              {themeList.map(t => (
-                <option key={t.name} value={t.name}>{t.label}</option>
+              {UI_FONT_PRESETS.map(preset => (
+                <option key={preset.label} value={preset.value}>
+                  {preset.label}
+                </option>
               ))}
             </select>
+            <p className="form-hint">
+              Choose a font for the sidebar, dialogs, and menus. Terminal text is configured separately.
+            </p>
           </div>
 
+              <div className="form-group">
+                <label className="form-label" htmlFor="ui-density">Interface density</label>
+                <select id="ui-density" className="form-input" value={uiDensity} onChange={e => setUiDensity(e.target.value)}>
+                  <option value="comfortable">Comfortable</option>
+                  <option value="compact">Compact</option>
+                </select>
+                <p className="form-hint">Adjusts sidebar spacing and pane headers. Terminal text keeps its own size.</p>
+              </div>
+            </>
+          )}
+
+          {activeSection === 'general' && matchingSections.length > 0 && (
+            <>
+          <SectionHeader section="general" />
           <div className="form-group">
             <label className="form-radio-label">
               <input
@@ -624,7 +720,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               Automatically reopen your sessions when Tether starts.
             </p>
 
-            <div style={{ marginLeft: 22, marginTop: 8, opacity: restoreOnLaunch ? 1 : 0.5 }}>
+            <div style={{ marginLeft: 22, marginTop: 8 }}>
               <label className="form-radio-label">
                 <input
                   type="checkbox"
@@ -658,7 +754,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                   checked={enableResumePicker}
                   onChange={e => setEnableResumePicker(e.target.checked)}
                 />
-                Enable "Resume previous conversation..." in the right-click menu
+                Enable conversation resume
               </label>
               <p className="form-hint">
                 Lets you manually pick an older Claude Code or Codex CLI conversation for a session&rsquo;s working directory.
@@ -731,7 +827,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             </>
           )}
 
-          {activeSection === 'terminal' && (
+          {activeSection === 'terminal' && matchingSections.length > 0 && (
             <>
           <SectionHeader section="terminal" />
           <div className="form-group">
@@ -872,108 +968,12 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             </p>
           </div>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="ui-font-family-select">
-              UI font family
-            </label>
-            <select
-              id="ui-font-family-select"
-              className="form-input"
-              value={uiFontFamily}
-              onChange={e => setUiFontFamily(e.target.value)}
-            >
-              {UI_FONT_PRESETS.map(preset => (
-                <option key={preset.label} value={preset.value}>
-                  {preset.label}
-                </option>
-              ))}
-            </select>
-            <p className="form-hint">
-              Affects sidebar, dialogs, and menus. Spacing tokens are tuned for
-              IBM Plex Sans; alternates may pack slightly tighter or looser.
-              Inter and Atkinson Hyperlegible are bundled.
-            </p>
-          </div>
             </>
           )}
 
-          {activeSection === 'sessions' && (
+          {activeSection === 'sessions' && matchingSections.length > 0 && (
             <>
           <SectionHeader section="sessions" />
-          <div className="form-group">
-            <label className="form-radio-label">
-              <input
-                type="checkbox"
-                checked={allowHelm}
-                onChange={e => setAllowHelm(e.target.checked)}
-              />
-              <span>Allow Helm</span>
-              <span className="settings-tag settings-tag--experimental">Experimental</span>
-            </label>
-            <p className="form-hint">
-              Unlocks the per-session &ldquo;Enable Helm&rdquo; toggle, which lets a designated
-              Claude session dispatch pre-briefed child sessions via the <code>tether-helm</code> MCP.
-              Leave off unless you&rsquo;re specifically using this — it changes Tether&rsquo;s surface area.
-            </p>
-          </div>
-
-          <div className="form-group">
-            <label className="form-radio-label">
-              <input
-                type="checkbox"
-                checked={cliHooksEnabled}
-                onChange={e => setCliHooksEnabled(e.target.checked)}
-              />
-              <span>Use CLI hooks for smarter status detection</span>
-            </label>
-            <p className="form-hint">
-              When on, Tether installs an additive entry in your
-              <code> ~/.claude/settings.json </code> and
-              <code> ~/.codex/config.toml </code>
-              so Claude/Codex tell us directly when a turn finishes or input is needed.
-              When off, Tether falls back to passive output observation only.
-              Takes effect on the next Tether launch. SSH environments additionally
-              need &ldquo;Install CLI status hooks on this host&rdquo; enabled per
-              environment — Tether never writes to a remote host without that opt-in.
-            </p>
-          </div>
-
-          <div className="form-group">
-            <label className="form-radio-label">
-              <input
-                type="checkbox"
-                checked={enablePaneSplitting}
-                onChange={e => setEnablePaneSplitting(e.target.checked)}
-              />
-              <span>Enable pane splitting</span>
-              <span className="settings-tag settings-tag--experimental">Experimental</span>
-            </label>
-            <p className="form-hint">
-              Drag session headers to split the terminal area into multiple panes.
-              Disable if you hit layout bugs &mdash; new sessions will replace the focused pane instead.
-            </p>
-            {enablePaneSplitting && (
-              <div style={{ marginLeft: 22, marginTop: 10 }}>
-                <label className="form-label" htmlFor="max-panes-select">
-                  Maximum panes
-                </label>
-                <select
-                  id="max-panes-select"
-                  className="form-input"
-                  value={maxPanes}
-                  onChange={e => setMaxPanes(parseMaxPanes(e.target.value))}
-                >
-                  <option value={1}>1</option>
-                  <option value={2}>2</option>
-                  <option value={4}>4</option>
-                </select>
-                <p className="form-hint">
-                  Panes use equal locked splits. Three-pane layouts are skipped.
-                </p>
-              </div>
-            )}
-          </div>
-
           <div className="form-group" style={{ marginTop: 20 }}>
             <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Default CLI Tool
@@ -1235,10 +1235,87 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             </p>
             {loaded && <EnvVarEditor vars={envVars} onChange={setEnvVars} vaultEnabled={vaultStatus.enabled} />}
           </div>
+          <details className="settings-advanced">
+            <summary>Advanced session options</summary>
+          <div className="form-group">
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={allowHelm}
+                onChange={e => setAllowHelm(e.target.checked)}
+              />
+              <span>Allow Helm</span>
+              <span className="settings-tag settings-tag--experimental">Experimental</span>
+            </label>
+            <p className="form-hint">
+              Unlocks the per-session &ldquo;Enable Helm&rdquo; toggle, which lets a designated
+              Claude session dispatch pre-briefed child sessions via the <code>tether-helm</code> MCP.
+              Leave off unless you&rsquo;re specifically using this — it changes Tether&rsquo;s surface area.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={cliHooksEnabled}
+                onChange={e => setCliHooksEnabled(e.target.checked)}
+              />
+              <span>Use CLI hooks for smarter status detection</span>
+            </label>
+            <p className="form-hint">
+              When on, Tether installs an additive entry in your
+              <code> ~/.claude/settings.json </code> and
+              <code> ~/.codex/config.toml </code>
+              so Claude/Codex tell us directly when a turn finishes or input is needed.
+              When off, Tether falls back to passive output observation only.
+              Takes effect on the next Tether launch. SSH environments additionally
+              need &ldquo;Install CLI status hooks on this host&rdquo; enabled per
+              environment — Tether never writes to a remote host without that opt-in.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={enablePaneSplitting}
+                onChange={e => setEnablePaneSplitting(e.target.checked)}
+              />
+              <span>Enable pane splitting</span>
+              <span className="settings-tag settings-tag--experimental">Experimental</span>
+            </label>
+            <p className="form-hint">
+              Drag session headers to split the terminal area into multiple panes.
+              Disable if you hit layout bugs &mdash; new sessions will replace the focused pane instead.
+            </p>
+            {enablePaneSplitting && (
+              <div style={{ marginLeft: 22, marginTop: 10 }}>
+                <label className="form-label" htmlFor="max-panes-select">
+                  Maximum panes
+                </label>
+                <select
+                  id="max-panes-select"
+                  className="form-input"
+                  value={maxPanes}
+                  onChange={e => setMaxPanes(parseMaxPanes(e.target.value))}
+                >
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                  <option value={4}>4</option>
+                </select>
+                <p className="form-hint">
+                  Panes use equal locked splits. Three-pane layouts are skipped.
+                </p>
+              </div>
+            )}
+          </div>
+
+          </details>
             </>
           )}
 
-          {activeSection === 'notifications' && (
+          {activeSection === 'notifications' && matchingSections.length > 0 && (
             <>
             <SectionHeader section="notifications" />
             <div className="form-group">
@@ -1412,7 +1489,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             </>
           )}
 
-          {activeSection === 'shortcuts' && (
+          {activeSection === 'shortcuts' && matchingSections.length > 0 && (
             <>
             <SectionHeader section="shortcuts" />
             <div className="form-group">
@@ -1432,7 +1509,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             </>
           )}
 
-          {activeSection === 'integrations' && (
+          {activeSection === 'integrations' && matchingSections.length > 0 && (
             <>
           <SectionHeader section="integrations" />
           {/* Git Providers */}
@@ -1917,7 +1994,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             </>
           )}
 
-          {activeSection === 'usage' && (
+          {activeSection === 'usage' && matchingSections.length > 0 && (
             <>
           <SectionHeader section="usage" />
           {/* Quota display */}
@@ -2047,9 +2124,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
           </div>
         </div>
         </div>
+        {saveError && <p className="settings-save-error" role="alert">{saveError}</p>}
         <div className="dialog-footer">
-          <button className="form-btn" onClick={onClose}>Cancel</button>
-          <button className="form-btn form-btn--primary" onClick={handleSave}>Save</button>
+          <button className="form-btn" onClick={handleCancel} disabled={saving}>Cancel</button>
+          <button className="form-btn form-btn--primary" onClick={handleSave} disabled={saving || !loaded}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
       <MigrateToVaultDialog isOpen={showMigrateDialog} onClose={() => setShowMigrateDialog(false)} />

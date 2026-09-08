@@ -1,9 +1,13 @@
 import type { EnvironmentInfo } from '../../shared/types';
 import logoUrl from '../assets/logo.png';
+import { Icon } from './Icon';
+import type { RecentProject } from '../utils/recent-projects';
 
 interface WelcomePaneProps {
   environments: EnvironmentInfo[];
   enableResumePicker: boolean;
+  recentProjects: RecentProject[];
+  onOpenProject: (project: RecentProject) => void;
   onNewLocalSession: () => void;
   onConnectSsh: () => void;
   onOpenCoder: () => void;
@@ -13,6 +17,8 @@ interface WelcomePaneProps {
 export function WelcomePane({
   environments,
   enableResumePicker,
+  recentProjects,
+  onOpenProject,
   onNewLocalSession,
   onConnectSsh,
   onOpenCoder,
@@ -22,14 +28,30 @@ export function WelcomePane({
   const hasCoder = environments.some(e => e.type === 'coder');
 
   return (
-    <div className="welcome-pane">
+    <div className={`welcome-pane ${recentProjects.length ? 'welcome-pane--returning' : ''}`}>
       <div className="welcome-pane__hero">
-        <WelcomeDiagram />
-        <h1 className="welcome-pane__title">Welcome to Tether</h1>
+        {recentProjects.length === 0 && <WelcomeDiagram />}
+        <h1 className="welcome-pane__title">{recentProjects.length ? 'Pick up where you left off' : 'Welcome to Tether'}</h1>
         <p className="welcome-pane__subtitle">
-          A single tether to every CLI session you run — local, remote, anywhere.
+          {recentProjects.length ? 'Choose a project to start a session or resume a conversation.' : 'Your agents, projects, and environments. One place to work.'}
         </p>
       </div>
+
+      {recentProjects.length > 0 && (
+        <section className="recent-projects" aria-labelledby="recent-projects-title">
+          <h2 id="recent-projects-title">Recent projects</h2>
+          {recentProjects.map(project => {
+            const env = environments.find(e => e.id === project.environmentId)!;
+            const name = project.workingDir.split(/[\\/]/).filter(Boolean).pop() || project.workingDir;
+            return <button key={JSON.stringify([project.environmentId, project.workingDir])} className="recent-project" onClick={() => onOpenProject(project)} title={`${project.workingDir}\n${env.name}`}>
+              <Icon name="folder" size={18} />
+              <span className="recent-project-info"><span>{name}</span><span>{project.workingDir}</span></span>
+              <span className="recent-project-env">{env.type === 'local' ? env.name : `${env.type === 'ssh' ? 'SSH' : 'Coder'}: ${env.name}`}</span>
+              <Icon name="chevron" size={14} />
+            </button>;
+          })}
+        </section>
+      )}
 
       <div className="welcome-pane__cards">
         <button type="button" className="welcome-card" onClick={onNewLocalSession}>
@@ -59,7 +81,7 @@ export function WelcomePane({
           className="welcome-pane__resume-link"
           onClick={onResume}
         >
-          Resume a previous conversation
+          Browse conversations to resume
         </button>
       )}
     </div>

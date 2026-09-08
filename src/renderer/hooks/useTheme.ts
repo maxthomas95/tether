@@ -32,16 +32,20 @@ export function useTheme() {
     });
   }, [applyTheme]);
 
-  // Set + persist theme
-  const setTheme = useCallback((name: string) => {
+  // Settings can preview without committing; Cancel restores the opening theme.
+  const previewTheme = useCallback((name: string) => {
     const theme = getTheme(name);
     themeRef.current = theme;
     setThemeNameState(name);
     applyTheme(theme);
-    window.electronAPI.config.set('theme', name);
   }, [applyTheme]);
+
+  const setTheme = useCallback((name: string) => {
+    previewTheme(name);
+    window.electronAPI.config.set('theme', name);
+  }, [previewTheme]);
 
   const xtermTheme: ITheme = themeRef.current.xterm;
 
-  return { themeName, setTheme, xtermTheme };
+  return { themeName, setTheme, previewTheme, xtermTheme };
 }

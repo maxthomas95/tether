@@ -20,31 +20,40 @@ The wizard only marks setup complete when you click **Skip Setup**, **Start Usin
 
 ## Creating Your First Session
 
-1. Click **+ New session** in the sidebar, or press **Ctrl+N**
+1. Click **New session** in the sidebar, or press **Ctrl+N**
 2. Choose how to start:
-   - **Existing folder** — browse to or paste a working directory. If it's a git repo, you can optionally create a **git worktree** for the session (see [Sessions](sessions#git-worktrees-local-only)).
+   - **Existing directory** — browse to or paste a working directory. If it's a git repo, you can optionally create a **git worktree** for the session (see [Sessions](sessions#git-worktrees-local-only)).
    - **Clone** — clone a repo from GitHub / Azure DevOps / Gitea (see [Git Providers](git-providers))
    - **New folder** — create an empty folder under your repos root, optionally `git init` and provision an empty remote (see [Git Providers](git-providers#new-folder))
 3. Pick an [environment](environments) (Local, SSH, or Coder)
 4. Pick a CLI tool (Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, or a custom binary)
 5. Optionally set a label, [launch profile](settings#launch-profiles), env vars, or CLI flags
-6. Click **Create**
+6. Click **Create session**
 
 The session launches in a new pane and the CLI takes over from there.
+
+## Returning to a Project
+
+When no panes are open, the home screen shows up to six recent local or SSH project locations. Choosing one opens the launch form with its environment and directory filled in. You can change the suggestion, start a new session, or use **Resume conversation** for supported local tools. Coder workspaces continue to use **Open Coder workspace**.
+
+Recent locations are stored locally as directory paths and environment IDs; they contain no flags, environment variables, or transcript content. Projects belonging to a removed environment are hidden.
 
 ## The Interface
 
 ### Sidebar
 
-The left sidebar groups sessions by environment and then by working directory. Each session row shows:
+The left sidebar groups sessions by environment and then by working directory. Use **New session** at the top, the **+** beside **Environments** to add a connection, and **Settings** at the bottom. The title bar's **Find session** button opens the same switcher as **Ctrl+P** and displays your remapped shortcut if you change it.
+
+Each session row shows:
 
 - A **status dot** — green (running), amber (waiting on you), gray (idle), red (dead / stopped)
+- The **CLI badge and readable state**, with the shared path available on the repo group and row tooltip
 - The **label** (auto-named from the directory, or rename inline by double-clicking)
 - A **pane badge** when the session is currently mounted in a split pane
 - A **🔕 badge** when notifications are muted for that session
 - A **↻ badge** when the session was resumed from a previous conversation (optional — see [Settings](settings#session-restore))
 
-Drag sessions to reorder them inside a group. Right-click a group header for **bulk actions** (Stop all, Restart all, Clear all). Right-click a session for per-session actions (Stop, Duplicate, Remove, Mute/Unmute notifications, Helm enable). Collapse groups with the chevron. Resize the sidebar by dragging its edge (180–400px) or hide it with **Ctrl+B**.
+Drag sessions to reorder them inside a group. Right-click a group header for **bulk actions** (Stop all, Restart all, Clear all). Right-click a session for per-session actions (Stop, Duplicate, Remove, Mute/Unmute notifications, Helm enable). Collapse groups with the chevron. Resize the sidebar by dragging its edge or hide it with **Ctrl+B**.
 
 Footers along the bottom of the sidebar show:
 
@@ -65,6 +74,8 @@ The main area displays the active session. It's a real terminal emulator (xterm.
 
 ### Split Panes
 
+The title bar's **Layout** control switches between a single pane and a maximum of two or four panes. Lowering the limit keeps sessions running in the sidebar; raising it allows additional sessions to be opened in splits. Layouts use equal splits, so three visible sessions occupy a four-slot layout. Click **Choose a session** in an empty slot to open the switcher.
+
 Drag a session from the sidebar onto the edge of the terminal area to view two or more side-by-side. Drop zones light up as you drag:
 
 - **Left / Right** — horizontal split
@@ -73,7 +84,7 @@ Drag a session from the sidebar onto the edge of the terminal area to view two o
 
 Once split, use **Alt+Arrow** to focus the neighboring pane (un-maximizing if needed) and **Alt+Shift+Arrow** to swap the focused pane's session with its neighbor. If a session inside a pane dies, an in-pane overlay offers **Restart in this pane** or **Close pane** so the layout survives.
 
-You can also **broadcast input** to multiple panes at once — toggle targets from the pane status strip. See [Sessions](sessions#broadcast-input).
+You can also **broadcast input** to multiple panes at once — toggle targets from the pane header. See [Sessions](sessions#broadcast-input).
 
 ### Notifications
 

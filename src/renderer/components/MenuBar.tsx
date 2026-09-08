@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import logoSrc from '../assets/logo.png';
 import { onKeyActivate } from '../utils/a11y';
+import { Icon } from './Icon';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -27,11 +28,15 @@ export interface MenuDef {
 
 interface MenuBarProps {
   menus: MenuDef[];
+  onSearch: () => void;
+  searchShortcut: string;
+  paneLimit: number;
+  onPaneLimitChange: (limit: number) => void;
 }
 
 // ── Component ──────────────────────────────────────────────────────
 
-export function MenuBar({ menus }: MenuBarProps) {
+export function MenuBar({ menus, onSearch, searchShortcut, paneLimit, onPaneLimitChange }: MenuBarProps) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
 
@@ -85,11 +90,13 @@ export function MenuBar({ menus }: MenuBarProps) {
           <button
             className={`menubar-item ${openIndex === i ? 'menubar-item--open' : ''}`}
             onClick={() => handleMenuClick(i)}
+            aria-haspopup="menu"
+            aria-expanded={openIndex === i}
           >
             {menu.label}
           </button>
           {openIndex === i && (
-            <div className="menubar-dropdown">
+            <div className="menubar-dropdown" role="menu" aria-label={menu.label}>
               {menu.items.map((item, j) =>
                 item.separator ? (
                   <div key={j} className="menubar-dropdown-sep" />
@@ -120,6 +127,19 @@ export function MenuBar({ menus }: MenuBarProps) {
           )}
         </div>
       ))}
+      <label className="menubar-pane-limit">
+        <span>Layout</span>
+        <select aria-label="Maximum visible panes" value={paneLimit} onChange={e => onPaneLimitChange(Number(e.target.value))}>
+          <option value={1}>Single pane</option>
+          <option value={2}>Up to 2 panes</option>
+          <option value={4}>Up to 4 panes</option>
+        </select>
+      </label>
+      <button className="menubar-search" aria-label="Find session" onClick={() => { setOpenIndex(null); onSearch(); }} title={searchShortcut ? `Find session (${searchShortcut})` : 'Find session'}>
+        <Icon name="search" size={14} />
+        <span>Find session</span>
+        {searchShortcut && <kbd>{searchShortcut}</kbd>}
+      </button>
     </div>
   );
 }

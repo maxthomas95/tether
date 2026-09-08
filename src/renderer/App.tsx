@@ -61,6 +61,8 @@ import {
 import { getBroadcastSessionIds, pruneBroadcastPaneIds } from './lib/broadcast-targets';
 import type { MenuDef } from './components/MenuBar';
 import { WelcomePane } from './components/WelcomePane';
+import { Icon } from './components/Icon';
+import { useRecentProjects } from './hooks/useRecentProjects';
 import { OfficePane } from './components/OfficePane';
 import { JobsOfficePill } from './components/sidebar/JobsOfficePill';
 
@@ -95,10 +97,12 @@ export function App() {
    *   - session enters visibleSessionIds while waiting → add id  (user saw it)
    */
   const [acknowledgedWaitingIds, setAcknowledgedWaitingIds] = useState<Set<string>>(new Set());
-  const [sidebarWidth, setSidebarWidth] = useState(220);
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [uiDensity, setUiDensity] = useState('comfortable');
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [welcomeInitialDirectory, setWelcomeInitialDirectory] = useState<string | undefined>();
   const [aboutOpen, setAboutOpen] = useState(false);
   const [usageHistoryOpen, setUsageHistoryOpen] = useState(false);
   const [setupWizardOpen, setSetupWizardOpen] = useState(false);
@@ -142,7 +146,7 @@ export function App() {
   const envMenuRef = useRef<HTMLDivElement>(null);
   const [keybindingOverrides, setKeybindingOverrides] = useState<KeybindingOverrides>({});
   const resolvedBindings = useMemo(() => resolveBindings(keybindingOverrides), [keybindingOverrides]);
-  const { themeName, setTheme, xtermTheme } = useTheme();
+  const { themeName, setTheme, previewTheme, xtermTheme } = useTheme();
   const effectiveXtermTheme = useMemo(
     () => hideTerminalCursor ? withHiddenXtermCursor(xtermTheme) : xtermTheme,
     [hideTerminalCursor, xtermTheme],
@@ -293,6 +297,7 @@ export function App() {
   // already acknowledged its current waiting cycle.
   const bangSuppressedIds = acknowledgedWaitingIds;
   const environmentById = useMemo(() => new Map(environments.map(env => [env.id, env])), [environments]);
+  const recentProjects = useRecentProjects(sessions, environments);
 
   // Load profiles on mount
   useEffect(() => {
@@ -356,6 +361,19 @@ export function App() {
     });
     return () => { cancelled = true; };
   }, [settingsOpen]);
+
+  // Apply the saved interface density without changing terminal font sizes.
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.config.get('uiDensity').then(value => {
+      if (!cancelled) setUiDensity(value === 'compact' ? 'compact' : 'comfortable');
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    setSidebarWidth(uiDensity === 'compact' ? 220 : 260);
+  }, [uiDensity]);
 
   // Check for first launch
   useEffect(() => {
@@ -850,7 +868,9 @@ export function App() {
   // Close env context menu on outside click
   useEffect(() => {
     if (!envMenuOpenId) return;
+    envMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
     const handleClick = (e: MouseEvent) => {
+      if (e.target instanceof Element && e.target.closest('.env-group-menu')) return;
       if (envMenuRef.current && !envMenuRef.current.contains(e.target as Node)) {
         setEnvMenuOpenId(null);
       }
@@ -1598,18 +1618,19 @@ export function App() {
     return term ? readLastLines(term.buffer.active, 6) : [];
   }, [termManager]);
 
-  // When pane splitting is turned off, collapse multi-pane or empty layouts
-  // back to the welcome screen. A single non-empty pane is left alone so the
-  // user keeps working in it.
+  // Keep the focused session visible when switching to a single pane.
+  // Other sessions stay alive in the sidebar; only their layout slots are removed.
   useEffect(() => {
     if (enablePaneSplitting || !layoutState.root) return;
     const leaves = getLeaves(layoutState.root);
     const hasEmpty = leaves.some(l => !l.sessionId);
     if (leaves.length > 1 || hasEmpty) {
-      layoutDispatch({ type: 'SET_ROOT', root: null });
-      layoutDispatch({ type: 'SET_FOCUS', paneId: null });
+      const retained = leaves.find(l => l.id === layoutState.focusedPaneId && l.sessionId)
+        ?? leaves.find(l => l.sessionId) ?? null;
+      layoutDispatch({ type: 'SET_ROOT', root: retained });
+      layoutDispatch({ type: 'SET_FOCUS', paneId: retained?.id ?? null });
     }
-  }, [enablePaneSplitting, layoutState.root, layoutDispatch]);
+  }, [enablePaneSplitting, layoutState.root, layoutState.focusedPaneId, layoutDispatch]);
 
   /**
    * Defensive recovery for a dead session inside a layout: spawn a fresh
@@ -1794,8 +1815,21 @@ export function App() {
   ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount]);
 
   return (
-    <div className="app-layout">
-      <MenuBar menus={menus} />
+    <div className="app-layout" data-density={uiDensity}>
+      <MenuBar menus={menus} onSearch={() => setSearchOpen(true)} searchShortcut={formatChord(resolvedBindings['search.open'])}
+        paneLimit={effectiveMaxPanes}
+        onPaneLimitChange={limit => {
+          void (async () => {
+            try {
+              await window.electronAPI.config.set('maxPanes', String(limit));
+              await window.electronAPI.config.set('enablePaneSplitting', limit > 1 ? 'true' : 'false');
+              setMaxPanes(limit);
+              setEnablePaneSplitting(limit > 1);
+            } catch (error) {
+              notifyError('Could not update the pane layout', error);
+            }
+          })();
+        }} />
       <div className="app-body">
       <aside
         className="sidebar"
@@ -1808,21 +1842,7 @@ export function App() {
       >
         <div className="sidebar-header">
           <button className="new-session-btn" onClick={() => setSessionDialogOpen(true)}>
-            + New session
-          </button>
-          <button
-            className="new-session-btn"
-            onClick={() => setEnvDialogOpen(true)}
-            style={{ marginTop: 6, fontSize: 11, color: 'var(--text-secondary)' }}
-          >
-            + Add environment
-          </button>
-          <button
-            className="new-session-btn"
-            onClick={() => setSettingsOpen(true)}
-            style={{ marginTop: 6, fontSize: 11, color: 'var(--text-secondary)' }}
-          >
-            Settings
+            <Icon name="plus" /> New session
           </button>
           {waitingCount > 0 && (
             <button
@@ -1838,6 +1858,10 @@ export function App() {
               {waitingCount} waiting
             </button>
           )}
+        </div>
+        <div className="sidebar-section-heading">
+          <span>Environments</span>
+          <button className="icon-button" aria-label="Add environment" title="Add environment" onClick={() => setEnvDialogOpen(true)}><Icon name="plus" /></button>
         </div>
         <div className="sidebar-content">
           {environments.map(env => {
@@ -1858,6 +1882,7 @@ export function App() {
                   onKeyDown={onKeyActivate(() => toggleGroup(env.id))}
                   role="button"
                   tabIndex={0}
+                  aria-expanded={!isCollapsed}
                   onContextMenu={e => { e.preventDefault(); setEnvMenuOpenId(prev => prev === env.id ? null : env.id); }}
                   style={{ cursor: 'pointer', position: 'relative' }}
                 >
@@ -1867,9 +1892,28 @@ export function App() {
                       <span className="env-group-active"> {runningCount} active</span>
                     )}
                   </span>
-                  <span className="env-group-count">({envSessions.length})</span>
+                  <button
+                    className="icon-button env-group-menu"
+                    aria-label={`Actions for ${env.name}`}
+                    aria-haspopup="menu"
+                    aria-expanded={envMenuOpenId === env.id}
+                    onClick={e => { e.stopPropagation(); setEnvMenuOpenId(prev => prev === env.id ? null : env.id); }}
+                    onKeyDown={stopPropagationOnKey}
+                  ><Icon name="more" /></button>
                   {envMenuOpenId === env.id && (
-                    <div ref={envMenuRef} className="context-menu" onClick={e => e.stopPropagation()} onKeyDown={stopPropagationOnKey} role="menu" tabIndex={-1}>
+                    <div ref={envMenuRef} className="context-menu" onClick={e => e.stopPropagation()} onKeyDown={e => {
+                      stopPropagationOnKey(e);
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setEnvMenuOpenId(null);
+                        e.currentTarget.parentElement?.querySelector<HTMLButtonElement>('.env-group-menu')?.focus();
+                      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+                        const index = items.indexOf(document.activeElement as HTMLElement);
+                        items[(index + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+                      }
+                    }} role="menu" aria-label={`Actions for ${env.name}`} tabIndex={-1}>
                       <div
                         className="context-menu-item"
                         role="menuitem"
@@ -1959,6 +2003,9 @@ export function App() {
         <QuotaFooter />
         <VaultStatusPill onAuthError={notifyVaultAuthError} />
         <JobsOfficePill status={jobsStatus} active={officeOpen} onToggle={() => setOfficeOpen(v => !v)} />
+        <div className="sidebar-utilities">
+          <button className="sidebar-settings" onClick={() => setSettingsOpen(true)}><Icon name="settings" /> Settings</button>
+        </div>
       </aside>
       {sidebarVisible && <SidebarResizeHandle onResize={setSidebarWidth} />}
       <main
@@ -1975,6 +2022,11 @@ export function App() {
             layoutDispatch={layoutDispatch}
             termManager={termManager}
             sessions={sessions}
+            environments={environments}
+            onChooseSession={paneId => {
+              layoutDispatch({ type: 'SET_FOCUS', paneId });
+              setSearchOpen(true);
+            }}
             isDragging={isDragging}
             draggingPaneId={draggingPaneId}
             onDragStateChange={handlePaneDragStateChange}
@@ -1995,6 +2047,12 @@ export function App() {
             <WelcomePane
               environments={environments}
               enableResumePicker={enableResumePicker}
+              recentProjects={recentProjects}
+              onOpenProject={project => {
+                setWelcomeInitialEnvId(project.environmentId);
+                setWelcomeInitialDirectory(project.workingDir);
+                setSessionDialogOpen(true);
+              }}
               onNewLocalSession={handleWelcomeNewLocal}
               onConnectSsh={handleWelcomeConnectSsh}
               onOpenCoder={handleWelcomeOpenCoder}
@@ -2017,7 +2075,8 @@ export function App() {
         environments={environments}
         profiles={profiles}
         initialEnvId={welcomeInitialEnvId}
-        onClose={() => { setSessionDialogOpen(false); setWelcomeInitialEnvId(undefined); }}
+        initialDirectory={welcomeInitialDirectory}
+        onClose={() => { setSessionDialogOpen(false); setWelcomeInitialEnvId(undefined); setWelcomeInitialDirectory(undefined); }}
         onCreate={handleCreateSession}
       />
       <NewEnvironmentDialog
@@ -2035,7 +2094,7 @@ export function App() {
           window.electronAPI.profile.list().then(setProfiles).catch(() => {});
         }}
         currentTheme={themeName}
-        onThemeChange={setTheme}
+        onThemeChange={previewTheme}
         onResetSessionFontSizes={handleResetSessionFontSizes}
         keybindings={resolvedBindings}
         onKeybindingChange={handleKeybindingChange}

@@ -4,6 +4,7 @@ import { CliToolBadge } from '../CliToolBadge';
 import { PaneLocationBadge } from './PaneLocationBadge';
 import { onKeyActivate, stopPropagationOnKey } from '../../utils/a11y';
 import { abbreviatePath } from '../../utils/paths';
+import { Icon } from '../Icon';
 import type { PaneLocation } from '../../lib/layout-tree';
 
 interface SessionItemProps {
@@ -89,7 +90,9 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
 
   useEffect(() => {
     if (!showMenu) return;
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
     const handleClick = (e: MouseEvent) => {
+      if (e.target instanceof Element && rowRef.current?.contains(e.target) && e.target.closest('.session-menu-button')) return;
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowMenu(false);
       }
@@ -178,9 +181,16 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
       ref={rowRef}
       className={itemClasses}
       onClick={handleRowClick}
-      onKeyDown={onKeyActivate(handleRowClick)}
+      onKeyDown={e => {
+        if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+          e.preventDefault(); hidePreview(); setShowMenu(true);
+        } else if (e.key === 'Escape' && showMenu) {
+          e.stopPropagation(); setShowMenu(false);
+        } else if (e.target === e.currentTarget) onKeyActivate(handleRowClick)(e);
+      }}
       role="button"
       tabIndex={0}
+      title={`${session.label}\n${session.workingDir}`}
       onContextMenu={handleContextMenu}
       onMouseEnter={handleMouseEnterRow}
       onMouseLeave={hidePreview}
@@ -299,7 +309,7 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
             </span>
             <span className="session-path">
               <CliToolBadge session={session} />
-              <span className="session-path-text">{abbreviatePath(session.workingDir)}</span>
+              <span className="session-path-text">{nested ? getStateText(session) : abbreviatePath(session.workingDir)}</span>
               {paneLocation && onFocusPane && (
                 <PaneLocationBadge
                   location={paneLocation}
@@ -312,8 +322,28 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
         )}
       </div>
 
+      {!editing && <button
+        type="button"
+        className="icon-button session-menu-button"
+        aria-label={`Actions for ${session.label}`}
+        aria-haspopup="menu"
+        aria-expanded={showMenu}
+        onClick={e => { e.stopPropagation(); hidePreview(); setShowMenu(v => !v); }}
+        onKeyDown={e => { if (e.key !== 'Escape') e.stopPropagation(); }}
+      ><Icon name="more" /></button>}
+
       {showMenu && (
-        <div ref={menuRef} className="context-menu" onClick={e => e.stopPropagation()} onKeyDown={stopPropagationOnKey} role="menu" tabIndex={-1}>
+        <div ref={menuRef} className="context-menu" onClick={e => e.stopPropagation()} onKeyDown={e => {
+          stopPropagationOnKey(e);
+          if (e.key === 'Escape') {
+            e.preventDefault(); setShowMenu(false); rowRef.current?.focus();
+          } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+            const index = items.indexOf(document.activeElement as HTMLElement);
+            items[(index + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+          }
+        }} role="menu" aria-label={`Actions for ${session.label}`} tabIndex={-1}>
           <div
             className="context-menu-item"
             role="menuitem"
@@ -403,6 +433,18 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
       )}
     </div>
   );
+}
+
+function getStateText({ state, waitingReason }: SessionInfo): string {
+  if ((state === 'waiting' || state === 'idle') && waitingReason === 'permission') return 'Needs permission';
+  switch (state) {
+    case 'waiting': return 'Waiting for you';
+    case 'dead':
+    case 'stopped': return 'Stopped';
+    case 'starting': return 'Starting';
+    case 'running': return 'Running';
+    default: return 'Idle';
+  }
 }
 
 function getStatusClass(

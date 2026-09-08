@@ -1,6 +1,13 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+
+function styleHash(file: string): string {
+  const html = readProjectFile(file).replace(/\r\n/g, '\n');
+  const style = html.match(/<style>([\s\S]*?)<\/style>/)![1];
+  return `'sha256-${createHash('sha256').update(style).digest('base64')}'`;
+}
 
 function readCsp(file: string): string {
   const html = readProjectFile(file);
@@ -29,7 +36,7 @@ describe('renderer CSP style directives', () => {
   it('allows runtime renderer styles without broad style-src unsafe-inline', () => {
     const csp = readCsp('index.html');
 
-    expect(directive(csp, 'style-src')).toContain("'sha256-OX2MoKPidt/DOFBxkvnq7fypbIIqDizDpa3tZR2VoAs='");
+    expect(directive(csp, 'style-src')).toContain(styleHash('index.html'));
     expect(directive(csp, 'style-src')).not.toContain("'unsafe-inline'");
     expect(directive(csp, 'style-src-elem')).toEqual(expect.arrayContaining(["'self'", "'unsafe-inline'"]));
     expect(directive(csp, 'style-src-attr')).toContain("'unsafe-inline'");
@@ -38,7 +45,7 @@ describe('renderer CSP style directives', () => {
   it('keeps the docs boot style hash while allowing runtime docs styles', () => {
     const csp = readCsp('docs-window.html');
 
-    expect(directive(csp, 'style-src')).toContain("'sha256-LDJwO9RJByaWNw/jyli+okv9VPbA47ii+LRt8wqnXyQ='");
+    expect(directive(csp, 'style-src')).toContain(styleHash('docs-window.html'));
     expect(directive(csp, 'style-src')).not.toContain("'unsafe-inline'");
     expect(directive(csp, 'style-src-elem')).toEqual(expect.arrayContaining(["'self'", "'unsafe-inline'"]));
     expect(directive(csp, 'style-src-attr')).toContain("'unsafe-inline'");

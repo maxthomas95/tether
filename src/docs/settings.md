@@ -1,9 +1,10 @@
 # Settings
 
-Open Settings with **Ctrl+,** or from the menu bar under **View**. The dialog has seven sections in a left rail:
+Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **View** in the menu bar. Search for a settings section by name or topic, such as “theme”, “hooks”, or “usage”. The dialog has eight sections:
 
-- [General](#general) — theme, session restore, and update checks
-- [Terminal](#terminal) — font families, cursor shape, scrollback
+- [General](#general) — session restore and update checks
+- [Appearance](#appearance) — theme previews, UI font, and interface density
+- [Terminal](#terminal) — terminal font, cursor shape, and scrollback
 - [Sessions](#sessions) — default CLI, Helm toggle, default env vars, per-CLI flag presets, launch profiles
 - [Notifications](#notifications) — desktop notification triggers and suppression
 - [Shortcuts](#shortcuts) — keyboard shortcut customization
@@ -12,22 +13,6 @@ Open Settings with **Ctrl+,** or from the menu bar under **View**. The dialog ha
 
 ## General
 
-### Theme
-
-Tether ships with seven built-in themes:
-
-| Theme | Style |
-|-------|-------|
-| **Catppuccin Mocha** | Dark (default) — warm muted pastels |
-| **Catppuccin Macchiato** | Dark — slightly lighter than Mocha |
-| **Catppuccin Frappé** | Dark — cooler than Mocha |
-| **Catppuccin Latte** | Light — cream background |
-| **Brass** | Dark — warm rope / canvas / copper palette |
-| **Tether (Default Dark)** | Dark — neutral cool tones, pairs with the logo |
-| **Tether Light** | Light — VS Code Light+ inspired, white canvas |
-
-The theme applies to the entire app: title bar, sidebar, terminal, dialogs, and this documentation window.
-
 ### Session restore
 
 Controls what happens to your sessions when you quit and relaunch Tether:
@@ -35,7 +20,7 @@ Controls what happens to your sessions when you quit and relaunch Tether:
 - **Restore sessions on launch** — automatically reopen your saved workspace (sessions and pane layout) when Tether starts.
 - **Resume previous conversations** — instead of starting each restored session fresh, reopen the same Claude Code or Codex CLI conversation it was on. Local environments only; SSH and Coder sessions always start fresh.
 - **Show a badge on resumed sessions** — adds a small ↻ marker next to sessions that were resumed from a prior conversation.
-- **Enable "Resume previous conversation..." in the right-click menu** — lets you manually pick an older Claude Code or Codex CLI conversation for a session's working directory. See [Sessions](sessions#resume-conversation).
+- **Enable conversation resume** — lets you manually pick an older Claude Code or Codex CLI conversation for a session's working directory. See [Sessions](sessions#resume-conversation).
 
 ### Update checks
 
@@ -58,6 +43,41 @@ Two quick-access buttons for support and troubleshooting:
 - **Open logs folder** — reveals Tether's runtime log files. Useful when filing a bug or tailing what the app is doing. Pair with **About → Export diagnostics for support** to bundle a scrubbed copy of these for a bug report.
 
 Both buttons hand off to your OS file manager (Explorer on Windows, Finder on macOS, `xdg-open` on Linux).
+
+## Appearance
+
+### Theme
+
+Tether ships with seven built-in themes:
+
+| Theme | Style |
+|-------|-------|
+| **Catppuccin Mocha** | Dark (default) — warm muted pastels |
+| **Catppuccin Macchiato** | Dark — slightly lighter than Mocha |
+| **Catppuccin Frappé** | Dark — cooler than Mocha |
+| **Catppuccin Latte** | Light — cream background |
+| **Brass** | Dark — warm rope / canvas / copper palette |
+| **Tether (Default Dark)** | Dark — cool graphite surfaces and cyan focus accents |
+| **Tether Light** | Light — VS Code Light+ inspired, white canvas |
+
+The theme applies to the entire app: title bar, sidebar, terminal, dialogs, and this documentation window.
+
+Theme selection previews the main window immediately. **Save** keeps the preview and updates the documentation window; **Cancel**, **Escape**, or the close button restores the theme you started with. Theme changes from the View menu and setup wizard still save immediately.
+
+### UI font family
+
+Pick the font used in the sidebar, dialogs, and menus:
+
+| Preset | Notes |
+|--------|-------|
+| **Default (IBM Plex Sans)** | Tether's identity face |
+| **Inter** | Bundled — clean geometric sans |
+| **Atkinson Hyperlegible** | Bundled — optimized for readability |
+| **System default** | Uses the OS's UI font (Segoe UI on Windows) |
+
+### Interface density
+
+**Comfortable** provides a wider initial sidebar and roomier pane headers. **Compact** reduces sidebar spacing and header height. Density and UI font changes apply when you save; terminal text keeps its independent font size. You can still resize the sidebar manually.
 
 ## Terminal
 
@@ -83,17 +103,6 @@ Pick from five presets or leave the default:
 
 This only affects xterm.js panes. Tether's own UI keeps IBM Plex Sans / JetBrains Mono regardless. Missing fonts fall back to Cascadia Code or Consolas.
 
-### UI font family
-
-Pick the font used in the sidebar, dialogs, and menus:
-
-| Preset | Notes |
-|--------|-------|
-| **Default (IBM Plex Sans)** | Tether's identity face |
-| **Inter** | Bundled — clean geometric sans |
-| **Atkinson Hyperlegible** | Bundled — optimized for readability |
-| **System default** | Uses the OS's UI font (Segoe UI on Windows) |
-
 ### Hide terminal cursor
 
 Hides the blinking cursor inside xterm.js panes. Useful when you're just watching output. When on, the cursor shape and blink controls below are disabled.
@@ -103,6 +112,8 @@ Hides the blinking cursor inside xterm.js panes. Useful when you're just watchin
 When the xterm.js cursor is visible, pick its shape (block / underline / bar) and whether it blinks.
 
 ## Sessions
+
+Common CLI defaults and launch profiles appear first. Expand **Advanced session options** for Helm, CLI status hooks, pane splitting, and the maximum pane count. These options keep their existing opt-in behavior.
 
 ### Allow Helm
 

@@ -68,6 +68,9 @@ export function PaneStatusStrip({ sessionId }: Props) {
 
   if (!enabled) return null;
   if (!sessionId) return null;
+  if (!usage) {
+    return <div className="pane-status-strip"><span className="pane-status-strip-item">Usage unavailable</span></div>;
+  }
 
   const model = usage ? dominantModel(usage) : null;
   const messageCount = usage?.messageCount ?? 0;
@@ -85,7 +88,7 @@ export function PaneStatusStrip({ sessionId }: Props) {
       </span>
       <span className="pane-status-strip-separator">·</span>
       <span className="pane-status-strip-item pane-status-strip-cost">
-        {formatCost(cost)}
+        {formatCost(cost)} <span className="pane-status-strip-estimate">API equivalent</span>
       </span>
     </div>
   );
