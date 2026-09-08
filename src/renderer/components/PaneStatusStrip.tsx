@@ -40,10 +40,20 @@ function buildTooltip(usage: SessionUsage): string {
   const lines: string[] = [];
   lines.push(`Total cost: ${formatCost(usage.totalCost)} (API equivalent)`);
   lines.push(`Messages: ${usage.messageCount}`);
+  if (usage.currentModel || usage.currentReasoningEffort || usage.contextWindowTokens) {
+    lines.push('');
+    lines.push('Current session:');
+    if (usage.currentModel) lines.push(`  Model:           ${shortenModel(usage.currentModel)}`);
+    if (usage.currentReasoningEffort) lines.push(`  Reasoning:       ${usage.currentReasoningEffort}`);
+    if (usage.contextWindowTokens) lines.push(`  Context window:  ${formatTokens(usage.contextWindowTokens)} tokens`);
+  }
   lines.push('');
   lines.push('Tokens:');
   lines.push(`  Input:          ${formatTokens(usage.inputTokens)}`);
   lines.push(`  Output:         ${formatTokens(usage.outputTokens)}`);
+  if ((usage.reasoningTokens ?? 0) > 0) {
+    lines.push(`  Reasoning:      ${formatTokens(usage.reasoningTokens ?? 0)}`);
+  }
   lines.push(`  Cache created:  ${formatTokens(usage.cacheCreationTokens)}`);
   lines.push(`  Cache read:     ${formatTokens(usage.cacheReadTokens)}`);
 
@@ -72,7 +82,7 @@ export function PaneStatusStrip({ sessionId }: Props) {
     return <div className="pane-status-strip"><span className="pane-status-strip-item">Usage unavailable</span></div>;
   }
 
-  const model = usage ? dominantModel(usage) : null;
+  const model = usage ? usage.currentModel ?? dominantModel(usage) : null;
   const messageCount = usage?.messageCount ?? 0;
   const cost = usage?.totalCost ?? 0;
   const tooltip = usage ? buildTooltip(usage) : 'No usage data yet';

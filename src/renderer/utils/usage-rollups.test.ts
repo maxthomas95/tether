@@ -3,7 +3,7 @@ import { dailyRollups, weeklyRollups, monthlyRollups, windowSummary } from './us
 import type { DailyUsage, DailyCliToolUsage } from '../../shared/types';
 import type { CliToolId } from '../../shared/cli-tools';
 
-function mkToolRow(cliTool: CliToolId, totalCost: number, sessionCount = 1, tokens = 100): DailyCliToolUsage {
+function mkToolRow(cliTool: CliToolId, totalCost: number, sessionCount = 1, tokens = 100, sessionIds?: string[]): DailyCliToolUsage {
   return {
     cliTool,
     totalCost,
@@ -12,13 +12,14 @@ function mkToolRow(cliTool: CliToolId, totalCost: number, sessionCount = 1, toke
     cacheCreationTokens: 0,
     cacheReadTokens: 0,
     sessionCount,
+    sessionIds,
   };
 }
 
 // Saturday in UTC. dayOfWeekMon0 = 5 → that week's Monday is May 4 2026.
 const TODAY = new Date(Date.UTC(2026, 4, 9));
 
-function mkDay(date: string, totalCost: number, sessionCount = 1, tokens = 1000): DailyUsage {
+function mkDay(date: string, totalCost: number, sessionCount = 1, tokens = 1000, sessionIds?: string[]): DailyUsage {
   return {
     date,
     inputTokens: tokens,
@@ -27,6 +28,7 @@ function mkDay(date: string, totalCost: number, sessionCount = 1, tokens = 1000)
     cacheReadTokens: 0,
     totalCost,
     sessionCount,
+    sessionIds,
   };
 }
 
@@ -80,6 +82,20 @@ describe('weeklyRollups', () => {
     expect(thisWeek.sessionCount).toBe(5);
   });
 
+  it('dedupes the same session across days when daily ids are available', () => {
+    const daily: DailyUsage[] = [
+      mkDay('2026-05-04', 1, 1, 100, ['s1']),
+      mkDay('2026-05-05', 2, 1, 100, ['s1']),
+      mkDay('2026-05-06', 3, 1, 100, ['s2']),
+    ];
+
+    const [thisWeek] = weeklyRollups(daily, 1, TODAY);
+
+    expect(thisWeek.totalCost).toBeCloseTo(6);
+    expect(thisWeek.sessionCount).toBe(2);
+    expect(thisWeek.sessionIds).toEqual(['s1', 's2']);
+  });
+
   it('does not bleed sessions from adjacent weeks', () => {
     // May 3 (Sun) is the previous week; May 4 (Mon) is this week. Two days, two
     // distinct weeks — neither should pick up the other's row.
@@ -131,6 +147,20 @@ describe('monthlyRollups', () => {
     const mar2024 = new Date(Date.UTC(2024, 2, 1));
     const [, feb] = monthlyRollups([], 2, mar2024);
     expect(feb.endDate).toBe('2024-02-29');
+  });
+
+  it('dedupes monthly session counts when daily ids are available', () => {
+    const daily: DailyUsage[] = [
+      mkDay('2026-05-01', 1, 1, 100, ['s1']),
+      mkDay('2026-05-15', 2, 1, 100, ['s1']),
+      mkDay('2026-05-20', 3, 1, 100, ['s2']),
+    ];
+
+    const [may] = monthlyRollups(daily, 1, TODAY);
+
+    expect(may.totalCost).toBeCloseTo(6);
+    expect(may.sessionCount).toBe(2);
+    expect(may.sessionIds).toEqual(['s1', 's2']);
   });
 });
 
@@ -213,6 +243,24 @@ describe('rollups: byCliTool propagation', () => {
     // claude: 2 + 2 = 4, 2 sessions; sorts first by cost
     expect(thisWeek.byCliTool?.[0]).toMatchObject({ cliTool: 'claude', totalCost: 4, sessionCount: 2 });
     expect(thisWeek.byCliTool?.[1]).toMatchObject({ cliTool: 'codex', totalCost: 1, sessionCount: 1 });
+  });
+
+  it('weekly dedupes per-tool session counts when ids are available', () => {
+    const daily: DailyUsage[] = [
+      {
+        ...mkDay('2026-05-04', 2, 1, 100, ['s1']),
+        byCliTool: [mkToolRow('codex', 2, 1, 100, ['s1'])],
+      },
+      {
+        ...mkDay('2026-05-05', 3, 1, 100, ['s1']),
+        byCliTool: [mkToolRow('codex', 3, 1, 100, ['s1'])],
+      },
+    ];
+
+    const [thisWeek] = weeklyRollups(daily, 1, TODAY);
+
+    expect(thisWeek.byCliTool?.[0]).toMatchObject({ cliTool: 'codex', totalCost: 5, sessionCount: 1 });
+    expect(thisWeek.byCliTool?.[0].sessionIds).toEqual(['s1']);
   });
 
   it('monthly merges disjoint tools across days', () => {

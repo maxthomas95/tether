@@ -8,7 +8,15 @@ import { readCrushSessions } from '../opencode/usage-reader';
 import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
 import { aggregateByEnvironment } from './env-aggregator';
 import { aggregateByCliTool } from './cli-tool-aggregator';
-import type { SessionUsage, UsageModelBreakdown, UsageInfo, DailyUsage, DailyCliToolUsage, CliToolId } from '../../shared/types';
+import type {
+  SessionUsage,
+  UsageModelBreakdown,
+  UsageInfo,
+  DailyUsage,
+  DailyCliToolUsage,
+  SessionDailyUsage,
+  CliToolId,
+} from '../../shared/types';
 
 const log = createLogger('usage');
 
@@ -40,10 +48,15 @@ function emptySessionUsage(sessionId: string, cliTool: CliToolId, environmentId?
     environmentId,
     inputTokens: 0,
     outputTokens: 0,
+    reasoningTokens: 0,
     cacheCreationTokens: 0,
     cacheReadTokens: 0,
     totalCost: 0,
     models: [],
+    daily: [],
+    currentModel: null,
+    currentReasoningEffort: null,
+    contextWindowTokens: null,
     messageCount: 0,
     firstMessageAt: null,
     lastMessageAt: null,
@@ -55,26 +68,79 @@ export function resetUsageForReparse(existing: SessionUsage): SessionUsage {
   return emptySessionUsage(existing.sessionId, existing.cliTool, existing.environmentId);
 }
 
-function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOffset: number): SessionUsage {
+function cloneModelBreakdown(model: UsageModelBreakdown): UsageModelBreakdown {
+  return {
+    ...model,
+    reasoningTokens: model.reasoningTokens ?? 0,
+  };
+}
+
+function emptyModelBreakdown(model: string): UsageModelBreakdown {
+  return {
+    model,
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    cost: 0,
+  };
+}
+
+function messageDate(timestamp: string): string {
+  const parsed = new Date(timestamp);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}/.test(timestamp) ? timestamp.slice(0, 10) : new Date().toISOString().slice(0, 10);
+}
+
+function cloneDailyUsage(day: SessionDailyUsage): SessionDailyUsage {
+  return {
+    ...day,
+    reasoningTokens: day.reasoningTokens ?? 0,
+    models: day.models.map(cloneModelBreakdown),
+  };
+}
+
+function addMessageToBreakdown(modelMap: Map<string, UsageModelBreakdown>, msg: ParsedMessage): void {
+  const mb = modelMap.get(msg.model) || emptyModelBreakdown(msg.model);
+  mb.inputTokens += msg.inputTokens;
+  mb.outputTokens += msg.outputTokens;
+  mb.reasoningTokens = (mb.reasoningTokens ?? 0) + (msg.reasoningTokens ?? 0);
+  mb.cacheCreationTokens += msg.cacheCreation5m + msg.cacheCreation1h;
+  mb.cacheReadTokens += msg.cacheReadTokens;
+  mb.cost += msg.cost;
+  modelMap.set(msg.model, mb);
+}
+
+export function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOffset: number): SessionUsage {
   if (messages.length === 0) return { ...existing, parsedByteOffset: newOffset };
 
   // Accumulate model breakdowns
   const modelMap = new Map<string, UsageModelBreakdown>();
   for (const m of existing.models) {
-    modelMap.set(m.model, { ...m });
+    modelMap.set(m.model, cloneModelBreakdown(m));
+  }
+
+  const dailyMap = new Map<string, SessionDailyUsage>();
+  for (const d of existing.daily ?? []) {
+    dailyMap.set(d.date, cloneDailyUsage(d));
   }
 
   let { inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, totalCost, messageCount } = existing;
+  let reasoningTokens = existing.reasoningTokens ?? 0;
   let firstMessageAt = existing.firstMessageAt;
   let lastMessageAt = existing.lastMessageAt;
+  let currentModel = existing.currentModel ?? null;
 
   for (const msg of messages) {
     inputTokens += msg.inputTokens;
     outputTokens += msg.outputTokens;
+    reasoningTokens += msg.reasoningTokens ?? 0;
     cacheCreationTokens += msg.cacheCreation5m + msg.cacheCreation1h;
     cacheReadTokens += msg.cacheReadTokens;
     totalCost += msg.cost;
     messageCount++;
+    currentModel = msg.model;
 
     if (!firstMessageAt || msg.timestamp < firstMessageAt) {
       firstMessageAt = msg.timestamp;
@@ -83,17 +149,31 @@ function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOff
       lastMessageAt = msg.timestamp;
     }
 
-    const mb = modelMap.get(msg.model) || {
-      model: msg.model,
-      inputTokens: 0, outputTokens: 0,
-      cacheCreationTokens: 0, cacheReadTokens: 0, cost: 0,
+    addMessageToBreakdown(modelMap, msg);
+
+    const date = messageDate(msg.timestamp);
+    const daily = dailyMap.get(date) || {
+      date,
+      inputTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalCost: 0,
+      messageCount: 0,
+      models: [],
     };
-    mb.inputTokens += msg.inputTokens;
-    mb.outputTokens += msg.outputTokens;
-    mb.cacheCreationTokens += msg.cacheCreation5m + msg.cacheCreation1h;
-    mb.cacheReadTokens += msg.cacheReadTokens;
-    mb.cost += msg.cost;
-    modelMap.set(msg.model, mb);
+    daily.inputTokens += msg.inputTokens;
+    daily.outputTokens += msg.outputTokens;
+    daily.reasoningTokens = (daily.reasoningTokens ?? 0) + (msg.reasoningTokens ?? 0);
+    daily.cacheCreationTokens += msg.cacheCreation5m + msg.cacheCreation1h;
+    daily.cacheReadTokens += msg.cacheReadTokens;
+    daily.totalCost += msg.cost;
+    daily.messageCount++;
+    const dailyModelMap = new Map<string, UsageModelBreakdown>(daily.models.map(m => [m.model, cloneModelBreakdown(m)]));
+    addMessageToBreakdown(dailyModelMap, msg);
+    daily.models = Array.from(dailyModelMap.values());
+    dailyMap.set(date, daily);
   }
 
   return {
@@ -102,10 +182,15 @@ function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOff
     environmentId: existing.environmentId,
     inputTokens,
     outputTokens,
+    reasoningTokens,
     cacheCreationTokens,
     cacheReadTokens,
     totalCost,
     models: Array.from(modelMap.values()),
+    daily: Array.from(dailyMap.values()).sort((a, b) => b.date.localeCompare(a.date)),
+    currentModel,
+    currentReasoningEffort: existing.currentReasoningEffort ?? null,
+    contextWindowTokens: existing.contextWindowTokens ?? null,
     messageCount,
     firstMessageAt,
     lastMessageAt,
@@ -142,10 +227,15 @@ class UsageService {
             environmentId: summary.environmentId,
             inputTokens: summary.inputTokens,
             outputTokens: summary.outputTokens,
+            reasoningTokens: summary.reasoningTokens ?? 0,
             cacheCreationTokens: summary.cacheCreationTokens,
             cacheReadTokens: summary.cacheReadTokens,
             totalCost: summary.totalCost,
-            models: summary.models,
+            models: summary.models.map(cloneModelBreakdown),
+            daily: summary.daily?.map(cloneDailyUsage) ?? [],
+            currentModel: summary.currentModel ?? null,
+            currentReasoningEffort: summary.currentReasoningEffort ?? null,
+            contextWindowTokens: summary.contextWindowTokens ?? null,
             messageCount: summary.messageCount,
             firstMessageAt: summary.firstMessageAt,
             lastMessageAt: summary.lastMessageAt,
@@ -265,6 +355,7 @@ class UsageService {
           model: cs.model,
           inputTokens: cs.promptTokens,
           outputTokens: cs.completionTokens,
+          reasoningTokens: 0,
           cacheCreationTokens: 0,
           cacheReadTokens: 0,
           cost: cs.cost,
@@ -272,6 +363,7 @@ class UsageService {
           model: 'unknown',
           inputTokens: cs.promptTokens,
           outputTokens: cs.completionTokens,
+          reasoningTokens: 0,
           cacheCreationTokens: 0,
           cacheReadTokens: 0,
           cost: cs.cost,
@@ -289,10 +381,25 @@ class UsageService {
             cliTool: 'opencode',
             inputTokens: cs.promptTokens,
             outputTokens: cs.completionTokens,
+            reasoningTokens: 0,
             cacheCreationTokens: 0,
             cacheReadTokens: 0,
             totalCost: cs.cost,
             models: [modelBreakdown],
+            daily: [{
+              date: messageDate(cs.updatedAt),
+              inputTokens: cs.promptTokens,
+              outputTokens: cs.completionTokens,
+              reasoningTokens: 0,
+              cacheCreationTokens: 0,
+              cacheReadTokens: 0,
+              totalCost: cs.cost,
+              messageCount: cs.messageCount,
+              models: [modelBreakdown],
+            }],
+            currentModel: modelBreakdown.model,
+            currentReasoningEffort: null,
+            contextWindowTokens: null,
             messageCount: cs.messageCount,
             firstMessageAt: cs.createdAt,
             lastMessageAt: cs.updatedAt,
@@ -365,17 +472,22 @@ class UsageService {
         environmentId: persisted.environmentId ?? environmentId,
         inputTokens: persisted.inputTokens,
         outputTokens: persisted.outputTokens,
+        reasoningTokens: persisted.reasoningTokens ?? 0,
         cacheCreationTokens: persisted.cacheCreationTokens,
         cacheReadTokens: persisted.cacheReadTokens,
         totalCost: persisted.totalCost,
-        models: persisted.models,
+        models: persisted.models.map(cloneModelBreakdown),
+        daily: persisted.daily?.map(cloneDailyUsage) ?? [],
+        currentModel: persisted.currentModel ?? null,
+        currentReasoningEffort: persisted.currentReasoningEffort ?? null,
+        contextWindowTokens: persisted.contextWindowTokens ?? null,
         messageCount: persisted.messageCount,
         firstMessageAt: persisted.firstMessageAt,
         lastMessageAt: persisted.lastMessageAt,
         parsedByteOffset: persisted.parsedByteOffset,
       } : emptySessionUsage(sessionId, cliTool, environmentId),
       lastSeenModel: cliTool === 'codex' && persisted && persisted.models.length > 0
-        ? persisted.models[persisted.models.length - 1].model
+        ? persisted.currentModel ?? persisted.models[persisted.models.length - 1].model
         : null,
     };
 
@@ -480,14 +592,22 @@ class UsageService {
         const result = parseCodexJsonl(session.filePath, {
           startOffset: session.usage.parsedByteOffset,
           priorModel: session.lastSeenModel ?? null,
+          priorReasoningEffort: session.usage.currentReasoningEffort ?? null,
+          priorContextWindowTokens: session.usage.contextWindowTokens ?? null,
         });
         if (result.messages.length > 0 || result.newByteOffset !== session.usage.parsedByteOffset) {
           session.usage = mergeMessages(session.usage, result.messages, result.newByteOffset);
           session.lastSeenModel = result.currentModel;
+          session.usage.currentModel = result.currentModel ?? session.usage.currentModel ?? null;
+          session.usage.currentReasoningEffort = result.currentReasoningEffort;
+          session.usage.contextWindowTokens = result.contextWindowTokens;
           this.persistSession(session);
           this.notifyUpdate();
         } else if (result.currentModel && result.currentModel !== session.lastSeenModel) {
           session.lastSeenModel = result.currentModel;
+          session.usage.currentModel = result.currentModel;
+          session.usage.currentReasoningEffort = result.currentReasoningEffort;
+          session.usage.contextWindowTokens = result.contextWindowTokens;
         }
         return;
       }
@@ -520,6 +640,7 @@ class UsageService {
       model: found.model,
       inputTokens: found.promptTokens,
       outputTokens: found.completionTokens,
+      reasoningTokens: 0,
       cacheCreationTokens: 0,
       cacheReadTokens: 0,
       cost: found.cost,
@@ -527,6 +648,7 @@ class UsageService {
       model: 'unknown',
       inputTokens: found.promptTokens,
       outputTokens: found.completionTokens,
+      reasoningTokens: 0,
       cacheCreationTokens: 0,
       cacheReadTokens: 0,
       cost: found.cost,
@@ -538,10 +660,25 @@ class UsageService {
       environmentId: session.usage.environmentId,
       inputTokens: found.promptTokens,
       outputTokens: found.completionTokens,
+      reasoningTokens: 0,
       cacheCreationTokens: 0,
       cacheReadTokens: 0,
       totalCost: found.cost,
       models: [modelBreakdown],
+      daily: [{
+        date: messageDate(found.updatedAt),
+        inputTokens: found.promptTokens,
+        outputTokens: found.completionTokens,
+        reasoningTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+        totalCost: found.cost,
+        messageCount: found.messageCount,
+        models: [modelBreakdown],
+      }],
+      currentModel: modelBreakdown.model,
+      currentReasoningEffort: null,
+      contextWindowTokens: null,
       messageCount: found.messageCount,
       firstMessageAt: found.createdAt,
       lastMessageAt: found.updatedAt,
@@ -562,10 +699,15 @@ class UsageService {
       environmentId: session.usage.environmentId,
       inputTokens: session.usage.inputTokens,
       outputTokens: session.usage.outputTokens,
+      reasoningTokens: session.usage.reasoningTokens ?? 0,
       cacheCreationTokens: session.usage.cacheCreationTokens,
       cacheReadTokens: session.usage.cacheReadTokens,
       totalCost: session.usage.totalCost,
       models: session.usage.models,
+      daily: session.usage.daily,
+      currentModel: session.usage.currentModel ?? null,
+      currentReasoningEffort: session.usage.currentReasoningEffort ?? null,
+      contextWindowTokens: session.usage.contextWindowTokens ?? null,
       messageCount: session.usage.messageCount,
       firstMessageAt: session.usage.firstMessageAt,
       lastMessageAt: session.usage.lastMessageAt,
@@ -629,9 +771,92 @@ class UsageService {
     // existing DailyUsage day object stays clean during accumulation; merged
     // into each day's `byCliTool` in the finalize pass.
     const dayToolMap = new Map<string, Map<CliToolId, DailyCliToolUsage>>();
+    const daySessionMap = new Map<string, Set<string>>();
+    const dayToolSessionMap = new Map<string, Map<CliToolId, Set<string>>>();
+
+    const addSessionId = (date: string, cliTool: CliToolId, sessionId: string): void => {
+      let sessions = daySessionMap.get(date);
+      if (!sessions) {
+        sessions = new Set();
+        daySessionMap.set(date, sessions);
+      }
+      sessions.add(sessionId);
+
+      let toolSessions = dayToolSessionMap.get(date);
+      if (!toolSessions) {
+        toolSessions = new Map();
+        dayToolSessionMap.set(date, toolSessions);
+      }
+      let ids = toolSessions.get(cliTool);
+      if (!ids) {
+        ids = new Set();
+        toolSessions.set(cliTool, ids);
+      }
+      ids.add(sessionId);
+    };
+
+    const addUsage = (
+      date: string,
+      cliTool: CliToolId,
+      sessionId: string,
+      usage: Pick<SessionUsage, 'inputTokens' | 'outputTokens' | 'reasoningTokens' | 'cacheCreationTokens' | 'cacheReadTokens' | 'totalCost'>,
+    ): void => {
+      const day = dayMap.get(date) || {
+        date,
+        inputTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+        totalCost: 0,
+        sessionCount: 0,
+      };
+
+      day.inputTokens += usage.inputTokens;
+      day.outputTokens += usage.outputTokens;
+      day.reasoningTokens = (day.reasoningTokens ?? 0) + (usage.reasoningTokens ?? 0);
+      day.cacheCreationTokens += usage.cacheCreationTokens;
+      day.cacheReadTokens += usage.cacheReadTokens;
+      day.totalCost += usage.totalCost;
+      dayMap.set(date, day);
+
+      let toolMap = dayToolMap.get(date);
+      if (!toolMap) {
+        toolMap = new Map();
+        dayToolMap.set(date, toolMap);
+      }
+      let toolRow = toolMap.get(cliTool);
+      if (!toolRow) {
+        toolRow = {
+          cliTool,
+          totalCost: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          reasoningTokens: 0,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          sessionCount: 0,
+        };
+        toolMap.set(cliTool, toolRow);
+      }
+      toolRow.totalCost += usage.totalCost;
+      toolRow.inputTokens += usage.inputTokens;
+      toolRow.outputTokens += usage.outputTokens;
+      toolRow.reasoningTokens = (toolRow.reasoningTokens ?? 0) + (usage.reasoningTokens ?? 0);
+      toolRow.cacheCreationTokens += usage.cacheCreationTokens;
+      toolRow.cacheReadTokens += usage.cacheReadTokens;
+
+      addSessionId(date, cliTool, sessionId);
+    };
 
     for (const tracked of this.tracked.values()) {
       const u = tracked.usage;
+      if (u.daily && u.daily.length > 0) {
+        for (const d of u.daily) {
+          addUsage(d.date, u.cliTool, u.sessionId, d);
+        }
+        continue;
+      }
       if (!u.lastMessageAt) continue;
 
       const date = u.lastMessageAt.slice(0, 10); // YYYY-MM-DD
@@ -682,12 +907,25 @@ class UsageService {
     // Attach per-tool breakdowns, sorted by cost desc, tie-break on cliTool
     // asc to match the aggregator's stable ordering. Drop all-zero tool rows.
     for (const [date, day] of dayMap) {
+      const sessionIds = daySessionMap.get(date);
+      if (sessionIds) {
+        day.sessionIds = Array.from(sessionIds).sort();
+        day.sessionCount = day.sessionIds.length;
+      }
+
       const toolMap = dayToolMap.get(date);
       if (!toolMap) continue;
       const rows = Array.from(toolMap.values()).filter(
         r => r.totalCost > 0 || r.inputTokens > 0 || r.outputTokens > 0
-          || r.cacheCreationTokens > 0 || r.cacheReadTokens > 0 || r.sessionCount > 0,
+          || (r.reasoningTokens ?? 0) > 0 || r.cacheCreationTokens > 0 || r.cacheReadTokens > 0 || r.sessionCount > 0,
       );
+      const toolSessionMap = dayToolSessionMap.get(date);
+      for (const row of rows) {
+        const ids = toolSessionMap?.get(row.cliTool);
+        if (!ids) continue;
+        row.sessionIds = Array.from(ids).sort();
+        row.sessionCount = row.sessionIds.length;
+      }
       rows.sort((a, b) => {
         if (a.totalCost !== b.totalCost) return b.totalCost - a.totalCost;
         return a.cliTool.localeCompare(b.cliTool);

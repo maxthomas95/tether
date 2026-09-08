@@ -13,9 +13,11 @@ export interface RollupRow {
   totalCost: number;
   inputTokens: number;
   outputTokens: number;
+  reasoningTokens?: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
   sessionCount: number;
+  sessionIds?: string[];
   /**
    * Per-CLI-tool breakdown summed across every day contributing to this row.
    * Sorted by totalCost desc, tie-break on cliTool asc. Omitted (undefined)
@@ -69,6 +71,7 @@ function emptyRow(key: string, label: string, startDate: string, endDate: string
     key, label, startDate, endDate,
     totalCost: 0,
     inputTokens: 0, outputTokens: 0,
+    reasoningTokens: 0,
     cacheCreationTokens: 0, cacheReadTokens: 0,
     sessionCount: 0,
   };
@@ -78,9 +81,17 @@ function addInto(target: RollupRow, source: DailyUsage, toolAcc?: Map<CliToolId,
   target.totalCost += source.totalCost;
   target.inputTokens += source.inputTokens;
   target.outputTokens += source.outputTokens;
+  target.reasoningTokens = (target.reasoningTokens ?? 0) + (source.reasoningTokens ?? 0);
   target.cacheCreationTokens += source.cacheCreationTokens;
   target.cacheReadTokens += source.cacheReadTokens;
-  target.sessionCount += source.sessionCount;
+  if (source.sessionIds && source.sessionIds.length > 0) {
+    const ids = new Set(target.sessionIds ?? []);
+    for (const id of source.sessionIds) ids.add(id);
+    target.sessionIds = Array.from(ids).sort();
+    target.sessionCount = target.sessionIds.length;
+  } else {
+    target.sessionCount += source.sessionCount;
+  }
   if (toolAcc && source.byCliTool) {
     for (const t of source.byCliTool) {
       let row = toolAcc.get(t.cliTool);
@@ -90,6 +101,7 @@ function addInto(target: RollupRow, source: DailyUsage, toolAcc?: Map<CliToolId,
           totalCost: 0,
           inputTokens: 0,
           outputTokens: 0,
+          reasoningTokens: 0,
           cacheCreationTokens: 0,
           cacheReadTokens: 0,
           sessionCount: 0,
@@ -99,9 +111,17 @@ function addInto(target: RollupRow, source: DailyUsage, toolAcc?: Map<CliToolId,
       row.totalCost += t.totalCost;
       row.inputTokens += t.inputTokens;
       row.outputTokens += t.outputTokens;
+      row.reasoningTokens = (row.reasoningTokens ?? 0) + (t.reasoningTokens ?? 0);
       row.cacheCreationTokens += t.cacheCreationTokens;
       row.cacheReadTokens += t.cacheReadTokens;
-      row.sessionCount += t.sessionCount;
+      if (t.sessionIds && t.sessionIds.length > 0) {
+        const ids = new Set(row.sessionIds ?? []);
+        for (const id of t.sessionIds) ids.add(id);
+        row.sessionIds = Array.from(ids).sort();
+        row.sessionCount = row.sessionIds.length;
+      } else {
+        row.sessionCount += t.sessionCount;
+      }
     }
   }
 }

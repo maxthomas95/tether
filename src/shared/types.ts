@@ -353,6 +353,9 @@ export interface CodexQuota {
   secondary: CodexQuotaWindow;
   planType: string | null;
   error: string | null;
+  buckets?: import('./codex-types').CodexAccountSnapshot['rateLimits'];
+  /** Last successful Codex quota observation, retained when a refresh fails. */
+  lastUpdated?: string | null;
 }
 
 export interface QuotaInfo {
@@ -369,9 +372,23 @@ export interface UsageModelBreakdown {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  /** Reasoning tokens when the CLI reports them separately, currently Codex. */
+  reasoningTokens?: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
   cost: number;
+}
+
+export interface SessionDailyUsage {
+  date: string;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens?: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalCost: number;
+  messageCount: number;
+  models: UsageModelBreakdown[];
 }
 
 export interface SessionUsage {
@@ -387,10 +404,27 @@ export interface SessionUsage {
   environmentId?: string;
   inputTokens: number;
   outputTokens: number;
+  /** Reasoning tokens reported separately from output tokens, currently Codex. */
+  reasoningTokens?: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
   totalCost: number;
   models: UsageModelBreakdown[];
+  /** Per-day session buckets used for accurate rollups across resumed sessions. */
+  daily?: SessionDailyUsage[];
+  /** Event dates, provider snapshots, or retained legacy totals with unknown dates. */
+  dayTiming?: 'event' | 'snapshot' | 'legacy';
+  workingDir?: string;
+  /** Tokens in the last reported request, not lifetime consumption. */
+  contextUsedTokens?: number | null;
+  /** Last successful transcript/metadata read. */
+  observedAt?: string | null;
+  /** Most recent model reported by the transcript side-channel, when known. */
+  currentModel?: string | null;
+  /** Most recent reasoning effort reported by Codex turn_context, when known. */
+  currentReasoningEffort?: string | null;
+  /** Most recent context window size reported by Codex, when known. */
+  contextWindowTokens?: number | null;
   messageCount: number;
   firstMessageAt: string | null;
   lastMessageAt: string | null;
@@ -417,19 +451,25 @@ export interface DailyCliToolUsage {
   totalCost: number;
   inputTokens: number;
   outputTokens: number;
+  reasoningTokens?: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
   sessionCount: number;
+  /** Unique contributing session ids, present for precise rollups. */
+  sessionIds?: string[];
 }
 
 export interface DailyUsage {
   date: string;
   inputTokens: number;
   outputTokens: number;
+  reasoningTokens?: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
   totalCost: number;
   sessionCount: number;
+  /** Unique contributing session ids, present for precise weekly/monthly counts. */
+  sessionIds?: string[];
   /**
    * Per-CLI-tool breakdown for this day. Optional for back-compat with any
    * persisted UsageInfo snapshots that predate this field.
@@ -679,6 +719,10 @@ export interface TetherAPI {
     refresh(): Promise<QuotaInfo>;
     setEnabled(enabled: boolean): Promise<void>;
     onUpdate(cb: (info: QuotaInfo) => void): () => void;
+  };
+  codex: {
+    account(): Promise<import('./codex-types').CodexAccountSnapshot>;
+    configuration(sessionId?: string): Promise<import('./codex-types').CodexConfigurationSnapshot>;
   };
   repoGroup: {
     getPrefs(): Promise<RepoGroupPref[]>;

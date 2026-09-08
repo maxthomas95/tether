@@ -10,6 +10,8 @@ export interface CodexParseInput {
    * (rare but possible mid-turn). Pass null on the first parse.
    */
   priorModel: string | null;
+  priorReasoningEffort?: string | null;
+  priorContextWindowTokens?: number | null;
 }
 
 export interface CodexParseResult {
@@ -17,11 +19,22 @@ export interface CodexParseResult {
   newByteOffset: number;
   /** Model in effect at end of the parsed chunk; persist for the next call. */
   currentModel: string | null;
+  currentReasoningEffort: string | null;
+  contextWindowTokens: number | null;
 }
 
 interface TurnContextEntry {
   type?: string;
-  payload?: { model?: unknown };
+  payload?: {
+    model?: unknown;
+    effort?: unknown;
+    model_context_window?: unknown;
+    collaboration_mode?: {
+      settings?: {
+        reasoning_effort?: unknown;
+      };
+    };
+  };
 }
 
 interface TokenCountEntry {
@@ -36,7 +49,15 @@ interface TokenCountEntry {
         output_tokens?: number;
         reasoning_output_tokens?: number;
       } | null;
+      model_context_window?: number;
     } | null;
+  };
+}
+
+interface TaskStartedEntry {
+  type?: string;
+  payload?: {
+    model_context_window?: unknown;
   };
 }
 
@@ -63,7 +84,13 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
     const fileSize = stat.size;
 
     if (fileSize <= input.startOffset) {
-      return { messages: [], newByteOffset: input.startOffset, currentModel: input.priorModel };
+      return {
+        messages: [],
+        newByteOffset: input.startOffset,
+        currentModel: input.priorModel,
+        currentReasoningEffort: input.priorReasoningEffort ?? null,
+        contextWindowTokens: input.priorContextWindowTokens ?? null,
+      };
     }
 
     const readLength = fileSize - input.startOffset;
@@ -77,7 +104,13 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
     if (text.length > 0 && !text.endsWith('\n')) {
       const lastNewline = text.lastIndexOf('\n');
       if (lastNewline === -1) {
-        return { messages: [], newByteOffset: input.startOffset, currentModel: input.priorModel };
+        return {
+          messages: [],
+          newByteOffset: input.startOffset,
+          currentModel: input.priorModel,
+          currentReasoningEffort: input.priorReasoningEffort ?? null,
+          contextWindowTokens: input.priorContextWindowTokens ?? null,
+        };
       }
       usableText = text.slice(0, lastNewline + 1);
       consumedBytes = Buffer.byteLength(usableText, 'utf-8');
@@ -85,6 +118,8 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
 
     const messages: ParsedMessage[] = [];
     let currentModel = input.priorModel;
+    let currentReasoningEffort = input.priorReasoningEffort ?? null;
+    let contextWindowTokens = input.priorContextWindowTokens ?? null;
 
     for (const line of usableText.split('\n')) {
       if (!line.startsWith('{')) continue;
@@ -96,8 +131,23 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
       const type = (parsed as { type?: string }).type;
 
       if (type === 'turn_context') {
-        const model = (parsed as TurnContextEntry).payload?.model;
+        const payload = (parsed as TurnContextEntry).payload;
+        const model = payload?.model;
         if (typeof model === 'string' && model) currentModel = model;
+        const effort = payload?.effort ?? payload?.collaboration_mode?.settings?.reasoning_effort;
+        if (typeof effort === 'string' && effort) currentReasoningEffort = effort;
+        const windowTokens = payload?.model_context_window;
+        if (typeof windowTokens === 'number' && Number.isFinite(windowTokens)) {
+          contextWindowTokens = windowTokens;
+        }
+        continue;
+      }
+
+      if (type === 'event_msg' && (parsed as { payload?: { type?: string } }).payload?.type === 'task_started') {
+        const windowTokens = (parsed as TaskStartedEntry).payload?.model_context_window;
+        if (typeof windowTokens === 'number' && Number.isFinite(windowTokens)) {
+          contextWindowTokens = windowTokens;
+        }
         continue;
       }
 
@@ -111,19 +161,25 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
       const rawInput = usage.input_tokens || 0;
       const cacheRead = usage.cached_input_tokens || 0;
       const inputTokens = Math.max(0, rawInput - cacheRead);
-      const outputTokens = (usage.output_tokens || 0) + (usage.reasoning_output_tokens || 0);
+      const outputTokens = usage.output_tokens || 0;
+      const reasoningTokens = usage.reasoning_output_tokens || 0;
+      const windowTokens = entry.payload.info?.model_context_window;
+      if (typeof windowTokens === 'number' && Number.isFinite(windowTokens)) {
+        contextWindowTokens = windowTokens;
+      }
 
       // Skip empty deltas — the first token_count after session_meta sometimes
       // has zeros while the rate-limit info is the only payload of interest.
-      if (inputTokens === 0 && cacheRead === 0 && outputTokens === 0) continue;
+      if (inputTokens === 0 && cacheRead === 0 && outputTokens === 0 && reasoningTokens === 0) continue;
 
       const model = currentModel || 'unknown';
-      const cost = calculateMessageCost(model, inputTokens, outputTokens, 0, 0, cacheRead);
+      const cost = calculateMessageCost(model, inputTokens, outputTokens + reasoningTokens, 0, 0, cacheRead);
 
       messages.push({
         model,
         inputTokens,
         outputTokens,
+        reasoningTokens,
         cacheCreation5m: 0,
         cacheCreation1h: 0,
         cacheReadTokens: cacheRead,
@@ -136,10 +192,18 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
       messages,
       newByteOffset: input.startOffset + consumedBytes,
       currentModel,
+      currentReasoningEffort,
+      contextWindowTokens,
     };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { messages: [], newByteOffset: 0, currentModel: input.priorModel };
+      return {
+        messages: [],
+        newByteOffset: 0,
+        currentModel: input.priorModel,
+        currentReasoningEffort: input.priorReasoningEffort ?? null,
+        contextWindowTokens: input.priorContextWindowTokens ?? null,
+      };
     }
     throw err;
   } finally {

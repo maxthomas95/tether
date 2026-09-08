@@ -5,6 +5,7 @@ export interface ParsedMessage {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  reasoningTokens?: number;
   cacheCreation5m: number;
   cacheCreation1h: number;
   cacheReadTokens: number;

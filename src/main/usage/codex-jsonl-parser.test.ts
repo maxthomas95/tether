@@ -40,8 +40,15 @@ function tokenCountEvent(opts: {
   };
 }
 
-function turnContext(model: string): object {
-  return { type: 'turn_context', payload: { model } };
+function turnContext(model: string, opts: { effort?: string; contextWindow?: number } = {}): object {
+  return {
+    type: 'turn_context',
+    payload: {
+      model,
+      ...(opts.effort ? { effort: opts.effort } : {}),
+      ...(opts.contextWindow ? { model_context_window: opts.contextWindow } : {}),
+    },
+  };
 }
 
 afterEach(() => {
@@ -66,9 +73,25 @@ describe('parseCodexJsonl', () => {
     expect(result.messages[0].model).toBe('gpt-5-codex');
     expect(result.messages[0].inputTokens).toBe(800); // 1000 - 200 cached
     expect(result.messages[0].cacheReadTokens).toBe(200);
-    expect(result.messages[0].outputTokens).toBe(60); // 50 + 10 reasoning
+    expect(result.messages[0].outputTokens).toBe(50);
+    expect(result.messages[0].reasoningTokens).toBe(10);
     expect(result.messages[0].cost).toBeGreaterThan(0);
     expect(result.currentModel).toBe('gpt-5-codex');
+  });
+
+  it('captures current Codex reasoning and context metadata from turn_context', () => {
+    const dir = makeTempDir();
+    const file = path.join(dir, 'rollout.jsonl');
+    writeJsonl(file, [
+      turnContext('gpt-5.6-sol', { effort: 'xhigh', contextWindow: 258400 }),
+      tokenCountEvent({ input: 100, output: 10 }),
+    ]);
+
+    const result = parseCodexJsonl(file, { startOffset: 0, priorModel: null });
+
+    expect(result.currentModel).toBe('gpt-5.6-sol');
+    expect(result.currentReasoningEffort).toBe('xhigh');
+    expect(result.contextWindowTokens).toBe(258400);
   });
 
   it('updates the active model when a new turn_context appears mid-file', () => {

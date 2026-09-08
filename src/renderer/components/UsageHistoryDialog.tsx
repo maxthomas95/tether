@@ -19,11 +19,11 @@ const WEEKLY_WEEKS = 12;
 const MONTHLY_MONTHS = 12;
 
 function rowTokens(row: RollupRow): number {
-  return row.inputTokens + row.outputTokens + row.cacheCreationTokens + row.cacheReadTokens;
+  return row.inputTokens + row.outputTokens + (row.reasoningTokens ?? 0) + row.cacheCreationTokens + row.cacheReadTokens;
 }
 
 function toolTokens(t: DailyCliToolUsage): number {
-  return t.inputTokens + t.outputTokens + t.cacheCreationTokens + t.cacheReadTokens;
+  return t.inputTokens + t.outputTokens + (t.reasoningTokens ?? 0) + t.cacheCreationTokens + t.cacheReadTokens;
 }
 
 function cliToolName(id: CliToolId): string {
