@@ -5,7 +5,7 @@ const ssh2Harness = vi.hoisted(() => {
   // EventEmitter must be required inside the hoisted block — vi.hoisted runs
   // before any static `import` resolves.
   const { EventEmitter } = require('node:events');
-  type ShellCb = (err: Error | undefined, stream: NodeJS.ReadWriteStream) => void;
+  type ShellCb = (err: Error | undefined, stream: FakeStream | null) => void;
 
   class FakeStream extends EventEmitter {
     write = vi.fn();
@@ -149,7 +149,7 @@ describe('SSHTransport', () => {
     const start = t.start(baseOptions());
     const client = ssh2Harness.current!;
     client.emit('ready');
-    client.lastShellCb!(new Error('shell failed'), null as unknown as NodeJS.ReadWriteStream);
+    client.lastShellCb!(new Error('shell failed'), null);
     await expect(start).rejects.toThrow(/shell failed/);
   });
 
@@ -336,6 +336,21 @@ describe('SSHTransport', () => {
     stream.emitClose();
     expect(exitCb).toHaveBeenCalledWith(expect.objectContaining({ exitCode: 0 }));
     expect(t.connected).toBe(false);
+  });
+
+  it('preserves ANSI, control characters, and Unicode across every byte boundary', async () => {
+    const t = new SSHTransport(baseConfig());
+    try {
+      const dataCb = vi.fn();
+      t.onData(dataCb);
+      const { stream } = await startConnected(t);
+      dataCb.mockClear();
+      const text = '\u001b[31mred\u001b[0m\r\n漢字😀café\u0007\u001b]0;title\u0007';
+      for (const byte of Buffer.from(text)) stream.emitData(Buffer.from([byte]));
+      expect(dataCb.mock.calls.map(call => call[0]).join('')).toBe(text);
+    } finally {
+      t.dispose();
+    }
   });
 
   it('dispose clears callbacks so subsequent events are no-ops', async () => {
