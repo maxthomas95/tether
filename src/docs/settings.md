@@ -131,7 +131,7 @@ SSH environments can extend this to their remote hosts, but only with a second, 
 
 ### Enable pane splitting
 
-Turns on drag-to-split and the split pane layout. When off, sessions always open full-screen in the terminal area. See [Getting Started](getting-started.md#split-panes).
+Turns on drag-to-split and the split pane layout. When off, the standard layout shows one full-screen session. **Layout → Canvas** is a separate mode with movable, resizable panels and works regardless of this setting. See [Getting Started](getting-started.md#split-panes).
 
 **Maximum panes** sets a limit of 1, 2, or 4 (default 4 when splitting is enabled). The title bar's **Layout** control changes the same settings immediately. Lowering the limit leaves other sessions running in the sidebar.
 

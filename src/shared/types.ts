@@ -608,8 +608,8 @@ export interface TetherAPI {
     writeText(text: string): void;
   };
   workspace: {
-    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>, activeIndex: number): Promise<void>;
-    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>; activeIndex: number } | null>;
+    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>, activeIndex: number, canvas?: import('./canvas-types').SavedCanvas): Promise<void>;
+    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>; activeIndex: number; canvas?: import('./canvas-types').SavedCanvas } | null>;
   };
   transcripts: {
     list(workingDir: string, cliTool?: CliToolId): Promise<TranscriptInfo[]>;

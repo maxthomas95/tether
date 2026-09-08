@@ -76,7 +76,7 @@ export interface TerminalManagerAPI {
   getOrCreate: (sessionId: string) => ManagedTerminal;
   peek: (sessionId: string) => Terminal | undefined;
   writeData: (sessionId: string, data: string) => void;
-  attachToPane: (paneId: PaneId, sessionId: string | null, container: HTMLDivElement) => void;
+  attachToPane: (paneId: PaneId, sessionId: string | null, container: HTMLDivElement, focusOnAttach?: boolean) => void;
   detachPane: (paneId: PaneId) => void;
   fitPane: (paneId: PaneId) => void;
   focusPane: (paneId: PaneId) => void;
@@ -288,7 +288,7 @@ export function useTerminalManager(
   }, []);
 
   // Attach a terminal to a pane container
-  const attachToPane = useCallback((paneId: PaneId, sessionId: string | null, container: HTMLDivElement) => {
+  const attachToPane = useCallback((paneId: PaneId, sessionId: string | null, container: HTMLDivElement, focusOnAttach = true) => {
     if (sessionId === null) return;
 
     let terminal: Terminal;
@@ -324,6 +324,7 @@ export function useTerminalManager(
     // Fit after the layout has settled — a single rAF can be too early for
     // flex containers that haven't received their final dimensions yet.
     const doFit = () => {
+      if (panes.current.get(paneId)?.container !== container) return;
       try {
         fitAddon.fit();
         window.electronAPI.session.resize(sessionId, terminal.cols, terminal.rows);
@@ -332,6 +333,7 @@ export function useTerminalManager(
       }
     };
     requestAnimationFrame(() => {
+      if (panes.current.get(paneId)?.container !== container) return;
       doFit();
       if (wasBackground) {
         // After DOM reattachment, xterm.js's renderer and viewport may be
@@ -341,7 +343,7 @@ export function useTerminalManager(
         terminal.refresh(0, terminal.rows - 1);
         terminal.scrollToBottom();
       }
-      terminal.focus();
+      if (focusOnAttach) terminal.focus();
       // Second fit after another frame to catch late layout shifts
       requestAnimationFrame(doFit);
     });

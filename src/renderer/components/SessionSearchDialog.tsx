@@ -44,10 +44,11 @@ export function SessionSearchDialog({ isOpen, sessions, environments, onClose, o
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const restoreFocusRef = useRef(true);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  useFocusTrap(dialogRef, isOpen);
+  useFocusTrap(dialogRef, isOpen, restoreFocusRef);
 
   const envNameById = useMemo(
     () => new Map(environments.map(env => [env.id, env.name])),
@@ -77,6 +78,7 @@ export function SessionSearchDialog({ isOpen, sessions, environments, onClose, o
   // Reset query + selection each time the dialog opens, and re-focus the input.
   useEffect(() => {
     if (!isOpen) return;
+    restoreFocusRef.current = true;
     setQuery('');
     setSelectedIndex(0);
     // useFocusTrap won't steal focus from an already-focused element; focusing
@@ -103,6 +105,9 @@ export function SessionSearchDialog({ isOpen, sessions, environments, onClose, o
   if (!isOpen) return null;
 
   const activate = (sessionId: string) => {
+    // The selected terminal owns focus after activation. Returning to the
+    // opener here would also dispatch a pane focus event for the old session.
+    restoreFocusRef.current = false;
     onActivate(sessionId);
     onClose();
   };

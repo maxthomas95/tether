@@ -111,9 +111,9 @@ const api: TetherAPI = {
   },
 
   workspace: {
-    save: (sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>, activeIndex: number): Promise<void> =>
-      ipcRenderer.invoke(IPC.WORKSPACE_SAVE, sessions, activeIndex),
-    load: (): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>; activeIndex: number } | null> =>
+    save: (sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>, activeIndex: number, canvas?: import('../shared/canvas-types').SavedCanvas): Promise<void> =>
+      ipcRenderer.invoke(IPC.WORKSPACE_SAVE, sessions, activeIndex, canvas),
+    load: (): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>; activeIndex: number; canvas?: import('../shared/canvas-types').SavedCanvas } | null> =>
       ipcRenderer.invoke(IPC.WORKSPACE_LOAD),
   },
 

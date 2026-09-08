@@ -30,13 +30,14 @@ interface MenuBarProps {
   menus: MenuDef[];
   onSearch: () => void;
   searchShortcut: string;
-  paneLimit: number;
-  onPaneLimitChange: (limit: number) => void;
+  paneLimit: number | 'canvas';
+  layoutReady?: boolean;
+  onPaneLimitChange: (limit: number | 'canvas') => void;
 }
 
 // ── Component ──────────────────────────────────────────────────────
 
-export function MenuBar({ menus, onSearch, searchShortcut, paneLimit, onPaneLimitChange }: MenuBarProps) {
+export function MenuBar({ menus, onSearch, searchShortcut, paneLimit, layoutReady = true, onPaneLimitChange }: MenuBarProps) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
 
@@ -129,10 +130,11 @@ export function MenuBar({ menus, onSearch, searchShortcut, paneLimit, onPaneLimi
       ))}
       <label className="menubar-pane-limit">
         <span>Layout</span>
-        <select aria-label="Maximum visible panes" value={paneLimit} onChange={e => onPaneLimitChange(Number(e.target.value))}>
+        <select aria-label="Session layout" value={paneLimit} disabled={!layoutReady} onChange={e => onPaneLimitChange(e.target.value === 'canvas' ? 'canvas' : Number(e.target.value))}>
           <option value={1}>Single pane</option>
           <option value={2}>Up to 2 panes</option>
           <option value={4}>Up to 4 panes</option>
+          <option value="canvas">Canvas</option>
         </select>
       </label>
       <button className="menubar-search" aria-label="Find session" onClick={() => { setOpenIndex(null); onSearch(); }} title={searchShortcut ? `Find session (${searchShortcut})` : 'Find session'}>

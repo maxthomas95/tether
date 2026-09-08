@@ -88,6 +88,14 @@ Once split, use **Alt+Arrow** to focus the neighboring pane (un-maximizing if ne
 
 You can also **broadcast input** to multiple panes at once — toggle targets from the pane header. See [Sessions](sessions.md#broadcast-input).
 
+### Canvas
+
+Choose **Canvas** in the title bar's **Layout** control, or toggle **View → Canvas Mode**. Your sessions appear as independently resizable panels on a larger workspace. Click inside a terminal to focus it and type; the focused panel has an accent border.
+
+Drag panel headers to move them, drag edges or corners to resize, and drag empty space to pan. **Arrange panels** resizes and places the panels in a grid using the available space. You can display more than four panels; when they no longer fit at a usable size, pan to reach the others. **Go to focused** brings the selected panel back into view.
+
+Maximize a panel from its header, then restore it to return to the same arrangement. Choose a single or split layout to leave Canvas; switching back keeps the canvas arrangement. See [Sessions](sessions.md#canvas-workspace) for adding panels and workspace restore.
+
 ### Notifications
 
 Tether can post OS notifications or generic outbound webhooks when a session goes waiting, idle, rings the terminal bell, or dies unexpectedly. Configure triggers in [Settings](settings.md#notifications), and mute individual sessions from their right-click menu.

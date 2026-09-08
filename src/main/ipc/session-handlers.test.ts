@@ -194,6 +194,15 @@ describe('session-handlers', () => {
       dbState.savedWorkspace = { sessions: [], activeIndex: -1 };
       expect(await harness.invoke(IPC.WORKSPACE_LOAD)).toEqual({ sessions: [], activeIndex: -1 });
     });
+
+    it('saves canvas geometry atomically with the session ordering it references', async () => {
+      const sessions = [{ workingDir: '/a', label: 'a' }, { workingDir: '/b', label: 'b' }];
+      const canvas = { panels: [{ sessionIndex: 1, x: -200, y: 70, width: 640, height: 420, z: 1 }],
+        viewport: { x: -300, y: 0 }, focusedSessionIndex: 1 };
+      await harness.invoke(IPC.WORKSPACE_SAVE, sessions, 1, canvas);
+      expect(await harness.invoke(IPC.WORKSPACE_LOAD)).toEqual({ sessions, activeIndex: 1, canvas });
+      expect(dbState.saveCount).toBe(1);
+    });
   });
 
   describe('TRANSCRIPTS_LIST', () => {

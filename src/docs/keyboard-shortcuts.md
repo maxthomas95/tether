@@ -27,6 +27,10 @@ The app-action shortcuts below are defaults and are **remappable** in [Settings 
 | **Ctrl+ArrowDown** / **Ctrl+ArrowUp** | Focus the next / previous pane in layout order |
 | **Alt+Shift+Arrow** | Swap the focused pane with its neighbor |
 
+These pane shortcuts also work in **Canvas** mode. Directional navigation follows the panels' positions, and selecting an offscreen panel brings it into view. **Ctrl+P** opens or focuses a canvas panel.
+
+Click empty canvas space, then use **Arrow keys** to pan. When a resize handle has keyboard focus, **Arrow keys** resize that edge or corner. Arrow keys inside a terminal still go to the CLI.
+
 ## Zoom & Font
 
 | Shortcut | Action |
