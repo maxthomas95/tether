@@ -283,9 +283,43 @@
   white-space: nowrap;
 }
 
+.usage-explorer-model-table {
+  width: 100%;
+  margin-top: var(--space-2);
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.usage-explorer-model-table th,
+.usage-explorer-model-table td {
+  padding: 4px 6px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  text-align: right;
+}
+
+.usage-explorer-model-table th:first-child,
+.usage-explorer-model-table td:first-child {
+  max-width: 240px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-explorer-model-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
 .usage-explorer-empty {
   margin: var(--space-4);
   text-align: center;
+}
+
+.usage-explorer-range-message {
+  margin: calc(var(--space-2) * -1) 0 0;
 }
 
 .usage-explorer-footer {

@@ -32,7 +32,7 @@ export interface UsageExplorerTotals {
   cacheCreationTokens: number;
   cacheReadTokens: number;
   reasoningTokens: number;
-  messages: number;
+  messages: number | null;
   sessions: number;
 }
 
@@ -77,7 +77,7 @@ export interface UsageExplorerOption {
 }
 
 export interface UsageExplorerResult {
-  dateRange: { startDate: string | null; endDate: string | null; finite: boolean; label: string };
+  dateRange: { startDate: string | null; endDate: string | null; finite: boolean; label: string; invalid: boolean; capped: boolean };
   totals: UsageExplorerTotals;
   comparison: UsageExplorerComparison;
   daily: UsageExplorerDailyRow[];
@@ -116,6 +116,12 @@ const EMPTY_TOTALS: UsageExplorerTotals = {
   sessions: 0,
 };
 
+export function cacheReadRatio(inputTokens: number, cacheReadTokens: number, cacheCreationTokens: number): number | null {
+  const denominator = inputTokens + cacheReadTokens + cacheCreationTokens;
+  if (denominator === 0) return null;
+  return cacheReadTokens / denominator;
+}
+
 function cloneTotals(): UsageExplorerTotals {
   return { ...EMPTY_TOTALS };
 }
@@ -135,7 +141,8 @@ function utcDay(date: Date): Date {
 function parseISODate(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const parsed = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  if (Number.isNaN(parsed.getTime())) return null;
+  return isoDate(parsed) === value ? parsed : null;
 }
 
 function formatDateLabel(value: string): string {
@@ -148,7 +155,7 @@ function tokenTotal(parts: Pick<UsageExplorerTotals, 'inputTokens' | 'outputToke
   return parts.inputTokens + parts.outputTokens + parts.cacheCreationTokens + parts.cacheReadTokens;
 }
 
-function totalsFromModels(models: ReadonlyArray<UsageModelBreakdown>, messages: number): UsageExplorerTotals {
+function totalsFromModels(models: ReadonlyArray<UsageModelBreakdown>, messages: number | null): UsageExplorerTotals {
   const totals = cloneTotals();
   for (const model of models) {
     totals.cost += model.cost;
@@ -197,10 +204,12 @@ function addTotals(target: UsageExplorerTotals, source: UsageExplorerTotals): vo
   target.cacheCreationTokens += source.cacheCreationTokens;
   target.cacheReadTokens += source.cacheReadTokens;
   target.reasoningTokens += source.reasoningTokens;
-  target.messages += source.messages;
+  target.messages = target.messages == null || source.messages == null
+    ? null
+    : target.messages + source.messages;
 }
 
-function modelRows(models: ReadonlyArray<UsageModelBreakdown>, messages: number): UsageExplorerModelRow[] {
+function modelRows(models: ReadonlyArray<UsageModelBreakdown>): UsageExplorerModelRow[] {
   const rows = new Map<string, UsageExplorerModelRow>();
   for (const model of models) {
     const row = rows.get(model.model) ?? { model: model.model, ...cloneTotals() };
@@ -214,7 +223,7 @@ function modelRows(models: ReadonlyArray<UsageModelBreakdown>, messages: number)
   }
   for (const row of rows.values()) {
     row.tokens = tokenTotal(row);
-    row.messages = messages;
+    row.messages = null;
   }
   return Array.from(rows.values()).sort((a, b) => b.cost - a.cost || a.model.localeCompare(b.model));
 }
@@ -222,19 +231,22 @@ function modelRows(models: ReadonlyArray<UsageModelBreakdown>, messages: number)
 function dateRangeFor(filters: UsageExplorerFilters, today: Date): UsageExplorerResult['dateRange'] {
   const end = utcDay(today);
   if (filters.datePreset === 'all') {
-    return { startDate: null, endDate: null, finite: false, label: 'All time' };
+    return { startDate: null, endDate: null, finite: false, label: 'All time', invalid: false, capped: false };
   }
   if (filters.datePreset === 'custom') {
     const startDate = parseISODate(filters.customStartDate);
     const endDate = parseISODate(filters.customEndDate);
-    if (!startDate || !endDate) return { startDate: null, endDate: null, finite: false, label: 'All time' };
+    if (!startDate || !endDate) return { startDate: null, endDate: null, finite: true, label: 'Invalid custom range', invalid: true, capped: false };
     const start = startDate <= endDate ? startDate : endDate;
-    const finish = startDate <= endDate ? endDate : startDate;
-    return { startDate: isoDate(start), endDate: isoDate(finish), finite: true, label: `${isoDate(start)} to ${isoDate(finish)}` };
+    let finish = startDate <= endDate ? endDate : startDate;
+    const days = Math.floor((finish.getTime() - start.getTime()) / 86_400_000) + 1;
+    const capped = days > 366;
+    if (capped) finish = addUTCDays(start, 365);
+    return { startDate: isoDate(start), endDate: isoDate(finish), finite: true, label: `${isoDate(start)} to ${isoDate(finish)}`, invalid: false, capped };
   }
   const days = filters.datePreset === 'today' ? 1 : filters.datePreset === '7d' ? 7 : 30;
   const start = addUTCDays(end, -(days - 1));
-  return { startDate: isoDate(start), endDate: isoDate(end), finite: true, label: filters.datePreset === 'today' ? 'Today' : `Last ${days} days` };
+  return { startDate: isoDate(start), endDate: isoDate(end), finite: true, label: filters.datePreset === 'today' ? 'Today' : `Last ${days} days`, invalid: false, capped: false };
 }
 
 function previousRange(range: UsageExplorerResult['dateRange']): UsageExplorerResult['dateRange'] | null {
@@ -245,7 +257,7 @@ function previousRange(range: UsageExplorerResult['dateRange']): UsageExplorerRe
   const days = Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
   const previousEnd = addUTCDays(start, -1);
   const previousStart = addUTCDays(previousEnd, -(days - 1));
-  return { startDate: isoDate(previousStart), endDate: isoDate(previousEnd), finite: true, label: `Previous ${days === 1 ? 'day' : `${days} days`}` };
+  return { startDate: isoDate(previousStart), endDate: isoDate(previousEnd), finite: true, label: `Previous ${days === 1 ? 'day' : `${days} days`}`, invalid: false, capped: false };
 }
 
 function inRange(date: string | null, range: UsageExplorerResult['dateRange']): boolean {
@@ -314,11 +326,12 @@ function applyModelFilter(slice: DaySlice, filters: UsageExplorerFilters): DaySl
   return {
     ...slice,
     models,
-    totals: totalsFromModels(models, slice.totals.messages),
+    totals: totalsFromModels(models, null),
   };
 }
 
 function filteredSlices(slices: ReadonlyArray<DaySlice>, filters: UsageExplorerFilters, range: UsageExplorerResult['dateRange']): DaySlice[] {
+  if (range.invalid) return [];
   const out: DaySlice[] = [];
   for (const slice of slices) {
     if (!matchesBasicFilters(slice, filters)) continue;
@@ -341,28 +354,57 @@ function summarize(slices: ReadonlyArray<DaySlice>): UsageExplorerTotals {
   return totals;
 }
 
-function dailyRows(slices: ReadonlyArray<DaySlice>, range: UsageExplorerResult['dateRange'], allTimeChartDays: number): UsageExplorerDailyRow[] {
+function sessionCountForDate(slices: ReadonlyArray<DaySlice>, date: string): number {
+  return new Set(slices.filter(slice => slice.date === date).map(slice => slice.sessionId)).size;
+}
+
+function emptyDailyRow(date: string): UsageExplorerDailyRow {
+  return {
+    date,
+    label: formatDateLabel(date),
+    approximate: false,
+    ...cloneTotals(),
+  };
+}
+
+function dailyRows(slices: ReadonlyArray<DaySlice>, range: UsageExplorerResult['dateRange'], allTimeChartDays: number, today: Date): UsageExplorerDailyRow[] {
   const byDate = new Map<string, UsageExplorerDailyRow>();
   for (const slice of slices) {
-    const date = slice.date ?? 'unknown';
+    if (!slice.date) continue;
+    const date = slice.date;
     const row = byDate.get(date) ?? {
       date,
-      label: date === 'unknown' ? 'Unknown day' : formatDateLabel(date),
+      label: formatDateLabel(date),
       approximate: false,
       ...cloneTotals(),
     };
     addTotals(row, slice.totals);
-    row.approximate = row.approximate || slice.timing !== 'event' || date === 'unknown';
+    row.approximate = row.approximate || slice.timing !== 'event';
     byDate.set(date, row);
   }
   for (const [date, row] of byDate) {
-    row.sessions = new Set(slices.filter(slice => (slice.date ?? 'unknown') === date).map(slice => slice.sessionId)).size;
+    row.sessions = sessionCountForDate(slices, date);
   }
-  const rows = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
-  if (range.finite) return rows;
-  const known = rows.filter(row => row.date !== 'unknown');
-  const unknown = rows.filter(row => row.date === 'unknown');
-  return [...known.slice(Math.max(0, known.length - allTimeChartDays)), ...unknown];
+  if (range.invalid) return [];
+  if (range.finite && range.startDate && range.endDate) {
+    const start = parseISODate(range.startDate);
+    const end = parseISODate(range.endDate);
+    if (!start || !end) return [];
+    const rows: UsageExplorerDailyRow[] = [];
+    for (let day = start; day <= end; day = addUTCDays(day, 1)) {
+      const key = isoDate(day);
+      rows.push(byDate.get(key) ?? emptyDailyRow(key));
+    }
+    return rows;
+  }
+  const chartEnd = utcDay(today);
+  const chartStart = addUTCDays(chartEnd, -(allTimeChartDays - 1));
+  const rows: UsageExplorerDailyRow[] = [];
+  for (let day = chartStart; day <= chartEnd; day = addUTCDays(day, 1)) {
+    const key = isoDate(day);
+    rows.push(byDate.get(key) ?? emptyDailyRow(key));
+  }
+  return rows;
 }
 
 function sessionRows(
@@ -410,7 +452,7 @@ function sessionRows(
       lastDate: dates[dates.length - 1] ?? null,
       timing: firstSlice.timing,
       approximate: entry.slices.some(slice => slice.timing !== 'event' || !slice.date),
-      models: modelRows(entry.models, entry.totals.messages),
+      models: modelRows(entry.models),
       ...entry.totals,
       sessions: 1,
     };
@@ -420,7 +462,7 @@ function sessionRows(
     if (sort.key === 'session') return direction * a.label.localeCompare(b.label);
     if (sort.key === 'cost') return direction * (a.cost - b.cost);
     if (sort.key === 'tokens') return direction * (a.tokens - b.tokens);
-    if (sort.key === 'messages') return direction * (a.messages - b.messages);
+    if (sort.key === 'messages') return direction * ((a.messages ?? -1) - (b.messages ?? -1));
     return direction * ((a.lastDate ?? '').localeCompare(b.lastDate ?? ''));
   });
   return rows;
@@ -475,7 +517,7 @@ export function buildUsageExplorer(options: UsageExplorerOptions): UsageExplorer
       label: previous?.label ?? 'Previous period',
       totals: summarize(previousSlices),
     },
-    daily: dailyRows(currentSlices, range, options.allTimeChartDays ?? 30),
+    daily: dailyRows(currentSlices, range, options.allTimeChartDays ?? 30, today),
     sessions: sessionRows(currentSlices, options.usage, options.sessions ?? [], options.environments ?? [], options.sort),
     options: optionsFrom(options.usage, options.environments ?? []),
     includesUnknownDay: currentSlices.some(slice => !slice.date || slice.timing === 'legacy'),

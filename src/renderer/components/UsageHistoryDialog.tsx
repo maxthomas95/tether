@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onKeyActivate, stopPropagationOnKey } from '../utils/a11y';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { useUsage } from '../hooks/useUsage';
 import { formatCost, formatTokens } from '../utils/usage-format';
 import {
   buildUsageExplorer,
+  cacheReadRatio,
   createDefaultUsageExplorerFilters,
   type UsageDatePreset,
   type UsageExplorerFilters,
@@ -33,6 +33,10 @@ function cliToolName(id: CliToolId): string {
   return CLI_TOOL_REGISTRY[id]?.displayName ?? id;
 }
 
+function formatMessageCount(messages: number | null): string {
+  return messages == null ? 'n/a' : messages.toString();
+}
+
 function percentDelta(current: number, previous: number): string {
   if (previous === 0) return current === 0 ? '0%' : 'new';
   const delta = ((current - previous) / previous) * 100;
@@ -43,10 +47,9 @@ function toggleValue<T extends string>(values: T[], value: T): T[] {
   return values.includes(value) ? values.filter(item => item !== value) : [...values, value];
 }
 
-function cacheHitLabel(read: number, created: number): string {
-  const total = read + created;
-  if (total === 0) return '0%';
-  return `${Math.round((read / total) * 100)}%`;
+function cacheHitLabel(input: number, read: number, created: number): string {
+  const ratio = cacheReadRatio(input, read, created);
+  return ratio == null ? 'n/a' : `${Math.round(ratio * 100)}%`;
 }
 
 interface SummaryTileProps {
@@ -103,6 +106,9 @@ function SessionRow({ row, expanded, onToggle }: SessionRowProps) {
   const contextLabel = row.contextUsedTokens != null && row.contextWindowTokens != null
     ? `${formatTokens(row.contextUsedTokens)} / ${formatTokens(row.contextWindowTokens)}`
     : 'n/a';
+  const contextTitle = row.currentModel || row.currentReasoningEffort
+    ? `Latest observation${row.currentModel ? `: ${row.currentModel}` : ''}${row.currentReasoningEffort ? `, ${row.currentReasoningEffort}` : ''}`
+    : 'Latest observation';
   return (
     <React.Fragment>
       <tr
@@ -131,7 +137,7 @@ function SessionRow({ row, expanded, onToggle }: SessionRowProps) {
             <div className="usage-explorer-detail-grid">
               <div>
                 <span>Messages</span>
-                <strong>{row.messages}</strong>
+                <strong>{formatMessageCount(row.messages)}</strong>
               </div>
               <div>
                 <span>Input</span>
@@ -147,20 +153,39 @@ function SessionRow({ row, expanded, onToggle }: SessionRowProps) {
               </div>
               <div>
                 <span>Cache hit</span>
-                <strong>{cacheHitLabel(row.cacheReadTokens, row.cacheCreationTokens)}</strong>
+                <strong>{cacheHitLabel(row.inputTokens, row.cacheReadTokens, row.cacheCreationTokens)}</strong>
               </div>
               <div>
-                <span>Context</span>
-                <strong>{contextLabel}</strong>
+                <span>Last request / capacity</span>
+                <strong title={contextTitle}>{contextLabel}</strong>
               </div>
             </div>
-            <div className="usage-explorer-models" aria-label="Model breakdown">
-              {row.models.map(model => (
-                <span key={model.model}>
-                  {model.model}: {formatCost(model.cost)} / {formatTokens(model.tokens)}
-                </span>
-              ))}
-            </div>
+            <table className="usage-explorer-model-table" aria-label="Model breakdown">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Input</th>
+                  <th>Output</th>
+                  <th>Cache create</th>
+                  <th>Cache read</th>
+                  <th>Reasoning</th>
+                  <th>Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {row.models.map(model => (
+                  <tr key={model.model}>
+                    <td>{model.model}</td>
+                    <td>{formatTokens(model.inputTokens)}</td>
+                    <td>{formatTokens(model.outputTokens)}</td>
+                    <td>{formatTokens(model.cacheCreationTokens)}</td>
+                    <td>{formatTokens(model.cacheReadTokens)}</td>
+                    <td>{formatTokens(model.reasoningTokens)} subset of output</td>
+                    <td>{formatCost(model.cost)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </td>
         </tr>
       )}
@@ -169,8 +194,8 @@ function SessionRow({ row, expanded, onToggle }: SessionRowProps) {
 }
 
 export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps) {
-  const { usage } = useUsage();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const loadGeneration = useRef(0);
   useFocusTrap(dialogRef, isOpen);
   const [filters, setFilters] = useState<UsageExplorerFilters>(() => createDefaultUsageExplorerFilters());
   const [sortKey, setSortKey] = useState<UsageSortKey>('lastActivity');
@@ -181,14 +206,25 @@ export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps)
   const [environments, setEnvironments] = useState<EnvironmentInfo[]>([]);
 
   useEffect(() => {
-    setDialogUsage(usage);
-  }, [usage]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    window.electronAPI.environment.list().then(setEnvironments).catch(() => setEnvironments([]));
-    window.electronAPI.session.list().then(setSessions).catch(() => setSessions([]));
-    window.electronAPI.usage.getAll().then(setDialogUsage).catch(() => null);
+    const generation = ++loadGeneration.current;
+    if (!isOpen) {
+      setDialogUsage(null);
+      setSessions([]);
+      setEnvironments([]);
+      return;
+    }
+    let active = true;
+    const applyIfCurrent = <T,>(setter: (value: T) => void) => (value: T) => {
+      if (active && loadGeneration.current === generation) setter(value);
+    };
+    window.electronAPI.environment.list().then(applyIfCurrent(setEnvironments)).catch(() => applyIfCurrent(setEnvironments)([]));
+    window.electronAPI.session.list().then(applyIfCurrent(setSessions)).catch(() => applyIfCurrent(setSessions)([]));
+    window.electronAPI.usage.getAll().then(applyIfCurrent(setDialogUsage)).catch(() => null);
+    const removeUsageUpdate = window.electronAPI.usage.onUpdate(applyIfCurrent(setDialogUsage));
+    return () => {
+      active = false;
+      removeUsageUpdate();
+    };
   }, [isOpen]);
 
   const explorer = useMemo(() => buildUsageExplorer({
@@ -281,9 +317,25 @@ export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps)
           <div className="usage-explorer-tiles">
             <SummaryTile label={explorer.dateRange.label} value={formatCost(explorer.totals.cost)} meta={`${explorer.totals.sessions} sessions, ${formatTokens(explorer.totals.tokens)} tokens`} />
             <SummaryTile label={explorer.comparison.label} value={explorer.comparison.available ? formatCost(explorer.comparison.totals.cost) : 'n/a'} meta={explorer.comparison.available ? `${percentDelta(explorer.totals.cost, explorer.comparison.totals.cost)} vs prior` : 'No finite comparison'} />
-            <SummaryTile label="Messages" value={explorer.totals.messages.toString()} meta={`${formatTokens(explorer.totals.inputTokens)} in, ${formatTokens(explorer.totals.outputTokens)} out`} />
-            <SummaryTile label="Cache" value={cacheHitLabel(explorer.totals.cacheReadTokens, explorer.totals.cacheCreationTokens)} meta={`${formatTokens(explorer.totals.cacheReadTokens)} read`} />
+            <SummaryTile label="Messages" value={formatMessageCount(explorer.totals.messages)} meta={`${formatTokens(explorer.totals.inputTokens)} in, ${formatTokens(explorer.totals.outputTokens)} out`} />
+            <SummaryTile label="Cache" value={cacheHitLabel(explorer.totals.inputTokens, explorer.totals.cacheReadTokens, explorer.totals.cacheCreationTokens)} meta={`${formatTokens(explorer.totals.cacheReadTokens)} read`} />
           </div>
+
+          {explorer.dateRange.invalid && (
+            <p className="form-hint usage-explorer-range-message">
+              Enter valid custom dates as YYYY-MM-DD.
+            </p>
+          )}
+          {explorer.dateRange.capped && (
+            <p className="form-hint usage-explorer-range-message">
+              Custom trend capped to 366 UTC days from the start date.
+            </p>
+          )}
+          {explorer.includesUnknownDay && (
+            <p className="form-hint usage-explorer-range-message">
+              Usage with unknown dates is included in totals and omitted from the trend.
+            </p>
+          )}
 
           <div className="usage-explorer-chart" aria-label="Daily usage trend">
             {explorer.daily.map(day => (

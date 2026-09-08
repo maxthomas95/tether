@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { CliToolId, SessionUsage, UsageInfo } from '../../shared/types';
-import { buildUsageExplorer, createDefaultUsageExplorerFilters, type UsageExplorerFilters } from './usage-explorer';
+import { buildUsageExplorer, cacheReadRatio, createDefaultUsageExplorerFilters, type UsageExplorerFilters } from './usage-explorer';
 
-function model(model: string, inputTokens: number, outputTokens: number, cost: number, cacheReadTokens = 0, reasoningTokens = 0) {
+function model(model: string, inputTokens: number, outputTokens: number, cost: number, cacheReadTokens = 0, reasoningTokens = 0, cacheCreationTokens = 0) {
   return {
     model,
     inputTokens,
     outputTokens,
     reasoningTokens,
-    cacheCreationTokens: 0,
+    cacheCreationTokens,
     cacheReadTokens,
     cost,
   };
@@ -123,6 +123,8 @@ describe('buildUsageExplorer', () => {
 
     expect(result.totals.cost).toBeCloseTo(0.03);
     expect(result.totals.tokens).toBe(30);
+    expect(result.totals.messages).toBeNull();
+    expect(result.sessions[0].messages).toBeNull();
     expect(result.sessions[0].models).toMatchObject([{ model: 'gpt-5', cost: 0.03 }]);
   });
 
@@ -159,9 +161,12 @@ describe('buildUsageExplorer', () => {
     const all = build(input, { datePreset: 'all' });
 
     expect(finite.totals.cost).toBe(0);
-    expect(finite.daily).toHaveLength(0);
+    expect(finite.daily).toHaveLength(30);
+    expect(finite.daily.every(day => day.cost === 0)).toBe(true);
     expect(all.totals.cost).toBeCloseTo(0.5);
-    expect(all.daily).toMatchObject([{ date: 'unknown', label: 'Unknown day', approximate: true }]);
+    expect(all.includesUnknownDay).toBe(true);
+    expect(all.daily).toHaveLength(30);
+    expect(all.daily.some(day => day.date === 'unknown')).toBe(false);
   });
 
   it('labels snapshot days as approximate', () => {
@@ -206,5 +211,42 @@ describe('buildUsageExplorer', () => {
     expect(result.totals.tokens).toBe(400);
     expect(result.totals.reasoningTokens).toBe(75);
     expect(result.totals.cacheReadTokens).toBe(70);
+  });
+
+  it('computes cache read ratio from uncached input plus cache buckets', () => {
+    expect(cacheReadRatio(100, 100, 0)).toBeCloseTo(0.5);
+    expect(cacheReadRatio(0, 100, 0)).toBeCloseTo(1);
+    expect(cacheReadRatio(0, 0, 0)).toBeNull();
+  });
+
+  it('keeps invalid custom ranges empty instead of broadening to all time', () => {
+    const result = build(usage([
+      session({ sessionId: 'legacy', totalCost: 1, inputTokens: 10, outputTokens: 10, messageCount: 1, models: [model('gpt-5', 10, 10, 1)], dayTiming: 'legacy' }),
+    ]), { datePreset: 'custom', customStartDate: '2026-02-31', customEndDate: '' });
+
+    expect(result.dateRange.invalid).toBe(true);
+    expect(result.totals.cost).toBe(0);
+    expect(result.daily).toHaveLength(0);
+    expect(result.sessions).toHaveLength(0);
+  });
+
+  it('fills inactive UTC calendar days for finite trend ranges', () => {
+    const result = build(usage([
+      session({
+        sessionId: 'active',
+        daily: [{ date: '2026-09-05', inputTokens: 10, outputTokens: 10, cacheCreationTokens: 0, cacheReadTokens: 0, totalCost: 0.2, messageCount: 1, models: [model('gpt-5', 10, 10, 0.2)] }],
+      }),
+    ]), { datePreset: 'custom', customStartDate: '2026-09-05', customEndDate: '2026-09-07' });
+
+    expect(result.daily.map(day => day.date)).toEqual(['2026-09-05', '2026-09-06', '2026-09-07']);
+    expect(result.daily.map(day => day.cost)).toEqual([0.2, 0, 0]);
+  });
+
+  it('caps long custom ranges at 366 calendar points', () => {
+    const result = build(usage([]), { datePreset: 'custom', customStartDate: '2025-01-01', customEndDate: '2026-09-07' });
+
+    expect(result.dateRange.capped).toBe(true);
+    expect(result.daily).toHaveLength(366);
+    expect(result.dateRange.endDate).toBe('2026-01-01');
   });
 });
