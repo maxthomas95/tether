@@ -30,7 +30,7 @@ export async function readCodexAccount(): Promise<CodexAccountSnapshot> {
   ]);
 
   if (results.every(result => !result.ok && result.unavailable)) {
-    return accountSnapshot('unavailable', now, 'Codex app-server unavailable');
+    return accountSnapshot('unavailable', null, 'Codex app-server unavailable');
   }
 
   const account = resultFor(results, 'account/read');
@@ -39,14 +39,18 @@ export async function readCodexAccount(): Promise<CodexAccountSnapshot> {
   const warnings = warningsFor(results);
 
   if (!account.ok && !usage.ok && !rateLimits.ok) {
-    return accountSnapshot('error', now, 'Codex account data could not be read', warnings);
+    return accountSnapshot('error', null, 'Codex account data could not be read', warnings);
   }
 
   const accountResult = asObject(account.result);
   const accountInfo = asObject(accountResult?.account);
   const authMode = safeString(accountInfo?.type);
   const planType = safeString(accountInfo?.planType) ?? planTypeFromRateLimits(rateLimits.result);
-  const usageResult = asObject(usage.result);
+  const usageResult = usage.ok ? asObject(usage.result) : null;
+  const summary = summaryFromUsage(usageResult);
+  if (usage.ok && summary === null) {
+    warnings.push('account/usage/read: Codex app-server sent an invalid response');
+  }
 
   return {
     status: 'ready',
@@ -54,7 +58,7 @@ export async function readCodexAccount(): Promise<CodexAccountSnapshot> {
     error: null,
     authMode,
     planType,
-    summary: summaryFromUsage(usageResult),
+    summary,
     dailyUsage: dailyUsageFromUsage(usageResult),
     rateLimits: rateLimitsFromResponse(rateLimits.result),
     warnings,
@@ -69,7 +73,7 @@ export async function readCodexQuota(): Promise<CodexAccountSnapshot> {
   ]);
 
   if (results.every(result => !result.ok && result.unavailable)) {
-    return accountSnapshot('unavailable', now, 'Codex app-server unavailable');
+    return accountSnapshot('unavailable', null, 'Codex app-server unavailable');
   }
 
   const account = resultFor(results, 'account/read');
@@ -77,7 +81,7 @@ export async function readCodexQuota(): Promise<CodexAccountSnapshot> {
   const warnings = warningsFor(results);
 
   if (!rateLimits.ok) {
-    return accountSnapshot('error', now, 'Codex quota could not be read', warnings);
+    return accountSnapshot('error', null, 'Codex quota could not be read', warnings);
   }
 
   const accountResult = asObject(account.result);
@@ -104,27 +108,32 @@ export async function inspectCodexConfiguration(cwd?: string): Promise<CodexConf
   ]);
 
   if (results.every(result => !result.ok && result.unavailable)) {
-    return configurationSnapshot('unavailable', now, 'Codex app-server unavailable');
+    return configurationSnapshot('unavailable', null, 'Codex app-server unavailable');
   }
 
   const config = resultFor(results, 'config/read');
   const models = resultFor(results, 'model/list');
   const warnings = warningsFor(results);
   if (!config.ok && !models.ok) {
-    return configurationSnapshot('error', now, 'Codex configuration could not be read');
+    return configurationSnapshot('error', null, 'Codex configuration could not be read');
   }
 
-  const configResult = asObject(config.result);
+  const configResult = config.ok ? asObject(config.result) : null;
   const effectiveConfig = asObject(configResult?.config);
+  const configAvailable = config.ok && configResult !== null && effectiveConfig !== null;
+  const configWarnings = [...warnings];
+  if (config.ok && !configAvailable) {
+    configWarnings.push('config/read: Codex app-server sent an invalid response');
+  }
 
   return {
     status: 'ready',
     lastUpdated: now,
-    error: warnings.length > 0 ? warnings.join('; ') : null,
-    fields: fieldsFromConfig(configResult, effectiveConfig),
+    error: configWarnings.length > 0 ? configWarnings.join('; ') : null,
+    fields: configAvailable ? fieldsFromConfig(configResult, effectiveConfig) : [],
     profiles: readProfileNames(),
     models: modelsFromResponse(models.result),
-    integrations: integrationsFromConfig(effectiveConfig),
+    integrations: configAvailable ? integrationsFromConfig(effectiveConfig) : [],
   };
 }
 
@@ -187,13 +196,18 @@ function summaryFromUsage(usage: JsonObject | null): CodexUsageSummary | null {
 
 function dailyUsageFromUsage(usage: JsonObject | null): CodexDailyUsageBucket[] {
   const buckets = Array.isArray(usage?.dailyUsageBuckets) ? usage.dailyUsageBuckets : [];
-  return buckets.flatMap(bucket => {
+  const byDate = new Map<string, number>();
+  for (const bucket of buckets) {
     const row = asObject(bucket);
     const date = stringOrNull(row?.startDate);
     const tokens = numberOrNull(row?.tokens);
-    if (!date || !validDateOnly(date) || tokens === null || !validCounter(tokens)) return [];
-    return [{ date, tokens }];
-  }).slice(0, MAX_ROWS);
+    if (!date || !validDateOnly(date) || tokens === null || !validCounter(tokens)) continue;
+    byDate.set(date, (byDate.get(date) ?? 0) + tokens);
+  }
+  return Array.from(byDate.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .slice(0, MAX_ROWS)
+    .map(([date, tokens]) => ({ date, tokens }));
 }
 
 function rateLimitsFromResponse(value: unknown): CodexRateLimit[] {
@@ -355,8 +369,8 @@ function validCounterOrNull(value: unknown): number | null {
 }
 
 function validPercent(value: unknown): number | null {
-  const number = validCounterOrNull(value);
-  return number !== null && number <= 100 ? number : null;
+  const number = numberOrNull(value);
+  return number !== null && number >= 0 && number <= 100 ? number : null;
 }
 
 function validTimestampSeconds(value: unknown): number | null {

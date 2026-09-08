@@ -51,7 +51,9 @@ describe('codex integration service', () => {
             impossible: 9007199254740993,
           },
           dailyUsageBuckets: [
-            { startDate: '2026-09-07', tokens: 25 },
+            { startDate: '2026-09-07', tokens: 20 },
+            { startDate: '2026-09-06', tokens: 3 },
+            { startDate: '2026-09-07', tokens: 5 },
             { startDate: '2026-09-08', tokens: -1 },
             { startDate: 'not-a-date', tokens: 10 },
           ],
@@ -66,7 +68,7 @@ describe('codex integration service', () => {
             limitId: 'codex',
             limitName: 'Codex',
             planType: 'pro',
-            primary: { usedPercent: 50, windowDurationMins: 300, resetsAt: 1799270400 },
+            primary: { usedPercent: 50.5, windowDurationMins: 300, resetsAt: 1799270400 },
             secondary: { usedPercent: 101, windowDurationMins: -1, resetsAt: 999999999999999999 },
           },
         },
@@ -82,9 +84,12 @@ describe('codex integration service', () => {
     expect(snapshot.authMode).toBe('chatgpt');
     expect(snapshot.planType).toBe('pro');
     expect(snapshot.summary?.lifetimeTokens).toBe(100);
-    expect(snapshot.dailyUsage).toEqual([{ date: '2026-09-07', tokens: 25 }]);
+    expect(snapshot.dailyUsage).toEqual([
+      { date: '2026-09-06', tokens: 3 },
+      { date: '2026-09-07', tokens: 25 },
+    ]);
     expect(snapshot.rateLimits[0].primary).toEqual({
-      usedPercent: 50,
+      usedPercent: 50.5,
       windowMinutes: 300,
       resetsAt: '2027-01-06T21:20:00.000Z',
     });
@@ -157,8 +162,23 @@ describe('codex integration service', () => {
     const snapshot = await readCodexQuota();
 
     expect(snapshot.status).toBe('error');
+    expect(snapshot.lastUpdated).toBeNull();
     expect(snapshot.error).toBe('Codex quota could not be read');
     expect(snapshot.rateLimits).toEqual([]);
+  });
+
+  it('does not stamp unavailable account snapshots as successful observations', async () => {
+    mockedCall.mockResolvedValue([
+      { method: 'account/read', ok: false, error: 'Codex app-server unavailable', unavailable: true },
+      { method: 'account/usage/read', ok: false, error: 'Codex app-server unavailable', unavailable: true },
+      { method: 'account/rateLimits/read', ok: false, error: 'Codex app-server unavailable', unavailable: true },
+    ]);
+
+    const snapshot = await readCodexAccount();
+
+    expect(snapshot.status).toBe('unavailable');
+    expect(snapshot.lastUpdated).toBeNull();
+    expect(snapshot.summary).toBeNull();
   });
 
   it('sanitizes configuration values and lists profile filenames only', async () => {
@@ -227,5 +247,39 @@ describe('codex integration service', () => {
       { method: 'config/read', params: { includeLayers: true, cwd: 'C:\\repo\\tether' } },
       { method: 'model/list', params: { includeHidden: false, limit: 100, cursor: null } },
     ]);
+  });
+
+  it('returns partial configuration status without default fields when config is null', async () => {
+    mockedCall.mockResolvedValue([
+      { method: 'config/read', ok: true, result: null },
+      { method: 'model/list', ok: true, result: { data: [{ id: 'gpt-5-codex' }] } },
+    ]);
+
+    const snapshot = await inspectCodexConfiguration();
+
+    expect(snapshot.status).toBe('ready');
+    expect(snapshot.error).toBe('config/read: Codex app-server sent an invalid response');
+    expect(snapshot.fields).toEqual([]);
+    expect(snapshot.integrations).toEqual([]);
+    expect(snapshot.models).toEqual([{
+      id: 'gpt-5-codex',
+      displayName: 'gpt-5-codex',
+      reasoningEfforts: [],
+      defaultReasoningEffort: null,
+    }]);
+  });
+
+  it('returns partial configuration status when config read fails but model list succeeds', async () => {
+    mockedCall.mockResolvedValue([
+      { method: 'config/read', ok: false, error: 'Codex app-server request failed' },
+      { method: 'model/list', ok: true, result: { data: [] } },
+    ]);
+
+    const snapshot = await inspectCodexConfiguration();
+
+    expect(snapshot.status).toBe('ready');
+    expect(snapshot.error).toBe('config/read: Codex app-server request failed');
+    expect(snapshot.fields).toEqual([]);
+    expect(snapshot.integrations).toEqual([]);
   });
 });

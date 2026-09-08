@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
+import packageJson from '../../../package.json';
 
 type RequestId = number;
 
@@ -59,20 +60,31 @@ export async function callCodexAppServer(
   calls: CodexAppServerCall[],
   options: CodexAppServerClientOptions = {},
 ): Promise<CodexAppServerCallResult[]> {
+  if (calls.length === 0) return [];
+
+  const seenMethods = new Set<CodexAppServerMethod>();
   for (const call of calls) {
     if (!ALLOWED_METHODS.has(call.method)) {
       throw new Error('Codex app-server method is not allowlisted');
     }
+    if (seenMethods.has(call.method)) {
+      throw new Error('Codex app-server calls must not repeat a method');
+    }
+    seenMethods.add(call.method);
   }
 
   const key = JSON.stringify(calls);
-  const existing = inflight.get(key);
-  if (existing) return existing;
+  if (!options.signal) {
+    const existing = inflight.get(key);
+    if (existing) return existing;
+  }
 
   const request = runCodexAppServer(calls, options).finally(() => {
     inflight.delete(key);
   });
-  inflight.set(key, request);
+  if (!options.signal) {
+    inflight.set(key, request);
+  }
   return request;
 }
 
@@ -85,6 +97,7 @@ function spawnCodexAppServer(spawnImpl: typeof spawn): ChildProcessWithoutNullSt
 
 function spawnOptions(): SpawnOptionsWithoutStdio {
   return {
+    detached: process.platform !== 'win32',
     windowsHide: true,
     shell: false,
     stdio: 'pipe',
@@ -198,6 +211,8 @@ function runCodexAppServer(
             error: unavailableMethod ? 'Codex app-server method unavailable' : 'Codex app-server request failed',
             unavailable: unavailableMethod,
           });
+        } else if (!hasOwn(response, 'result')) {
+          results.set(method, errorResult(method, 'Codex app-server sent an invalid response'));
         } else {
           results.set(method, { method, ok: true, result: response.result });
         }
@@ -211,7 +226,7 @@ function runCodexAppServer(
       id: 1,
       method: 'initialize',
       params: {
-        clientInfo: { name: 'tether', title: 'Tether', version: '0.6.4' },
+        clientInfo: { name: 'tether', title: 'Tether', version: packageJson.version },
         capabilities: {
           experimentalApi: true,
           optOutNotificationMethods: ['thread/started', 'turn/started', 'agent/message/delta'],
@@ -241,6 +256,10 @@ function asResponse(message: unknown): JsonRpcResponse | null {
   return message as JsonRpcResponse;
 }
 
+function hasOwn<T extends object>(object: T, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
 function isMethodUnavailable(error: { code?: number; message?: string }): boolean {
   const text = String(error.message ?? '').toLowerCase();
   return error.code === -32601 || text.includes('method') && text.includes('not found');
@@ -255,7 +274,7 @@ function errorResult(method: CodexAppServerMethod, error: string): CodexAppServe
 }
 
 function disposeChild(child: ChildProcessWithoutNullStreams, cleanupSpawnImpl: typeof spawn): void {
-  if (!child.pid || child.killed) return;
+  if (!child.pid || child.killed || child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === 'win32') {
     try {
       const killer = cleanupSpawnImpl('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
@@ -263,23 +282,28 @@ function disposeChild(child: ChildProcessWithoutNullStreams, cleanupSpawnImpl: t
         shell: false,
         stdio: 'ignore',
       });
-      killer.on('error', () => undefined);
+      killer.once('error', () => killDirectChild(child));
+      killer.once('exit', code => {
+        if (code !== 0) killDirectChild(child);
+      });
       return;
     } catch {
       // Fall back to killing the direct child below.
     }
   } else {
     try {
-      const killer = cleanupSpawnImpl('pkill', ['-TERM', '-P', String(child.pid)], {
-        windowsHide: true,
-        shell: false,
-        stdio: 'ignore',
-      });
-      killer.on('error', () => undefined);
+      process.kill(-child.pid, 'SIGTERM');
+      return;
     } catch {
-      // Fall back to killing the direct child below.
+      // Fall back to killing the direct child below. The helper is spawned as
+      // its own process group on POSIX, so group kill cannot target unrelated siblings.
     }
   }
+  killDirectChild(child);
+}
+
+function killDirectChild(child: ChildProcessWithoutNullStreams): void {
+  if (child.killed || child.exitCode !== null || child.signalCode !== null) return;
   try {
     child.kill();
   } catch {
@@ -289,28 +313,28 @@ function disposeChild(child: ChildProcessWithoutNullStreams, cleanupSpawnImpl: t
 
 class JsonLineParser {
   private readonly decoder = new StringDecoder('utf8');
-  private buffer = '';
-  private pendingLineBytes = 0;
+  private pending = Buffer.alloc(0);
 
   constructor(private readonly maxFrameBytes: number) {}
 
   push(chunk: Buffer): unknown[] {
-    this.pendingLineBytes += chunk.length;
-    if (this.pendingLineBytes > this.maxFrameBytes) {
-      throw new Error('oversized frame');
-    }
-
-    this.buffer += this.decoder.write(chunk);
     const messages: unknown[] = [];
-    let newlineIndex = this.buffer.indexOf('\n');
+    this.pending = Buffer.concat([this.pending, chunk]);
+    let newlineIndex = this.pending.indexOf(0x0a);
     while (newlineIndex !== -1) {
-      const line = this.buffer.slice(0, newlineIndex).replace(/\r$/, '');
-      this.buffer = this.buffer.slice(newlineIndex + 1);
-      this.pendingLineBytes = Buffer.byteLength(this.buffer, 'utf8');
+      if (newlineIndex > this.maxFrameBytes) {
+        throw new Error('oversized frame');
+      }
+      const lineBytes = this.pending.subarray(0, newlineIndex);
+      const line = this.decoder.write(lineBytes).replace(/\r$/, '');
+      this.pending = this.pending.subarray(newlineIndex + 1);
       if (line.trim().length > 0) {
         messages.push(JSON.parse(line));
       }
-      newlineIndex = this.buffer.indexOf('\n');
+      newlineIndex = this.pending.indexOf(0x0a);
+    }
+    if (this.pending.length > this.maxFrameBytes) {
+      throw new Error('oversized frame');
     }
     return messages;
   }
