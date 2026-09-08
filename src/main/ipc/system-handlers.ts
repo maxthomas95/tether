@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { app, ipcMain, dialog, shell } from 'electron';
 import { IPC } from '../../shared/constants';
+import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 import { createLogger } from '../logger';
 import type { HandlerContext } from './helpers';
 
@@ -8,14 +9,17 @@ const log = createLogger('ipc:system');
 const COMMAND_LOOKUP_TIMEOUT_MS = 3_000;
 
 function commandExists(command: string): Promise<boolean> {
-  const trimmed = command.trim();
-  if (!trimmed) return Promise.resolve(false);
+  // Setup only probes registered CLI binaries. Never pass renderer input to a
+  // command lookup: where.exe accepts options and sh is an execution boundary.
+  const binary = Object.values(CLI_TOOL_REGISTRY)
+    .find(tool => tool.binaryName !== '' && tool.binaryName === command.trim())?.binaryName;
+  if (!binary) return Promise.resolve(false);
 
   return new Promise((resolve) => {
     const executable = process.platform === 'win32' ? 'where.exe' : 'sh';
     const args = process.platform === 'win32'
-      ? [trimmed]
-      : ['-lc', 'command -v "$1" >/dev/null 2>&1', 'sh', trimmed];
+      ? [binary]
+      : ['-lc', 'command -v "$1" >/dev/null 2>&1', 'sh', binary];
 
     execFile(executable, args, { timeout: COMMAND_LOOKUP_TIMEOUT_MS }, (err) => {
       resolve(!err);
@@ -34,17 +38,22 @@ export function registerSystemHandlers(ctx: HandlerContext): void {
   });
 
   ipcMain.handle(IPC.UPDATE_OPEN_RELEASE_PAGE, async (_event, url: string) => {
+    if (typeof url !== 'string' || url.length > 2048) return;
+    let releaseUrl: URL;
     try {
-      const u = new URL(url);
-      if (u.protocol !== 'https:' || u.host !== 'github.com' || !u.pathname.startsWith('/maxthomas95/tether/')) {
-        log.warn('Refusing to open non-release URL', { url });
+      releaseUrl = new URL(url);
+      if (releaseUrl.protocol !== 'https:' || releaseUrl.host !== 'github.com' ||
+          releaseUrl.username || releaseUrl.password ||
+          (releaseUrl.pathname !== '/maxthomas95/tether/releases' &&
+           !releaseUrl.pathname.startsWith('/maxthomas95/tether/releases/'))) {
+        log.warn('Refusing to open non-release URL');
         return;
       }
     } catch {
-      log.warn('Refusing to open malformed URL', { url });
+      log.warn('Refusing to open malformed release URL');
       return;
     }
-    await shell.openExternal(url);
+    await shell.openExternal(releaseUrl.href);
   });
 
   ipcMain.handle(IPC.SHELL_OPEN_EXTERNAL, async (_event, url: string) => {
@@ -56,14 +65,16 @@ export function registerSystemHandlers(ctx: HandlerContext): void {
     try {
       parsed = new URL(url);
     } catch {
-      log.warn('Refusing to open malformed URL', { url });
+      log.warn('Refusing to open malformed URL');
       return;
     }
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      log.warn('Refusing to open URL with disallowed protocol', { url });
+    if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.username || parsed.password) {
+      log.warn('Refusing to open URL with disallowed protocol or credentials');
       return;
     }
-    await shell.openExternal(url);
+    // HTTP(S) destinations, including local development servers, are deliberate
+    // browser links. Open the parsed URL so validation and use agree.
+    await shell.openExternal(parsed.href);
   });
 
   ipcMain.handle(IPC.SHELL_COMMAND_EXISTS, async (_event, command: string) => {

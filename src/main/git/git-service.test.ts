@@ -1,17 +1,27 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 
 const spawnMock = vi.hoisted(() => vi.fn());
 const existsSyncMock = vi.hoisted(() => vi.fn());
+const mkdirSyncMock = vi.hoisted(() => vi.fn());
 
 vi.mock('node:child_process', () => ({ spawn: spawnMock }));
 vi.mock('node:fs', () => ({
-  default: { existsSync: existsSyncMock, mkdirSync: vi.fn() },
+  default: { existsSync: existsSyncMock, mkdirSync: mkdirSyncMock },
   existsSync: existsSyncMock,
-  mkdirSync: vi.fn(),
+  mkdirSync: mkdirSyncMock,
 }));
 
-import { gitClone, gitRemoteAdd, gitBranchStatus, parsePorcelainStatus } from './git-service';
+import {
+  createFolder,
+  gitBranchStatus,
+  gitClone,
+  gitInit,
+  gitRemoteAdd,
+  gitWorktreeAdd,
+  gitWorktreeRemove,
+  parsePorcelainStatus,
+} from './git-service';
 
 function fakeProc() {
   const proc = new EventEmitter() as EventEmitter & {
@@ -27,24 +37,56 @@ function fakeProc() {
 
 describe('git-service hardening', () => {
   beforeEach(() => {
+    vi.stubGlobal('process', { ...process, platform: 'win32' });
     spawnMock.mockReset();
     existsSyncMock.mockReset();
+    mkdirSyncMock.mockReset();
     existsSyncMock.mockReturnValue(false);
   });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each(['relative', 'C:relative', '/root-relative', '\\root-relative', '\\\\?\\C:\\repo', '//?/C:/repo', '\\\\.\\C:\\repo', 42])(
+    'rejects unsafe Windows path %j before filesystem access', async (directory) => {
+      await expect(gitInit(directory as string)).rejects.toThrow();
+      expect(existsSyncMock).not.toHaveBeenCalled();
+      expect(mkdirSyncMock).not.toHaveBeenCalled();
+      expect(spawnMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('supports an absolute POSIX path with Unicode and spaces', async () => {
+    vi.stubGlobal('process', { ...process, platform: 'linux' });
+    await expect(createFolder({ path: '/tmp/日本語 repo', initGit: false })).resolves.toBe('/tmp/日本語 repo');
+    expect(mkdirSyncMock).toHaveBeenCalledWith('/tmp/日本語 repo', { recursive: true });
+  });
+
+  it('supports a normal Windows UNC share', async () => {
+    await expect(createFolder({ path: '\\\\server\\share\\repo', initGit: false })).resolves.toBe('\\\\server\\share\\repo');
+    expect(mkdirSyncMock).toHaveBeenCalledWith('\\\\server\\share\\repo', { recursive: true });
+  });
+
+  it.each(['--detach', 'feature/../main', 'feature//name', '.hidden', 'feature/.hidden', 'feature.lock/child', 'HEAD', '@', 'name\tbranch', 'name@{1}', 'name\\branch', 'name:branch'])(
+    'rejects malformed branch %j before filesystem access', async (branch) => {
+      await expect(gitWorktreeAdd({ sourceRepo: 'C:/repo/source', worktreePath: 'C:/repo/target', branch })).rejects.toThrow('Branch name is invalid');
+      expect(existsSyncMock).not.toHaveBeenCalled();
+      expect(spawnMock).not.toHaveBeenCalled();
+    },
+  );
 
   it('uses -- and a protocol allowlist for clone', async () => {
     const proc = fakeProc();
     spawnMock.mockReturnValue(proc);
     const promise = gitClone({ url: 'https://github.com/example/repo.git', destination: 'C:/repo/out' });
     proc.emit('close', 0);
-    await expect(promise).resolves.toBe('C:/repo/out');
+    await expect(promise).resolves.toBe('C:\\repo\\out');
 
     expect(spawnMock).toHaveBeenCalledWith('git', [
       'clone',
       '--progress',
       '--',
       'https://github.com/example/repo.git',
-      'C:/repo/out',
+      'C:\\repo\\out',
     ], expect.objectContaining({
       env: expect.objectContaining({ GIT_ALLOW_PROTOCOL: 'https:ssh' }),
     }));
@@ -52,6 +94,53 @@ describe('git-service hardening', () => {
 
   it('rejects dangerous clone URLs before spawning git', async () => {
     await expect(gitClone({ url: 'ext::sh -c calc', destination: 'C:/repo/out' })).rejects.toThrow(/not allowed/);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid clone destinations before checking the filesystem', async () => {
+    await expect(gitClone({ url: 'https://github.com/example/repo.git', destination: '..\\out' })).rejects.toThrow(/absolute path/);
+    await expect(gitClone({ url: 'https://github.com/example/repo.git', destination: 'C:\\repo\\bad\npath' })).rejects.toThrow(/invalid characters/);
+
+    expect(existsSyncMock).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('initializes git with a validated absolute path after --', async () => {
+    const proc = fakeProc();
+    spawnMock.mockReturnValue(proc);
+    const promise = gitInit('C:/repo/new project');
+    proc.emit('close', 0);
+    await expect(promise).resolves.toBe('C:\\repo\\new project');
+
+    expect(mkdirSyncMock).toHaveBeenCalledWith('C:\\repo\\new project', { recursive: true });
+    expect(spawnMock).toHaveBeenCalledWith('git', [
+      'init',
+      '--',
+      'C:\\repo\\new project',
+    ], expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] }));
+  });
+
+  it('rejects invalid init paths before filesystem side effects', async () => {
+    await expect(gitInit('--upload-pack=calc')).rejects.toThrow(/absolute path/);
+    await expect(gitInit('C:\\repo\\bad\0path')).rejects.toThrow(/invalid characters/);
+
+    expect(existsSyncMock).not.toHaveBeenCalled();
+    expect(mkdirSyncMock).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('creates a folder with spaces without spawning git when initGit is false', async () => {
+    await expect(createFolder({ path: 'C:/repo/new project', initGit: false })).resolves.toBe('C:\\repo\\new project');
+
+    expect(mkdirSyncMock).toHaveBeenCalledWith('C:\\repo\\new project', { recursive: true });
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid folder paths before filesystem side effects', async () => {
+    await expect(createFolder({ path: '\\root-relative', initGit: false })).rejects.toThrow(/drive-absolute or a UNC path/);
+
+    expect(existsSyncMock).not.toHaveBeenCalled();
+    expect(mkdirSyncMock).not.toHaveBeenCalled();
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
@@ -64,15 +153,88 @@ describe('git-service hardening', () => {
     await expect(promise).resolves.toBeUndefined();
 
     expect(spawnMock).toHaveBeenCalledWith('git', [
-      '-C',
-      'C:/repo/project',
       'remote',
       'add',
       '--',
       'origin',
       'git@github.com:example/repo.git',
     ], expect.objectContaining({
+      cwd: 'C:\\repo\\project',
       env: expect.objectContaining({ GIT_ALLOW_PROTOCOL: 'https:ssh' }),
+    }));
+  });
+
+  it('rejects invalid remote-add repository paths before repo checks', async () => {
+    await expect(gitRemoteAdd('C:\\repo\\bad\rpath', 'origin', 'https://github.com/example/repo.git')).rejects.toThrow(/invalid characters/);
+
+    expect(existsSyncMock).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('adds worktrees with validated cwd, branch, and end-of-options path marker', async () => {
+    existsSyncMock
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false);
+    const proc = fakeProc();
+    spawnMock.mockReturnValue(proc);
+
+    const promise = gitWorktreeAdd({
+      sourceRepo: 'C:/repo/source project',
+      worktreePath: 'C:/repo/worktree target',
+      branch: 'feature/sonar-fix',
+    });
+    proc.emit('close', 0);
+
+    await expect(promise).resolves.toBe('C:\\repo\\worktree target');
+    expect(spawnMock).toHaveBeenCalledWith('git', [
+      'worktree',
+      'add',
+      '-b',
+      'feature/sonar-fix',
+      '--',
+      'C:\\repo\\worktree target',
+    ], expect.objectContaining({
+      cwd: 'C:\\repo\\source project',
+    }));
+  });
+
+  it('rejects invalid worktree branch names before repo checks', async () => {
+    await expect(gitWorktreeAdd({
+      sourceRepo: 'C:/repo/source',
+      worktreePath: 'C:/repo/target',
+      branch: '-upload-pack=calc',
+    })).rejects.toThrow(/Branch name is invalid/);
+    await expect(gitWorktreeAdd({
+      sourceRepo: 'C:/repo/source',
+      worktreePath: 'C:/repo/target',
+      branch: 'feature/../main',
+    })).rejects.toThrow(/Branch name is invalid/);
+
+    expect(existsSyncMock).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('removes worktrees with a validated cwd and end-of-options path marker', async () => {
+    existsSyncMock.mockReturnValue(true);
+    const proc = fakeProc();
+    spawnMock.mockReturnValue(proc);
+
+    const promise = gitWorktreeRemove({
+      sourceRepo: 'C:/repo/source project',
+      worktreePath: 'C:/repo/worktree target',
+      force: true,
+    });
+    proc.emit('close', 0);
+
+    await expect(promise).resolves.toBeUndefined();
+    expect(spawnMock).toHaveBeenCalledWith('git', [
+      'worktree',
+      'remove',
+      '--force',
+      '--',
+      'C:\\repo\\worktree target',
+    ], expect.objectContaining({
+      cwd: 'C:\\repo\\source project',
     }));
   });
 });

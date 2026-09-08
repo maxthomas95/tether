@@ -16,6 +16,8 @@ The Setup Wizard runs on first launch and walks you through:
 8. **Git provider** — optional GitHub, Azure DevOps, or Gitea credentials for repo browse, clone, and remote-create.
 9. **Ready** — setup complete; start using Tether.
 
+The wizard checks installation status for the built-in CLI tools. Custom binaries can be configured when creating a session.
+
 The wizard only marks setup complete when you click **Skip Setup**, **Start Using Tether**, or **Create First Session**. Closing it with **Esc** or **X** just dismisses it for this app run.
 
 ## Creating Your First Session
@@ -70,7 +72,7 @@ The main area displays the active session. It's a real terminal emulator (xterm.
 - **Ctrl+ArrowDown** / **Ctrl+ArrowUp** — next / previous session
 - **Ctrl+scroll** on the terminal — change terminal font size
 - **Ctrl+=** / **Ctrl+-** — zoom the whole window (UI + terminal together)
-- **Ctrl-click** any printed URL — opens in your system browser
+- **Ctrl-click** a printed HTTP or HTTPS URL — opens in your system browser, including local development links. URLs containing a username or password are rejected.
 
 ### Split Panes
 

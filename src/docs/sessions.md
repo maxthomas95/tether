@@ -29,9 +29,13 @@ On **Existing directory**, choose a local directory and a CLI with conversation 
 
 When the Existing directory tab points to a git repository, a **Create as new git worktree** checkbox appears. Check it, type a branch name, and Tether will `git worktree add` a new working tree alongside the repo before spawning the session. The worktree path auto-fills from the branch name but can be edited. Useful for running parallel agent sessions on different branches of the same repo without juggling stashes or clones.
 
+Local Git operations require a full, absolute directory path. Spaces and Unicode names are supported. Worktree branch names must be valid Git branch names; values that look like command options are rejected.
+
 ## Resume Conversation
 
 When you create a Local Claude Code, Codex CLI, or OpenCode session in a directory with existing transcripts, Tether offers to resume a previous conversation. Click a transcript preview to start from where you left off (uses `claude --resume` / `codex resume <id>` / `opencode --session <id>` under the hood). Resume is not currently supported for Coder sessions because transcripts live inside the workspace.
+
+Claude Code and GitHub Copilot transcript lookups require a full session UUID. Invalid identifiers are treated as unavailable conversations and are not used as filesystem paths.
 
 ## Multi-CLI Support
 
