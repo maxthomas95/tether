@@ -8,6 +8,19 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.6.6-beta.5] ? 2026-09-07
+
+Beta follow-up to `0.6.5-beta.4`, restoring Windows session creation for npm-installed CLI tools. Available on the Beta update channel.
+
+### Bug Fixes
+- **Windows session creation** ? prefer Windows command shims such as `codex.cmd` over npm?s extensionless Unix scripts, fixing `Cannot create process, error code: 193` when starting Codex sessions (#228).
+
+### Beta Notes
+- No persistence or terminal-stream changes.
+- Windows installer and portable builds are unsigned.
+
+---
+
 ## [0.6.5-beta.4] — 2026-09-07
 
 Beta release carrying the changes since `0.6.4-beta.3`, including a refreshed workspace, optional session canvas, remote usage collection, and security and packaging fixes. Available on the Beta update channel.
