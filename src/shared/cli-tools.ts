@@ -128,7 +128,7 @@ export function buildCliArgsForTool(
   return [...cliArgs];
 }
 
-export type CodexReasoningEffort = 'low' | 'medium' | 'high';
+export type CodexReasoningEffort = string;
 
 export interface CodexLaunchSelection {
   model?: string;
@@ -142,10 +142,10 @@ export interface CodexLaunchFlagsUpdate {
 }
 
 const CODEX_SAFE_VALUE_RE = /^[A-Za-z0-9._:@/+~-]+$/;
-const CODEX_REASONING_EFFORTS = new Set<CodexReasoningEffort>(['low', 'medium', 'high']);
+const CODEX_MAX_LAUNCH_VALUE_LENGTH = 128;
 
 export function isSafeCodexLaunchValue(value: string): boolean {
-  return CODEX_SAFE_VALUE_RE.test(value);
+  return value.length > 0 && value.length <= CODEX_MAX_LAUNCH_VALUE_LENGTH && CODEX_SAFE_VALUE_RE.test(value);
 }
 
 function codexConfigKey(entry: string): string | null {
@@ -177,27 +177,74 @@ function isCodexKnownLaunchConfig(entry: string): boolean {
   return key === 'model' || key === 'model_reasoning_effort';
 }
 
+function hasMultipleCodexFlags(entry: string): boolean {
+  const flags = entry.match(/(?:^|\s)-{1,2}[A-Za-z][^\s=]*/g);
+  return (flags?.length ?? 0) > 1;
+}
+
+function unquoteCodexValue(value: string): string {
+  const trimmed = value.trim();
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function readKnownCodexEntry(entry: string): { key: keyof CodexLaunchSelection; value: string } | { key: null; value: null; ambiguous: boolean } {
+  const trimmed = entry.trim();
+  if (!trimmed || hasMultipleCodexFlags(trimmed)) return { key: null, value: null, ambiguous: true };
+  const modelEquals = /^--model=(.+)$/.exec(trimmed);
+  const modelLong = /^--model\s+(.+)$/.exec(trimmed);
+  const modelShort = /^-m\s+(.+)$/.exec(trimmed);
+  const profileEquals = /^--profile=(.+)$/.exec(trimmed);
+  const profileLong = /^--profile\s+(.+)$/.exec(trimmed);
+  const profileShort = /^-p\s+(.+)$/.exec(trimmed);
+  const config = /^(?:-c|--config)(?:\s+|=)([^=\s]+)=(.+)$/.exec(trimmed);
+
+  if (modelEquals || modelLong || modelShort) {
+    return { key: 'model', value: unquoteCodexValue((modelEquals || modelLong || modelShort)?.[1] || '') };
+  }
+  if (profileEquals || profileLong || profileShort) {
+    return { key: 'profile', value: unquoteCodexValue((profileEquals || profileLong || profileShort)?.[1] || '') };
+  }
+  if (config?.[1] === 'model') {
+    return { key: 'model', value: unquoteCodexValue(config[2]) };
+  }
+  if (config?.[1] === 'model_reasoning_effort') {
+    return { key: 'reasoningEffort', value: unquoteCodexValue(config[2]) };
+  }
+  return { key: null, value: null, ambiguous: false };
+}
+
 export function readCodexLaunchFlags(flags: string[]): CodexLaunchSelection {
   const selection: CodexLaunchSelection = {};
 
-  for (const flag of flags) {
+  for (let index = 0; index < flags.length; index += 1) {
+    const flag = flags[index];
     const trimmed = flag.trim();
-    const modelEquals = /^--model=(\S+)$/.exec(trimmed);
-    const modelLong = /^--model\s+(\S+)$/.exec(trimmed);
-    const modelShort = /^-m\s+(\S+)$/.exec(trimmed);
-    const profileEquals = /^--profile=(\S+)$/.exec(trimmed);
-    const profileLong = /^--profile\s+(\S+)$/.exec(trimmed);
-    const profileShort = /^-p\s+(\S+)$/.exec(trimmed);
-    const config = /^(?:-c|--config)(?:\s+|=)([^=\s]+)=(\S+)$/.exec(trimmed);
+    if (trimmed === '--model' || trimmed === '-m' || trimmed === '--profile' || trimmed === '-p') {
+      const next = flags[index + 1]?.trim();
+      if (next && isSafeCodexLaunchValue(unquoteCodexValue(next))) {
+        selection[trimmed === '--model' || trimmed === '-m' ? 'model' : 'profile'] = unquoteCodexValue(next);
+        index += 1;
+      }
+      continue;
+    }
+    if (trimmed === '-c' || trimmed === '--config') {
+      const config = /^([^=\s]+)=(.+)$/.exec(flags[index + 1]?.trim() || '');
+      if (config?.[1] === 'model' && isSafeCodexLaunchValue(unquoteCodexValue(config[2]))) {
+        selection.model = unquoteCodexValue(config[2]);
+        index += 1;
+      } else if (config?.[1] === 'model_reasoning_effort' && isSafeCodexLaunchValue(unquoteCodexValue(config[2]))) {
+        selection.reasoningEffort = unquoteCodexValue(config[2]);
+        index += 1;
+      }
+      continue;
+    }
 
-    if (modelEquals || modelLong || modelShort) {
-      selection.model = (modelEquals || modelLong || modelShort)?.[1];
-    } else if (profileEquals || profileLong || profileShort) {
-      selection.profile = (profileEquals || profileLong || profileShort)?.[1];
-    } else if (config?.[1] === 'model') {
-      selection.model = config[2];
-    } else if (config?.[1] === 'model_reasoning_effort' && CODEX_REASONING_EFFORTS.has(config[2] as CodexReasoningEffort)) {
-      selection.reasoningEffort = config[2] as CodexReasoningEffort;
+    const known = readKnownCodexEntry(trimmed);
+    if (known.key && isSafeCodexLaunchValue(known.value)) {
+      selection[known.key] = known.value;
     }
   }
 
@@ -229,27 +276,58 @@ export function updateCodexLaunchFlags(flags: string[], selection: CodexLaunchSe
     };
   }
 
-  const wantsConfig = Boolean(selection.reasoningEffort);
-  if (wantsConfig) {
-    const ambiguousConfig = flags.find(flag => {
-      const key = codexConfigKey(flag);
-      return key !== null && !isCodexKnownLaunchConfig(flag);
-    });
-    if (ambiguousConfig) {
+  const next: string[] = [];
+  for (let index = 0; index < flags.length; index += 1) {
+    const flag = flags[index];
+    const trimmed = flag.trim();
+    if (!trimmed) {
+      next.push(flag);
+      continue;
+    }
+    if (hasMultipleCodexFlags(trimmed)) {
       return {
         flags: [...flags],
-        conflict: `Manual config flag kept: ${ambiguousConfig}. Remove it before using the guided Codex controls.`,
+        conflict: `Manual Codex launch entry kept: ${flag}. Split it into one setting per entry before using guided controls.`,
       };
     }
+    if (trimmed === '--model' || trimmed === '-m' || trimmed === '--profile' || trimmed === '-p') {
+      const value = flags[index + 1]?.trim();
+      if (!value || !isSafeCodexLaunchValue(unquoteCodexValue(value))) {
+        return {
+          flags: [...flags],
+          conflict: `Manual Codex launch entry kept: ${flag}. Remove it before using guided controls.`,
+        };
+      }
+      index += 1;
+      continue;
+    }
+    if (trimmed === '-c' || trimmed === '--config') {
+      const config = /^([^=\s]+)=(.+)$/.exec(flags[index + 1]?.trim() || '');
+      if (config?.[1] === 'model' || config?.[1] === 'model_reasoning_effort') {
+        if (!isSafeCodexLaunchValue(unquoteCodexValue(config[2]))) {
+          return {
+            flags: [...flags],
+            conflict: `Manual Codex launch entry kept: ${flag} ${flags[index + 1] || ''}. Remove it before using guided controls.`,
+          };
+        }
+        index += 1;
+        continue;
+      }
+      next.push(flag);
+      continue;
+    }
+    const known = readKnownCodexEntry(trimmed);
+    if (known.key) {
+      continue;
+    }
+    if (isCodexModelFlag(trimmed) || isCodexProfileFlag(trimmed) || isCodexKnownLaunchConfig(trimmed)) {
+      return {
+        flags: [...flags],
+        conflict: `Manual Codex launch entry kept: ${flag}. Remove it before using guided controls.`,
+      };
+    }
+    next.push(flag);
   }
-
-  const next = flags.filter(flag => {
-    const trimmed = flag.trim();
-    if (!trimmed) return false;
-    return !isCodexModelFlag(trimmed)
-      && !isCodexProfileFlag(trimmed)
-      && !isCodexKnownLaunchConfig(trimmed);
-  });
 
   if (selection.model) {
     next.push(`--model=${selection.model}`);

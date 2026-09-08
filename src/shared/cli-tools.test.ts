@@ -41,8 +41,12 @@ describe('Codex launch flag helpers', () => {
     const flags = ['--search', '-c sandbox_mode=workspace-write'];
     const result = updateCodexLaunchFlags(flags, { reasoningEffort: 'medium' });
 
-    expect(result.flags).toEqual(flags);
-    expect(result.conflict).toContain('sandbox_mode=workspace-write');
+    expect(result.conflict).toBeNull();
+    expect(result.flags).toEqual([
+      '--search',
+      '-c sandbox_mode=workspace-write',
+      '-c model_reasoning_effort=medium',
+    ]);
   });
 
   it('rejects whitespace in guided launch values', () => {
@@ -62,5 +66,40 @@ describe('Codex launch flag helpers', () => {
       model: 'gpt-5.2-codex',
       reasoningEffort: 'medium',
     });
+  });
+
+  it('handles split flag and value arrays from resolved launch args', () => {
+    expect(getCodexLaunchSettings([
+      '--model',
+      'gpt-5.2-codex',
+      '--profile',
+      'daily',
+      '-c',
+      'model_reasoning_effort=xhigh',
+    ])).toEqual({
+      model: 'gpt-5.2-codex',
+      profile: 'daily',
+      reasoningEffort: 'xhigh',
+    });
+  });
+
+  it('reads quoted known values without treating quotes as launch metadata', () => {
+    expect(getCodexLaunchSettings([
+      '--model "gpt-5.2-codex"',
+      "--profile 'daily'",
+      '-c model_reasoning_effort=xhigh',
+    ])).toEqual({
+      model: 'gpt-5.2-codex',
+      profile: 'daily',
+      reasoningEffort: 'xhigh',
+    });
+  });
+
+  it('fails closed when a raw entry contains multiple known Codex flags', () => {
+    const flags = ['--model old-model --search'];
+    const result = updateCodexLaunchFlags(flags, { model: 'gpt-5.2-codex' });
+
+    expect(result.flags).toEqual(flags);
+    expect(result.conflict).toContain('Split it into one setting per entry');
   });
 });

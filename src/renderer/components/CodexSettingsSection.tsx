@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { readCodexLaunchFlags, updateCodexLaunchFlags, type CodexReasoningEffort } from '../../shared/cli-tools';
 import type { CliToolId, SessionInfo } from '../../shared/types';
 import type { CodexConfigurationSnapshot } from '../../shared/codex-types';
@@ -56,15 +56,24 @@ export function CodexLaunchControls({
     ...(configuration?.profiles.map(profile => profile.name) ?? []),
     selection.profile || '',
   ]), [configuration, selection.profile]);
-  const activeModel = selection.model || manualModel;
-  const activeProfile = selection.profile || manualProfile;
+  const activeModel = selection.model || '';
+  const activeProfile = selection.profile || '';
   const modelMeta = configuration?.models.find(model => model.id === activeModel);
-  const reasoningEfforts = modelMeta?.reasoningEfforts.length ? modelMeta.reasoningEfforts : FALLBACK_REASONING;
+  const reasoningEfforts = sortedUnique([
+    ...(modelMeta?.reasoningEfforts.length ? modelMeta.reasoningEfforts : FALLBACK_REASONING),
+    selection.reasoningEffort || '',
+  ]);
+
+  useEffect(() => {
+    setManualModel(selection.model || '');
+    setManualProfile(selection.profile || '');
+    setConflict(null);
+  }, [flags, selection.model, selection.profile]);
 
   const apply = (next: { model?: string; profile?: string; reasoningEffort?: CodexReasoningEffort | '' }) => {
     const result = updateCodexLaunchFlags(flags, {
-      model: next.model ?? activeModel,
-      profile: next.profile ?? activeProfile,
+      model: next.model ?? selection.model ?? '',
+      profile: next.profile ?? selection.profile ?? '',
       reasoningEffort: next.reasoningEffort ?? selection.reasoningEffort ?? '',
     });
     setConflict(result.conflict);
@@ -181,7 +190,7 @@ export function CodexSettingsSection({
             onChange={e => onQuotaWarningPercentChange(sanitizePercent(e.target.value))}
           />
         </label>
-        <p className="form-hint">Remaining percent threshold. 0 disables the warning.</p>
+        <p className="form-hint">Remaining percent threshold. Requires Usage subscription quota. 0 disables the warning.</p>
       </div>
       <CodexAccountPanel sessions={sessions} onConfigurationLoaded={setConfiguration} />
     </>

@@ -89,7 +89,7 @@ function UsageWindow({ label, usedPercent, windowMinutes, resetsAt }: Readonly<{
   );
 }
 
-export function CodexAccountPanel({ sessions, onConfigurationLoaded }: Readonly<{ sessions: SessionInfo[]; onConfigurationLoaded?: (snapshot: CodexConfigurationSnapshot) => void }>) {
+export function CodexAccountPanel({ sessions, onConfigurationLoaded }: Readonly<{ sessions: SessionInfo[]; onConfigurationLoaded?: (snapshot: CodexConfigurationSnapshot | null) => void }>) {
   const [account, setAccount] = useState<LoadState<CodexAccountSnapshot>>(idleAccount);
   const [configuration, setConfiguration] = useState<LoadState<CodexConfigurationSnapshot>>(idleConfig);
   const [sessionId, setSessionId] = useState('');
@@ -102,6 +102,24 @@ export function CodexAccountPanel({ sessions, onConfigurationLoaded }: Readonly<
       configGeneration.current += 1;
     };
   }, []);
+
+  useEffect(() => {
+    const hasSelectedSession = !sessionId || sessions.some(session => session.id === sessionId);
+    if (!hasSelectedSession) {
+      configGeneration.current += 1;
+      setConfiguration(idleConfig);
+      onConfigurationLoaded?.(null);
+      setSessionId('');
+      return;
+    }
+  }, [onConfigurationLoaded, sessionId, sessions]);
+
+  const handleSessionChange = (nextSessionId: string) => {
+    configGeneration.current += 1;
+    setSessionId(nextSessionId);
+    setConfiguration(idleConfig);
+    onConfigurationLoaded?.(null);
+  };
 
   const loadAccount = useCallback(async () => {
     const generation = accountGeneration.current + 1;
@@ -149,7 +167,7 @@ export function CodexAccountPanel({ sessions, onConfigurationLoaded }: Readonly<
             <p className="form-hint">Account-wide Codex usage from the Codex CLI. Tether local costs are separate.</p>
           </div>
           <button type="button" className="form-btn" onClick={loadAccount} disabled={account.status === 'loading'}>
-            {account.status === 'loading' ? 'Loading...' : accountData ? 'Retry' : 'Load account usage'}
+            {account.status === 'loading' ? 'Loading...' : account.status === 'error' ? 'Retry' : accountData ? 'Refresh' : 'Load account usage'}
           </button>
         </div>
         {account.error && <p className="codex-settings-error" role="alert">{account.error}</p>}
@@ -161,6 +179,7 @@ export function CodexAccountPanel({ sessions, onConfigurationLoaded }: Readonly<
               {accountData.authMode && <span>Auth: {accountData.authMode}</span>}
               {accountData.planType && <span>Plan: {accountData.planType}</span>}
             </div>
+            {accountData.error && <p className="codex-settings-error">{accountData.error}</p>}
             <div className="codex-settings-stats">
               <SummaryStat label="Lifetime tokens" value={formatNumber(accountData.summary?.lifetimeTokens)} />
               <SummaryStat label="Peak daily tokens" value={formatNumber(accountData.summary?.peakDailyTokens)} />
@@ -189,7 +208,7 @@ export function CodexAccountPanel({ sessions, onConfigurationLoaded }: Readonly<
         <div className="codex-settings-block-head">
           <div>
             <h3>Configuration inspector</h3>
-            <p className="form-hint">Shows effective Codex settings and where they came from. Commands, environment values, and URLs are omitted.</p>
+            <p className="form-hint">Shows effective Codex disk configuration and where values came from. It may differ from a running session or a native profile launch. Commands, environment values, and URLs are omitted.</p>
           </div>
           <button type="button" className="form-btn" onClick={loadConfiguration} disabled={configuration.status === 'loading'}>
             {configuration.status === 'loading' ? 'Inspecting...' : configData ? 'Retry' : 'Inspect configuration'}
@@ -197,7 +216,7 @@ export function CodexAccountPanel({ sessions, onConfigurationLoaded }: Readonly<
         </div>
         <label className="form-label" htmlFor="codex-config-session">
           Project context
-          <select id="codex-config-session" className="form-input" value={sessionId} onChange={e => setSessionId(e.target.value)}>
+          <select id="codex-config-session" className="form-input" value={sessionId} onChange={e => handleSessionChange(e.target.value)}>
             <option value="">Global Codex config</option>
             {codexSessions.map(session => (
               <option key={session.id} value={session.id}>{session.label}</option>
@@ -235,7 +254,7 @@ export function CodexAccountPanel({ sessions, onConfigurationLoaded }: Readonly<
             </div>
           </>
         ) : (
-          <p className="form-hint">Use this when you need to compare Tether launch flags with Codex config. Existing sessions may still be running with older settings.</p>
+          <p className="form-hint">Use this to inspect disk configuration for a project context. It does not read runtime settings from an active Codex session.</p>
         )}
       </section>
     </div>
