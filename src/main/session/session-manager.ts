@@ -23,6 +23,7 @@ import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
 import { envForSession as hookEnvForSession, revokeSessionToken as revokeHookSessionToken } from '../cli-config/hook-service';
 import { envForRemoteSession, detachRemoteSession } from '../cli-config/remote/remote-hook-service';
 import { usageService } from '../usage/usage-service';
+import { remoteUsageService } from '../usage/remote-usage-service';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { createLogger } from '../logger';
 
@@ -221,6 +222,8 @@ export class Session {
   /** Active opencode session-id watcher, so we can cancel on removal. */
   opencodeDetectCancel: (() => void) | null = null;
   readonly worktreeOf: string | null;
+  usageSessionId?: string;
+  remoteUsageStatus?: 'pending' | 'collecting' | 'unavailable';
 
   constructor(id: string, label: string, workingDir: string, options: {
     environmentId?: string;
@@ -254,6 +257,8 @@ export class Session {
       waitingReason: this.waitingReason,
       createdAt: this.createdAt,
       toolSessionId: this.toolSessionId || undefined,
+      usageSessionId: this.usageSessionId,
+      remoteUsageStatus: this.remoteUsageStatus,
       claudeSessionId: this.claudeSessionId || undefined,
       resumed: this.resumed || undefined,
       worktreeOf: this.worktreeOf || undefined,
@@ -550,6 +555,7 @@ export class SessionManager {
       const { exitCode } = exitInfo;
       if (!session.transport) return;
       log.info('Session exited', { id, exitCode });
+      remoteUsageService.stop(id);
       statusDetector.markExited(id, exitCode);
       session.transport = null;
       session.helmIntegration?.cleanup();
@@ -785,6 +791,20 @@ export class SessionManager {
       session.toolSessionId = toolSessionId || null;
     }
 
+    const remoteUsage = !(transport instanceof LocalTransport) && (cliTool === 'claude' || cliTool === 'codex');
+    if (remoteUsage) {
+      // A non-secret process marker lets the side channel identify Codex's
+      // open rollout file. It is never read from or injected into PTY output.
+      resolvedEnv.TETHER_USAGE_SESSION_ID = id;
+      session.usageSessionId = `remote-pending:${id}`;
+      session.remoteUsageStatus = 'pending';
+      if (cliTool === 'claude') {
+        toolSessionId = uuidv4();
+        session.claudeSessionId = toolSessionId;
+        session.toolSessionId = toolSessionId;
+      }
+    }
+
     try {
       await transport.start({
         workingDir: opts.workingDir,
@@ -812,6 +832,32 @@ export class SessionManager {
       this.sessions.delete(id);
       this.callbacksMap.delete(id);
       throw err;
+    }
+
+    if (remoteUsage && session.transport && this.sessions.has(id) && opts.environmentId) {
+      const coder = transport instanceof CoderTransport;
+      const separator = opts.workingDir.indexOf('::');
+      remoteUsageService.start({
+        sessionId: id, environmentId: opts.environmentId, cli: cliTool as 'claude' | 'codex',
+        workspace: coder ? (separator < 0 ? opts.workingDir : opts.workingDir.slice(0, separator)).trim() : '',
+        workingDir: coder ? (separator < 0 ? '.' : opts.workingDir.slice(separator + 2) || '.') : opts.workingDir,
+        nativeSessionId: toolSessionId,
+        home: resolvedEnv.HOME,
+        claudeHome: resolvedEnv.CLAUDE_CONFIG_DIR,
+        codexHome: resolvedEnv.CODEX_HOME,
+        onSource: (key, nativeId) => {
+          if (!this.sessions.has(id)) return;
+          session.usageSessionId = key;
+          session.toolSessionId = nativeId;
+          if (cliTool === 'claude') session.claudeSessionId = nativeId;
+          callbacks.onUpdate?.(id, session.toInfo());
+        },
+        onStatus: status => {
+          if (!this.sessions.has(id) || session.remoteUsageStatus === status) return;
+          session.remoteUsageStatus = status;
+          callbacks.onUpdate?.(id, session.toInfo());
+        },
+      });
     }
 
     // Codex doesn't accept a pre-assigned session id — it mints one and writes
@@ -901,6 +947,7 @@ export class SessionManager {
     const session = this.sessions.get(id);
     if (session) {
       log.info('Removing session', { id });
+      remoteUsageService.stop(id);
       statusDetector.unregister(id);
       // Revoke any per-session hook token. No-op for local sessions (they use
       // the boot-global token); remote sessions get scoped tokens, so a
@@ -1012,6 +1059,7 @@ export class SessionManager {
     const session = this.sessions.get(id);
     if (session?.transport) {
       log.warn('Force-killing session', { id });
+      remoteUsageService.stop(id);
       session.transport.kill();
       // kill() may fire the transport's onExit synchronously; if it did, the
       // normal exit handler already ran the full cleanup and nulled the
@@ -1031,6 +1079,7 @@ export class SessionManager {
   }
 
   dispose(): void {
+    remoteUsageService.dispose();
     statusDetector.dispose();
     for (const session of this.sessions.values()) {
       session.codexDetectCancel?.();

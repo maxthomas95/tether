@@ -31,7 +31,7 @@ export interface RemoteFileOps {
 
 export interface ControlConnection {
   /** Run a command on the host, collecting exit code and output. */
-  exec(cmd: string): Promise<RemoteExecResult>;
+  exec(cmd: string, options?: { input?: string; timeoutMs?: number; maxBytes?: number }): Promise<RemoteExecResult>;
   /** File operations (SFTP subsystem). Cached per connection. */
   files(): Promise<RemoteFileOps>;
   /**

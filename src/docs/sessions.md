@@ -59,6 +59,12 @@ Each session has a state, shown by the colored dot in the sidebar:
 
 State detection is passive — Tether watches output cadence; it does not parse or filter the terminal stream. With [CLI hooks](settings#cli-hooks) enabled, Claude/Codex sessions get hook-grade detection on top: local sessions automatically, SSH sessions when their environment opts in via [CLI status hooks on remote hosts](environments#cli-status-hooks-on-remote-hosts). Coder sessions are cadence-only for now.
 
+Claude and Codex panes can show [usage totals from SSH and Coder hosts](usage-quota#ssh-and-coder-sessions)
+even when status hooks are off. Collection uses a separate connection and leaves
+the terminal stream untouched. **Waiting for remote usage** means the transcript
+has not been identified yet; **Last collected** means collection is temporarily
+unavailable and the displayed totals may be stale.
+
 ## Managing Sessions
 
 Each session has a visible **Actions** (…) button; the same actions remain available by right-click. With a session row focused, **Shift+F10** opens its menu. Use arrow keys to move through actions and **Escape** to close it.

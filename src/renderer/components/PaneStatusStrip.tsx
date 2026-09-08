@@ -4,6 +4,7 @@ import type { SessionUsage } from '../../shared/types';
 
 interface Props {
   sessionId: string | undefined;
+  remoteStatus?: 'pending' | 'collecting' | 'unavailable';
 }
 
 /** Shorten "claude-opus-4-6" → "opus-4-6". */
@@ -63,22 +64,24 @@ function buildTooltip(usage: SessionUsage): string {
   return lines.join('\n');
 }
 
-export function PaneStatusStrip({ sessionId }: Props) {
+export function PaneStatusStrip({ sessionId, remoteStatus }: Props) {
   const { usage, enabled } = useSessionUsage(sessionId);
 
   if (!enabled) return null;
   if (!sessionId) return null;
   if (!usage) {
-    return <div className="pane-status-strip"><span className="pane-status-strip-item">Usage unavailable</span></div>;
+    const label = remoteStatus === 'pending' ? 'Waiting for remote usage' : 'Usage unavailable';
+    return <div className="pane-status-strip"><span className="pane-status-strip-item">{label}</span></div>;
   }
 
   const model = usage ? dominantModel(usage) : null;
   const messageCount = usage?.messageCount ?? 0;
   const cost = usage?.totalCost ?? 0;
-  const tooltip = usage ? buildTooltip(usage) : 'No usage data yet';
+  const tooltip = buildTooltip(usage) + (remoteStatus === 'unavailable' ? '\nRemote collection unavailable; showing last collected totals. Retrying automatically.' : '');
 
   return (
     <div className="pane-status-strip" title={tooltip}>
+      {remoteStatus === 'unavailable' && <span className="pane-status-strip-item">Last collected</span>}
       <span className="pane-status-strip-item pane-status-strip-model">
         {model ? shortenModel(model) : '—'}
       </span>

@@ -224,6 +224,10 @@ The **About** dialog has an **Export diagnostics for support** button that bundl
 
 Per-session and global usage stats are computed from Claude Code and Codex CLI transcript JSONL files (plus OpenCode's local DB and the bundled LiteLLM pricing table). Toggle tracking on/off; resync on demand.
 
+Claude and Codex sessions on SSH and Coder also feed these totals. Remote
+collection is independent of CLI status hooks. See [SSH and Coder usage](usage-quota#ssh-and-coder-sessions)
+for host requirements, sudo behavior, and the **Last collected** indicator.
+
 ### Budget guardrails
 
 Set **Daily budget warning (USD)** or **Weekly budget warning (USD)** to a positive dollar amount to enable local warning guardrails. Blank or `0` disables a guardrail.
