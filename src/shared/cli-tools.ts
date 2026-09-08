@@ -145,7 +145,7 @@ const CODEX_SAFE_VALUE_RE = /^[A-Za-z0-9._:@/+~-]+$/;
 const CODEX_MAX_LAUNCH_VALUE_LENGTH = 128;
 
 export function isSafeCodexLaunchValue(value: string): boolean {
-  return value.length > 0 && value.length <= CODEX_MAX_LAUNCH_VALUE_LENGTH && CODEX_SAFE_VALUE_RE.test(value);
+  return value.length > 0 && !value.startsWith('-') && value.length <= CODEX_MAX_LAUNCH_VALUE_LENGTH && CODEX_SAFE_VALUE_RE.test(value);
 }
 
 function codexConfigKey(entry: string): string | null {
@@ -317,7 +317,7 @@ export function updateCodexLaunchFlags(flags: string[], selection: CodexLaunchSe
       continue;
     }
     const known = readKnownCodexEntry(trimmed);
-    if (known.key) {
+    if (known.key && isSafeCodexLaunchValue(known.value)) {
       continue;
     }
     if (isCodexModelFlag(trimmed) || isCodexProfileFlag(trimmed) || isCodexKnownLaunchConfig(trimmed)) {

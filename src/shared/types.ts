@@ -164,6 +164,10 @@ export interface EnvironmentInfo {
 }
 
 export interface SessionInfo {
+  /** Tether profile name as captured at launch, distinct from a native Codex profile. */
+  launchProfileName?: string;
+  /** Allowlisted launch overrides; observed runtime metadata may differ. */
+  codexLaunch?: { model?: string; reasoningEffort?: string; profile?: string };
   id: string;
   environmentId: string | null;
   cliTool?: CliToolId;

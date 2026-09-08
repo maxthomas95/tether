@@ -91,6 +91,8 @@ export const IPC = {
   USAGE_GET_ALL: 'usage:get-all',
   USAGE_REFRESH: 'usage:refresh',
   USAGE_EXPORT: 'usage:export',
+  CODEX_ACCOUNT: 'codex:account',
+  CODEX_CONFIGURATION: 'codex:configuration',
 
   // Update
   UPDATE_CHECK: 'update:check',

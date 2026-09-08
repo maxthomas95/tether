@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { createLogger } from '../logger';
 import type { QuotaInfo, CodexQuota } from '../../shared/types';
+import { readCodexQuota } from '../codex/integration-service';
 
 const log = createLogger('quota');
 
@@ -13,8 +14,6 @@ const CLAUDE_TOKEN_REFRESH_URL = 'https://platform.claude.com/v1/oauth/token';
 const CLAUDE_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 const CLAUDE_CREDENTIALS_PATH = path.join(os.homedir(), '.claude', '.credentials.json');
 
-const CODEX_API_URL = 'https://chatgpt.com/backend-api/wham/usage';
-const CODEX_AUTH_PATH = path.join(os.homedir(), '.codex', 'auth.json');
 
 interface ClaudeCredentials {
   accessToken: string;
@@ -24,23 +23,9 @@ interface ClaudeCredentials {
   rateLimitTier?: string;
 }
 
-interface CodexCredentials {
-  accessToken: string;
-  accountId?: string;
-}
-
 interface ClaudeApiResponse {
   five_hour?: { utilization: number; resets_at: string | null };
   seven_day?: { utilization: number; resets_at: string | null };
-  [key: string]: unknown;
-}
-
-interface CodexApiResponse {
-  rate_limit?: {
-    primary_window?: { used_percent: number; reset_at: string | number | null };
-    secondary_window?: { used_percent: number; reset_at: string | number | null };
-  };
-  plan_type?: string;
   [key: string]: unknown;
 }
 
@@ -77,15 +62,18 @@ function emptyQuota(error: string | null = null): QuotaInfo {
   };
 }
 
-class QuotaService {
+export class QuotaService {
   private pollInterval: ReturnType<typeof setInterval> | null = null;
   private lastQuota: QuotaInfo = emptyQuota();
   private callback: ((info: QuotaInfo) => void) | null = null;
   private _enabled = true;
+  private generation = 0;
+  private inflight: Promise<QuotaInfo> | null = null;
 
   get enabled(): boolean { return this._enabled; }
 
   setEnabled(enabled: boolean): void {
+    if (this._enabled === enabled) return;
     this._enabled = enabled;
     if (!enabled) {
       this.stop();
@@ -101,13 +89,15 @@ class QuotaService {
   }
 
   start(): void {
-    if (!this._enabled) return;
+    if (!this._enabled || this.pollInterval) return;
     log.info('Quota polling started');
     this.fetchQuota();
     this.pollInterval = setInterval(() => this.fetchQuota(), POLL_INTERVAL_MS);
   }
 
   stop(): void {
+    this.generation++;
+    this.inflight = null;
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
@@ -121,12 +111,23 @@ class QuotaService {
 
   async fetchQuota(): Promise<QuotaInfo> {
     if (!this._enabled) return this.lastQuota;
+    if (this.inflight) return this.inflight;
+    const generation = this.generation;
+    const request = this.collectQuota(generation).finally(() => {
+      if (this.inflight === request) this.inflight = null;
+    });
+    this.inflight = request;
+    return request;
+  }
+
+  private async collectQuota(generation: number): Promise<QuotaInfo> {
 
     // Fetch Claude and Codex in parallel
     const [claudeResult, codexResult] = await Promise.all([
       this.fetchClaude(),
       this.fetchCodex(),
     ]);
+    if (!this._enabled || generation !== this.generation) return this.lastQuota;
 
     const info: QuotaInfo = {
       ...claudeResult,
@@ -218,66 +219,28 @@ class QuotaService {
   }
 
   private async fetchCodex(): Promise<CodexQuota | null> {
-    const creds = this.readCodexCredentials();
-    if (!creds) return null; // No Codex installed / not logged in — just skip
-
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10_000);
-
-      const headers: Record<string, string> = {
-        'Authorization': `Bearer ${creds.accessToken}`,
-        'Accept': 'application/json',
-      };
-      if (creds.accountId) {
-        headers['ChatGPT-Account-Id'] = creds.accountId;
-      }
-
-      const res = await fetch(CODEX_API_URL, { headers, signal: controller.signal });
-      clearTimeout(timeout);
-
-      if (res.status === 401 || res.status === 403) {
-        return {
-          primary: { usedPercent: null, resetAt: null },
-          secondary: { usedPercent: null, resetAt: null },
-          planType: null,
-          error: "Codex credentials expired — run 'codex' to refresh",
-        };
-      }
-
-      if (!res.ok) {
-        return {
-          primary: this.lastQuota.codex?.primary ?? { usedPercent: null, resetAt: null },
-          secondary: this.lastQuota.codex?.secondary ?? { usedPercent: null, resetAt: null },
-          planType: this.lastQuota.codex?.planType ?? null,
-          error: `Codex API error: ${res.status}`,
-        };
-      }
-
-      const data: CodexApiResponse = await res.json();
-
+    const snapshot = await readCodexQuota().catch(() => null);
+    const previous = this.lastQuota.codex;
+    if (snapshot?.status === 'unavailable' && !previous) return null;
+    if (!snapshot || snapshot.status !== 'ready') {
       return {
-        primary: {
-          usedPercent: data.rate_limit?.primary_window?.used_percent ?? null,
-          resetAt: normalizeCodexResetAt(data.rate_limit?.primary_window?.reset_at),
-        },
-        secondary: {
-          usedPercent: data.rate_limit?.secondary_window?.used_percent ?? null,
-          resetAt: normalizeCodexResetAt(data.rate_limit?.secondary_window?.reset_at),
-        },
-        planType: data.plan_type ?? null,
-        error: null,
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      log.warn('Codex quota fetch failed', { error: message });
-      return {
-        primary: this.lastQuota.codex?.primary ?? { usedPercent: null, resetAt: null },
-        secondary: this.lastQuota.codex?.secondary ?? { usedPercent: null, resetAt: null },
-        planType: this.lastQuota.codex?.planType ?? null,
-        error: message.includes('abort') ? 'Codex: request timed out' : `Codex: ${message}`,
+        primary: previous?.primary ?? { usedPercent: null, resetAt: null },
+        secondary: previous?.secondary ?? { usedPercent: null, resetAt: null },
+        planType: previous?.planType ?? null,
+        buckets: previous?.buckets ?? [],
+        lastUpdated: previous?.lastUpdated ?? null,
+        error: snapshot?.error || 'Codex quota is unavailable. Open Codex to check your sign-in.',
       };
     }
+    const main = snapshot.rateLimits.find(bucket => bucket.id === 'codex') ?? snapshot.rateLimits[0];
+    return {
+      primary: { usedPercent: main?.primary?.usedPercent ?? null, resetAt: main?.primary?.resetsAt ?? null },
+      secondary: { usedPercent: main?.secondary?.usedPercent ?? null, resetAt: main?.secondary?.resetsAt ?? null },
+      buckets: snapshot.rateLimits,
+      lastUpdated: snapshot.lastUpdated,
+      planType: snapshot.planType,
+      error: snapshot.warnings.length ? snapshot.warnings.join(' ') : null,
+    };
   }
 
   private readClaudeCredentials(): ClaudeCredentials | null {
@@ -292,21 +255,6 @@ class QuotaService {
         expiresAt: oauth.expiresAt ?? 0,
         subscriptionType: oauth.subscriptionType,
         rateLimitTier: oauth.rateLimitTier,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  private readCodexCredentials(): CodexCredentials | null {
-    try {
-      const raw = fs.readFileSync(CODEX_AUTH_PATH, 'utf-8');
-      const json = JSON.parse(raw);
-      const token = json?.tokens?.access_token;
-      if (!token) return null;
-      return {
-        accessToken: token,
-        accountId: json?.tokens?.account_id,
       };
     } catch {
       return null;

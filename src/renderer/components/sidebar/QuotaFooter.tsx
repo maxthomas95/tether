@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuota } from '../../hooks/useQuota';
 import { onKeyActivate } from '../../utils/a11y';
+import { codexQuotaWarnings, quotaWindowLabel } from '../../utils/codex-quota';
 
 function formatResetTime(iso: string | null): string {
   if (!iso) return '';
@@ -47,13 +48,53 @@ function QuotaBar({ label, used, resetsAt }: QuotaBarProps) {
   );
 }
 
-export function QuotaFooter() {
+export function QuotaFooter({ onQuotaLow }: { onQuotaLow?: (message: string) => void } = {}) {
   const { quota, refresh, enabled } = useQuota();
+  const [warningThreshold, setWarningThreshold] = useState(0);
+  const warned = useRef(new Set<string>());
+
+  useEffect(() => {
+    let active = true;
+    const readThreshold = () => {
+      window.electronAPI.config.get('codexQuotaWarningPercent').then(value => {
+        if (active) setWarningThreshold(Number(value) || 0);
+      }).catch(() => {});
+    };
+    readThreshold();
+    window.addEventListener('tether:settings-changed', readThreshold);
+    return () => { active = false; window.removeEventListener('tether:settings-changed', readThreshold); };
+  }, []);
+
+  useEffect(() => {
+    if (!enabled || !onQuotaLow) return;
+    const due = codexQuotaWarnings(quota?.codex, warningThreshold).filter(row => !warned.current.has(row.key));
+    if (!due.length) return;
+    let active = true;
+    window.electronAPI.config.get('codexQuotaLastWarnings').then(async raw => {
+      if (!active) return;
+      let previous: string[] = [];
+      try {
+        const parsed: unknown = JSON.parse(raw || '[]');
+        if (Array.isArray(parsed)) previous = parsed.filter((key): key is string => typeof key === 'string').slice(-64);
+      } catch { /* An invalid marker must not prevent future warnings. */ }
+      const keys = new Set(previous);
+      for (const warning of due) {
+        if (keys.has(warning.key) || warned.current.has(warning.key)) continue;
+        warned.current.add(warning.key);
+        keys.add(warning.key);
+        onQuotaLow(warning.message);
+      }
+      await window.electronAPI.config.set('codexQuotaLastWarnings', JSON.stringify([...keys].slice(-64)));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [enabled, quota?.codex, warningThreshold, onQuotaLow]);
 
   if (!enabled || !quota) return null;
 
   const hasClaudeData = quota.fiveHour.utilization !== null || quota.sevenDay.utilization !== null;
-  const hasCodexData = quota.codex != null && quota.codex.primary.usedPercent !== null;
+  const hasCodexData = quota.codex != null && (quota.codex.primary.usedPercent !== null
+    || quota.codex.secondary.usedPercent !== null
+    || !!quota.codex.buckets?.some(bucket => bucket.primary?.usedPercent != null || bucket.secondary?.usedPercent != null));
 
   // Show section when we have data OR an error (so errors aren't silently swallowed)
   const showClaude = hasClaudeData || quota.error !== null;
@@ -87,8 +128,19 @@ export function QuotaFooter() {
               <span className="quota-plan">{quota.codex.planType}</span>
             )}
           </div>
-          <QuotaBar label="5h" used={quota.codex.primary.usedPercent} resetsAt={quota.codex.primary.resetAt} />
-          <QuotaBar label="7d" used={quota.codex.secondary.usedPercent} resetsAt={quota.codex.secondary.resetAt} />
+          {quota.codex.buckets?.length ? quota.codex.buckets.map(bucket => (
+            <React.Fragment key={bucket.id}>
+              {quota.codex!.buckets!.length > 1 && <span className="quota-plan">{bucket.name}</span>}
+              {bucket.primary && <QuotaBar label={quotaWindowLabel(bucket.primary.windowMinutes, 'Primary')} used={bucket.primary.usedPercent} resetsAt={bucket.primary.resetsAt} />}
+              {bucket.secondary && <QuotaBar label={quotaWindowLabel(bucket.secondary.windowMinutes, 'Secondary')} used={bucket.secondary.usedPercent} resetsAt={bucket.secondary.resetsAt} />}
+            </React.Fragment>
+          )) : <>
+            <QuotaBar label="Primary" used={quota.codex.primary.usedPercent} resetsAt={quota.codex.primary.resetAt} />
+            <QuotaBar label="Secondary" used={quota.codex.secondary.usedPercent} resetsAt={quota.codex.secondary.resetAt} />
+          </>}
+          {quota.codex.lastUpdated && <div className="quota-plan">
+            {quota.codex.error ? 'Last known quota' : 'Updated'} {new Date(quota.codex.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </div>}
           {quota.codex.error && <div className="quota-error">{quota.codex.error}</div>}
         </div>
       )}

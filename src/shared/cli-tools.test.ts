@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { getCodexLaunchSettings, readCodexLaunchFlags, updateCodexLaunchFlags } from './cli-tools';
 
 describe('Codex launch flag helpers', () => {
+  it('preserves a following option when a model value is missing', () => {
+    const flags = ['--model', '--search'];
+    expect(getCodexLaunchSettings(flags)).toEqual({});
+    expect(updateCodexLaunchFlags(flags, { model: 'gpt-5' })).toMatchObject({ flags, conflict: expect.any(String) });
+  });
+
+  it('preserves positional text mixed into a known flag entry', () => {
+    const flags = ['--model old-model explain-this'];
+    expect(updateCodexLaunchFlags(flags, { model: 'gpt-5' })).toMatchObject({ flags, conflict: expect.any(String) });
+  });
   it('reads model, profile, and reasoning variants from stored flag entries', () => {
     expect(readCodexLaunchFlags([
       '--model gpt-5.1-codex',

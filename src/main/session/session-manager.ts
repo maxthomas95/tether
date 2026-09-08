@@ -18,7 +18,7 @@ import { detectNewCopilotSession, releaseCopilotSessionClaim } from '../copilot/
 import { opencodeTranscriptExists } from '../opencode/transcripts';
 import { detectNewOpencodeSession, releaseOpencodeSessionClaim } from '../opencode/session-watcher';
 import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId, SessionExitInfo, WaitingReason } from '../../shared/types';
-import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
+import { getCliBinary, getCodexLaunchSettings, toolSupportsResume } from '../../shared/cli-tools';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
 import { envForSession as hookEnvForSession, revokeSessionToken as revokeHookSessionToken } from '../cli-config/hook-service';
 import { envForRemoteSession, detachRemoteSession } from '../cli-config/remote/remote-hook-service';
@@ -221,6 +221,9 @@ export class Session {
   /** Active opencode session-id watcher, so we can cancel on removal. */
   opencodeDetectCancel: (() => void) | null = null;
   readonly worktreeOf: string | null;
+  /** Allowlisted launch metadata; never retain arbitrary flags or environment values. */
+  launchProfileName?: string;
+  codexLaunch?: SessionInfo['codexLaunch'];
 
   constructor(id: string, label: string, workingDir: string, options: {
     environmentId?: string;
@@ -260,6 +263,8 @@ export class Session {
       helmEnabled: this.helmEnabled || undefined,
       parentSessionId: this.parentSessionId || undefined,
       notificationsMuted: this.notificationsMuted || undefined,
+      launchProfileName: this.launchProfileName,
+      codexLaunch: this.codexLaunch,
     };
   }
 }
@@ -583,6 +588,7 @@ export class SessionManager {
         try { profileEnvVars = JSON.parse(profile.env_vars); } catch { /* ignore */ }
       }
       if (profile) {
+        session.launchProfileName = profile.name;
         const perToolProfileFlags = parseCliFlagsPerTool(profile.cli_flags_per_tool);
         profileCliFlags = perToolProfileFlags[cliTool] || (cliTool === 'claude' ? parseStringArray(profile.cli_flags) : []);
       }
@@ -622,6 +628,7 @@ export class SessionManager {
       const disabled = new Set(opts.disabledInheritedFlags);
       resolvedCliArgs = resolvedCliArgs.filter(f => !disabled.has(f));
     }
+    if (cliTool === 'codex') session.codexLaunch = getCodexLaunchSettings(resolvedCliArgs);
 
     // Wire the Helm MCP for this session if both the global Allow Helm setting
     // AND the per-session flag are on. Only Claude Code understands --mcp-config
