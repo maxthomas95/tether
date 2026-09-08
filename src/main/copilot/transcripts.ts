@@ -173,6 +173,9 @@ export function listCopilotTranscripts(cwd: string, limit = 50, copilotHome = ge
 }
 
 export function copilotTranscriptExists(cwd: string, sessionId: string, copilotHome = getCopilotHome()): boolean {
+  // Resume accepts full UUIDs, never filesystem paths or abbreviated IDs.
+  if (typeof sessionId !== 'string' || sessionId.length !== 36 ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return false;
   const dir = path.join(getCopilotSessionStateRoot(copilotHome), sessionId);
   const meta = readWorkspaceMeta(path.join(dir, 'workspace.yaml'));
   if (!meta) return false;
