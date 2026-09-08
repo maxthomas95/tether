@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EnvironmentInfo } from '../../shared/types';
 import { useSessionUsage } from '../hooks/useSessionUsage';
 import { buildInspectorViewModel, type InspectableSession, type InspectorConfig } from '../utils/session-inspector';
@@ -18,32 +18,35 @@ export function PaneStatusStrip({ sessionId, tetherSessionId, session, environme
     cliHooksEnabled: false,
     codexLifecycleHooksEnabled: false,
   });
+  const configGenerationRef = useRef(0);
 
   const refreshConfig = useCallback(() => {
-    let cancelled = false;
+    const generation = ++configGenerationRef.current;
     Promise.all([
       window.electronAPI.config.get('cliHooksEnabled').catch(() => null),
       window.electronAPI.config.get('codexLifecycleHooksEnabled').catch(() => null),
     ]).then(([cliHooksEnabled, codexLifecycleHooksEnabled]) => {
-      if (cancelled) return;
+      if (generation !== configGenerationRef.current) return;
       setConfig({
         cliHooksEnabled: cliHooksEnabled === 'true',
-        codexLifecycleHooksEnabled: codexLifecycleHooksEnabled !== 'false',
+        codexLifecycleHooksEnabled: codexLifecycleHooksEnabled === 'true',
       });
     });
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   useEffect(() => {
-    const cancelInitial = refreshConfig();
+    let active = true;
+    const guardedRefreshConfig = () => {
+      if (active) refreshConfig();
+    };
+    guardedRefreshConfig();
     const handleSettingsChanged = () => {
-      refreshConfig();
+      guardedRefreshConfig();
     };
     window.addEventListener('tether:settings-changed', handleSettingsChanged);
     return () => {
-      cancelInitial();
+      active = false;
+      configGenerationRef.current++;
       window.removeEventListener('tether:settings-changed', handleSettingsChanged);
     };
   }, [refreshConfig]);

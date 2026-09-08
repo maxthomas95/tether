@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { EnvironmentInfo, SessionUsage } from '../../shared/types';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { Icon } from './Icon';
@@ -57,7 +58,7 @@ export function SessionInspector({
       >
         <Icon name="more" size={14} />
       </button>
-      {isOpen && (
+      {isOpen && createPortal(
         <div className="dialog-overlay session-inspector-overlay" onMouseDown={onClose} role="presentation">
           <div
             ref={dialogRef}
@@ -91,7 +92,8 @@ export function SessionInspector({
               <button type="button" className="form-btn" onClick={onClose}>Close</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
