@@ -25,7 +25,7 @@ function findEnvironmentRow(id: string): EnvironmentRow | undefined {
 
 export function listEnvironments(): EnvironmentRow[] {
   return getDb().environments
-    .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
+    .toSorted((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
     .map(toPublicRow);
 }
 

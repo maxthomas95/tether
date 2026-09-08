@@ -1,4 +1,5 @@
 import { net } from 'electron';
+import { trimBoundaryCharacter, trimTrailingCharacter } from '../../shared/string-trim';
 import {
   KvReadResult,
   OidcAuthUrlResponse,
@@ -34,7 +35,7 @@ export class VaultClient {
   private token: string | undefined;
 
   constructor(opts: VaultClientOptions) {
-    this.addr = opts.addr.replace(/\/+$/, '');
+    this.addr = trimTrailingCharacter(opts.addr, '/');
     this.namespace = opts.namespace || undefined;
     this.token = opts.token;
   }
@@ -102,8 +103,8 @@ export class VaultClient {
    * `<mount>/data/<path>`.
    */
   async kvRead(mount: string, path: string): Promise<KvReadResult> {
-    const cleanMount = mount.replace(/^\/+|\/+$/g, '');
-    const cleanPath = path.replace(/^\/+|\/+$/g, '');
+    const cleanMount = trimBoundaryCharacter(mount, '/');
+    const cleanPath = trimBoundaryCharacter(path, '/');
     const body = await this.request<{ data?: { data?: Record<string, unknown>; metadata?: Record<string, unknown> } }>(
       'GET',
       `/v1/${cleanMount}/data/${cleanPath}`,
@@ -118,8 +119,8 @@ export class VaultClient {
    * KV v2 write. Wraps the value object in `{ data: ... }` per the v2 protocol.
    */
   async kvWrite(mount: string, path: string, data: Record<string, unknown>): Promise<void> {
-    const cleanMount = mount.replace(/^\/+|\/+$/g, '');
-    const cleanPath = path.replace(/^\/+|\/+$/g, '');
+    const cleanMount = trimBoundaryCharacter(mount, '/');
+    const cleanPath = trimBoundaryCharacter(path, '/');
     await this.request('POST', `/v1/${cleanMount}/data/${cleanPath}`, { data });
   }
 
@@ -128,8 +129,8 @@ export class VaultClient {
    * Empty array if the path has no children or doesn't exist.
    */
   async kvList(mount: string, path: string): Promise<string[]> {
-    const cleanMount = mount.replace(/^\/+|\/+$/g, '');
-    const cleanPath = path.replace(/^\/+|\/+$/g, '');
+    const cleanMount = trimBoundaryCharacter(mount, '/');
+    const cleanPath = trimBoundaryCharacter(path, '/');
     try {
       const body = await this.request<{ data?: { keys?: string[] } }>(
         'LIST',

@@ -10,7 +10,7 @@ vi.mock('electron', () => ({ safeStorage: safeStorageMock }));
 vi.mock('./database');
 
 import { __resetDb, getDb } from './__mocks__/database';
-import { createGitProvider, getGitProvider, updateGitProvider } from './git-provider-repo';
+import { createGitProvider, getGitProvider, listGitProviders, updateGitProvider } from './git-provider-repo';
 import { decryptSecretFromStorage, isEncryptedSecret } from './secret-storage';
 
 describe('git-provider-repo', () => {
@@ -44,6 +44,31 @@ describe('git-provider-repo', () => {
       token: 'vault://secret/git#token',
     });
     expect(getDb().gitProviders[0].token).toBe('vault://secret/git#token');
+  });
+
+  it('lists providers by creation time without reordering stored rows', () => {
+    for (const name of ['Second', 'First']) {
+      createGitProvider({ name, type: 'github', baseUrl: 'https://api.github.com', token: 'vault://secret/git#token' });
+    }
+    const stored = getDb().gitProviders;
+    stored[0].created_at = '2026-02-01T00:00:00.000Z';
+    stored[1].created_at = '2026-01-01T00:00:00.000Z';
+    Object.freeze(stored);
+
+    expect(listGitProviders().map(row => row.name)).toEqual(['First', 'Second']);
+    expect(getDb().gitProviders).toBe(stored);
+    expect(stored.map(row => row.name)).toEqual(['Second', 'First']);
+  });
+
+  it('trims URL suffixes on create and update while preserving interior slashes', () => {
+    const provider = createGitProvider({
+      name: 'Gitea', type: 'gitea', baseUrl: 'https://example.test/git//api///', token: 'vault://secret/git#token',
+    });
+    expect(provider.baseUrl).toBe('https://example.test/git//api');
+
+    const interior = 'https://example.test/' + '/'.repeat(100_000) + 'api';
+    updateGitProvider(provider.id, { baseUrl: interior + '///' });
+    expect(getGitProvider(provider.id)?.baseUrl).toBe(interior);
   });
 
   it('rewrites a legacy plaintext token on update', () => {
