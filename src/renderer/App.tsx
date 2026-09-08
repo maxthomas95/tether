@@ -82,6 +82,7 @@ export function App() {
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<'integrations' | undefined>();
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   /**
    * Sessions whose current waiting cycle the user has already acknowledged
@@ -2002,7 +2003,8 @@ export function App() {
         />
         <QuotaFooter />
         <VaultStatusPill onAuthError={notifyVaultAuthError} />
-        <JobsOfficePill status={jobsStatus} active={officeOpen} onToggle={() => setOfficeOpen(v => !v)} />
+        <JobsOfficePill status={jobsStatus} active={officeOpen} onToggle={() => setOfficeOpen(v => !v)}
+          onConfigure={() => { setSettingsInitialSection('integrations'); setSettingsOpen(true); }} />
         <div className="sidebar-utilities">
           <button className="sidebar-settings" onClick={() => setSettingsOpen(true)}><Icon name="settings" /> Settings</button>
         </div>
@@ -2062,6 +2064,7 @@ export function App() {
         )}
         {officeOpen && jobsStatus?.detected && (
           <OfficePane
+            onConfigure={() => { setSettingsInitialSection('integrations'); setSettingsOpen(true); }}
             url={jobsStatus.url}
             version={jobsStatus.version}
             onClose={() => setOfficeOpen(false)}
@@ -2088,9 +2091,11 @@ export function App() {
         initialType={welcomeInitialEnvType}
       />
       <SettingsDialog
+        initialSection={settingsInitialSection}
         isOpen={settingsOpen}
         onClose={() => {
           setSettingsOpen(false);
+          setSettingsInitialSection(undefined);
           window.electronAPI.profile.list().then(setProfiles).catch(() => {});
         }}
         currentTheme={themeName}
