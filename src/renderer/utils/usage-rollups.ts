@@ -87,7 +87,7 @@ function addInto(target: RollupRow, source: DailyUsage, toolAcc?: Map<CliToolId,
   if (source.sessionIds && source.sessionIds.length > 0) {
     const ids = new Set(target.sessionIds ?? []);
     for (const id of source.sessionIds) ids.add(id);
-    target.sessionIds = Array.from(ids).sort();
+    target.sessionIds = Array.from(ids).sort((a, b) => a.localeCompare(b));
     target.sessionCount = target.sessionIds.length;
   } else {
     target.sessionCount += source.sessionCount;
@@ -117,7 +117,7 @@ function addInto(target: RollupRow, source: DailyUsage, toolAcc?: Map<CliToolId,
       if (t.sessionIds && t.sessionIds.length > 0) {
         const ids = new Set(row.sessionIds ?? []);
         for (const id of t.sessionIds) ids.add(id);
-        row.sessionIds = Array.from(ids).sort();
+        row.sessionIds = Array.from(ids).sort((a, b) => a.localeCompare(b));
         row.sessionCount = row.sessionIds.length;
       } else {
         row.sessionCount += t.sessionCount;

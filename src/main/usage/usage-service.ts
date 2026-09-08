@@ -1058,7 +1058,7 @@ export class UsageService {
     for (const [date, day] of dayMap) {
       const sessionIds = daySessionMap.get(date);
       if (sessionIds) {
-        day.sessionIds = Array.from(sessionIds).sort();
+        day.sessionIds = Array.from(sessionIds).sort((a, b) => a.localeCompare(b));
         day.sessionCount = day.sessionIds.length;
       }
 
@@ -1072,7 +1072,7 @@ export class UsageService {
       for (const row of rows) {
         const ids = toolSessionMap?.get(row.cliTool);
         if (!ids) continue;
-        row.sessionIds = Array.from(ids).sort();
+        row.sessionIds = Array.from(ids).sort((a, b) => a.localeCompare(b));
         row.sessionCount = row.sessionIds.length;
       }
       rows.sort((a, b) => {

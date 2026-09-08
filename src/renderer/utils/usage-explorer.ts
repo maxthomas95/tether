@@ -432,7 +432,7 @@ function sessionRows(
     const source = usage?.sessions[sessionId];
     const firstSlice = entry.slices[0];
     const live = liveByToolId.get(sessionId);
-    const dates = entry.slices.map(slice => slice.date).filter((date): date is string => !!date).sort();
+    const dates = entry.slices.map(slice => slice.date).filter((date): date is string => !!date).sort((a, b) => a.localeCompare(b));
     const environmentId = firstSlice.environmentId;
     const environment = environmentId ? envById.get(environmentId) : null;
     const cliTool = firstSlice.cliTool;
@@ -470,17 +470,17 @@ function sessionRows(
 
 function optionsFrom(usage: UsageInfo | null, environments: ReadonlyArray<EnvironmentInfo>): UsageExplorerResult['options'] {
   const sessions = Object.values(usage?.sessions ?? {});
-  const cliTools = Array.from(new Set(sessions.map(session => session.cliTool))).sort();
-  const projects = Array.from(new Set(sessions.map(sessionProject))).sort();
+  const cliTools = Array.from(new Set(sessions.map(session => session.cliTool))).sort((a, b) => a.localeCompare(b));
+  const projects = Array.from(new Set(sessions.map(sessionProject))).sort((a, b) => a.localeCompare(b));
   const models = Array.from(new Set(sessions.flatMap(session => [
     ...session.models.map(model => model.model),
     ...(session.daily ?? []).flatMap(day => day.models.map(model => model.model)),
-  ]))).sort();
+  ]))).sort((a, b) => a.localeCompare(b));
   const envIds = new Set(sessions.map(session => session.environmentId ?? 'unattributed'));
   return {
     cliTools: cliTools.map(value => ({ value, label: value })),
     projects: projects.map(value => ({ value, label: value })),
-    environments: Array.from(envIds).sort().map(value => ({
+    environments: Array.from(envIds).sort((a, b) => a.localeCompare(b)).map(value => ({
       value,
       label: value === 'unattributed' ? 'Unattributed' : environments.find(env => env.id === value)?.name ?? value,
     })),
