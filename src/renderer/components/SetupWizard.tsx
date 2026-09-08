@@ -786,6 +786,11 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                     >
                       {vaultLoggingIn ? 'Opening browser...' : vaultStatus.loggedIn ? 'Log In Again' : 'Save & Log In'}
                     </button>
+                    {vaultLoggingIn && (
+                      <button className="form-btn" onClick={() => window.electronAPI.vault.cancelLogin().catch(err => setVaultError(String(err)))}>
+                        Cancel login
+                      </button>
+                    )}
                     <button
                       className="form-btn"
                       onClick={() => setShowMigrateDialog(true)}

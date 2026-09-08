@@ -71,7 +71,10 @@ export function VaultStatusPill({ onAuthError }: Readonly<VaultStatusPillProps>)
     : `Click to renew Vault token${status.identity ? ` (signed in as ${status.identity})` : ''}`;
 
   const handleClick = async () => {
-    if (busy) return;
+    if (busy) {
+      await window.electronAPI.vault.cancelLogin().catch(onAuthError);
+      return;
+    }
     setBusy(true);
     try {
       await window.electronAPI.vault.login();
@@ -89,14 +92,14 @@ export function VaultStatusPill({ onAuthError }: Readonly<VaultStatusPillProps>)
       className="sidebar-footer vault-pill"
       role="button"
       tabIndex={0}
-      title={title}
+      title={busy ? 'Cancel Vault login, then click again to retry' : title}
       onClick={handleClick}
       onKeyDown={onKeyActivate(handleClick)}
-      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', cursor: busy ? 'wait' : 'pointer' }}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', cursor: 'pointer' }}
     >
       <span style={{ color, fontSize: 10, lineHeight: 1 }}>{dot}</span>
       <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-        {busy ? 'Opening browser…' : label}
+        {busy ? 'Cancel Vault login' : label}
       </span>
     </div>
   );
