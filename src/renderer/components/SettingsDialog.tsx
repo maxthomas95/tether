@@ -2057,7 +2057,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               Show usage quota in sidebar
             </label>
             <p className="form-hint">
-              Display Claude and Codex subscription usage (5-hour and 7-day windows) in the sidebar footer. Polls every 5 minutes.
+              Display Claude and Codex subscription usage in the sidebar footer, with the quota windows each provider reports. Polls every 5 minutes.
             </p>
             <label className="form-radio-label" style={{ marginTop: 8 }}>
               <input

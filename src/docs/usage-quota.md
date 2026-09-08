@@ -61,6 +61,6 @@ Set **Codex quota warning** in [Settings -> Codex](settings.md#codex) to a remai
 
 ## Privacy
 
-Tether's usage collector reads local metadata and does not upload transcripts. Its pricing table may refresh once a day from `raw.githubusercontent.com`. Optional quota refreshes and explicit account/configuration inspection use provider services through the installed CLI. Tether does not send prompts through these read-only requests or copy Codex credentials into its renderer, files or logs.
+Tether's usage collector reads local metadata and does not upload transcripts. Its pricing table may refresh once a day from `raw.githubusercontent.com`. Optional quota refreshes contact providers; Codex requests use the installed CLI. Explicit account/configuration inspection may also contact provider services through Codex. Tether does not send prompts through these read-only requests or copy Codex credentials into its renderer, files or logs.
 
 The configuration inspector exposes only selected settings, source categories, native profile names and integration names. Commands, URLs, environment values and authentication payloads are omitted. Exports include project paths and IDs, so choose their destination accordingly.

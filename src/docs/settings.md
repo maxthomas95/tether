@@ -268,7 +268,7 @@ Inspect configuration to load the installed CLI's model and native-profile choic
 
 ### Account and configuration
 
-**Load account usage** requests account-wide Codex statistics and quota windows. This is separate from the local API-equivalent estimates in [Usage & Quota](usage-quota). Fields the CLI or account cannot report stay unavailable.
+**Load account usage** requests account-wide Codex statistics and quota windows. This is separate from the local API-equivalent estimates in [Usage & Quota](usage-quota.md). Fields the CLI or account cannot report stay unavailable.
 
 **Inspect configuration** reads selected effective settings from disk, with their source category. Choose global settings or a local Codex session's project context. This is not a running session's complete runtime configuration: launch overrides, native profiles and later CLI changes can differ. Remote project configuration cannot be inspected through the local CLI.
 
