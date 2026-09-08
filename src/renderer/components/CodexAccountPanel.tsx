@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { quotaWindowLabel } from '../utils/codex-quota';
 import type { CodexAccountSnapshot, CodexConfigurationSnapshot } from '../../shared/codex-types';
 import type { SessionInfo } from '../../shared/types';
 
@@ -27,14 +28,14 @@ function formatUpdated(value: string | null | undefined): string {
   if (!value) return 'Not loaded';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return `${date.toLocaleString()} (${date.toISOString()})`;
+  return date.toLocaleString();
 }
 
 function formatReset(value: string | null | undefined): string {
   if (!value) return 'no reset reported';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return `${date.toLocaleString()} (${date.toISOString()})`;
+  return date.toLocaleString();
 }
 
 function accountStatusText(snapshot: CodexAccountSnapshot | null): string {
@@ -83,7 +84,7 @@ function UsageWindow({ label, usedPercent, windowMinutes, resetsAt }: Readonly<{
         <span style={{ width: `${pct ?? 0}%` }} />
       </div>
       <p className="form-hint">
-        {windowMinutes ? `${windowMinutes} minute window` : 'Window length unavailable'}; resets {formatReset(resetsAt)}.
+        {windowMinutes ? `${quotaWindowLabel(windowMinutes, 'Unknown')} window` : 'Window length unavailable'}; resets {formatReset(resetsAt)}.
       </p>
     </div>
   );
@@ -167,7 +168,7 @@ export function CodexAccountPanel({ sessions, onConfigurationLoaded }: Readonly<
             <p className="form-hint">Account-wide Codex usage from the Codex CLI. Tether local costs are separate.</p>
           </div>
           <button type="button" className="form-btn" onClick={loadAccount} disabled={account.status === 'loading'}>
-            {account.status === 'loading' ? 'Loading...' : account.status === 'error' ? 'Retry' : accountData ? 'Refresh' : 'Load account usage'}
+            {account.status === 'loading' ? 'Loading...' : account.status === 'error' || (accountData && accountData.status !== 'ready') ? 'Retry' : accountData ? 'Refresh' : 'Load account usage'}
           </button>
         </div>
         {account.error && <p className="codex-settings-error" role="alert">{account.error}</p>}
@@ -184,8 +185,8 @@ export function CodexAccountPanel({ sessions, onConfigurationLoaded }: Readonly<
               <SummaryStat label="Lifetime tokens" value={formatNumber(accountData.summary?.lifetimeTokens)} />
               <SummaryStat label="Peak daily tokens" value={formatNumber(accountData.summary?.peakDailyTokens)} />
               <SummaryStat label="Longest turn" value={formatSeconds(accountData.summary?.longestRunningTurnSec)} />
-              <SummaryStat label="Current streak" value={formatNumber(accountData.summary?.currentStreakDays)} />
-              <SummaryStat label="Longest streak" value={formatNumber(accountData.summary?.longestStreakDays)} />
+              <SummaryStat label="Current streak (days)" value={formatNumber(accountData.summary?.currentStreakDays)} />
+              <SummaryStat label="Longest streak (days)" value={formatNumber(accountData.summary?.longestStreakDays)} />
             </div>
             {accountData.dailyUsage.length > 0 && <Sparkline points={accountData.dailyUsage} />}
             {accountData.rateLimits.map(limit => (
@@ -211,7 +212,7 @@ export function CodexAccountPanel({ sessions, onConfigurationLoaded }: Readonly<
             <p className="form-hint">Shows effective Codex disk configuration and where values came from. It may differ from a running session or a native profile launch. Commands, environment values, and URLs are omitted.</p>
           </div>
           <button type="button" className="form-btn" onClick={loadConfiguration} disabled={configuration.status === 'loading'}>
-            {configuration.status === 'loading' ? 'Inspecting...' : configData ? 'Retry' : 'Inspect configuration'}
+            {configuration.status === 'loading' ? 'Inspecting...' : configuration.status === 'error' || (configData && configData.status !== 'ready') ? 'Retry' : configData ? 'Refresh configuration' : 'Inspect configuration'}
           </button>
         </div>
         <label className="form-label" htmlFor="codex-config-session">

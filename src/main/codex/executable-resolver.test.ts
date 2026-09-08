@@ -22,7 +22,7 @@ describe('resolveCodexExecutable', () => {
     const trusted = 'C:\\Program Files\\Codex\\codex.EXE';
     expect(resolveCodexExecutable({
       platform: 'win32',
-      pathEnv: ['.', 'node_modules\\.bin', '\\\\?\\C:\\unsafe', 'C:\\Program Files\\Codex'].join(';'),
+      pathEnv: ['.', '\\unsafe', 'node_modules\\.bin', '\\\\?\\C:\\unsafe', 'C:\\Program Files\\Codex'].join(';'),
       pathExt: '.EXE;.CMD',
       existsSync: existsFor([
         win.resolve('node_modules\\.bin\\codex.EXE'),
@@ -54,7 +54,7 @@ describe('resolveCodexExecutable', () => {
     })).toEqual({
       kind: 'cmd',
       file: 'C:\\Windows\\System32\\cmd.exe',
-      args: ['/d', '/s', '/c', '"C:\\Program Files\\nodejs\\codex.CMD" app-server'],
+      args: ['/d', '/v:off', '/s', '/c', '""C:\\Program Files\\nodejs\\codex.CMD" app-server"'],
     });
   });
 
@@ -68,6 +68,9 @@ describe('resolveCodexExecutable', () => {
 });
 
 describe('resolveWindowsSystemExecutable', () => {
+  it('does not fall back to cwd lookup without an absolute system executable', () => {
+    expect(resolveWindowsSystemExecutable('cmd.exe', { comSpec: '', systemRoot: '', existsSync: () => false })).toBeNull();
+  });
   it('resolves taskkill from System32 when present', () => {
     expect(resolveWindowsSystemExecutable('taskkill.exe', {
       platform: 'win32',

@@ -27,7 +27,7 @@ export function resolveCodexExecutable(opts: ResolveCodexExecutableOptions = {})
 export function resolveWindowsSystemExecutable(
   name: 'cmd.exe' | 'taskkill.exe',
   opts: ResolveCodexExecutableOptions = {},
-): string {
+): string | null {
   const existsSync = opts.existsSync ?? fileExistsSync;
   const comSpec = opts.comSpec ?? process.env.ComSpec;
   if (name === 'cmd.exe' && comSpec && isTrustedWindowsAbsolutePath(comSpec) && path.win32.basename(comSpec).toLowerCase() === 'cmd.exe' && existsSync(comSpec)) {
@@ -40,7 +40,7 @@ export function resolveWindowsSystemExecutable(
     if (existsSync(candidate)) return candidate;
   }
 
-  return name;
+  return null;
 }
 
 function resolveWindowsCodex(opts: ResolveCodexExecutableOptions): CodexExecutableLaunch | null {
@@ -72,8 +72,12 @@ function resolveWindowsCodex(opts: ResolveCodexExecutableOptions): CodexExecutab
 
   for (const candidate of shimCandidates) {
     if (existsSync(candidate)) {
+      // These characters can expand inside cmd.exe quotes. Native paths do
+      // not cross a shell and have no such restriction.
+      if (/[%^!"\r\n\0]/.test(candidate)) continue;
       const cmd = resolveWindowsSystemExecutable('cmd.exe', opts);
-      return { kind: 'cmd', file: cmd, args: ['/d', '/s', '/c', `${quoteCmdExeArg(candidate)} app-server`] };
+      if (!cmd) return null;
+      return { kind: 'cmd', file: cmd, args: ['/d', '/v:off', '/s', '/c', `"${quoteCmdExeArg(candidate)} app-server"`] };
     }
   }
 
@@ -106,7 +110,9 @@ function windowsPathExts(pathExt: string | undefined): string[] {
 }
 
 function isTrustedWindowsAbsolutePath(value: string): boolean {
-  if (value.length === 0) return false;
-  if (value.startsWith('\\\\?\\') || value.startsWith('\\\\.\\')) return false;
-  return path.win32.isAbsolute(value);
+  if (value.length === 0 || /[\r\n\0"]/.test(value)) return false;
+  const normalized = path.win32.normalize(value);
+  if (normalized.startsWith('\\\\?\\') || normalized.startsWith('\\\\.\\')) return false;
+  if (normalized.startsWith('\\') && !normalized.startsWith('\\\\')) return false;
+  return path.win32.isAbsolute(normalized);
 }

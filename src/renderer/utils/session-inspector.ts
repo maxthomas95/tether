@@ -13,6 +13,7 @@ export interface CodexSessionActivity {
   activeSubagentIds: string[];
   compactionCount: number;
   observedModel?: string;
+  modelObservedAt?: string;
 }
 
 export type InspectableSession = SessionInfo & {
@@ -65,7 +66,7 @@ export function latestModel(usage: SessionUsage | null, session?: InspectableSes
   const usageModel = usage?.currentModel ?? null;
   const activityModel = session?.activity?.observedModel ?? null;
   if (usageModel && activityModel && usage?.observedAt && session?.activity?.lastHookAt) {
-    return timestampMs(session.activity.lastHookAt) > timestampMs(usage.observedAt) ? activityModel : usageModel;
+    return timestampMs(session.activity.modelObservedAt ?? session.activity.lastHookAt) > timestampMs(usage.observedAt) ? activityModel : usageModel;
   }
   return usageModel ?? activityModel;
 }
@@ -85,8 +86,8 @@ export function describeHookHealth(
   environment: EnvironmentInfo | undefined,
   config: InspectorConfig,
 ): HookHealthStatus {
-  const cliTool = session?.cliTool;
-  if (cliTool && cliTool !== 'codex') return 'not-applicable';
+  const cliTool = session?.cliTool ?? 'claude';
+  if (cliTool !== 'codex') return 'not-applicable';
   if (!config.cliHooksEnabled || !config.codexLifecycleHooksEnabled) return 'disabled';
   if (environment && environment.type !== 'local') return 'remote-unavailable';
   return session?.activity?.lastHookAt ? 'events' : 'no-events';

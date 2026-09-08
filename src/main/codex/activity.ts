@@ -30,7 +30,10 @@ export function reduceCodexSessionActivity(
     completedTurnIds: current?.completedTurnIds ? [...current.completedTurnIds] : undefined,
   };
   next.lastHookAt = metadata.at ?? new Date().toISOString();
-  if (metadata.model) next.observedModel = metadata.model;
+  if (metadata.model) {
+    next.observedModel = metadata.model;
+    next.modelObservedAt = next.lastHookAt;
+  }
   const mayReturnToRunning = next.phase !== 'permission' &&
     next.phase !== 'complete' &&
     next.phase !== 'interrupted';

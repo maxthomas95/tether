@@ -11,6 +11,7 @@ export interface CodexSessionActivity {
   activeSubagentIds: string[];
   compactionCount: number;
   observedModel?: string;
+  modelObservedAt?: string;
   currentTurnId?: string;
   completedTurnIds?: string[];
 }

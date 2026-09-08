@@ -43,6 +43,12 @@ const session: InspectableSession = {
 };
 
 describe('session inspector formatting', () => {
+  it('does not refresh an old model observation when an unrelated hook arrives', () => {
+    expect(latestModel({ ...baseUsage, currentModel: 'new-model', observedAt: '2026-09-07T11:00:00Z' }, {
+      ...session, activity: { phase: 'running', activeSubagentIds: [], compactionCount: 0,
+        lastHookAt: '2026-09-07T12:00:00Z', observedModel: 'old-model', modelObservedAt: '2026-09-07T10:00:00Z' },
+    })).toBe('new-model');
+  });
   it('keeps unknown values distinct from zero values', () => {
     expect(formatCost(undefined)).toBe('Unknown');
     expect(formatCost(0)).toBe('$0.00');

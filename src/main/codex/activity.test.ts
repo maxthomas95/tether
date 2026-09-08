@@ -17,6 +17,7 @@ describe('Codex activity reducer', () => {
     state = reduceCodexSessionActivity(state, 'compact_complete', {});
     expect(state.phase).toBe('running');
     expect(state.compactionCount).toBe(1);
+    expect(state.modelObservedAt).toBe('2026-09-07T00:00:00.000Z');
   });
 
   it('deduplicates subagent starts and ignores duplicate stops', () => {

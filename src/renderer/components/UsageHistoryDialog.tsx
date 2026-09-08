@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onKeyActivate, stopPropagationOnKey } from '../utils/a11y';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import { formatCost, formatTokens } from '../utils/usage-format';
 import {
   buildUsageExplorer,
@@ -180,7 +181,7 @@ function SessionRow({ row, expanded, onToggle }: SessionRowProps) {
                     <td>{formatTokens(model.outputTokens)}</td>
                     <td>{formatTokens(model.cacheCreationTokens)}</td>
                     <td>{formatTokens(model.cacheReadTokens)}</td>
-                    <td>{formatTokens(model.reasoningTokens)} subset of output</td>
+                    <td title="Already included in output">{formatTokens(model.reasoningTokens)}</td>
                     <td>{formatCost(model.cost)}</td>
                   </tr>
                 ))}
@@ -194,6 +195,7 @@ function SessionRow({ row, expanded, onToggle }: SessionRowProps) {
 }
 
 export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps) {
+  useEscapeKey(onClose, isOpen);
   const dialogRef = useRef<HTMLDivElement>(null);
   const loadGeneration = useRef(0);
   useFocusTrap(dialogRef, isOpen);
@@ -219,8 +221,14 @@ export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps)
     };
     window.electronAPI.environment.list().then(applyIfCurrent(setEnvironments)).catch(() => applyIfCurrent(setEnvironments)([]));
     window.electronAPI.session.list().then(applyIfCurrent(setSessions)).catch(() => applyIfCurrent(setSessions)([]));
-    window.electronAPI.usage.getAll().then(applyIfCurrent(setDialogUsage)).catch(() => null);
-    const removeUsageUpdate = window.electronAPI.usage.onUpdate(applyIfCurrent(setDialogUsage));
+    let streamed = false;
+    const removeUsageUpdate = window.electronAPI.usage.onUpdate(info => {
+      streamed = true;
+      applyIfCurrent(setDialogUsage)(info);
+    });
+    window.electronAPI.usage.getAll().then(info => {
+      if (!streamed) applyIfCurrent(setDialogUsage)(info);
+    }).catch(() => null);
     return () => {
       active = false;
       removeUsageUpdate();
@@ -272,7 +280,10 @@ export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps)
 
   return (
     <div className="dialog-overlay" onClick={onClose} onKeyDown={onKeyActivate(onClose)} role="button" tabIndex={-1}>
-      <div ref={dialogRef} className="dialog dialog--wide usage-explorer-dialog" onClick={e => e.stopPropagation()} onKeyDown={stopPropagationOnKey} role="dialog" aria-modal="true" aria-label="Usage history" tabIndex={-1}>
+      <div ref={dialogRef} className="dialog dialog--wide usage-explorer-dialog" onClick={e => e.stopPropagation()} onKeyDown={event => {
+        stopPropagationOnKey(event);
+        if (event.key === 'Escape') onClose();
+      }} role="dialog" aria-modal="true" aria-label="Usage history" tabIndex={-1}>
         <div className="dialog-header">
           <span>Usage history</span>
           <button className="dialog-close" aria-label="Close dialog" onClick={onClose}>&times;</button>
@@ -338,17 +349,17 @@ export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps)
           )}
 
           <div className="usage-explorer-chart" aria-label="Daily usage trend">
-            {explorer.daily.map(day => (
+            {explorer.daily.map((day, index) => (
               <button
                 key={day.date}
-                className={`usage-explorer-chart__bar ${day.approximate ? 'usage-explorer-chart__bar--approx' : ''}`}
-                style={{ '--bar-height': `${maxDailyCost > 0 ? Math.max(8, (day.cost / maxDailyCost) * 100) : 0}%` } as React.CSSProperties}
+                className={`usage-explorer-chart__bar ${day.approximate ? 'usage-explorer-chart__bar--approx' : ''} ${day.cost === 0 ? 'usage-explorer-chart__bar--zero' : ''}`}
+                style={{ '--bar-height': `${maxDailyCost > 0 ? (day.cost / maxDailyCost) * 84 : 0}px` } as React.CSSProperties}
                 onClick={() => selectDay(day.date)}
-                title={`${day.label}: ${formatCost(day.cost)}`}
-                aria-label={`${day.label}: ${formatCost(day.cost)}`}
+                title={`${day.date} UTC: ${formatCost(day.cost)}`}
+                aria-label={`${day.date} UTC: ${formatCost(day.cost)}`}
               >
                 <span />
-                <small>{day.label}</small>
+                <small>{index % Math.max(1, Math.ceil(explorer.daily.length / 10)) === 0 ? day.date.slice(8) : ''}</small>
               </button>
             ))}
           </div>

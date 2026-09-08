@@ -163,6 +163,18 @@ describe('SessionManager', () => {
     manager.dispose();
   });
 
+  it('captures only selected Codex launch metadata after inherited flags are disabled', async () => {
+    dbState.defaultCliFlagsPerTool.codex = ['--model=old-model', '--profile=work'];
+    const cliArgs = ['--model', 'new-model', '-c model_reasoning_effort=xhigh', '-c private_value=SECRET'];
+    const session = await manager.createSession({
+      workingDir: 'C:/projects/tether', cliTool: 'codex', cliArgs,
+      disabledInheritedFlags: ['--model=old-model'],
+    }, callbacks());
+    expect(session.toInfo().codexLaunch).toEqual({ model: 'new-model', profile: 'work', reasoningEffort: 'xhigh' });
+    expect(JSON.stringify(session.toInfo())).not.toContain('SECRET');
+    expect(cliArgs).toEqual(['--model', 'new-model', '-c model_reasoning_effort=xhigh', '-c private_value=SECRET']);
+  });
+
   describe('spawn_session helm handler — cliTool', () => {
     async function spawnHelmParent(): Promise<Record<string, (params: Record<string, unknown>) => Promise<unknown>>> {
       dbState.config.allowHelm = 'true';

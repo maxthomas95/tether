@@ -106,6 +106,7 @@ function spawnCodexAppServer(
 
 function spawnOptions(launch: CodexExecutableLaunch): SpawnOptionsWithoutStdio {
   return {
+    windowsVerbatimArguments: launch.kind === 'cmd',
     detached: launch.kind === 'direct' && process.platform !== 'win32',
     windowsHide: true,
     shell: false,
@@ -298,6 +299,7 @@ function disposeChild(
   if (process.platform === 'win32') {
     try {
       const taskkill = resolveWindowsSystemExecutableImpl('taskkill.exe');
+      if (!taskkill) { killDirectChild(child); return; }
       const killer = cleanupSpawnImpl(taskkill, ['/pid', String(child.pid), '/t', '/f'], {
         windowsHide: true,
         shell: false,
