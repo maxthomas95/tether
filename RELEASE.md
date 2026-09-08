@@ -130,7 +130,7 @@ Twelve idempotent phases. Each phase is a no-op if its work is already done, so 
 |---|---|---|---|
 | 1 | preflight | on `main`, tree clean, in sync with `github/main` | `--resume` relaxes branch/cleanliness checks |
 | 2 | release-branch | create/checkout `release/v{version}-{prerelease}` | branch already checked out |
-| 3 | version | bump `package.json` to target version | already at target |
+| 3 | version | bump `package.json` and the root/package version fields in `package-lock.json` | both already at target |
 | 4 | pricing-refresh | fetch latest LiteLLM pricing JSON; overwrite `src/main/usage/litellm-prices.json` if changed | unchanged, network/parse failure (warning only) |
 | 5 | changelog | draft CHANGELOG section if missing | section exists |
 | 6 | commit-push | commit bump+pricing+changelog, push release branch to GitHub | remote branch up to date |
@@ -188,7 +188,7 @@ If the script breaks and you need to ship anyway:
 1. `git checkout -b release/v0.X.0 main`
 2. `npm version 0.X.0 --no-git-tag-version`
 3. Edit `CHANGELOG.md` — add a section at the top
-4. `git add package.json CHANGELOG.md && git commit -m "Release v0.X.0"`
+4. `git add package.json package-lock.json CHANGELOG.md && git commit -m "Release v0.X.0"`
 5. `git push -u github release/v0.X.0`
 6. Open a PR on GitHub, wait for checks, squash-merge
 7. `git checkout main && git pull github main`

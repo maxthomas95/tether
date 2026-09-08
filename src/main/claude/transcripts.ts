@@ -26,10 +26,18 @@ export function getClaudeProjectsRoot(): string {
 }
 
 export function getProjectDir(cwd: string): string {
-  return path.join(getClaudeProjectsRoot(), encodeCwdForClaude(cwd));
+  if (typeof cwd !== 'string' || /[\0\r\n]/.test(cwd)) throw new Error('Invalid transcript working directory');
+  const encoded = encodeCwdForClaude(cwd);
+  // Separators are encoded above, but dot segments would still escape projects.
+  if (!encoded || encoded === '.' || encoded === '..') throw new Error('Invalid transcript working directory');
+  return path.join(getClaudeProjectsRoot(), encoded);
 }
 
 export function transcriptPath(cwd: string, sessionId: string): string {
+  if (typeof sessionId !== 'string' || sessionId.length !== 36 ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) {
+    throw new Error('Invalid Claude transcript session ID');
+  }
   return path.join(getProjectDir(cwd), `${sessionId}.jsonl`);
 }
 
@@ -138,9 +146,10 @@ export function scanAllTranscripts(): DiscoveredTranscript[] {
  * `limit` results.
  */
 export function listTranscripts(cwd: string, limit = 50): TranscriptInfo[] {
-  const dir = getProjectDir(cwd);
+  let dir: string;
   let entries: fs.Dirent[];
   try {
+    dir = getProjectDir(cwd);
     entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch {
     return [];

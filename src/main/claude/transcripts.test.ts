@@ -12,6 +12,8 @@ vi.mock('electron', () => ({
 import {
   getClaudeHome,
   getClaudeProjectsRoot,
+  getProjectDir,
+  listTranscripts,
   transcriptExists,
   transcriptPath,
 } from './transcripts';
@@ -59,5 +61,42 @@ describe('Claude config dir resolution', () => {
 
     expect(expectedPath.startsWith(override)).toBe(true);
     expect(transcriptExists(cwd, sessionId)).toBe(true);
+  });
+
+  it('rejects malformed transcript lookup inputs', () => {
+    const override = makeTempDir('tether-claude-override-');
+    process.env.CLAUDE_CONFIG_DIR = override;
+
+    expect(() => transcriptPath('..\0..', '00000000-0000-4000-8000-000000000001')).toThrow(/working directory/);
+    expect(() => transcriptPath(path.join(override, 'work', 'repo'), '..\\evil')).toThrow(/session ID/);
+    expect(transcriptExists(path.join(override, 'work', 'repo'), '..\\evil')).toBe(false);
+  });
+});
+
+describe('Claude transcript path boundaries', () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+
+  it.each(['', '.', '..', '\0', 'repo\nname'])(
+    'rejects an unsafe project directory %j without reading it', (cwd) => {
+      expect(() => getProjectDir(cwd)).toThrow('Invalid transcript working directory');
+      expect(transcriptExists(cwd, id)).toBe(false);
+      expect(listTranscripts(cwd)).toEqual([]);
+    },
+  );
+
+  it.each(['../outside', '..\\outside', '/absolute', 'C:\\outside', id + '\n', id + ':stream', 'not-a-uuid'])(
+    'rejects a path-like or malformed resume ID %j', (sessionId) => {
+      expect(() => transcriptPath('/repo', sessionId)).toThrow('Invalid Claude transcript session ID');
+      expect(transcriptExists('/repo', sessionId)).toBe(false);
+    },
+  );
+
+  it('keeps encoded Windows and POSIX working directories inside projects', () => {
+    for (const cwd of ['C:\\work\\repo with spaces', '/home/user/日本語', '../repo', '/']) {
+      const relative = path.relative(getClaudeProjectsRoot(), transcriptPath(cwd, id));
+      expect(relative.split(path.sep)).toHaveLength(2);
+      expect(relative.startsWith('..' + path.sep)).toBe(false);
+      expect(path.isAbsolute(relative)).toBe(false);
+    }
   });
 });

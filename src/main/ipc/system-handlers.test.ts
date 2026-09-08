@@ -4,6 +4,8 @@ import { createHarness, makeElectronMockBase, type IpcRegistry } from './ipc-tes
 const registry = vi.hoisted<IpcRegistry>(() => ({ handlers: new Map(), listeners: new Map() }));
 const shellMock = vi.hoisted(() => ({ openExternal: vi.fn() }));
 const dialogMock = vi.hoisted(() => ({ showSaveDialog: vi.fn() }));
+const processMock = vi.hoisted(() => ({ execFile: vi.fn() }));
+vi.mock('node:child_process', () => processMock);
 vi.mock('electron', () => ({ ...makeElectronMockBase(registry), dialog: dialogMock, shell: shellMock }));
 
 const dbState = { config: { updateChannel: 'stable' } as Record<string, string> };
@@ -34,7 +36,34 @@ describe('system-handlers', () => {
     updateCheckerMock.checkForUpdates.mockReset();
     diagnosticsMock.exportDiagnostics.mockReset();
     diagnosticsMock.defaultExportFilename.mockClear();
+    processMock.execFile.mockReset();
     registerSystemHandlers(harness.ctx);
+  });
+
+  describe('SHELL_COMMAND_EXISTS', () => {
+    it.each(['--help', '/R', '-c', 'claude; echo injected', '$(echo injected)', 'C:\\tools\\claude.exe', 'unknown', '', 42])(
+      'rejects unregistered lookup input %j without starting a process', async (command) => {
+        expect(await harness.invoke(IPC.SHELL_COMMAND_EXISTS, command)).toBe(false);
+        expect(processMock.execFile).not.toHaveBeenCalled();
+      },
+    );
+
+    it('looks up registered CLI names on the current platform', async () => {
+      processMock.execFile.mockImplementation((_file, _args, _opts, callback) => callback(null));
+      for (const binary of ['claude', 'codex', 'copilot', 'opencode']) {
+        expect(await harness.invoke(IPC.SHELL_COMMAND_EXISTS, ` ${binary} `)).toBe(true);
+        expect(processMock.execFile).toHaveBeenLastCalledWith(
+          process.platform === 'win32' ? 'where.exe' : 'sh',
+          process.platform === 'win32' ? [binary] : ['-lc', 'command -v "$1" >/dev/null 2>&1', 'sh', binary],
+          { timeout: 3000 }, expect.any(Function),
+        );
+      }
+    });
+
+    it('returns false when the CLI lookup fails', async () => {
+      processMock.execFile.mockImplementation((_file, _args, _opts, callback) => callback(new Error('not found')));
+      expect(await harness.invoke(IPC.SHELL_COMMAND_EXISTS, 'claude')).toBe(false);
+    });
   });
 
   describe('UPDATE_CHECK', () => {
@@ -55,6 +84,17 @@ describe('system-handlers', () => {
   });
 
   describe('UPDATE_OPEN_RELEASE_PAGE', () => {
+    it.each([
+      'https://github.com/maxthomas95/tether/issues',
+      'https://github.com/maxthomas95/tether/releases-evil',
+      'https://github.com/maxthomas95/tether/releases/../issues',
+      'https://user:password@github.com/maxthomas95/tether/releases',
+      'https://github.com.evil.example/maxthomas95/tether/releases',
+      42,
+    ])('rejects invalid release destination %j', async (url) => {
+      await harness.invoke(IPC.UPDATE_OPEN_RELEASE_PAGE, url);
+      expect(shellMock.openExternal).not.toHaveBeenCalled();
+    });
     it('opens a github.com/maxthomas95/tether/... URL', async () => {
       await harness.invoke(IPC.UPDATE_OPEN_RELEASE_PAGE, 'https://github.com/maxthomas95/tether/releases/tag/v0.5.0');
       expect(shellMock.openExternal).toHaveBeenCalledWith('https://github.com/maxthomas95/tether/releases/tag/v0.5.0');
@@ -84,6 +124,15 @@ describe('system-handlers', () => {
   });
 
   describe('SHELL_OPEN_EXTERNAL', () => {
+    it('opens the canonical URL and retains local development links', async () => {
+      await harness.invoke(IPC.SHELL_OPEN_EXTERNAL, 'HTTP://localhost:3000/a/../b');
+      expect(shellMock.openExternal).toHaveBeenCalledWith('http://localhost:3000/b');
+    });
+
+    it('refuses credential-bearing URLs', async () => {
+      await harness.invoke(IPC.SHELL_OPEN_EXTERNAL, 'https://user:secret@example.com/path');
+      expect(shellMock.openExternal).not.toHaveBeenCalled();
+    });
     it('opens an http/https URL', async () => {
       await harness.invoke(IPC.SHELL_OPEN_EXTERNAL, 'https://example.com/path');
       expect(shellMock.openExternal).toHaveBeenCalledWith('https://example.com/path');

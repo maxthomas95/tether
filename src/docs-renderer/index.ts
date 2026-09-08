@@ -1,5 +1,5 @@
 import { marked } from 'marked';
-import { LOADER_THEMES, type LoaderTheme } from '../shared/loader-themes';
+import { getTheme } from '../renderer/styles/themes';
 
 import gettingStartedMd from '../docs/getting-started.md?raw';
 import sessionsMd from '../docs/sessions.md?raw';
@@ -19,20 +19,6 @@ import '@fontsource/ibm-plex-sans/700.css';
 import '@fontsource-variable/jetbrains-mono';
 
 import './docs.css';
-
-// Extended theme map for CSS variables beyond the loader-theme subset.
-// Mirrors src/renderer/styles/themes.ts values.
-const EXTENDED_THEMES: Record<string, {
-  hover: string; active: string; header: string; textSecondary: string;
-}> = {
-  mocha:          { hover: '#45475a', active: '#585b70', header: '#313244', textSecondary: '#bac2de' },
-  macchiato:      { hover: '#494d64', active: '#5b6078', header: '#363a4f', textSecondary: '#b8c0e0' },
-  frappe:         { hover: '#51576d', active: '#626880', header: '#414559', textSecondary: '#b5bfe2' },
-  latte:          { hover: '#bcc0cc', active: '#acb0be', header: '#ccd0da', textSecondary: '#5c5f77' },
-  tether:         { hover: '#3a342d', active: '#4a4239', header: '#2c2723', textSecondary: '#c9bfae' },
-  'default-dark': { hover: '#2a2d2e', active: '#37373d', header: '#2d2d2d', textSecondary: '#858585' },
-  'tether-light':  { hover: '#e8e8e8', active: '#d6d6d6', header: '#ececec', textSecondary: '#616161' },
-};
 
 // Slugify heading text into a stable anchor id matching what dialog (?) icons
 // pass to `tetherAPI.docs.open({ anchor })`. Mirrors GitHub-flavored anchors:
@@ -81,20 +67,10 @@ let currentPage = pages[0];
 let pendingAnchor: string | null = null;
 
 function applyTheme(themeName: string): void {
-  const loader: LoaderTheme = LOADER_THEMES[themeName] || LOADER_THEMES.mocha;
-  const ext = EXTENDED_THEMES[themeName] || EXTENDED_THEMES.mocha;
-  const s = document.documentElement.style;
-
-  s.setProperty('--bg-primary', loader.bg);
-  s.setProperty('--bg-sidebar', loader.sidebar);
-  s.setProperty('--text-primary', loader.text);
-  s.setProperty('--text-muted', loader.muted);
-  s.setProperty('--accent', loader.accent);
-  s.setProperty('--border-color', loader.border);
-  s.setProperty('--bg-hover', ext.hover);
-  s.setProperty('--bg-active', ext.active);
-  s.setProperty('--bg-header', ext.header);
-  s.setProperty('--text-secondary', ext.textSecondary);
+  const theme = getTheme(themeName);
+  for (const [property, value] of Object.entries(theme.css)) {
+    document.documentElement.style.setProperty(property, value);
+  }
 }
 
 function navigateTo(pageId: string, anchor?: string): void {
@@ -153,7 +129,7 @@ function render(): void {
     });
   });
 
-  // Handle internal doc links (e.g., [Sessions](sessions), [Vault](vault#oidc))
+  // Markdown file links work on GitHub; legacy page IDs remain supported in-app.
   root.querySelectorAll<HTMLAnchorElement>('.docs-article a').forEach(el => {
     const href = el.getAttribute('href');
     if (!href || href.startsWith('http')) return;
@@ -166,7 +142,7 @@ function render(): void {
         return;
       }
       const [page, anchor] = href.split('#');
-      navigateTo(page, anchor);
+      navigateTo(page.endsWith('.md') ? page.slice(0, -3) : page, anchor);
     });
   });
 
