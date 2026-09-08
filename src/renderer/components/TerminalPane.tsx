@@ -17,6 +17,7 @@ interface TerminalPaneProps {
   isMaximized: boolean;
   onChooseSession: () => void;
   isFocused: boolean;
+  canvas?: boolean;
   isDragging: boolean;
   draggingPaneId: string | null;
   onDragStateChange: (dragging: boolean, sourcePaneId?: string) => void;
@@ -42,6 +43,7 @@ export function TerminalPane({
   isMaximized,
   onChooseSession,
   isFocused,
+  canvas = false,
   isDragging,
   draggingPaneId,
   onDragStateChange,
@@ -70,12 +72,19 @@ export function TerminalPane({
       return;
     }
 
-    termManager.attachToPane(paneId, sessionId, container);
+    termManager.attachToPane(paneId, sessionId, container, !canvas);
 
     return () => {
       termManager.detachPane(paneId);
     };
-  }, [paneId, sessionId, termManager]);
+  }, [paneId, sessionId, termManager, canvas]);
+
+  // Attaching several visible canvas panels must not let the last one steal focus.
+  useEffect(() => {
+    if (!canvas || !isFocused || !sessionId) return;
+    const frame = requestAnimationFrame(() => termManager.focusPane(paneId));
+    return () => cancelAnimationFrame(frame);
+  }, [canvas, isFocused, paneId, sessionId, termManager]);
 
   // ResizeObserver for auto-fitting
   useEffect(() => {
@@ -163,7 +172,7 @@ export function TerminalPane({
   const environmentLabel = environment
     ? environment.type === 'local' ? environment.name : `${environment.type === 'ssh' ? 'SSH' : 'Coder'}: ${environment.name}`
     : session?.environmentId ? 'Unknown environment' : 'Local';
-  const canDragPane = enablePaneSplitting && sessionId !== null;
+  const canDragPane = !canvas && enablePaneSplitting && sessionId !== null;
   let broadcastTitle = 'Include this pane in broadcast input';
   if (isBroadcastTarget) {
     broadcastTitle = isBroadcastActive
@@ -175,7 +184,7 @@ export function TerminalPane({
     <div
       className={[
         'terminal-pane',
-        isFocused && enablePaneSplitting ? 'terminal-pane--focused' : '',
+        isFocused && (enablePaneSplitting || canvas) ? 'terminal-pane--focused' : '',
         isBroadcastTarget ? 'terminal-pane--broadcast-target' : '',
       ].join(' ')}
       onFocus={handleFocus}
@@ -183,7 +192,7 @@ export function TerminalPane({
     >
       <div
         className="terminal-pane-header"
-        style={canDragPane ? undefined : { cursor: 'default' }}
+        style={canDragPane || canvas ? undefined : { cursor: 'default' }}
         draggable={canDragPane}
         onDragStart={(e) => {
           if (!canDragPane) return;
@@ -250,7 +259,8 @@ export function TerminalPane({
               className="terminal-pane-xterm"
             />
             <PaneStatusStrip
-              sessionId={session?.claudeSessionId || session?.toolSessionId}
+              sessionId={session?.usageSessionId || session?.claudeSessionId || session?.toolSessionId}
+              remoteStatus={session?.remoteUsageStatus}
               tetherSessionId={sessionId}
               session={session}
               environment={environment}

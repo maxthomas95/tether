@@ -183,6 +183,9 @@ export interface SessionInfo {
   createdAt: string;
   /** Tool-native session id used for resume on the next launch. */
   toolSessionId?: string;
+  /** Usage identity can include remote host/workspace/user context. */
+  usageSessionId?: string;
+  remoteUsageStatus?: 'pending' | 'collecting' | 'unavailable';
   /** Legacy Claude Code session id alias. */
   claudeSessionId?: string;
   /** True if this session was started by resuming a prior tool transcript. */
@@ -549,11 +552,20 @@ export interface HostVerifyRequest {
 /** Whether the J.O.B.S. office integration probes for a running instance. */
 export type JobsEnabledMode = 'auto' | 'off';
 
+export interface JobsSettings {
+  enabled: JobsEnabledMode;
+  url: string;
+  token: string;
+  path: string;
+  shareRemoteSessions: boolean;
+  autoLaunch: boolean;
+}
+
 /**
  * Detection/launch state of the J.O.B.S. pixel-office integration. JOBS is an
  * external self-hosted server (github.com/maxthomas95/JOBS) — Tether never
  * bundles it; it only probes `GET {url}/healthz` for `{ app: "jobs" }` and,
- * when a local checkout path is configured, can spawn the built server itself.
+ * when automatic launch is enabled, can spawn a configured built checkout.
  */
 export interface JobsStatus {
   enabled: JobsEnabledMode;
@@ -565,6 +577,10 @@ export interface JobsStatus {
   version: string | null;
   /** True when Tether spawned (and owns) the JOBS server process. */
   managed: boolean;
+  phase?: 'off' | 'checking' | 'starting' | 'connected' | 'unavailable';
+  shareRemoteSessions?: boolean;
+  /** Delivery errors are separate from office availability. */
+  bridgeError?: string;
   /** Human-readable launch/probe problem (e.g. "JOBS folder is not built"). */
   error?: string;
 }
@@ -655,8 +671,8 @@ export interface TetherAPI {
     writeText(text: string): void;
   };
   workspace: {
-    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>, activeIndex: number): Promise<void>;
-    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>; activeIndex: number } | null>;
+    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>, activeIndex: number, canvas?: import('./canvas-types').SavedCanvas): Promise<void>;
+    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>; activeIndex: number; canvas?: import('./canvas-types').SavedCanvas } | null>;
   };
   transcripts: {
     list(workingDir: string, cliTool?: CliToolId): Promise<TranscriptInfo[]>;
@@ -769,6 +785,10 @@ export interface TetherAPI {
   };
   gifPanel: import('./gif-panel').GifPanelAPI;
   jobs: {
+    getSettings(): Promise<JobsSettings>;
+    saveSettings(settings: JobsSettings): Promise<JobsStatus>;
+    disable(): Promise<JobsStatus>;
+    remove(): Promise<JobsStatus>;
     getStatus(): Promise<JobsStatus>;
     /** Re-read jobs* config keys and probe immediately. Returns the fresh status. */
     refresh(): Promise<JobsStatus>;

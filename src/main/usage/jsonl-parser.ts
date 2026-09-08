@@ -61,72 +61,7 @@ export function parseJsonlFile(filePath: string, startOffset: number): ParseResu
     const bytesRead = fs.readSync(fd, buf, 0, readLength, effectiveStartOffset);
     const text = buf.slice(0, bytesRead).toString('utf-8');
 
-    // Handle partial last line — if text doesn't end with \n, the last
-    // line is incomplete (file still being written). Discard it and set
-    // offset to retry on the next parse.
-    let usableText = text;
-    let consumedBytes = bytesRead;
-
-    if (text.length > 0 && !text.endsWith('\n')) {
-      const lastNewline = text.lastIndexOf('\n');
-      if (lastNewline === -1) {
-        // Entire chunk is a partial line — nothing to parse yet
-        return { messages: [], newByteOffset: effectiveStartOffset };
-      }
-      usableText = text.slice(0, lastNewline + 1);
-      consumedBytes = Buffer.byteLength(usableText, 'utf-8');
-    }
-
-    const messages: ParsedMessage[] = [];
-
-    for (const line of usableText.split('\n')) {
-      if (!line.startsWith('{')) continue;
-
-      let entry: JsonlEntry;
-      try { entry = JSON.parse(line); } catch { continue; }
-
-      if (entry.type !== 'assistant') continue;
-      const usage = entry.message?.usage;
-      if (!usage) continue;
-
-      const model = entry.message?.model || 'unknown';
-      const inputTokens = usage.input_tokens || 0;
-      const outputTokens = usage.output_tokens || 0;
-      const cacheReadTokens = usage.cache_read_input_tokens || 0;
-
-      // Cache creation breakdown: prefer granular 5m/1h split. If the
-      // breakdown is missing, Claude reports the common 5-minute cache-write
-      // field as a flat `cache_creation_input_tokens` value.
-      let cacheCreate5m = 0;
-      let cacheCreate1h = 0;
-      if (usage.cache_creation) {
-        cacheCreate5m = usage.cache_creation.ephemeral_5m_input_tokens || 0;
-        cacheCreate1h = usage.cache_creation.ephemeral_1h_input_tokens || 0;
-      } else if (usage.cache_creation_input_tokens) {
-        cacheCreate5m = usage.cache_creation_input_tokens;
-      }
-
-      const cost = calculateMessageCost(
-        model, inputTokens, outputTokens,
-        cacheCreate5m, cacheCreate1h, cacheReadTokens,
-      );
-
-      messages.push({
-        model,
-        inputTokens,
-        outputTokens,
-        cacheCreation5m: cacheCreate5m,
-        cacheCreation1h: cacheCreate1h,
-        cacheReadTokens,
-        timestamp: entry.timestamp || new Date().toISOString(),
-        cost,
-      });
-    }
-
-    return {
-      messages,
-      newByteOffset: effectiveStartOffset + consumedBytes,
-    };
+    return parseClaudeUsageText(text, effectiveStartOffset);
   } catch (err) {
     // File doesn't exist or is unreadable — return empty
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -136,4 +71,74 @@ export function parseJsonlFile(filePath: string, startOffset: number): ParseResu
   } finally {
     if (fd !== null) try { fs.closeSync(fd); } catch { /* ignore */ }
   }
+}
+
+/** Parse complete transcript records without requiring a local file. */
+export function parseClaudeUsageText(text: string, startOffset = 0): ParseResult {
+  // Handle partial last line — if text doesn't end with \n, the last
+  // line is incomplete (file still being written). Discard it and set
+  // offset to retry on the next parse.
+  let usableText = text;
+  let consumedBytes = Buffer.byteLength(text, 'utf8');
+
+  if (text.length > 0 && !text.endsWith('\n')) {
+    const lastNewline = text.lastIndexOf('\n');
+    if (lastNewline === -1) {
+      // Entire chunk is a partial line — nothing to parse yet
+      return { messages: [], newByteOffset: startOffset };
+    }
+    usableText = text.slice(0, lastNewline + 1);
+    consumedBytes = Buffer.byteLength(usableText, 'utf-8');
+  }
+
+  const messages: ParsedMessage[] = [];
+
+  for (const line of usableText.split('\n')) {
+    if (!line.startsWith('{')) continue;
+
+    let entry: JsonlEntry;
+    try { entry = JSON.parse(line); } catch { continue; }
+
+    if (entry.type !== 'assistant') continue;
+    const usage = entry.message?.usage;
+    if (!usage) continue;
+
+    const model = entry.message?.model || 'unknown';
+    const inputTokens = usage.input_tokens || 0;
+    const outputTokens = usage.output_tokens || 0;
+    const cacheReadTokens = usage.cache_read_input_tokens || 0;
+
+    // Cache creation breakdown: prefer granular 5m/1h split. If the
+    // breakdown is missing, Claude reports the common 5-minute cache-write
+    // field as a flat `cache_creation_input_tokens` value.
+    let cacheCreate5m = 0;
+    let cacheCreate1h = 0;
+    if (usage.cache_creation) {
+      cacheCreate5m = usage.cache_creation.ephemeral_5m_input_tokens || 0;
+      cacheCreate1h = usage.cache_creation.ephemeral_1h_input_tokens || 0;
+    } else if (usage.cache_creation_input_tokens) {
+      cacheCreate5m = usage.cache_creation_input_tokens;
+    }
+
+    const cost = calculateMessageCost(
+      model, inputTokens, outputTokens,
+      cacheCreate5m, cacheCreate1h, cacheReadTokens,
+    );
+
+    messages.push({
+      model,
+      inputTokens,
+      outputTokens,
+      cacheCreation5m: cacheCreate5m,
+      cacheCreation1h: cacheCreate1h,
+      cacheReadTokens,
+      timestamp: entry.timestamp || new Date().toISOString(),
+      cost,
+    });
+  }
+
+  return {
+    messages,
+    newByteOffset: startOffset + consumedBytes,
+  };
 }

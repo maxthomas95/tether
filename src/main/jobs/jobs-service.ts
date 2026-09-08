@@ -1,318 +1,275 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { getDb } from '../db/database';
-import { decryptConfigValue } from '../ipc/config-handlers';
 import { createLogger } from '../logger';
-import type { JobsEnabledMode, JobsStatus } from '../../shared/types';
+import { readJobsConfig } from './jobs-config';
+import { JOBS_DEFAULT_URL, isJobsLoopback, normalizeJobsUrl } from '../../shared/jobs';
+import type { JobsSettings, JobsStatus } from '../../shared/types';
 
 const log = createLogger('jobs');
-
-export const JOBS_DEFAULT_URL = 'http://localhost:8780';
 const PROBE_INTERVAL_MS = 60_000;
 const PROBE_TIMEOUT_MS = 3_000;
-/** After spawning the server, poll healthz this often until it answers. */
 const SPAWN_POLL_MS = 1_000;
 const SPAWN_POLL_MAX = 15;
 
-export interface JobsConfig {
-  enabled: JobsEnabledMode;
-  url: string;
-  /** Bearer token sent on webhook posts; also injected as JOBS_TOKEN/WEBHOOK_TOKEN when Tether launches the server. */
-  token?: string;
-  /** Local JOBS checkout to auto-launch when no instance answers the probe. */
-  path?: string;
-}
-
-/** Trim trailing slashes without a regex (avoids the SonarCloud S5852 ReDoS heuristic). */
-function stripTrailingSlashes(url: string): string {
-  let end = url.length;
-  while (end > 0 && url[end - 1] === '/') end--;
-  return url.slice(0, end);
-}
-
-/** Read the jobs* keys from the flat string config. Single source of truth for defaults. */
-export function readJobsConfig(): JobsConfig {
-  const cfg = getDb().config;
-  return {
-    enabled: cfg.jobsEnabled === 'off' ? 'off' : 'auto',
-    url: stripTrailingSlashes(cfg.jobsUrl || JOBS_DEFAULT_URL),
-    token: cfg.jobsToken ? decryptConfigValue('jobsToken', cfg.jobsToken) || undefined : undefined,
-    path: cfg.jobsPath || undefined,
-  };
-}
-
-let cachedNodeBinary: string | null | undefined;
-
-/**
- * Find a real Node.js runtime on PATH. Packaged Tether builds disable the
- * RunAsNode fuse (forge.config.ts), so the ELECTRON_RUN_AS_NODE trick boots a
- * second full Tether app there — which loses the single-instance race and
- * exits 0 within milliseconds. A real node is the only reliable runtime in
- * production; it's also already a prerequisite of the JOBS setup (the folder
- * must be npm-built). Cached for the process lifetime.
- */
+/** Only a real Node runtime works in packaged builds with RunAsNode disabled. */
 function findNodeBinary(): string | null {
-  if (cachedNodeBinary !== undefined) return cachedNodeBinary;
   const candidate = process.platform === 'win32' ? 'node.exe' : 'node';
   try {
-    const res = spawnSync(candidate, ['--version'], { timeout: 3_000, windowsHide: true });
-    cachedNodeBinary = res.status === 0 ? candidate : null;
-  } catch {
-    cachedNodeBinary = null;
-  }
-  return cachedNodeBinary;
+    return spawnSync(candidate, ['--version'], { timeout: 3_000, windowsHide: true }).status === 0 ? candidate : null;
+  } catch { return null; }
 }
 
-function isLoopbackUrl(url: string): boolean {
-  try {
-    const host = new URL(url).hostname;
-    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Probes for a running J.O.B.S. office server and optionally launches one from
- * a configured local checkout. Detection is positive-identification only: the
- * probe requires `healthz` to answer `{ app: "jobs" }` so a stranger service
- * on the same port never lights up the Office UI.
- *
- * Ownership rule: if Tether spawned the server, Tether kills it on quit. An
- * instance that was already running (Docker, user-started) is never touched.
- */
-class JobsService {
+/** Positive identification only. Tether stops only children it started. */
+export class JobsService {
   private status: JobsStatus = {
-    enabled: 'auto',
-    url: JOBS_DEFAULT_URL,
-    detected: false,
-    version: null,
-    managed: false,
+    enabled: 'off', url: JOBS_DEFAULT_URL, detected: false, version: null, managed: false, phase: 'off', shareRemoteSessions: false,
   };
+  private config: JobsSettings | null = null;
   private child: ChildProcess | null = null;
+  private childConfig: string | null = null;
+  private stopping: { child: ChildProcess; done: Promise<void> } | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private spawnPollTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<(status: JobsStatus) => void>();
-  /** One launch attempt per config generation — reset by refresh(). */
   private launchAttempted = false;
   private disposed = false;
+  private generation = 0;
+  private probeController = new AbortController();
 
-  getStatus(): JobsStatus {
-    return { ...this.status };
-  }
+  getStatus(): JobsStatus { return { ...this.status }; }
 
   onStatusChange(cb: (status: JobsStatus) => void): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
   }
 
-  start(): void {
-    void this.refresh();
-    this.timer = setInterval(() => void this.tick(), PROBE_INTERVAL_MS);
+  setBridgeError(error?: string): void {
+    this.setStatus({ ...this.status, bridgeError: error });
   }
 
-  /** Re-read config and probe immediately. Called after the Settings dialog saves. */
+  start(): void {
+    if (this.timer || this.disposed) return;
+    void this.refresh();
+    this.timer = setInterval(() => {
+      if (this.config && this.config.enabled !== 'off') void this.tick(this.config, this.generation);
+    }, PROBE_INTERVAL_MS);
+  }
+
   async refresh(): Promise<JobsStatus> {
+    if (this.disposed) return this.getStatus();
+    const generation = ++this.generation;
+    this.probeController.abort();
+    this.probeController = new AbortController();
+    this.clearSpawnPoll();
     this.launchAttempted = false;
-    await this.tick();
+    // Opt-out must work even when a previously saved token cannot be decrypted.
+    let cfg = readJobsConfig(false);
+    try {
+      if (cfg.enabled !== 'off') cfg = { ...readJobsConfig(), url: normalizeJobsUrl(cfg.url) };
+    } catch {
+      this.config = null;
+      this.stopManagedChild();
+      this.setStatus({ enabled: cfg.enabled, url: cfg.url, detected: false, version: null,
+        managed: false, phase: 'unavailable', error: 'Could not read JOBS settings. Check the server URL and saved token, or remove the integration.' });
+      return this.getStatus();
+    }
+    const changed = !this.config || this.config.enabled !== cfg.enabled ||
+      this.config.autoLaunch !== cfg.autoLaunch || this.launchKey(this.config) !== this.launchKey(cfg);
+    this.config = cfg;
+    if (cfg.enabled === 'off' || !cfg.autoLaunch || this.childConfig !== this.launchKey(cfg)) this.stopManagedChild();
+    if (changed || !this.status.detected) {
+      this.setStatus({ enabled: cfg.enabled, url: cfg.url, detected: false, version: null,
+        managed: !!this.child, shareRemoteSessions: cfg.enabled !== 'off' && cfg.shareRemoteSessions,
+        phase: cfg.enabled === 'off' ? 'off' : this.child && this.status.phase === 'starting' ? 'starting' : 'checking' });
+    } else if (this.status.shareRemoteSessions !== cfg.shareRemoteSessions) {
+      // Sharing can stop while the user keeps watching the connected office.
+      this.setStatus({ ...this.status, shareRemoteSessions: cfg.shareRemoteSessions, bridgeError: undefined });
+    }
+    if (cfg.enabled !== 'off') {
+      if (this.stopping) {
+        const stopped = await this.waitForStop();
+        if (!this.current(generation)) return this.getStatus();
+        if (!stopped) {
+          this.setError('Waiting for the previous JOBS server to stop. Try connecting again shortly.');
+          return this.getStatus();
+        }
+      }
+      await this.tick(cfg, generation);
+    }
     return this.getStatus();
   }
 
-  private async tick(): Promise<void> {
-    if (this.disposed) return;
-    const cfg = readJobsConfig();
+  private current(generation: number): boolean {
+    return !this.disposed && generation === this.generation;
+  }
 
-    if (cfg.enabled === 'off') {
-      this.stopManagedChild();
-      this.setStatus({ enabled: 'off', url: cfg.url, detected: false, version: null, managed: false });
-      return;
-    }
-
+  private async tick(cfg: JobsSettings, generation: number): Promise<void> {
+    if (!this.current(generation)) return;
+    if (this.stopping) return;
     const probe = await this.probe(cfg.url);
-    if (probe) {
-      this.setStatus({
-        enabled: cfg.enabled,
-        url: cfg.url,
-        detected: true,
-        version: probe.version,
-        managed: this.child !== null,
-      });
+    if (!this.current(generation)) return;
+    if (probe.ok) {
+      this.setStatus({ ...this.status, enabled: cfg.enabled, url: cfg.url, detected: true,
+        version: probe.version, managed: !!this.child, phase: 'connected', error: undefined });
       return;
     }
-
-    // Nothing answered. If we own a child that's still booting, let the spawn
-    // poll handle it; otherwise consider launching from the configured path.
-    if (!this.child && cfg.path && !this.launchAttempted) {
+    if (this.child && this.status.phase === 'starting') {
+      this.pollAfterSpawn(cfg, generation, 0);
+      return;
+    }
+    if (!this.child && cfg.autoLaunch && !this.launchAttempted && probe.unreachable) {
       this.launchAttempted = true;
-      this.tryLaunch(cfg);
+      this.tryLaunch(cfg, generation);
       return;
     }
-
-    if (!this.child) {
-      this.setStatus({ enabled: cfg.enabled, url: cfg.url, detected: false, version: null, managed: false, error: this.status.error });
-    }
+    this.setStatus({ ...this.status, detected: false, version: null, phase: 'unavailable',
+      error: this.status.error || probe.error });
   }
 
-  private async probe(url: string): Promise<{ version: string | null } | null> {
+  private async probe(url: string): Promise<{ ok: true; version: string | null } | { ok: false; error: string; unreachable?: boolean }> {
     try {
-      const res = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
-      if (!res.ok) return null;
-      const body = (await res.json()) as { app?: unknown; version?: unknown };
-      if (body.app !== 'jobs') return null;
-      return { version: typeof body.version === 'string' ? body.version : null };
+      const res = await fetch(`${url}/healthz`, {
+        signal: AbortSignal.any([this.probeController.signal, AbortSignal.timeout(PROBE_TIMEOUT_MS)]),
+        redirect: 'error',
+      });
+      if (!res.ok) return { ok: false, error: `JOBS health check returned HTTP ${res.status}. Check the URL and server.` };
+      const body: unknown = await res.json().catch(() => null);
+      if (!body || typeof body !== 'object' || !('app' in body) || body.app !== 'jobs') {
+        return { ok: false, error: 'The server responded, but it is not a JOBS office. Check the URL and port.' };
+      }
+      return { ok: true, version: 'version' in body && typeof body.version === 'string' ? body.version : null };
     } catch {
-      return null;
+      return { ok: false, unreachable: true, error: 'Could not reach JOBS. Start the server and check its URL, then save and connect again.' };
     }
   }
 
-  private tryLaunch(cfg: JobsConfig): void {
-    if (!cfg.path) return;
-    if (!isLoopbackUrl(cfg.url)) {
-      this.setError(cfg, 'Auto-launch skipped: JOBS URL is not localhost');
+  private launchKey(cfg: JobsSettings): string {
+    return JSON.stringify([cfg.url, cfg.path, cfg.token]);
+  }
+
+  private tryLaunch(cfg: JobsSettings, generation: number): void {
+    const url = new URL(cfg.url);
+    if (!cfg.path || url.protocol !== 'http:' || !isJobsLoopback(url) || url.pathname !== '/') {
+      this.setError('Automatic launch needs a built JOBS folder and a local HTTP URL without a path.');
       return;
     }
-    const entry = path.join(cfg.path, 'dist-server', 'server', 'index.js');
-    if (!fs.existsSync(entry)) {
-      this.setError(cfg, 'JOBS folder is not built — run "npm install && npm run build" in it first');
-      log.warn('JOBS launch skipped: dist-server missing', { path: cfg.path });
+    const entry = path.resolve(cfg.path, 'dist-server', 'server', 'index.js');
+    if (!fs.existsSync(entry) || !fs.existsSync(path.resolve(cfg.path, 'dist', 'index.html'))) {
+      this.setError('JOBS folder is not built. Run "npm install" and "npm run build" in that folder first.');
       return;
     }
-
-    let port = '8780';
-    try {
-      port = new URL(cfg.url).port || '8780';
-    } catch { /* keep default */ }
-
-    const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      PORT: port,
-    };
-    if (cfg.token) {
-      env.JOBS_TOKEN = cfg.token;
-      env.WEBHOOK_TOKEN = cfg.token;
-    }
-
-    // Prefer a real node from PATH; the ELECTRON_RUN_AS_NODE fallback only
-    // works in dev — packaged builds disable the RunAsNode fuse (see
-    // findNodeBinary). The JOBS folder had to be npm-built, so node being
-    // on PATH is the normal case.
-    let runtime = findNodeBinary();
+    const runtime = findNodeBinary();
     if (!runtime) {
-      runtime = process.execPath;
-      env.ELECTRON_RUN_AS_NODE = '1';
+      this.setError('Install Node.js and restart Tether to launch JOBS, or run the server yourself.');
+      return;
     }
-
-    log.info('Launching JOBS server', { entry, port, runtime });
+    const env: NodeJS.ProcessEnv = { ...process.env, PORT: url.port || '80' };
+    delete env.ELECTRON_RUN_AS_NODE;
+    if (cfg.token) { env.JOBS_TOKEN = cfg.token; env.WEBHOOK_TOKEN = cfg.token; }
     let child: ChildProcess;
     try {
-      child = spawn(runtime, [entry], {
-        cwd: cfg.path,
-        env,
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-    } catch (err) {
-      this.setError(cfg, `Failed to launch JOBS: ${err instanceof Error ? err.message : String(err)}`);
+      // Do not copy an external server's output into Tether logs: it may contain secrets.
+      child = spawn(runtime, [entry], { cwd: cfg.path, env, windowsHide: true, stdio: 'ignore' });
+    } catch {
+      this.setError('Could not launch JOBS. Check the folder and Node.js installation.');
       return;
     }
     this.child = child;
-
-    child.stdout?.on('data', (chunk: Buffer) => {
-      const line = chunk.toString('utf-8').trim();
-      if (line) log.info('[jobs-server] ' + line);
-    });
-    child.stderr?.on('data', (chunk: Buffer) => {
-      const line = chunk.toString('utf-8').trim();
-      if (line) log.warn('[jobs-server] ' + line);
-    });
+    this.childConfig = this.launchKey(cfg);
+    this.setStatus({ ...this.status, detected: false, managed: true, phase: 'starting', error: undefined });
     child.on('exit', (code) => {
-      log.info('JOBS server exited', { code });
-      if (this.child === child) {
-        this.child = null;
-        if (!this.disposed) {
-          // code 0 before ever answering healthz = the runtime didn't actually
-          // run the server (e.g. RunAsNode fuse disabled and no node on PATH).
-          let error: string | undefined;
-          if (code) {
-            error = `JOBS server exited with code ${code}`;
-          } else if (code === 0 && !this.status.detected) {
-            error = 'JOBS server exited immediately — install Node.js (needed to run the server) and Test again';
-          }
-          this.setStatus({ ...this.status, detected: false, managed: false, error });
-        }
-      }
+      if (this.child !== child) return;
+      this.child = null;
+      this.childConfig = null;
+      this.clearSpawnPoll();
+      this.setError(`JOBS server exited${code === null ? '' : ` with code ${code}`}. Check the server setup and try again.`);
     });
-    child.on('error', (err) => {
-      log.warn('JOBS server spawn error', { error: err.message });
-      if (this.child === child) {
-        this.child = null;
-        this.setError(cfg, `Failed to launch JOBS: ${err.message}`);
-      }
+    child.on('error', () => {
+      if (this.child !== child) return;
+      this.child = null;
+      this.childConfig = null;
+      this.clearSpawnPoll();
+      this.setError('Could not start JOBS. Check the folder and Node.js installation.');
     });
-
-    this.pollAfterSpawn(cfg, 0);
+    this.pollAfterSpawn(cfg, generation, 0);
   }
 
-  private pollAfterSpawn(cfg: JobsConfig, attempt: number): void {
-    if (this.disposed || !this.child) return;
+  private pollAfterSpawn(cfg: JobsSettings, generation: number, attempt: number): void {
+    if (!this.current(generation) || !this.child) return;
+    this.clearSpawnPoll();
+    const child = this.child;
     this.spawnPollTimer = setTimeout(() => {
-      void this.probe(cfg.url).then((probe) => {
-        if (this.disposed) return;
-        if (probe) {
-          log.info('JOBS server is up', { url: cfg.url, version: probe.version });
-          this.setStatus({ enabled: cfg.enabled, url: cfg.url, detected: true, version: probe.version, managed: true });
-          return;
-        }
-        if (attempt + 1 >= SPAWN_POLL_MAX) {
-          log.warn('JOBS server did not answer healthz after launch — giving up', { url: cfg.url });
+      this.spawnPollTimer = null;
+      void this.probe(cfg.url).then(probe => {
+        if (!this.current(generation) || this.child !== child) return;
+        if (probe.ok) {
+          this.setStatus({ ...this.status, detected: true, version: probe.version, managed: true, phase: 'connected', error: undefined });
+        } else if (attempt + 1 >= SPAWN_POLL_MAX) {
           this.stopManagedChild();
-          this.setError(cfg, 'JOBS server launched but never answered healthz');
-          return;
-        }
-        this.pollAfterSpawn(cfg, attempt + 1);
+          this.setError('JOBS launched but did not become ready. Check the port and server setup, then try again.');
+        } else this.pollAfterSpawn(cfg, generation, attempt + 1);
       });
     }, SPAWN_POLL_MS);
   }
 
-  private setError(cfg: JobsConfig, error: string): void {
-    this.setStatus({ enabled: cfg.enabled, url: cfg.url, detected: false, version: null, managed: false, error });
+  private setError(error: string): void {
+    this.setStatus({ ...this.status, detected: false, version: null, managed: !!this.child, phase: 'unavailable', error });
   }
 
   private setStatus(next: JobsStatus): void {
-    const prev = this.status;
+    if (this.disposed || JSON.stringify(this.status) === JSON.stringify(next)) return;
     this.status = next;
-    const changed =
-      prev.enabled !== next.enabled ||
-      prev.url !== next.url ||
-      prev.detected !== next.detected ||
-      prev.version !== next.version ||
-      prev.managed !== next.managed ||
-      prev.error !== next.error;
-    if (!changed) return;
     for (const cb of this.listeners) {
-      try { cb(this.getStatus()); } catch { /* listeners never break the service */ }
+      try { cb(this.getStatus()); } catch { /* Observers never break lifecycle handling. */ }
     }
   }
 
+  private clearSpawnPoll(): void {
+    if (this.spawnPollTimer) clearTimeout(this.spawnPollTimer);
+    this.spawnPollTimer = null;
+  }
+
   private stopManagedChild(): void {
-    if (this.spawnPollTimer) {
-      clearTimeout(this.spawnPollTimer);
-      this.spawnPollTimer = null;
-    }
-    if (this.child) {
+    this.clearSpawnPoll();
+    const child = this.child;
+    this.child = null;
+    this.childConfig = null;
+    if (child) {
+      const done = new Promise<void>(resolve => {
+        const finish = () => {
+          if (this.stopping?.child === child) this.stopping = null;
+          child.removeListener('exit', finish);
+          child.removeListener('error', finish);
+          resolve();
+        };
+        child.once('exit', finish);
+        child.once('error', finish);
+      });
+      this.stopping = { child, done };
       log.info('Stopping managed JOBS server');
-      try { this.child.kill(); } catch { /* already gone */ }
-      this.child = null;
+      try { child.kill(); } catch { /* Already gone. */ }
     }
+  }
+
+  private async waitForStop(): Promise<boolean> {
+    const stopping = this.stopping;
+    if (!stopping) return true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        stopping.done.then(() => true),
+        new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), PROBE_TIMEOUT_MS); }),
+      ]);
+    } finally { if (timer) clearTimeout(timer); }
   }
 
   dispose(): void {
     this.disposed = true;
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+    this.generation++;
+    this.probeController.abort();
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
     this.stopManagedChild();
     this.listeners.clear();
   }

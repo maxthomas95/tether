@@ -27,6 +27,7 @@ import type {
   WaitingReason,
   NotificationPrefs,
   JobsStatus,
+  JobsSettings,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -115,9 +116,9 @@ const api: TetherAPI = {
   },
 
   workspace: {
-    save: (sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>, activeIndex: number): Promise<void> =>
-      ipcRenderer.invoke(IPC.WORKSPACE_SAVE, sessions, activeIndex),
-    load: (): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>; activeIndex: number } | null> =>
+    save: (sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>, activeIndex: number, canvas?: import('../shared/canvas-types').SavedCanvas): Promise<void> =>
+      ipcRenderer.invoke(IPC.WORKSPACE_SAVE, sessions, activeIndex, canvas),
+    load: (): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>; activeIndex: number; canvas?: import('../shared/canvas-types').SavedCanvas } | null> =>
       ipcRenderer.invoke(IPC.WORKSPACE_LOAD),
   },
 
@@ -286,6 +287,10 @@ const api: TetherAPI = {
   },
 
   jobs: {
+    getSettings: (): Promise<JobsSettings> => ipcRenderer.invoke(IPC.JOBS_GET_SETTINGS),
+    saveSettings: (settings: JobsSettings): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_SAVE_SETTINGS, settings),
+    disable: (): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_DISABLE),
+    remove: (): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_REMOVE),
     getStatus: (): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_GET_STATUS),
     refresh: (): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_REFRESH),
     onStatusChange(cb: (status: JobsStatus) => void): () => void {

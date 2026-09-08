@@ -40,16 +40,19 @@ export function useSessionUsage(sessionId: string | undefined): {
       return;
     }
 
+    let updated = false;
+    setUsage(null);
     window.electronAPI.usage.getSession(sessionId).then(nextUsage => {
-      if (generation !== usageGenerationRef.current) return;
+      if (generation !== usageGenerationRef.current || updated) return;
       setUsage(nextUsage);
     }).catch(() => {
-      if (generation !== usageGenerationRef.current) return;
+      if (generation !== usageGenerationRef.current || updated) return;
       setUsage(null);
     });
 
     const remove = window.electronAPI.usage.onUpdate((info) => {
       if (generation !== usageGenerationRef.current) return;
+      updated = true;
       const sessionUsage = info.sessions[sessionId] ?? null;
       setUsage(sessionUsage);
     });

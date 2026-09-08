@@ -4,13 +4,15 @@ import os from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ app: { getPath: () => '' } }));
-vi.mock('../db/database', () => ({ getDb: () => ({ usageSummaries: [] }), saveDb: vi.fn() }));
+vi.mock('../db/database', () => ({ getDb: vi.fn(() => ({ usageSummaries: [] })), saveDb: vi.fn() }));
 vi.mock('./jsonl-parser', () => ({ parseJsonlFile: vi.fn(() => ({ messages: [], newByteOffset: 0 })) }));
 vi.mock('node:fs', async (importOriginal) => ({
   ...await importOriginal<typeof import('node:fs')>(),
   watchFile: vi.fn(),
   unwatchFile: vi.fn(),
 }));
+
+import { getDb, type PersistedSessionUsage } from '../db/database';
 
 import { usageService } from './usage-service';
 import { parseJsonlFile } from './jsonl-parser';
@@ -23,6 +25,31 @@ afterEach(() => {
 });
 
 describe('usage-service path validation', () => {
+  it.each(['remote', 'invalid-local'] as const)('restores %s summaries without reading or watching them as local transcripts', async (kind) => {
+    vi.useFakeTimers();
+    try {
+      const summary: PersistedSessionUsage = {
+        sessionId: kind === 'remote' ? 'remote:source' : '../outside', cliTool: 'claude', workingDir: '/repo',
+        // A legacy path must not make a remote summary a local reader target.
+        filePath: kind === 'remote' ? '/remote/transcript.jsonl' : undefined,
+        remote: kind === 'remote' ? { scope: 'remote-user', path: '/remote/transcript.jsonl', nativeSessionId: 'native', identity: 'inode' } : undefined,
+        inputTokens: 20, outputTokens: 3, cacheCreationTokens: 0, cacheReadTokens: 0,
+        totalCost: 0.25, models: [], messageCount: 1,
+        firstMessageAt: null, lastMessageAt: null, parsedByteOffset: 100,
+      };
+      vi.mocked(getDb).mockReturnValueOnce({ usageSummaries: [summary] } as ReturnType<typeof getDb>);
+      expect(() => usageService.start()).not.toThrow();
+      await usageService.refresh(summary.sessionId);
+      expect(usageService.getSessionUsage(summary.sessionId)?.inputTokens).toBe(20);
+      expect(parseJsonlFile).not.toHaveBeenCalled();
+      expect(fs.watchFile).not.toHaveBeenCalled();
+    } finally {
+      usageService.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+
   it.each([
     ['../outside', '/repo'],
     ['..\\outside', '/repo'],

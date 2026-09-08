@@ -146,7 +146,7 @@ SSH environments can extend this to their remote hosts, but only with a second, 
 
 ### Enable pane splitting
 
-Turns on drag-to-split and the split pane layout. When off, sessions always open full-screen in the terminal area. See [Getting Started](getting-started.md#split-panes).
+Turns on drag-to-split and the split pane layout. When off, the standard layout shows one full-screen session. **Layout → Canvas** is a separate mode with movable, resizable panels and works regardless of this setting. See [Getting Started](getting-started.md#split-panes).
 
 **Maximum panes** sets a limit of 1, 2, or 4 (default 4 when splitting is enabled). The title bar's **Layout** control changes the same settings immediately. Lowering the limit leaves other sessions running in the sidebar.
 
@@ -221,21 +221,30 @@ Manage host keys captured during SSH first-connect (TOFU). Remove an entry to fo
 
 ### J.O.B.S. Office
 
-[J.O.B.S.](https://github.com/maxthomas95/JOBS) is a separate self-hosted pixel-art office that visualizes Claude Code agent activity in real time. When the integration is enabled (default), Tether probes `{url}/healthz` once a minute for a running instance. On detection:
+[J.O.B.S.](https://github.com/maxthomas95/JOBS) is a separate self-hosted pixel-art office for agent activity. In **Settings → Integrations → J.O.B.S. Office**, choose how Tether connects to it. New setups are **off by default**; explicitly saved integrations keep their previous connection, sharing, and launch behavior.
 
-- An **Office** pill appears in the sidebar footer (and a **J.O.B.S. Office** item in the View menu) that opens the office over the terminal area.
-- Tether narrates **SSH and Coder sessions** into the office via the JOBS webhook API, so remote agents appear alongside the local ones JOBS already sees through its own transcript watcher. Local sessions are deliberately not bridged — JOBS watches `~/.claude/projects` itself.
+To add an office:
 
-Settings:
+1. Use **Get JOBS / setup instructions** to set up the separate server, or use one you already run (including Docker).
+2. Check **Enable JOBS connection** and enter its **Server URL** (default `http://localhost:8780`). Use HTTP or HTTPS without embedded credentials, query parameters, or fragments.
+3. Optionally enable **Share SSH and Coder sessions with JOBS** and enter the server's **Webhook token**. Leave sharing off to view the office without sending Tether session metadata.
+4. Choose **Save and connect** to save these settings and check the connection immediately, or use the dialog's **Save** button. Cancel discards unapplied edits; it does not undo an action already applied with a JOBS button.
 
-- **Server URL** — where to probe (default `http://localhost:8780`).
-- **Token** — sent as Bearer auth on webhook posts; also injected as `JOBS_TOKEN`/`WEBHOOK_TOKEN` when Tether launches the server.
-- **Local JOBS folder** — optional path to a JOBS checkout. When set and nothing answers the probe, Tether launches the built server (`dist-server/`) from that folder using Node.js from your PATH, and stops it on quit. An instance Tether didn't start is never touched. The folder must be built first (`npm install && npm run build`) — which means Node is already installed on any machine where this works.
+When connected, an **Office** pill appears in the sidebar footer and **J.O.B.S. Office** appears in the View menu. Both open the office over the terminal area, where **JOBS settings** takes you back to the integration controls. If an enabled office becomes unavailable, its sidebar pill opens settings to help you reconnect or remove it. **Open office** in settings opens the saved connection in your browser. Tether checks availability once a minute; settings show connection, launch, and session-sharing errors separately. A successful connection check identifies JOBS; the webhook token is checked when a remote session is sent.
 
-- **Test now** — saves the fields above and re-probes immediately.
+**Sharing:** Tether sends active SSH and Coder session labels, project folder names (not full paths), environment names, CLI names, and activity status. It never sends prompts or terminal contents. Stopped, failed, and removed sessions are removed from the office. Tether does not bridge local sessions: JOBS may watch local transcripts independently. Disable that watcher in JOBS if you also want to stop its local monitoring.
 
-The J.O.B.S. token is stored encrypted with the OS keychain. Tether refuses to save it if the keychain is unavailable.
+**Automatic launch:** Enable **Let Tether start JOBS automatically**, then select a local JOBS checkout. Build it first with `npm install` and `npm run build`; Node.js must be on PATH. Automatic launch requires a local HTTP URL without a path. Tether launches the built server only if no office answers, and stops only the server it started when disabled or on quit. Changes to the launch folder, URL, or token restart a Tether-managed server. Turning off automatic launch stops a Tether-managed server and leaves the connection enabled for an independently run server.
 
+The webhook token is stored encrypted using the OS keychain. Tether refuses to save a token when encryption is unavailable. When Tether launches JOBS, it also provides that token as `JOBS_TOKEN` and `WEBHOOK_TOKEN`.
+
+To opt out:
+
+- **Turn off now** immediately stops connection checks, new session sharing, and any server Tether launched. Saved settings are kept for later. Alternatively, uncheck **Enable JOBS connection** and save.
+- Uncheck **Share SSH and Coder sessions with JOBS** and save to keep viewing the office while stopping Tether's session sharing.
+- **Remove integration… → Remove and forget** turns the integration off and clears its saved URL, encrypted token, folder, and sharing preferences. It leaves JOBS files and independently running servers alone. Enable the connection again to add a new setup.
+
+When sharing ends or the server changes, Tether makes a best-effort request to remove its agents from the previous office. If that server cannot be reached, its stale-agent timeout clears them later. Closing the office view only closes the view; use the settings above to opt out of sharing.
 ### Diagnostics export
 
 Open **About → Export diagnostics for support** to create a zip containing a scrubbed copy of `data.json`, rotated logs, and a version/OS manifest. Credentials and encrypted secret values are redacted; Vault references are preserved. Log scrubbing removes recognized credential patterns. The export is in About, not a control in this settings section.
@@ -244,13 +253,17 @@ Open **About → Export diagnostics for support** to create a zip containing a s
 
 ### Tracking
 
-Usage is read from local Claude Code and Codex CLI transcripts, plus the supported Crush database reader attributed to OpenCode. See [Usage & Quota](usage-quota.md#how-it-works) for coverage and limitations. These display controls do not stop local usage collection:
+Usage is read from local Claude Code and Codex CLI transcripts, Claude/Codex sessions launched through SSH or Coder, and the supported local Crush database reader attributed to OpenCode. See [Usage & Quota](usage-quota.md#how-it-works) for coverage and limitations. These display controls do not stop usage collection:
 
 - **Show per-session cost strip below terminal** — on by default.
 - **Show global usage in sidebar** — on by default.
 - **Show per-CLI tool breakdown in usage footer** — off by default; available when global usage is shown.
 
 There is no manual resync or usage-collection toggle in Settings.
+
+Claude and Codex sessions on SSH and Coder also feed these totals. Remote
+collection is independent of CLI status hooks. See [SSH and Coder usage](usage-quota.md#ssh-and-coder-sessions)
+for host requirements, sudo behavior, and the **Last collected** indicator.
 
 ### Budget guardrails
 

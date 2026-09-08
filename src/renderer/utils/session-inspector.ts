@@ -149,7 +149,9 @@ export function buildInspectorViewModel(args: {
     { label: 'Reasoning Tokens', value: formatTokens(usage?.reasoningTokens), muted: usage?.reasoningTokens === null || usage?.reasoningTokens === undefined },
     { label: 'Cache Created', value: formatTokens(usage?.cacheCreationTokens), muted: usage?.cacheCreationTokens === null || usage?.cacheCreationTokens === undefined },
     { label: 'Cache Read', value: formatTokens(usage?.cacheReadTokens), muted: usage?.cacheReadTokens === null || usage?.cacheReadTokens === undefined },
-    { label: 'Usage Tracking', value: usageAvailable ? 'Available' : usageAvailabilityLabel(environment), muted: !usageAvailable },
+    { label: 'Usage Tracking', value: usageAvailable
+      ? session?.remoteUsageStatus === 'unavailable' ? 'Last collected remote totals; retrying' : 'Available'
+      : session?.remoteUsageStatus === 'pending' ? 'Waiting for remote usage' : usageAvailabilityLabel(environment), muted: !usageAvailable || session?.remoteUsageStatus === 'unavailable' },
   );
 
   return {

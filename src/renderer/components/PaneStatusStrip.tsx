@@ -6,12 +6,13 @@ import { SessionInspector } from './SessionInspector';
 
 interface Props {
   sessionId: string | undefined;
+  remoteStatus?: 'pending' | 'collecting' | 'unavailable';
   tetherSessionId?: string | null;
   session?: InspectableSession;
   environment?: EnvironmentInfo;
 }
 
-export function PaneStatusStrip({ sessionId, tetherSessionId, session, environment }: Props) {
+export function PaneStatusStrip({ sessionId, remoteStatus, tetherSessionId, session, environment }: Props) {
   const { usage, enabled } = useSessionUsage(sessionId);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [config, setConfig] = useState<InspectorConfig>({
@@ -54,8 +55,9 @@ export function PaneStatusStrip({ sessionId, tetherSessionId, session, environme
   if (!enabled) return null;
   if (!sessionId && !session) return null;
 
+  const nativeSessionId = session?.toolSessionId || session?.claudeSessionId || (remoteStatus ? undefined : sessionId);
   const view = buildInspectorViewModel({
-    nativeSessionId: sessionId,
+    nativeSessionId,
     tetherSessionId,
     session,
     environment,
@@ -64,8 +66,11 @@ export function PaneStatusStrip({ sessionId, tetherSessionId, session, environme
   });
 
   return (
-    <div className="pane-status-strip">
-      <span className="pane-status-strip-item pane-status-strip-model">
+    <div className="pane-status-strip" title={remoteStatus === 'unavailable' ? 'Remote collection unavailable; showing last collected totals. Retrying automatically.' : undefined}>
+      {!usage && remoteStatus && <span className="pane-status-strip-item">{remoteStatus === 'pending' ? 'Waiting for remote usage' : 'Usage unavailable'}</span>}
+      {usage && remoteStatus === 'unavailable' && <span className="pane-status-strip-item">Last collected</span>}
+      {(usage || !remoteStatus) && <>
+        <span className="pane-status-strip-item pane-status-strip-model">
         {view.stripModel ?? 'Unknown model'}
       </span>
       <span className="pane-status-strip-separator">·</span>
@@ -76,9 +81,10 @@ export function PaneStatusStrip({ sessionId, tetherSessionId, session, environme
       <span className="pane-status-strip-item pane-status-strip-cost">
         {view.costLabel} <span className="pane-status-strip-estimate">API equivalent</span>
       </span>
+      </>}
       <span className="pane-status-strip-spacer" />
       <SessionInspector
-        nativeSessionId={sessionId}
+        nativeSessionId={nativeSessionId}
         tetherSessionId={tetherSessionId}
         session={session}
         environment={environment}

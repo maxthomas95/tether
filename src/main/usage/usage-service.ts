@@ -2,8 +2,8 @@ import * as fs from 'node:fs';
 import { createLogger } from '../logger';
 import { transcriptPath, scanAllTranscripts } from '../claude/transcripts';
 import { scanAllCodexTranscripts } from '../codex/transcripts';
-import { parseJsonlFile, type ParsedMessage } from './jsonl-parser';
-import { parseCodexJsonl, type CodexTokenUsageCounters } from './codex-jsonl-parser';
+import { parseJsonlFile, parseClaudeUsageText, type ParsedMessage } from './jsonl-parser';
+import { parseCodexJsonl, parseCodexUsageText, type CodexTokenUsageCounters } from './codex-jsonl-parser';
 import { readCrushSessions } from '../opencode/usage-reader';
 import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
 import { aggregateByEnvironment } from './env-aggregator';
@@ -18,6 +18,8 @@ import type {
   CliToolId,
 } from '../../shared/types';
 
+import type { RemoteUsageCli, RemoteUsageReply, RemoteUsageSource } from './remote-protocol';
+
 const log = createLogger('usage');
 
 const WATCH_DEBOUNCE_MS = 300;
@@ -26,6 +28,8 @@ const RESCAN_INTERVAL_MS = 5 * 60 * 1_000;
 const USAGE_SCHEMA_VERSION = 2;
 
 interface TrackedSession {
+  remote?: RemoteUsageSource;
+  remoteNeedsReparse?: boolean;
   sessionId: string;
   cliTool: CliToolId;
   workingDir: string;
@@ -279,24 +283,26 @@ export class UsageService {
     for (const summary of db.usageSummaries) {
       if (!this.tracked.has(summary.sessionId)) {
         const cliTool = (summary.cliTool as CliToolId) || 'claude';
-        const filePath = summary.filePath ?? (cliTool === 'claude' ? claudeUsagePath(summary.workingDir, summary.sessionId) : '');
+        const filePath = summary.remote ? '' : summary.filePath ?? (cliTool === 'claude' ? claudeUsagePath(summary.workingDir, summary.sessionId) : '');
         const usage = markLegacyIfTranscriptUnavailable(hydrateUsage(summary, cliTool), filePath);
         this.tracked.set(summary.sessionId, {
           sessionId: summary.sessionId,
           cliTool,
           workingDir: summary.workingDir,
           filePath,
+          remote: summary.remote,
+          remoteNeedsReparse: !!summary.remote && summary.usageSchemaVersion !== USAGE_SCHEMA_VERSION,
           watching: false,
           debounceTimer: null,
           usage,
-          lastSeenModel: usage.dayTiming === 'legacy' ? null : usage.currentModel ?? null,
+          lastSeenModel: summary.remote ? usage.currentModel ?? summary.lastSeenModel ?? null : usage.dayTiming === 'legacy' ? null : usage.currentModel ?? null,
           codexTokenUsage: summary.codexTokenUsage ?? null,
         });
         const tracked = this.tracked.get(summary.sessionId);
         if (tracked && needsUsageReparse(summary, filePath)) {
           this.reparseSessionPreservingLegacy(tracked);
         } else if (usage.dayTiming === 'legacy' && usage.dayTiming !== summary.dayTiming) {
-          this.persistSession(this.tracked.get(summary.sessionId)!);
+          this.persistSession(this.tracked.get(summary.sessionId)!, false);
         }
       }
     }
@@ -581,6 +587,61 @@ export class UsageService {
     }
   }
 
+  /** Restore a remote cursor without ever opening/watching its path locally. */
+  trackRemote(sessionId: string, workingDir: string, cliTool: RemoteUsageCli, environmentId: string, remote: RemoteUsageSource): { offset: number; identity: string } {
+    let session = this.tracked.get(sessionId);
+    if (!session) {
+      const saved = getDb().usageSummaries.find(s => s.sessionId === sessionId && s.remote);
+      const usage = saved
+        ? markLegacyIfTranscriptUnavailable(hydrateUsage(saved, cliTool, environmentId), '')
+        : emptySessionUsage(sessionId, cliTool, environmentId);
+      session = { sessionId, cliTool, workingDir, filePath: '', watching: false, debounceTimer: null,
+        remote: saved?.remote ?? remote, usage, lastSeenModel: saved?.currentModel ?? saved?.lastSeenModel ?? null,
+        codexTokenUsage: saved?.codexTokenUsage ?? null,
+        remoteNeedsReparse: !!saved && saved.usageSchemaVersion !== USAGE_SCHEMA_VERSION };
+      this.tracked.set(sessionId, session);
+    }
+    if (session.remoteNeedsReparse) return { offset: 0, identity: '' };
+    return { offset: session.usage.parsedByteOffset, identity: session.remote?.identity ?? '' };
+  }
+
+  applyRemote(sessionId: string, reply: RemoteUsageReply): void {
+    const session = this.tracked.get(sessionId);
+    if (!session?.remote || !reply.source || reply.offset === undefined || reply.text === undefined) return;
+    if (!session.remoteNeedsReparse && !reply.reset && reply.offset <= session.usage.parsedByteOffset) return;
+    if (reply.reset || session.remoteNeedsReparse) this.resetTrackedSessionForReparse(session);
+    const codexResult = session.cliTool === 'codex'
+      ? parseCodexUsageText(reply.text, {
+        startOffset: 0, priorModel: session.lastSeenModel ?? null,
+        priorReasoningEffort: session.usage.currentReasoningEffort,
+        priorContextWindowTokens: session.usage.contextWindowTokens,
+        priorContextUsedTokens: session.usage.contextUsedTokens,
+        priorTokenUsage: session.codexTokenUsage,
+      })
+      : null;
+    const parsed = codexResult ?? parseClaudeUsageText(reply.text);
+    // Sanitized text has a different byte length. The cursor always refers to
+    // the remote original and advances across non-usage records as well.
+    session.usage = mergeMessages(session.usage, parsed.messages, reply.offset);
+    session.usage.dayTiming = 'event';
+    session.usage.workingDir = session.workingDir;
+    if (codexResult) {
+      session.lastSeenModel = codexResult.currentModel;
+      session.codexTokenUsage = codexResult.tokenUsage;
+      session.usage.currentModel = codexResult.currentModel;
+      session.usage.currentReasoningEffort = codexResult.currentReasoningEffort;
+      session.usage.contextWindowTokens = codexResult.contextWindowTokens;
+      session.usage.contextUsedTokens = codexResult.contextUsedTokens;
+      session.usage.observedAt = codexResult.observedAt ?? session.usage.observedAt ?? null;
+    } else {
+      session.usage.observedAt = parsed.messages.at(-1)?.timestamp ?? session.usage.observedAt ?? null;
+    }
+    session.remoteNeedsReparse = false;
+    session.remote = reply.source;
+    this.persistSession(session);
+    this.notifyUpdate();
+  }
+
   untrackSession(sessionId: string): void {
     const session = this.tracked.get(sessionId);
     if (!session) return;
@@ -658,7 +719,7 @@ export class UsageService {
   }
 
   private parseSession(session: TrackedSession): boolean {
-    if (!session.filePath) return false;
+    if (session.remote || !session.filePath) return false;
     try {
       if (session.cliTool === 'codex') {
         const result = parseCodexJsonl(session.filePath, {
@@ -798,6 +859,8 @@ export class UsageService {
       cliTool: session.cliTool,
       workingDir: session.workingDir,
       filePath: session.filePath,
+      remote: session.remote,
+      lastSeenModel: session.lastSeenModel,
       environmentId: session.usage.environmentId,
       inputTokens: session.usage.inputTokens,
       outputTokens: session.usage.outputTokens,
@@ -838,7 +901,7 @@ export class UsageService {
     // change. This replaces the old fs.watch + ENOENT-retry loop which gave
     // up after 60s and missed sessions where the user took longer than that
     // to send their first prompt (claude doesn't create the JSONL until then).
-    if (session.watching || !session.filePath) return;
+    if (session.remote || session.watching || !session.filePath) return;
     session.watching = true;
     fs.watchFile(session.filePath, { interval: WATCH_POLL_INTERVAL_MS, persistent: false }, (curr, prev) => {
       // File vanished or never existed yet — nothing to parse.
