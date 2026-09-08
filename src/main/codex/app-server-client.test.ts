@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { callCodexAppServer, resetCodexAppServerClientForTests } from './app-server-client';
 import packageJson from '../../../package.json';
 
@@ -48,6 +48,10 @@ function clientOptions(options: Parameters<typeof callCodexAppServer>[1] = {}): 
 describe('codex app-server client', () => {
   beforeEach(() => {
     resetCodexAppServerClientForTests();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('initializes over JSONL, sends initialized, then reads allowlisted methods', async () => {
@@ -278,14 +282,13 @@ describe('codex app-server client', () => {
     ]);
   });
 
-  it('cancels and disposes the spawned helper', async () => {
+  it.each(['win32', 'linux'] as const)('cancels and disposes the spawned helper on %s', async platform => {
     const child = makeChild(456);
     const cleanup = makeChild();
     const cleanupSpawnImpl = vi.fn(() => cleanup);
     const controller = new AbortController();
-    const killProcess = process.platform === 'win32'
-      ? null
-      : vi.spyOn(process, 'kill').mockReturnValue(true);
+    const killProcess = vi.fn(() => true);
+    vi.stubGlobal('process', { ...process, platform, kill: killProcess });
     const promise = callCodexAppServer([
       { method: 'model/list', params: { limit: 100 } },
     ], clientOptions({
@@ -299,18 +302,21 @@ describe('codex app-server client', () => {
     await expect(promise).resolves.toEqual([
       { method: 'model/list', ok: false, error: 'Codex app-server request cancelled' },
     ]);
-    if (process.platform === 'win32') {
+    if (platform === 'win32') {
       expect(cleanupSpawnImpl).toHaveBeenCalledWith('C:\\Windows\\System32\\taskkill.exe', ['/pid', '456', '/t', '/f'], expect.any(Object));
+      expect(killProcess).not.toHaveBeenCalled();
+      expect(child.kill).not.toHaveBeenCalled();
+      cleanup.emit('error', new Error('taskkill failed'));
+      expect(child.kill).toHaveBeenCalledOnce();
     } else {
       expect(killProcess).toHaveBeenCalledWith(-456, 'SIGTERM');
+      expect(cleanupSpawnImpl).not.toHaveBeenCalled();
       expect(child.kill).not.toHaveBeenCalled();
     }
-    killProcess?.mockRestore();
-    cleanup.emit('error', new Error('taskkill failed'));
   });
 
   it('does not coalesce signalled calls with unsignalled callers', async () => {
-    const signalledChild = makeChild(111);
+    const signalledChild = makeChild();
     const unsignalledChild = makeChild();
     const spawnImpl = vi.fn()
       .mockReturnValueOnce(signalledChild)
