@@ -53,6 +53,22 @@ the future, first decide how those PRs will be handled.
 Once the baseline is understood, revisit a coverage condition on new code.
 Coverage shows execution, not assertion quality or end-to-end Electron behavior.
 
+## Temporary analyzer workaround
+
+The CI migration exposed a SonarJasmin (`JsSecuritySensorV2`) stall at
+`src/renderer/index.tsx`. Normal JS/TS analysis and LCOV import had already
+completed. A verbose rerun identified that file as the stalled analysis unit.
+It contains font/style imports and the React root mount; application behavior
+lives in `App.tsx` and the component tree.
+
+The scanner temporarily excludes only this bootstrap file. This means Sonar
+does not inspect or report coverage for those 31 lines; Vitest still includes
+them in its local and CI coverage report. `App.tsx`, renderer components, and
+the rest of the application remain in scope with the new security engine
+enabled. Remove the exclusion and rerun the bounded scan when the upstream
+analyzer can handle the entry point. See the
+[similar Sonar report](https://community.sonarsource.com/t/jssecuritysensorv2-jasmin-never-terminates-on-a-single-file-ci-analysis-runs-until-the-6h-github/187475).
+
 If cutover fails, re-enable Automatic Analysis only after disabling CI scans,
 and restore `.sonarcloud.properties` from the parent of the migration commit.
 
