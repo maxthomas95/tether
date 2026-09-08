@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 
 type RequestId = number;
 
@@ -26,13 +27,14 @@ export interface CodexAppServerClientOptions {
   timeoutMs?: number;
   maxFrameBytes?: number;
   maxResponseBytes?: number;
+  signal?: AbortSignal;
   spawnImpl?: typeof spawn;
+  cleanupSpawnImpl?: typeof spawn;
 }
 
 const DEFAULT_TIMEOUT_MS = 8_000;
 const DEFAULT_MAX_FRAME_BYTES = 1024 * 1024;
 const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
-const CACHE_TTL_MS = 2_500;
 const ALLOWED_METHODS = new Set<CodexAppServerMethod>([
   'account/read',
   'account/usage/read',
@@ -42,11 +44,9 @@ const ALLOWED_METHODS = new Set<CodexAppServerMethod>([
 ]);
 
 const inflight = new Map<string, Promise<CodexAppServerCallResult[]>>();
-const cache = new Map<string, { expiresAt: number; value: CodexAppServerCallResult[] }>();
 
 export function resetCodexAppServerClientForTests(): void {
   inflight.clear();
-  cache.clear();
 }
 
 interface JsonRpcResponse {
@@ -66,21 +66,10 @@ export async function callCodexAppServer(
   }
 
   const key = JSON.stringify(calls);
-  const cached = cache.get(key);
-  const now = Date.now();
-  if (cached && cached.expiresAt > now) {
-    return cached.value.map(row => ({ ...row }));
-  }
-
   const existing = inflight.get(key);
-  if (existing) {
-    return existing;
-  }
+  if (existing) return existing;
 
-  const request = runCodexAppServer(calls, options).then(value => {
-    cache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, value });
-    return value;
-  }).finally(() => {
+  const request = runCodexAppServer(calls, options).finally(() => {
     inflight.delete(key);
   });
   inflight.set(key, request);
@@ -110,8 +99,14 @@ function runCodexAppServer(
   const maxFrameBytes = options.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES;
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
   const spawnImpl = options.spawnImpl ?? spawn;
+  const cleanupSpawnImpl = options.cleanupSpawnImpl ?? spawn;
 
   return new Promise(resolve => {
+    if (options.signal?.aborted) {
+      resolve(calls.map(call => errorResult(call.method, 'Codex app-server request cancelled')));
+      return;
+    }
+
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawnCodexAppServer(spawnImpl);
@@ -122,13 +117,18 @@ function runCodexAppServer(
 
     const pending = new Map<RequestId, CodexAppServerMethod>();
     const results = new Map<CodexAppServerMethod, CodexAppServerCallResult>();
-    const parser = new ContentLengthParser(maxFrameBytes);
+    const parser = new JsonLineParser(maxFrameBytes);
     let settled = false;
-    let sentInitialized = false;
+    let initialized = false;
     let nextId = 1;
     let receivedBytes = 0;
 
     child.stderr.resume();
+
+    const abort = () => {
+      finish(calls.map(call => results.get(call.method) ?? errorResult(call.method, 'Codex app-server request cancelled')));
+    };
+    options.signal?.addEventListener('abort', abort, { once: true });
 
     const timer = setTimeout(() => {
       finish(calls.map(call => results.get(call.method) ?? unavailable(call.method)));
@@ -138,11 +138,13 @@ function runCodexAppServer(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      disposeChild(child);
+      options.signal?.removeEventListener('abort', abort);
+      disposeChild(child, cleanupSpawnImpl);
       resolve(value);
     };
 
     child.on('error', () => finish(calls.map(call => unavailable(call.method))));
+    child.stdin.on('error', () => finish(calls.map(call => errorResult(call.method, 'Codex app-server request failed'))));
     child.on('exit', () => {
       if (!settled) {
         finish(calls.map(call => results.get(call.method) ?? unavailable(call.method)));
@@ -166,14 +168,19 @@ function runCodexAppServer(
       }
 
       for (const message of messages) {
-        const response = message as JsonRpcResponse;
-        if (response.id === 1 && !sentInitialized) {
-          sentInitialized = true;
-          writeMessage(child, { method: 'initialized' });
+        const response = asResponse(message);
+        if (!response) continue;
+        if (response.id === 1 && !initialized) {
+          if (response.error || response.result === undefined) {
+            finish(calls.map(call => errorResult(call.method, 'Codex app-server initialize failed')));
+            return;
+          }
+          initialized = true;
+          writeMessage(child, { method: 'initialized' }, finish, calls);
           for (const call of calls) {
             const id = ++nextId;
             pending.set(id, call.method);
-            writeMessage(child, { id, method: call.method, params: call.params ?? null });
+            writeMessage(child, { id, method: call.method, params: call.params ?? null }, finish, calls);
           }
           continue;
         }
@@ -184,8 +191,13 @@ function runCodexAppServer(
         if (!method) continue;
         pending.delete(id);
         if (response.error) {
-          const message = isMethodUnavailable(response.error) ? 'Codex app-server method unavailable' : 'Codex app-server request failed';
-          results.set(method, { method, ok: false, error: message, unavailable: isMethodUnavailable(response.error) });
+          const unavailableMethod = isMethodUnavailable(response.error);
+          results.set(method, {
+            method,
+            ok: false,
+            error: unavailableMethod ? 'Codex app-server method unavailable' : 'Codex app-server request failed',
+            unavailable: unavailableMethod,
+          });
         } else {
           results.set(method, { method, ok: true, result: response.result });
         }
@@ -205,14 +217,28 @@ function runCodexAppServer(
           optOutNotificationMethods: ['thread/started', 'turn/started', 'agent/message/delta'],
         },
       },
-    });
+    }, finish, calls);
   });
 }
 
-function writeMessage(child: ChildProcessWithoutNullStreams, message: unknown): void {
-  const body = Buffer.from(JSON.stringify(message), 'utf-8');
-  child.stdin.write(`Content-Length: ${body.length}\r\n\r\n`);
-  child.stdin.write(body);
+function writeMessage(
+  child: ChildProcessWithoutNullStreams,
+  message: unknown,
+  finish: (value: CodexAppServerCallResult[]) => void,
+  calls: CodexAppServerCall[],
+): void {
+  child.stdin.write(`${JSON.stringify(message)}\n`, error => {
+    if (error) {
+      finish(calls.map(call => errorResult(call.method, 'Codex app-server request failed')));
+    }
+  });
+}
+
+function asResponse(message: unknown): JsonRpcResponse | null {
+  if (message === null || typeof message !== 'object' || Array.isArray(message)) {
+    return null;
+  }
+  return message as JsonRpcResponse;
 }
 
 function isMethodUnavailable(error: { code?: number; message?: string }): boolean {
@@ -228,12 +254,28 @@ function errorResult(method: CodexAppServerMethod, error: string): CodexAppServe
   return { method, ok: false, error };
 }
 
-function disposeChild(child: ChildProcessWithoutNullStreams): void {
+function disposeChild(child: ChildProcessWithoutNullStreams, cleanupSpawnImpl: typeof spawn): void {
   if (!child.pid || child.killed) return;
   if (process.platform === 'win32') {
     try {
-      spawn('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, shell: false, stdio: 'ignore' });
+      const killer = cleanupSpawnImpl('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
+        windowsHide: true,
+        shell: false,
+        stdio: 'ignore',
+      });
+      killer.on('error', () => undefined);
       return;
+    } catch {
+      // Fall back to killing the direct child below.
+    }
+  } else {
+    try {
+      const killer = cleanupSpawnImpl('pkill', ['-TERM', '-P', String(child.pid)], {
+        windowsHide: true,
+        shell: false,
+        stdio: 'ignore',
+      });
+      killer.on('error', () => undefined);
     } catch {
       // Fall back to killing the direct child below.
     }
@@ -245,38 +287,31 @@ function disposeChild(child: ChildProcessWithoutNullStreams): void {
   }
 }
 
-class ContentLengthParser {
-  private buffer = Buffer.alloc(0);
+class JsonLineParser {
+  private readonly decoder = new StringDecoder('utf8');
+  private buffer = '';
+  private pendingLineBytes = 0;
 
   constructor(private readonly maxFrameBytes: number) {}
 
   push(chunk: Buffer): unknown[] {
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    const messages: unknown[] = [];
-
-    while (this.buffer.length > 0) {
-      const headerEnd = this.buffer.indexOf('\r\n\r\n');
-      if (headerEnd === -1) {
-        if (this.buffer.length > this.maxFrameBytes) throw new Error('oversized header');
-        break;
-      }
-
-      const header = this.buffer.slice(0, headerEnd).toString('ascii');
-      const match = /^Content-Length:\s*(\d+)$/im.exec(header);
-      if (!match) throw new Error('missing content length');
-      const length = Number(match[1]);
-      if (!Number.isSafeInteger(length) || length < 0 || length > this.maxFrameBytes) {
-        throw new Error('invalid content length');
-      }
-
-      const bodyStart = headerEnd + 4;
-      const bodyEnd = bodyStart + length;
-      if (this.buffer.length < bodyEnd) break;
-      const body = this.buffer.slice(bodyStart, bodyEnd).toString('utf-8');
-      messages.push(JSON.parse(body));
-      this.buffer = this.buffer.slice(bodyEnd);
+    this.pendingLineBytes += chunk.length;
+    if (this.pendingLineBytes > this.maxFrameBytes) {
+      throw new Error('oversized frame');
     }
 
+    this.buffer += this.decoder.write(chunk);
+    const messages: unknown[] = [];
+    let newlineIndex = this.buffer.indexOf('\n');
+    while (newlineIndex !== -1) {
+      const line = this.buffer.slice(0, newlineIndex).replace(/\r$/, '');
+      this.buffer = this.buffer.slice(newlineIndex + 1);
+      this.pendingLineBytes = Buffer.byteLength(this.buffer, 'utf8');
+      if (line.trim().length > 0) {
+        messages.push(JSON.parse(line));
+      }
+      newlineIndex = this.buffer.indexOf('\n');
+    }
     return messages;
   }
 }

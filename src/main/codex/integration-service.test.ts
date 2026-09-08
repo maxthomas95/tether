@@ -48,10 +48,12 @@ describe('codex integration service', () => {
             longestRunningTurnSec: 90,
             currentStreakDays: 2,
             longestStreakDays: 3,
+            impossible: 9007199254740993,
           },
           dailyUsageBuckets: [
             { startDate: '2026-09-07', tokens: 25 },
             { startDate: '2026-09-08', tokens: -1 },
+            { startDate: 'not-a-date', tokens: 10 },
           ],
         },
       },
@@ -65,7 +67,7 @@ describe('codex integration service', () => {
             limitName: 'Codex',
             planType: 'pro',
             primary: { usedPercent: 50, windowDurationMins: 300, resetsAt: 1799270400 },
-            secondary: { usedPercent: 10, windowDurationMins: null, resetsAt: null },
+            secondary: { usedPercent: 101, windowDurationMins: -1, resetsAt: 999999999999999999 },
           },
         },
       },
@@ -85,6 +87,11 @@ describe('codex integration service', () => {
       usedPercent: 50,
       windowMinutes: 300,
       resetsAt: '2027-01-06T21:20:00.000Z',
+    });
+    expect(snapshot.rateLimits[0].secondary).toEqual({
+      usedPercent: null,
+      windowMinutes: null,
+      resetsAt: null,
     });
     expect(mockedCall).toHaveBeenCalledWith([
       { method: 'account/read', params: { refreshToken: false } },
@@ -141,6 +148,19 @@ describe('codex integration service', () => {
     ]);
   });
 
+  it('returns error for quota when rate limits fail even if account succeeds', async () => {
+    mockedCall.mockResolvedValue([
+      { method: 'account/read', ok: true, result: { account: { type: 'chatgpt', planType: 'plus' }, requiresOpenaiAuth: false } },
+      { method: 'account/rateLimits/read', ok: false, error: 'Codex app-server request failed' },
+    ]);
+
+    const snapshot = await readCodexQuota();
+
+    expect(snapshot.status).toBe('error');
+    expect(snapshot.error).toBe('Codex quota could not be read');
+    expect(snapshot.rateLimits).toEqual([]);
+  });
+
   it('sanitizes configuration values and lists profile filenames only', async () => {
     const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-codex-home-'));
     process.env.CODEX_HOME = codexHome;
@@ -161,11 +181,13 @@ describe('codex integration service', () => {
             service_tier: null,
             mcp_servers: {
               github: { command: 'SECRET_COMMAND', env: { TOKEN: 'SECRET' }, enabled: true },
+              ['x'.repeat(200)]: { enabled: true },
             },
           },
           origins: {
             model: { name: { type: 'user', file: path.join(codexHome, 'config.toml') }, version: '1' },
             approval_policy: { name: { type: 'project', dotCodexFolder: path.join(codexHome, '.codex') }, version: '1' },
+            service_tier: { name: { type: 'untrustedSource', value: 'SECRET' }, version: '1' },
           },
         },
       },
@@ -174,8 +196,9 @@ describe('codex integration service', () => {
         ok: true,
         result: {
           data: [{
-            id: 'gpt-5-codex',
+            id: 'display-id',
             displayName: 'GPT-5 Codex',
+            model: 'gpt-5-codex',
             supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Medium' }],
             defaultReasoningEffort: 'medium',
           }],
@@ -188,8 +211,12 @@ describe('codex integration service', () => {
     expect(JSON.stringify(snapshot)).not.toContain('SECRET');
     expect(snapshot.fields).toContainEqual({ key: 'approval_policy', value: 'Custom policy', source: 'project' });
     expect(snapshot.fields).toContainEqual({ key: 'model', value: 'gpt-5-codex', source: 'user' });
+    expect(snapshot.fields).toContainEqual({ key: 'service_tier', value: null, source: null });
     expect(snapshot.profiles).toEqual([{ name: 'alpha' }]);
-    expect(snapshot.integrations).toEqual([{ name: 'github', kind: 'mcp', enabled: true }]);
+    expect(snapshot.integrations).toEqual([
+      { name: 'github', kind: 'mcp', enabled: true },
+      { name: 'x'.repeat(160), kind: 'mcp', enabled: true },
+    ]);
     expect(snapshot.models).toEqual([{
       id: 'gpt-5-codex',
       displayName: 'GPT-5 Codex',
