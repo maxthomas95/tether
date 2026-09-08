@@ -689,7 +689,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                   Pick a theme
                 </label>
                 <p className="form-hint" style={{ marginBottom: 12 }}>
-                  Choose a theme. You can change this later in Settings → General.
+                  Choose a theme. You can change this later in Settings → Appearance.
                 </p>
                 <select
                   className="form-input"

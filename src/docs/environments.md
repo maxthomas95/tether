@@ -27,7 +27,7 @@ If the OS keychain is unavailable, Tether refuses to save or read a stored passw
 
 #### Host key verification
 
-On first connect to a new host, Tether shows a **Host key verification** dialog (TOFU — trust on first use). Approving stores the fingerprint in `data.json` and silently re-verifies on every subsequent connect. If the host key ever changes, the connection is refused and the dialog reopens so you can re-approve or disconnect. Manage known hosts in Settings → Integrations → SSH known hosts.
+On first connect to a new host, Tether shows a **Host key verification** dialog (TOFU — trust on first use). Approving stores the fingerprint in `data.json` and silently re-verifies on subsequent connects. A changed key is refused without another trust prompt. If you have verified that the change is expected, revoke the old entry under **Settings → Integrations → SSH Known Hosts**, then reconnect to review the new fingerprint.
 
 #### CLI status hooks on remote hosts
 
@@ -37,7 +37,7 @@ While sessions run on the host, Tether keeps a small stdlib-only Node helper und
 
 Requirements and limits:
 
-- The global **CLI status hooks** toggle in [Settings → Sessions](settings#cli-hooks) must also be on; the per-environment checkbox is a separate consent for writing to that host.
+- The global **CLI status hooks** toggle in [Settings → Sessions](settings.md#cli-hooks) must also be on; the per-environment checkbox is a separate consent for writing to that host.
 - The host needs `node` (or `nodejs`) on the PATH — without it, sessions silently fall back to cadence-only detection.
 - Not available for sudo-elevated environments: the CLI runs as root, and Tether does not touch root's config files.
 - If the connection to the host drops, affected sessions immediately fall back to cadence detection; Tether reconnects once and restores hook detection when it succeeds.
@@ -67,7 +67,7 @@ Caveats:
 
 ## Creating an Environment
 
-1. Click **+ Add environment** in the sidebar header
+1. Click **+** beside **Environments** in the sidebar
 2. Choose the type (Local, SSH, or Coder)
 3. Fill in the connection details
 4. Click **Create**
@@ -94,9 +94,9 @@ The default Local environment cannot be deleted.
 
 Settings are applied in layers:
 
-1. **Global defaults** — set in [Settings](settings) (Ctrl+,)
+1. **Global defaults** — set in [Settings](settings.md) (Ctrl+,)
 2. **Environment defaults** — set on the environment itself
-3. **Launch profile** — selected when creating a session (see [Settings](settings#launch-profiles))
+3. **Launch profile** — selected when creating a session (see [Settings](settings.md#launch-profiles))
 4. **Session overrides** — set when creating a session
 
-Each layer overrides the previous. Env vars merge key-by-key; CLI flag arrays replace wholesale at each layer.
+Env vars merge key-by-key, with later layers winning. CLI flags follow a separate additive sequence: per-tool global defaults → selected profile's per-tool flags → session flags. The launch form lets you disable inherited flags individually.

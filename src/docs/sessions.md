@@ -7,18 +7,18 @@ A **session** in Tether is a running CLI process in a specific directory and env
 Click **+ New session** or press **Ctrl+N**. The dialog has three tabs for picking a working directory:
 
 - **Existing directory** — browse to or paste a path you already use
-- **Clone** — clone a remote repo via a configured Git provider (see [Git Providers](git-providers))
-- **New folder** — create an empty folder under your repos root, optionally `git init` and provision an empty remote (see [Git Providers](git-providers#new-folder)). New folder mode is local-only.
+- **Clone** — clone a remote repo via a configured Git provider (see [Git Providers](git-providers.md))
+- **New folder** — create an empty folder under your repos root, optionally `git init` and provision an empty remote (see [Git Providers](git-providers.md#new-folder)). New folder mode is local-only.
 
 On Existing directory and New folder, pressing **Enter** in a standard text field runs the same primary action as clicking **Create session**.
 
 Other fields:
 
-- **Environment** — Local, SSH, or Coder (see [Environments](environments))
+- **Environment** — Local, SSH, or Coder (see [Environments](environments.md))
 - **CLI tool** — [Claude Code](#multi-cli-support), [Codex CLI](#multi-cli-support), [GitHub Copilot CLI](#multi-cli-support), [OpenCode](#multi-cli-support), or a [Custom](#multi-cli-support) binary
 - **Label** — optional display name (defaults to the directory name)
-- **Launch profile** — preset env vars and CLI flags (see [Settings](settings#launch-profiles))
-- **Environment variables** — key-value pairs passed to the CLI process. Values can be `vault://` references; see [Vault](vault).
+- **Launch profile** — preset env vars and CLI flags (see [Settings](settings.md#launch-profiles))
+- **Environment variables** — key-value pairs passed to the CLI process. Values can be `vault://` references; see [Vault](vault.md).
 - **CLI flags** — additional command-line arguments. Multi-token flags like `--permission-mode plan` are tokenized at the transport boundary.
 
 ### Resume from the launcher
@@ -31,7 +31,7 @@ When the Existing directory tab points to a git repository, a **Create as new gi
 
 ## Resume Conversation
 
-When you create a Local Claude Code, Codex CLI, or OpenCode session in a directory with existing transcripts, Tether offers to resume a previous conversation. Click a transcript preview to start from where you left off (uses `claude --resume` / `codex resume <id>` / `opencode --session <id>` under the hood). Resume is not currently supported for Coder sessions because transcripts live inside the workspace.
+For local Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode sessions, use **Resume conversation** in the launcher to choose history for the working directory. Tether uses `claude --resume <id>`, `codex resume <id>`, `copilot --resume <id>`, or `opencode --session <id>`. Tether's conversation picker and automatic resume are unavailable for SSH, Coder, and Custom sessions.
 
 ## Multi-CLI Support
 
@@ -42,7 +42,7 @@ Tether is CLI-agnostic. The CLI registry lives in `src/shared/cli-tools.ts`; per
 | **Claude Code** | Full integration: resume (`--resume`, `--session-id`), transcript browsing, hooks-based status detection. |
 | **Codex CLI** | Full integration: `codex resume <id>`, transcript browsing, session-id watcher captures `sessionId` at spawn, hooks-based status detection. |
 | **GitHub Copilot CLI** | Resume support, transcript browsing. |
-| **OpenCode** | Full integration: resume (`--session <id>`), transcript browsing, cost tracking from OpenCode's local DB. |
+| **OpenCode** | Resume (`--session <id>`) and transcript browsing. Cost coverage depends on the supported local database; see [Usage & Quota](usage-quota.md#how-it-works). |
 | **Custom** | Any binary you specify. No resume, no transcript reader. |
 
 ## Session States
@@ -55,9 +55,9 @@ Each session has a state, shown by the colored dot in the sidebar:
 | **Waiting** | Amber | The CLI is paused on a prompt (input, permission, tool approval) |
 | **Idle** | Gray | Session is alive but quiet |
 | **Stopped** | Gray (dim) | Session was stopped gracefully |
-| **Dead** | Red | The CLI process exited |
+| **Dead** | Red | The process exited with an error, or the transport failed |
 
-State detection is passive — Tether watches output cadence; it does not parse or filter the terminal stream. With [CLI hooks](settings#cli-hooks) enabled, Claude/Codex sessions get hook-grade detection on top: local sessions automatically, SSH sessions when their environment opts in via [CLI status hooks on remote hosts](environments#cli-status-hooks-on-remote-hosts). Coder sessions are cadence-only for now.
+State detection is passive — Tether watches output cadence; it does not parse or filter the terminal stream. With [CLI hooks](settings.md#cli-hooks) enabled, Claude/Codex sessions get hook-grade detection on top: local sessions automatically, SSH sessions when their environment opts in via [CLI status hooks on remote hosts](environments.md#cli-status-hooks-on-remote-hosts). Coder sessions are cadence-only for now.
 
 ## Managing Sessions
 
@@ -71,7 +71,7 @@ Double-click the label in the sidebar, or right-click and choose **Rename**. Ent
 
 ### Stopping
 
-**Ctrl+W** sends a graceful stop signal (SIGTERM) to the active session. You can also right-click and choose **Stop**. If the session doesn't terminate within 3 seconds, Tether automatically escalates to a forced kill. Clicking **Stop** a second time during the grace period forces an immediate kill.
+**Ctrl+W** or **Stop** requests shutdown of the active session. Local and Coder sessions terminate their local PTY process; SSH sends **Ctrl+C**, then `exit`, and closes the connection. If the session remains alive, Tether escalates after the 3-second grace period. A second **Stop** during that period forces an immediate kill.
 
 ### Removing
 
@@ -87,7 +87,7 @@ Drag sessions within a group to reorder them. Order is persisted per repo group.
 
 ### Muting notifications
 
-Right-click a session and choose **Mute notifications** to silence desktop notifications for that session only — useful when one session is noisy but you still want alerts from others. Muted sessions show a 🔕 badge next to the status dot. Unmute from the same right-click menu. Global notification triggers are configured in [Settings](settings#notifications).
+Right-click a session and choose **Mute notifications** to silence desktop notifications and generic outbound webhooks for that session. Muted sessions show a 🔕 badge next to the status dot. Unmute from the same menu. Global triggers are configured in [Settings](settings.md#notifications).
 
 ### Pane recovery
 
@@ -95,7 +95,7 @@ If a session inside a split pane dies, the pane shows an in-pane overlay with **
 
 ## Broadcast Input
 
-When you have multiple panes open in a split layout, you can broadcast keystrokes to several sessions at once — useful for running the same command in parallel. Toggle broadcast targets from the pane status strip or from **Session → Clear Broadcast Input Targets** to reset. When broadcast is active, anything you type in the focused pane is echoed to all targeted panes simultaneously.
+Toggle broadcast targets from each pane header. With at least two live targets selected, input from a selected pane is sent to every selected session. Input from an unselected pane stays in that pane. Dead or stopped sessions are removed from the targets. Use **Session → Clear Broadcast Input Targets** to reset.
 
 ## Bulk Actions on a Group
 
@@ -107,7 +107,7 @@ Right-click a repo-group header in the sidebar for bulk actions across every ses
 
 ## Helm (opt-in)
 
-A session can be designated as a **Helm** parent that dispatches pre-briefed child sessions via the `tether-helm` MCP. Enable per-session from the right-click menu. Experimental and personal; see [Helm](helm).
+A session can be designated as a **Helm** parent that dispatches pre-briefed child sessions via the `tether-helm` MCP. Enable per-session from the right-click menu. Experimental and personal; see [Helm](helm.md).
 
 ## Session Grouping
 
@@ -130,9 +130,9 @@ Opening a session from the switcher behaves exactly like clicking it in the side
 
 With several sessions running at once, "which one needs me?" is the recurring question. The attention queue answers it: press **Ctrl+Shift+A** (or click **Session → Jump to Next Waiting**, or the amber **N waiting** pill in the sidebar header) to jump straight to the next session that's amber — **Waiting** — sorted permission prompts first, then oldest-waiting first. Repeated presses cycle through the whole queue, wrapping back to the start once you've seen them all, so it doubles as a "drain the queue" loop across a busy sidebar.
 
-The pill only appears when at least one session is waiting, and shows the live count. Muting a session's notifications doesn't remove it from the queue — muting only silences desktop notifications, so a muted session still surfaces here when it's your turn to look at it.
+The pill only appears when at least one session is waiting, and shows the live count. Muting suppresses desktop notifications and generic webhooks, but leaves the session in the attention queue.
 
-The shortcut is remappable like any other; see [Keyboard Shortcuts](keyboard-shortcuts).
+The shortcut is remappable like any other; see [Keyboard Shortcuts](keyboard-shortcuts.md).
 
 Hover any session row for about a third of a second and a small popover shows its last few terminal lines — a quick way to triage which session actually needs you before you switch to it. It works for any session with terminal output, not just waiting ones, and pairs naturally with the attention queue for draining a busy sidebar.
 

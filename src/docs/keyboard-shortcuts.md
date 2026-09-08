@@ -2,7 +2,7 @@
 
 The title bar's **Find session** button opens the session switcher and displays its current shortcut, including custom bindings. Session rows also support **Shift+F10** for their action menu; use arrow keys to move and **Escape** to dismiss it.
 
-All shortcuts below are the defaults. Every one is **remappable** in [Settings → Shortcuts](settings#shortcuts) — click a row, press a new chord, and it's saved. Reserved chords (e.g. **Ctrl+C** for copy / SIGINT) prompt for explicit confirmation before rebinding.
+The app-action shortcuts below are defaults and are **remappable** in [Settings → Shortcuts](settings.md#shortcuts). Click a row, press a new chord, and it saves immediately. Reserved chords (e.g. **Ctrl+C** for copy / SIGINT) prompt for confirmation before rebinding. Clipboard shortcuts, **Shift+F10**, and mouse gestures such as **Ctrl+scroll** and **Ctrl+click** are not entries in that editor.
 
 ## Session Management
 
@@ -10,14 +10,14 @@ All shortcuts below are the defaults. Every one is **remappable** in [Settings �
 |----------|--------|
 | **Ctrl+N** | Create a new session |
 | **Ctrl+P** | Find a session (quick switcher) |
-| **Ctrl+W** | Stop the active session (SIGTERM) |
+| **Ctrl+W** | Stop the active session |
 
 ## Navigation
 
 | Shortcut | Action |
 |----------|--------|
 | **Ctrl+1** through **Ctrl+9** | Switch to session by position |
-| **Ctrl+Shift+A** | Jump to next waiting session (see [Attention queue](sessions#attention-queue)) |
+| **Ctrl+Shift+A** | Jump to next waiting session (see [Attention queue](sessions.md#attention-queue)) |
 
 ## Split Panes
 
@@ -36,7 +36,7 @@ All shortcuts below are the defaults. Every one is **remappable** in [Settings �
 | **Ctrl+-** | Zoom whole window out |
 | **Ctrl+0** | Reset window zoom |
 
-Window zoom uses `webFrame.setZoomLevel`. Per-pane font size is persisted with the layout.
+Window zoom affects the whole app. **Ctrl+scroll** sets a font-size override for that session's lifetime. Clear overrides with **Settings → Terminal → Reset all session font sizes**; **Ctrl+0** only resets window zoom.
 
 ## Interface
 
