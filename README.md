@@ -86,14 +86,14 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 
 ### Cost & quota
 
-- **Usage tracking** for Claude Code, Codex CLI, and OpenCode — per-session and global, computed from the CLI's own transcripts using a vendored [LiteLLM](https://github.com/BerriAI/litellm) pricing table. Copilot CLI sessions work fully, but cost tracking is blocked upstream until Copilot persists token usage ([copilot-cli#2947](https://github.com/github/copilot-cli/issues/2947))
+- **Usage tracking** — local Claude Code and Codex CLI transcript estimates use a bundled [LiteLLM](https://github.com/BerriAI/litellm) pricing table. The OpenCode usage path reads supported Crush databases; other OpenCode storage formats are not covered. Copilot supports resume/history but has no cost reader. See [Usage & Quota](src/docs/usage-quota.md).
 - **Usage history dialog** — Daily / Weekly / Monthly rollups with per-environment cost attribution
 - **CSV / JSON export** of usage history for offline analysis
 - **Subscription quota tracking** *(optional)* — surface your Anthropic / OpenAI quota in the sidebar footer
 
 ### Secrets
 
-- **Vault integration** — store env vars as `vault://` references resolved at session start; KV v2 with token or OIDC auth, sidebar status pill with expiry warnings, and a tree-view picker for browsing existing secrets
+- **Vault integration** — store secrets as `vault://mount/path#key` references resolved at session start; KV v2 with browser OIDC login, an encrypted token cache, expiry warnings, and a tree-view secret picker
 - **Plaintext → Vault migration** — Settings has a one-click sweep that copies plaintext env-var values into Vault and rewrites the local config to references
 
 ### Interface
@@ -107,7 +107,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 
 ### Operations
 
-- **Auto-update** — polls GitHub Releases and notifies on new versions; toggle off in Settings if you're on a locked-down network
+- **Update notifications** — checks GitHub Releases on launch and links to downloads; stable/beta channels and an opt-out live in Settings → General
 - **Diagnostics export** — one-click bundle of scrubbed `data.json` (SSH passwords, tokens, sensitive env-var values redacted) plus rotated logs, for triaging support issues
 - **Helm** *(opt-in, personal-experimental)* — designate a session as "helm" so it can dispatch pre-briefed child sessions through the `tether-helm` MCP, including spawning Coder workspaces. Off by default behind a two-level gate. Not on the 1.0 roadmap.
 
@@ -134,6 +134,8 @@ npm install       # install dependencies
 npm run start     # launch in dev mode (Electron Forge + Vite)
 ```
 
+For a reproducible contributor install, use Node 24 and `npx npm@10.9.4 ci`, matching CI. Run `npm run typecheck`, `npm run lint`, `npm test`, and `npm run test:packaging` before submitting changes. Packaging changes also need `npm run package` and `npm run verify:package`; the Helm package has its own build and audit in CI.
+
 ## Tech Stack
 
 | | Technology | Why |
@@ -157,14 +159,18 @@ Tether runs as a desktop client; outbound network traffic is intentionally minim
 | `api.github.com`, `github.com` | Auto-update check (latest GitHub Release polling) and downloading installers from the Releases page. | `src/main/update/update-checker.ts` |
 | `raw.githubusercontent.com` | Daily refresh of LiteLLM model pricing JSON. Falls back to the bundled snapshot if blocked. | `src/main/usage/pricing-fetcher.ts` |
 | Your Vault server | Resolving `vault://` env-var references at session start. Only contacted when Vault integration is configured. | `src/main/vault/` |
-| Your SSH host(s) | SSH-transport sessions and managed git worktree clones. Only contacted for environments you create. | `src/main/transport/ssh-transport.ts` |
+| Your SSH host(s) | SSH sessions and optional remote status hooks. | `src/main/transport/ssh-transport.ts`, `src/main/cli-config/` |
 | Your Coder server | Coder workspace listing, creation, and PTY exec. Only contacted when Coder integration is configured. | `src/main/transport/coder-transport.ts` |
+| `api.anthropic.com`, `platform.claude.com`, `chatgpt.com` | Subscription quota polling and Claude OAuth refresh, when quota is enabled and local credentials are available. | `src/main/quota/quota-service.ts` |
+| Configured Git provider and clone hosts | Repository browsing, creation, and cloning through GitHub, Azure DevOps, or Gitea. | `src/main/git/` |
+| Configured webhook endpoint | Optional session-state notifications. A blank URL disables them. | `src/main/notifications/` |
+| Configured J.O.B.S. server (default `localhost:8780`) | Health probes, Office view, and remote-session narration. Auto-detection is enabled by default. | `src/main/jobs/` |
 
-The auto-update check and pricing refresh are the only "always-on" outbound calls; both fail silently and never block the app from launching. Disable the update check from **Settings → Updates** if you'd prefer no GitHub egress at all.
+Update checks, pricing refresh, subscription quota, and J.O.B.S. auto-detection are enabled by default. Disable launch update checks in **Settings → General**, quota polling in **Settings → Usage**, and J.O.B.S. in **Settings → Integrations**. Pricing refresh has no settings toggle and falls back to a bundled snapshot when unavailable. Manual update checks and configured GitHub providers can still contact GitHub when launch checks are off. Each CLI process may also make its own network requests.
 
 ## Documentation
 
-User-facing docs ship inside Tether — open the Documentation window from the View menu, or click any `(?)` icon in a dialog to deep-link straight to the relevant section. Source markdown is in [`src/docs/`](src/docs/) (Getting Started, Sessions, Environments, Vault, Git Providers, Usage & Quota, Helm, Keyboard Shortcuts, Settings).
+User-facing docs ship inside Tether — open **Help → Documentation**, or click any `(?)` icon in a dialog to jump to the relevant section. Source markdown is in [`src/docs/`](src/docs/) (Getting Started, Sessions, Environments, Vault, Git Providers, Usage & Quota, Helm, Keyboard Shortcuts, Settings).
 
 Contributor / design docs:
 

@@ -53,6 +53,7 @@ Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provid
 - Dark theme by default. Status colors: green (#22C55E), amber (#EAB308), gray (#6B7280), red (#EF4444)
 - Per-CLI behavior (resume args, history provider, common flags) goes in `src/shared/cli-tools.ts`, not scattered through transports
 - **When adding or changing a feature, update the in-app docs** (`src/docs/*.md`) in the same PR. Check `settings.md`, `sessions.md`, `getting-started.md`, and `keyboard-shortcuts.md` for any sections that reference the feature. User-facing docs ship inside the app — stale docs are bugs.
+- Use relative `.md` links between help pages (for example, `settings.md#appearance`) so navigation works both on GitHub and in the docs window.
 
 ### Session grouping
 
@@ -72,14 +73,15 @@ Each environment has preconfigured settings (host, auth, default directory, env 
 Tether is a dumb-pipe PTY multiplexer; it does not depend on any one CLI. Tools are registered in `src/shared/cli-tools.ts`:
 - **Claude Code** — full support including session resume (`--resume`, `--session-id`) and transcript browsing
 - **Codex CLI** — full support including session resume (`codex resume <id>`) and transcript browsing
-- **OpenCode** — raw PTY only, no resume integration
+- **GitHub Copilot CLI** — local session resume (`copilot --resume <id>`) and transcript browsing; no cost reader
+- **OpenCode** — local session resume (`opencode --session <id>`) and transcript browsing; usage coverage is limited to the supported Crush database reader
 - **Custom** — any binary the user specifies
 
 CLI flag presets are stored as strings in arrays. Multi-token flags (e.g. `--permission-mode plan`) are tokenized at the transport boundary, so single-string entries with whitespace are split into separate process args.
 
 ### Vault integration
 
-Env vars can hold a `vault://` reference instead of a literal value. `vault-resolver.ts` resolves these at session start using `vault-client.ts` (KV v2). Auth modes: token, OIDC. The sidebar shows a Vault status pill; expiry warnings surface before sessions launch.
+Env vars can hold a `vault://<mount>/<path>#<key>` reference instead of a literal value. `vault-resolver.ts` resolves these at session start using `vault-client.ts` (KV v2). Login uses browser OIDC; the token is cached encrypted with Electron safeStorage. There is no pasted-token or token-file auth UI. The sidebar shows a Vault status pill and expiry warnings; renewal requires logging in again.
 
 ### Cross-platform hygiene
 
@@ -120,12 +122,16 @@ Implementation work still goes through isolated worktrees when parallel sessions
 ## Build & Run
 
 ```bash
-npm install          # Install dependencies
+node --version       # CI uses Node 24
+npx npm@10.9.4 ci    # Install the locked dependencies with CI's npm version
 npm run start        # Launch in dev mode (Electron Forge + Vite)
-npx electron .       # Direct launch (no Vite dev server for renderer)
-npx tsc --noEmit     # Type check (preferred over full builds during dev)
-npm test             # Vitest unit tests
+npm run typecheck    # TypeScript check (tsc --noEmit)
+npm run lint         # ESLint
+npm test             # Vitest tests
+npm run test:packaging # Packaging helper tests
 ```
+
+For packaging changes, also run `npm run package` and `npm run verify:package`. CI separately builds/audits the Helm package and audits root/runtime dependencies; see `.github/workflows/ci.yml`. In-app Settings has eight sections; theme and UI font/density are under Appearance. See `src/docs/settings.md` for current controls and save behavior.
 
 **Note:** Native modules (node-pty) have ABI issues with VS 2025 + Electron 41. Workarounds: lazy node-pty import and JSON persistence for app state. Crush/OpenCode usage reads its local database through Node's built-in, experimental `node:sqlite`; JSON file storage is the current persistence layer.
 
