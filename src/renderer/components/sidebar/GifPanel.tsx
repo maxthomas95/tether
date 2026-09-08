@@ -18,6 +18,17 @@ function lastImage(): string {
   try { return localStorage.getItem(CURRENT_IMAGE_KEY) || ''; } catch { return ''; }
 }
 
+function shuffledIndex(currentIndex: number, count: number): number {
+  // A power-of-two mask preserves uniformity. Reject unused indices and the
+  // current image instead of folding them into the collection with modulo.
+  const mask = 2 ** Math.ceil(Math.log2(count)) - 1;
+  let candidate: number;
+  do {
+    candidate = globalThis.crypto.getRandomValues(new Uint32Array(1))[0] & mask;
+  } while (candidate >= count || candidate === currentIndex);
+  return candidate;
+}
+
 export function GifPanel({ settings, onSettingsChange }: Readonly<GifPanelProps>) {
   const [library, setLibrary] = useState(EMPTY_LIBRARY);
   const [selectedId, setSelectedId] = useState(lastImage);
@@ -105,12 +116,11 @@ export function GifPanel({ settings, onSettingsChange }: Readonly<GifPanelProps>
     const count = library.images.length;
     if (count < 2) return;
     // Shuffle always selects a different image.
-    let step = 1;
-    if (direction === 'previous') step = -1;
     if (direction === 'shuffle') {
-      const fraction = globalThis.crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
-      step = 1 + Math.floor(fraction * (count - 1));
+      setSelectedId(library.images[shuffledIndex(currentIndex, count)].id);
+      return;
     }
+    const step = direction === 'previous' ? -1 : 1;
     setSelectedId(library.images[(currentIndex + step + count) % count].id);
   }, [library.images, currentIndex]);
 

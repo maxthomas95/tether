@@ -44,7 +44,7 @@ Recent locations are stored locally as directory paths and environment IDs; they
 
 ### Sidebar
 
-For an optional local GIF viewer, choose **View → GIF Panel**, then **Add GIF folder**. It supports GIF, APNG, and WebP collections with shuffle and rotation controls. See [GIF panel settings](settings#gif-panel).
+For an optional local GIF viewer, choose **View → GIF Panel**, then **Add GIF folder**. It supports GIF, APNG, and WebP collections with shuffle and rotation controls. See [GIF panel settings](settings.md#gif-panel).
 
 The left sidebar groups sessions by environment and then by working directory. Use **New session** at the top, the **+** beside **Environments** to add a connection, and **Settings** at the bottom. The title bar's **Find session** button opens the same switcher as **Ctrl+P** and displays your remapped shortcut if you change it.
 
