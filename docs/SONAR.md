@@ -55,6 +55,10 @@ Coverage shows execution, not assertion quality or end-to-end Electron behavior.
 
 ## Temporary analyzer workaround
 
+The scan step has a five-minute timeout (ten minutes for the entire scan job).
+To collect file-level diagnostic logs, set the repository Actions variable
+`SONAR_VERBOSE` to `true` and rerun the job; remove it afterward for normal logs.
+
 The CI migration exposed a SonarJasmin (`JsSecuritySensorV2`) stall at
 `src/renderer/index.tsx`. Normal JS/TS analysis and LCOV import had already
 completed. A verbose rerun identified that file as the stalled analysis unit.
