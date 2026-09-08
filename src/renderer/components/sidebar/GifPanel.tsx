@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GifPanelLibrary, GifPanelSettings, GifPanelSettingsPatch } from '../../../shared/gif-panel';
 import { Icon } from '../Icon';
 import { extractErrorMessage } from '../../utils/errors';
+import { GifPanelViewer, type LoadedGifImage } from './GifPanelViewer';
+import { GifPanelOptions } from './GifPanelOptions';
 import './gif-panel.css';
 
 interface GifPanelProps {
@@ -19,7 +21,7 @@ function lastImage(): string {
 export function GifPanel({ settings, onSettingsChange }: Readonly<GifPanelProps>) {
   const [library, setLibrary] = useState(EMPTY_LIBRARY);
   const [selectedId, setSelectedId] = useState(lastImage);
-  const [image, setImage] = useState<{ key: string; url?: string; error?: string } | null>(null);
+  const [image, setImage] = useState<LoadedGifImage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -103,7 +105,12 @@ export function GifPanel({ settings, onSettingsChange }: Readonly<GifPanelProps>
     const count = library.images.length;
     if (count < 2) return;
     // Shuffle always selects a different image.
-    const step = direction === 'shuffle' ? 1 + Math.floor(Math.random() * (count - 1)) : direction === 'next' ? 1 : -1;
+    let step = 1;
+    if (direction === 'previous') step = -1;
+    if (direction === 'shuffle') {
+      const fraction = globalThis.crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
+      step = 1 + Math.floor(fraction * (count - 1));
+    }
     setSelectedId(library.images[(currentIndex + step + count) % count].id);
   }, [library.images, currentIndex]);
 
@@ -124,7 +131,7 @@ export function GifPanel({ settings, onSettingsChange }: Readonly<GifPanelProps>
   };
   const update = (patch: GifPanelSettingsPatch) => { void mutate(() => globalThis.electronAPI.gifPanel.updateSettings(patch)); };
   const addFolders = () => { void mutate(() => globalThis.electronAPI.gifPanel.addSources()); };
-  const imageError = image?.key === imageKey ? image.error : undefined;
+  const currentImage = image?.key === imageKey ? image : null;
 
   return (
     <section className="gif-panel" aria-label="GIF panel">
@@ -138,19 +145,19 @@ export function GifPanel({ settings, onSettingsChange }: Readonly<GifPanelProps>
       {error && <p className="gif-panel-error" role="alert">{error}</p>}
       {!settings.collapsed && (
         <div id="gif-panel-content" className="gif-panel-content">
-          <div className={`gif-panel-viewer gif-panel-viewer--${settings.scaleMode}`}>
-            {active && current && !motionPaused && image?.key === imageKey && image.url ? (
-              <img src={image.url} alt={current.name} onError={() => setImage({ key: imageKey, error: 'This image could not be displayed. Try Next or Rescan.' })} />
-            ) : (
-              <div className="gif-panel-placeholder">
-                {motionPaused ? <><p>Animations are off for reduced motion.</p><button className="gif-panel-button" onClick={() => setMotionAllowed(true)}>Play GIFs</button></> :
-                  imageError ? <p role="alert">{imageError}</p> :
-                    current ? <p>Loading image…</p> :
-                      scanning ? <p>Looking for GIFs…</p> :
-                        <><p>{settings.sources.length ? 'No GIF, APNG, or WebP images found.' : 'A little company while you code.'}</p><button className="gif-panel-button" disabled={busy} onClick={addFolders}>Add GIF folder</button></>}
-              </div>
-            )}
-          </div>
+          <GifPanelViewer
+            active={active}
+            current={current}
+            image={currentImage}
+            scaleMode={settings.scaleMode}
+            motionPaused={motionPaused}
+            scanning={scanning}
+            hasSources={settings.sources.length > 0}
+            busy={busy}
+            onPlay={() => setMotionAllowed(true)}
+            onAddFolders={addFolders}
+            onImageError={() => setImage({ key: imageKey, error: 'This image could not be displayed. Try Next or Rescan.' })}
+          />
           {current && <div className="gif-panel-caption"><span title={current.name}>{current.name}</span><span>{currentIndex + 1}/{library.images.length}</span></div>}
           <div className="gif-panel-controls" aria-label="GIF playback controls">
             <button className="gif-panel-button" aria-label="Previous GIF" title="Previous GIF" disabled={library.images.length < 2} onClick={() => navigate('previous')}>‹</button>
@@ -163,17 +170,15 @@ export function GifPanel({ settings, onSettingsChange }: Readonly<GifPanelProps>
             <button className="gif-panel-button" disabled={scanning || busy} onClick={() => setRefresh(value => value + 1)}>Rescan</button>
           </div>
           {manageOpen && (
-            <div id="gif-panel-options" className="gif-panel-options">
-              <div className="gif-panel-sources">
-                {settings.sources.map(source => <div className="gif-panel-source" key={source}><span title={source}>{source}</span><button className="icon-button" aria-label={`Remove folder ${source}`} title="Remove folder from panel" disabled={busy} onClick={() => { void mutate(() => globalThis.electronAPI.gifPanel.removeSource(source)); }}><Icon name="close" size={12} /></button></div>)}
-              </div>
-              <button className="gif-panel-button" disabled={busy} onClick={addFolders}>Add folder</button>
-              <label><input type="checkbox" checked={settings.recursive} disabled={busy} onChange={event => update({ recursive: event.target.checked })} /> Include subfolders</label>
-              <label>Image size<select aria-label="GIF image size" value={settings.scaleMode} disabled={busy} onChange={event => update({ scaleMode: event.target.value === 'original' ? 'original' : 'auto' })}><option value="auto">Fit panel</option><option value="original">Original</option></select></label>
-              <label>Rotate every<select aria-label="GIF rotation interval" value={settings.intervalMs} disabled={busy} onChange={event => update({ intervalMs: Number(event.target.value) })}>{[...new Set([1000, 3000, 5000, 10000, 15000, 30000, 60000, settings.intervalMs])].sort((a, b) => a - b).map(ms => <option key={ms} value={ms}>{ms / 1000}s</option>)}</select></label>
-              <p className="gif-panel-note">GIF, APNG, WebP · Local folders only. Changes save immediately.</p>
-              {reducedMotion && motionAllowed && <button className="gif-panel-button" onClick={() => setMotionAllowed(false)}>Stop animations</button>}
-            </div>
+            <GifPanelOptions
+              settings={settings}
+              busy={busy}
+              showStopAnimations={reducedMotion && motionAllowed}
+              onAddFolders={addFolders}
+              onRemoveFolder={source => { void mutate(() => globalThis.electronAPI.gifPanel.removeSource(source)); }}
+              onUpdate={update}
+              onStopAnimations={() => setMotionAllowed(false)}
+            />
           )}
           {library.warnings.map(warning => <p className="gif-panel-note" key={warning}>{warning}</p>)}
         </div>

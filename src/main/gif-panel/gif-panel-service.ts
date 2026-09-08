@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import {
@@ -17,6 +18,64 @@ const EXTENSIONS = new Set(['.gif', '.apng', '.webp']);
 interface ImageFile extends GifPanelImage {
   filePath: string;
   source: string;
+}
+
+interface ScanDirectory {
+  directory: string;
+  source: string;
+  depth: number;
+}
+
+interface ScanState {
+  files: Map<string, ImageFile>;
+  warnings: Set<string>;
+  seen: Set<string>;
+  entries: number;
+}
+
+function scanLimitReached(scan: ScanState): boolean {
+  return scan.entries >= MAX_ENTRIES || scan.files.size >= MAX_IMAGES;
+}
+
+async function indexImage(filePath: string, name: string, source: string, scan: ScanState): Promise<void> {
+  try {
+    const stat = await fs.stat(filePath);
+    if (stat.size === 0 || stat.size > MAX_GIF_BYTES) {
+      scan.warnings.add('Empty files and images larger than 50 MB were skipped.');
+      return;
+    }
+    const id = createHash('sha256').update(pathKey(filePath)).digest('hex');
+    scan.files.set(id, { id, name, version: `${stat.mtimeMs}:${stat.size}`, filePath, source });
+  } catch {
+    scan.warnings.add(`Some images in ${source} could not be read.`);
+  }
+}
+
+async function scanEntry(entry: Dirent, current: ScanDirectory, recursive: boolean, queue: ScanDirectory[], scan: ScanState): Promise<void> {
+  const filePath = path.join(current.directory, entry.name);
+  if (entry.isDirectory() && recursive) {
+    if (current.depth < 32) queue.push({ directory: filePath, source: current.source, depth: current.depth + 1 });
+    else scan.warnings.add('Folders deeper than 32 levels were skipped.');
+  }
+  if (!entry.isFile() || !EXTENSIONS.has(path.extname(entry.name).toLowerCase())) return;
+  await indexImage(filePath, entry.name, current.source, scan);
+}
+
+async function scanDirectory(current: ScanDirectory, recursive: boolean, queue: ScanDirectory[], scan: ScanState): Promise<void> {
+  const directoryKey = pathKey(current.directory);
+  if (scan.seen.has(directoryKey)) return;
+  scan.seen.add(directoryKey);
+  try {
+    // Do not follow directory symlinks/junctions, including replaced roots.
+    if (pathKey(await fs.realpath(current.directory)) !== directoryKey) return;
+    const dir = await fs.opendir(current.directory);
+    for await (const entry of dir) {
+      if (++scan.entries > MAX_ENTRIES || scan.files.size >= MAX_IMAGES) break;
+      await scanEntry(entry, current, recursive, queue, scan);
+    }
+  } catch {
+    scan.warnings.add(`Could not read ${current.directory}. Check that the folder is available.`);
+  }
 }
 
 function pathKey(value: string): string {
@@ -121,52 +180,19 @@ export class GifPanelService {
   }
 
   private async scanFolders(settings: GifPanelSettings, revision: number): Promise<GifPanelLibrary> {
-    const files = new Map<string, ImageFile>();
-    const warnings = new Set<string>();
-    const seen = new Set<string>();
-    let entries = 0;
-    for (const source of settings.sources) {
-      const queue = [{ directory: source, depth: 0 }];
-      while (queue.length && entries < MAX_ENTRIES && files.size < MAX_IMAGES) {
-        if (revision !== this.revision) return { images: [], warnings: [] };
-        const { directory, depth } = queue.pop()!;
-        if (seen.has(pathKey(directory))) continue;
-        seen.add(pathKey(directory));
-        try {
-          // Do not follow directory symlinks/junctions, including replaced roots.
-          if (pathKey(await fs.realpath(directory)) !== pathKey(directory)) continue;
-          const dir = await fs.opendir(directory);
-          for await (const entry of dir) {
-            if (++entries > MAX_ENTRIES || files.size >= MAX_IMAGES) break;
-            const filePath = path.join(directory, entry.name);
-            if (entry.isDirectory() && settings.recursive) {
-              if (depth < 32) queue.push({ directory: filePath, depth: depth + 1 });
-              else warnings.add('Folders deeper than 32 levels were skipped.');
-            }
-            if (!entry.isFile() || !EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
-            try {
-              const stat = await fs.stat(filePath);
-              if (stat.size === 0 || stat.size > MAX_GIF_BYTES) {
-                warnings.add('Empty files and images larger than 50 MB were skipped.');
-                continue;
-              }
-              const id = createHash('sha256').update(pathKey(filePath)).digest('hex');
-              files.set(id, { id, name: entry.name, version: `${stat.mtimeMs}:${stat.size}`, filePath, source });
-            } catch {
-              warnings.add(`Some images in ${source} could not be read.`);
-            }
-          }
-        } catch {
-          warnings.add(`Could not read ${directory}. Check that the folder is available.`);
-        }
-      }
+    const scan: ScanState = { files: new Map(), warnings: new Set(), seen: new Set(), entries: 0 };
+    // Reverse the stack so roots retain the user's configured order.
+    const queue = settings.sources.map(source => ({ directory: source, source, depth: 0 })).reverse();
+    while (queue.length && !scanLimitReached(scan)) {
+      if (revision !== this.revision) return { images: [], warnings: [] };
+      await scanDirectory(queue.pop()!, settings.recursive, queue, scan);
     }
-    if (entries >= MAX_ENTRIES || files.size >= MAX_IMAGES) warnings.add('Scan limit reached (2,000 images or 20,000 entries). Choose smaller folders.');
+    if (scanLimitReached(scan)) scan.warnings.add('Scan limit reached (2,000 images or 20,000 entries). Choose smaller folders.');
     if (revision !== this.revision) return { images: [], warnings: [] };
-    this.files = files;
-    const images = [...files.values()].map(({ id, name, version }) => ({ id, name, version }));
+    this.files = scan.files;
+    const images = [...scan.files.values()].map(({ id, name, version }) => ({ id, name, version }));
     images.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-    return { images, warnings: [...warnings] };
+    return { images, warnings: [...scan.warnings] };
   }
 
   async readImage(id: unknown): Promise<string> {

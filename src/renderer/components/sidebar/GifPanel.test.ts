@@ -71,6 +71,22 @@ it('navigates, shuffles away from the current image, and remembers the selection
   expect(container.querySelector('img')?.alt).toBe('second.gif');
 });
 
+it.each([0, 0xffffffff])('shuffles within the collection without repeats for crypto sample %i', async sample => {
+  images.push({ id: 'c', name: 'third.gif', version: '1' });
+  const random = vi.spyOn(globalThis.crypto, 'getRandomValues').mockReturnValue(new Uint32Array([sample]));
+  await mount();
+  const visited = new Set<string>();
+  for (let index = 0; index < images.length; index++) {
+    const previous = container.querySelector('img')!.alt;
+    visited.add(previous);
+    await click('Shuffle GIF');
+    expect(container.querySelector('img')!.alt).not.toBe(previous);
+  }
+  expect(visited.size).toBe(3);
+  expect(container.querySelector('img')?.alt).toBe('first.gif');
+  expect(random).toHaveBeenCalledTimes(3);
+});
+
 it('removes images and timers when collapsed or hidden, then resumes when visible', async () => {
   settings.rotationEnabled = true;
   await mount();
