@@ -1,6 +1,6 @@
 # Settings
 
-Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **View** in the menu bar. Search for a settings section by name or topic, such as “theme”, “hooks”, or “usage”. The dialog has eight sections:
+Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **View** in the menu bar. Search for a settings section by name or topic, such as “theme”, “hooks”, or “usage”. The dialog has nine sections:
 
 - [General](#general) — session restore and update checks
 - [Appearance](#appearance) — theme previews, UI font, and interface density
@@ -9,6 +9,7 @@ Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **Vie
 - [Notifications](#notifications) — desktop notification triggers and suppression
 - [Shortcuts](#shortcuts) — keyboard shortcut customization
 - [Integrations](#integrations) — Vault, Git providers, SSH known hosts, diagnostics, J.O.B.S. office
+- [Codex](#codex) - launch controls, account usage, configuration inspection and lifecycle visibility
 - [Usage](#usage) — cost tracking, history dialog, exports, subscription quota
 
 ## General
@@ -230,9 +231,11 @@ Set **Daily budget warning (USD)** or **Weekly budget warning (USD)** to a posit
 
 When the current UTC day or Monday-Sunday UTC ISO week crosses its threshold, Tether shows one in-app warning for that period and turns the global usage footer amber while crossed.
 
+Set **Codex quota warning (% remaining)** to receive an in-app notification when a fresh Codex quota window reports that much quota remaining or less. The warning is keyed to the provider's reset time, so a restart does not repeat the same low-quota warning.
+
 ### History dialog
 
-Click the global usage footer at the bottom of the sidebar to open a Usage history dialog with Today / 7d / 30d / All-time tiles and tabbed Daily / Weekly / Monthly tables.
+Click the global usage footer to open usage history with project, environment, CLI, model and date filters, a period comparison, daily trend and expandable session ledger. See [Usage & Quota](usage-quota#usage-history-dialog).
 
 ### Export
 
@@ -240,7 +243,33 @@ Two buttons here — **Export as CSV…** and **Export as JSON…**. CSV is one 
 
 ### Subscription quota
 
-Optional. Tether can poll your Anthropic / OpenAI subscription quota and show the remaining budget in the sidebar footer. Disable here if you're on metered API billing instead. See [Usage & Quota](usage-quota#quota-tracking).
+Optional. Tether can poll your Anthropic / OpenAI subscription quota and show the remaining budget in the sidebar footer. Codex quota uses the supported Codex app-server interface instead of reading local auth tokens directly. Disable here if you're on metered API billing instead. See [Usage & Quota](usage-quota#quota-tracking).
+
+## Codex
+
+### Launch controls
+
+Choose a default model, reasoning effort or native Codex profile for new Codex sessions. The same controls are available in a Tether launch profile's Codex flags editor. Tether launch profiles and native Codex profiles are separate: the former combines Tether environment/flag defaults, while the latter selects Codex's own profile through `--profile`.
+
+Inspect configuration to load the installed CLI's model and native-profile choices, or enter an identifier manually. Native profiles are discovered from `*.config.toml` files in the Codex home. Ambiguous manual flags are preserved and must be resolved in the flags editor before guided changes can apply. Saving defaults does not change an already-running session.
+
+### Account and configuration
+
+**Load account usage** requests account-wide Codex statistics and quota windows. This is separate from the local API-equivalent estimates in [Usage & Quota](usage-quota). Fields the CLI or account cannot report stay unavailable.
+
+**Inspect configuration** reads selected effective settings from disk, with their source category. Choose global settings or a local Codex session's project context. This is not a running session's complete runtime configuration: launch overrides, native profiles and later CLI changes can differ. Remote project configuration cannot be inspected through the local CLI.
+
+Only selected settings and integration names are displayed. Tether does not expose raw config, credentials, hook commands, server URLs or environment values. Neither action runs automatically when Settings opens.
+
+### Lifecycle visibility
+
+**Track Codex lifecycle hooks** is an experimental, explicit opt-in. It also requires **CLI status hooks** in Sessions and takes effect on the next Tether launch. Tether adds asynchronous observer hooks to the native Codex hooks file while preserving existing valid hooks. Malformed configuration is left untouched.
+
+Review and trust the installed commands using Codex's native `/hooks` flow when prompted. Tether does not bypass that review. Hook events provide session activity, permission waits, compaction and subagent metadata; they do not approve requests, alter tool results or modify terminal output. Missing or unsupported hooks leave their metadata unavailable. Local lifecycle installation does not install these additional hooks on remote hosts.
+
+### Quota warning
+
+Set **Codex quota warning** to the percentage remaining at which you want an in-app notification. `0` disables it. **Subscription quota** under Usage must also be enabled. Only fresh successful observations can warn, and the provider reset time prevents repeated warnings across restarts.
 
 ## Data Storage
 

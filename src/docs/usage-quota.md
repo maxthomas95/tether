@@ -1,75 +1,64 @@
 # Usage & Quota
 
-Tether tracks per-session and global token usage and cost for Claude Code, Codex CLI, and OpenCode sessions. There's no agent-side instrumentation — usage is computed from the CLI's own transcript files (or OpenCode's local DB) using a vendored copy of [LiteLLM](https://github.com/BerriAI/litellm)'s pricing table.
+Tether reads usage metadata from CLI transcript files and local stores. Terminal output continues directly to the terminal; usage tracking does not intercept it. Costs are estimates at API rates, using a cached [LiteLLM](https://github.com/BerriAI/litellm) pricing table. They are not subscription bills.
 
 ## How It Works
 
-| CLI | Source | Notes |
-|-----|--------|-------|
-| Claude Code | `~/.claude/projects/**/transcripts/*.jsonl` | Sums input / output / cache-create / cache-read tokens per event. |
-| Codex CLI | `~/.codex/sessions/**/*.jsonl` | Tracks active model from `turn_context` and sums `last_token_usage` deltas from `token_count` events. |
-| OpenCode | `crush.db` (local SQLite) | Reads pre-computed cost per session; no token-level math. |
-| Copilot CLI | *(not supported)* | Blocked on upstream — `events.jsonl` doesn't persist token usage. See ROADMAP. |
+| CLI | Source | Coverage |
+|-----|--------|----------|
+| Claude Code | Local transcript JSONL | Input, output, cache creation and cache reads per event. |
+| Codex CLI | Local session JSONL under the Codex home | Token events, model, reasoning effort and reported context metadata when available. |
+| OpenCode | Local session store | Session usage snapshots; exact event-day timing may be unavailable. |
+| Copilot CLI | Not available | Its supported history source does not report token usage. |
 
-Backfill runs at startup; live updates piggyback on filesystem watchers. Pricing data lives at `{userData}/litellm-prices.json` and refreshes at most once a day from `raw.githubusercontent.com`.
+Backfill runs at startup and filesystem watchers update local usage. Codex uses `CODEX_HOME` when set, otherwise `~/.codex`. Collection depends on accessible metadata; an SSH or Coder session does not imply that its remote transcripts are available locally.
+
+Codex cumulative counters prevent repeated token reports from being counted twice. Reasoning tokens are part of output tokens; the reasoning breakdown is not added to output or billed again. Cached input is separated from uncached input for cost calculations.
+
+Daily totals use each event's UTC date. Resuming a conversation on another day does not move its earlier usage to the new day. Tether rebuilds older local summaries from available transcripts once. If the source is missing, historical lifetime totals remain available with unknown daily timing. Snapshot-based sources are marked approximate. Session counts count unique conversations across the selected period.
 
 ## Per-Session Cost Strip
 
-For a session with a known conversation ID, the footer shows the model, message count, and cost labeled **API equivalent**. This estimate is not your subscription bill. Hover for token and model details. If usage has not arrived, the strip says **Usage unavailable** instead of presenting a measured zero.
+The pane footer shows available usage and an API-equivalent cost estimate. Click its details control to inspect the native conversation ID, working directory, environment, launch profile and tracking coverage.
+
+For Codex, details distinguish requested launch overrides from the latest observed model and reasoning effort. The last reported request size and context-window capacity are shown when available. This is a transcript observation, not a live measurement of remaining context. Missing metadata is labelled unavailable instead of being presented as a measured zero.
+
+Optional lifecycle hooks add last-hook time, approvals, compaction counts and active subagent IDs. Counts cover events observed during the current Tether session. See [Codex settings](settings#codex).
 
 ## Global Usage Footer
 
-The bottom of the sidebar shows today's cost and a 7-day sparkline (`GlobalUsageFooter`). Click it to open the **Usage history** dialog.
-
-## Budget Guardrails
-
-[Settings -> Usage](settings#usage) has optional **Daily budget warning (USD)**
-and **Weekly budget warning (USD)** thresholds. Blank or `0` disables a
-guardrail; positive decimal dollar values enable it.
-
-Daily warnings use the current UTC calendar day. Weekly warnings use the current
-ISO week, Monday-Sunday in UTC, matching the weekly usage-history rollups. When
-usage crosses a configured threshold, Tether shows one in-app warning toast for
-that period and turns the global usage footer amber while crossed. The
-last-warning period is saved locally, so restarting Tether does not repeat the
-same daily or weekly warning.
-
-These guardrails use Tether's local API-equivalent cost estimates. They are not
-provider billing data and do not change subscription or API limits.
+The sidebar footer shows today's cost and a seven-day sparkline. Click it to open usage history. Tool and environment breakdowns describe attributed local observations; unattributed backfill remains separate.
 
 ## Usage History Dialog
 
-Tiles for **Today / 7d / 30d / All-time** cost and token counts, plus tabbed tables:
+Filter by CLI, project, environment, model and UTC date range. Compare the selected period with the preceding period of the same length, inspect the daily trend and click a day to narrow the session ledger.
 
-- **Daily** — last 30 days, one row per day
-- **Weekly** — last 12 weeks (ISO weeks, Mon start)
-- **Monthly** — last 12 months
+The sortable ledger expands into per-model input, output, cache and reasoning breakdowns. Model and date filters use the matching daily model usage rather than a conversation's entire lifetime. Unknown daily timing is included only in all-time views and is labelled; approximate snapshots remain distinguishable. No conversation text is displayed.
 
-All rollup math is pure renderer-side; no extra IPC calls.
+## Budget Guardrails
 
-### Per-environment attribution
+[Settings -> Usage](settings#usage) has optional **Daily budget warning (USD)** and **Weekly budget warning (USD)** thresholds. Blank or `0` disables a warning.
 
-The footer tooltip groups today's cost by environment ID (sorted, with an "Unattributed" bucket for backfilled or out-of-band sessions). Useful when you split work across Local / SSH / Coder and want to know which deployment is burning the budget.
+Daily warnings use the UTC calendar day; weekly warnings use Monday-Sunday UTC. When tracked usage crosses a threshold, Tether shows an in-app warning and turns the usage footer amber. The last-warning period is saved locally to avoid repeating a warning after restart. These warnings do not change provider limits.
 
 ## Export
 
-[Settings → Usage](settings#usage) has two export buttons:
-
-- **Export as CSV…** — one row per session with totals. RFC 4180 quoting; safe to drop into Excel or analytics tooling.
-- **Export as JSON…** — full structure: per-session, per-model breakdowns, daily rollups, working directory, environment ID, and the current Tether version.
-
-Both serialize via `src/main/usage/usage-exporter.ts` and prompt for a save location.
+[Settings -> Usage](settings#usage) provides **Export as CSV** and **Export as JSON**. CSV contains a row per session. JSON includes per-session and per-model totals, daily buckets, timing coverage, working directories and environment IDs. Both ask for a save location; exports contain usage metadata, not conversation text.
 
 ## Quota Tracking
 
-Bar values explicitly show the percentage **left**, for example **63% left**. Reset times are shown alongside the bars when available. Hover for both used and remaining percentages.
+Enable **Subscription quota** in [Settings -> Usage](settings#usage). The sidebar shows the percentage left and the next reported reset. Quota polling starts shortly after launch and refreshes every five minutes; click the footer to refresh.
 
-Optional. If you're on an Anthropic Pro / Max or OpenAI Plus subscription, Tether can poll the provider's quota endpoint and surface remaining budget in the sidebar footer (`QuotaFooter`).
+Codex quota uses the installed Codex CLI's supported app-server interface. Tether shows reported quota buckets with their actual window durations and retains the last successful observation when a refresh fails. A last-known reading is labelled with its observation time. Availability depends on the installed CLI, sign-in and account mode.
 
-Toggle it on in [Settings → Usage → Subscription quota](settings#usage). Disable if you're on metered API billing instead — the poll just adds noise.
+Set **Codex quota warning** in [Settings -> Codex](settings#codex) to a remaining-percentage threshold. `0` disables notifications. Fresh successful measurements at or below the threshold produce one in-app warning per reported window reset. Stale, failed, expired and unknown measurements do not trigger warnings. Subscription quota must be enabled.
 
-When the quota service is enabled, it polls on a short timer at startup (5s delay) and refreshes periodically. Failures are silent and won't block startup.
+## Codex Account Usage
+
+[Settings -> Codex](settings#codex) has an explicit **Load account usage** action. It displays the account-wide token summary, daily trend, streaks, longest turn and quota windows that Codex reports. These figures have a different scope from Tether's local session estimates and are never added to them. Unsupported methods or unavailable account fields are labelled. Opening Settings alone does not request account usage.
 
 ## Privacy
 
-Transcript files stay on your machine. Tether only reads them locally — nothing is uploaded. The pricing JSON refresh is the only network call this feature makes (one HTTP GET per day, to `raw.githubusercontent.com`).
+Tether's usage collector reads local metadata and does not upload transcripts. Its pricing table may refresh once a day from `raw.githubusercontent.com`. Optional quota refreshes and explicit account/configuration inspection use provider services through the installed CLI. Tether does not send prompts through these read-only requests or copy Codex credentials into its renderer, files or logs.
+
+The configuration inspector exposes only selected settings, source categories, native profile names and integration names. Commands, URLs, environment values and authentication payloads are omitted. Exports include project paths and IDs, so choose their destination accordingly.
