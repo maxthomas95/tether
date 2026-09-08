@@ -16,6 +16,19 @@ function resolverFor(files: string[], pathEnv = 'C:\\tools', pathExt = '.COM;.EX
 }
 
 describe('resolveWindowsLaunch', () => {
+  it('prefers the Windows npm shim over its extensionless Unix script', () => {
+    const base = win.resolve('C:\\tools', 'codex');
+    const file = `${base}.CMD`;
+    const resolve = resolverFor([base, file, `${base}.ps1`]);
+    expect(resolve('codex')).toEqual({ kind: 'shell', file });
+    expect(resolve(base)).toEqual({ kind: 'shell', file });
+  });
+
+  it('does not append PATHEXT to an explicitly named file', () => {
+    const file = win.resolve('C:\\tools', 'codex.cmd');
+    expect(resolverFor([file, `${file}.EXE`])('codex.cmd')).toEqual({ kind: 'shell', file });
+  });
+
   it('resolves a bare executable directly', () => {
     // Default PATHEXT declares .EXE, so the appended extension is upper-cased;
     // the case-insensitive existsSync still matches an on-disk claude.exe.
