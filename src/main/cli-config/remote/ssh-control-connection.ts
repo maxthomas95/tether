@@ -81,23 +81,35 @@ function wrapSftp(sftp: SFTPWrapper): RemoteFileOps {
   };
 }
 
-export async function connectSshControl(sshConfig: SSHConfig): Promise<ControlConnection> {
+export async function connectSshControl(sshConfig: SSHConfig, signal?: AbortSignal): Promise<ControlConnection> {
   const { Client } = loadSsh2();
   const client: SshClient = new Client();
   let verifyError: string | null = null;
 
   await new Promise<void>((resolve, reject) => {
+    const abort = () => { client.destroy(); reject(new Error('Control connection cancelled')); };
+    client.once('close', () => {
+      signal?.removeEventListener('abort', abort);
+      reject(new Error('Control connection closed before ready'));
+    });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) { abort(); return; }
     let connectConfig: Record<string, unknown>;
     try {
       connectConfig = buildSshConnectConfig(sshConfig, (reason) => {
         verifyError = reason;
       });
     } catch (err) {
+      signal?.removeEventListener('abort', abort);
+      client.destroy();
       reject(err instanceof Error ? err : new Error(String(err)));
       return;
     }
     client.once('ready', () => resolve());
-    client.once('error', (err: Error) => reject(new Error(verifyError || err.message)));
+    client.once('error', (err: Error) => {
+      client.destroy();
+      reject(new Error(verifyError || err.message));
+    });
     client.connect(connectConfig as Parameters<SshClient['connect']>[0]);
   });
 
@@ -149,19 +161,45 @@ export async function connectSshControl(sshConfig: SSHConfig): Promise<ControlCo
   });
 
   return {
-    exec: (cmd) =>
+    exec: (cmd, options) =>
       new Promise<RemoteExecResult>((resolve, reject) => {
+        let channel: import('ssh2').ClientChannel | undefined;
+        let settled = false;
+        const finish = (error?: Error, result?: RemoteExecResult) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (error) {
+            channel?.destroy();
+            reject(error);
+          } else resolve(result!);
+        };
+        const timer = setTimeout(() => finish(new Error('Remote command timed out')), options?.timeoutMs ?? 30_000);
         client.exec(cmd, (err, stream) => {
+          if (settled) { stream?.destroy(); return; }
           if (err) {
-            reject(err);
+            finish(err);
             return;
           }
-          let stdout = '';
-          let stderr = '';
-          stream.on('data', (d: Buffer) => { stdout += d.toString('utf8'); });
-          stream.stderr.on('data', (d: Buffer) => { stderr += d.toString('utf8'); });
-          stream.on('close', (code: number | null) => resolve({ code, stdout, stderr }));
-          stream.on('error', (streamErr: Error) => reject(streamErr));
+          channel = stream;
+          const stdout: Buffer[] = [];
+          const stderr: Buffer[] = [];
+          let bytes = 0;
+          const append = (d: Buffer, isError: boolean) => {
+            bytes += d.length;
+            if (bytes > (options?.maxBytes ?? 4 * 1024 * 1024)) {
+              finish(new Error('Remote command output exceeded limit'));
+              return;
+            }
+            (isError ? stderr : stdout).push(d);
+          };
+          stream.on('data', (d: Buffer) => append(d, false));
+          stream.stderr.on('data', (d: Buffer) => append(d, true));
+          stream.on('close', (code: number | null) => finish(undefined, {
+            code, stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8'),
+          }));
+          stream.on('error', (streamErr: Error) => finish(streamErr));
+          stream.end(options?.input);
         });
       }),
 

@@ -243,13 +243,17 @@ Open **About → Export diagnostics for support** to create a zip containing a s
 
 ### Tracking
 
-Usage is read from local Claude Code and Codex CLI transcripts, plus the supported Crush database reader attributed to OpenCode. See [Usage & Quota](usage-quota.md#how-it-works) for coverage and limitations. These display controls do not stop local usage collection:
+Usage is read from local Claude Code and Codex CLI transcripts, Claude/Codex sessions launched through SSH or Coder, and the supported local Crush database reader attributed to OpenCode. See [Usage & Quota](usage-quota.md#how-it-works) for coverage and limitations. These display controls do not stop usage collection:
 
 - **Show per-session cost strip below terminal** — on by default.
 - **Show global usage in sidebar** — on by default.
 - **Show per-CLI tool breakdown in usage footer** — off by default; available when global usage is shown.
 
 There is no manual resync or usage-collection toggle in Settings.
+
+Claude and Codex sessions on SSH and Coder also feed these totals. Remote
+collection is independent of CLI status hooks. See [SSH and Coder usage](usage-quota.md#ssh-and-coder-sessions)
+for host requirements, sudo behavior, and the **Last collected** indicator.
 
 ### Budget guardrails
 
