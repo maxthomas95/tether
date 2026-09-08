@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, useId } from 'react';
 import logoSrc from '../assets/logo.png';
 import { MigrateToVaultDialog } from './MigrateToVaultDialog';
 import { VaultPickerDialog } from './VaultPickerDialog';
@@ -82,6 +82,7 @@ function stepTitle(step: WizardStep): string {
 }
 
 export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated, onThemeChange }: SetupWizardProps) {
+  const idPrefix = useId();
   const [step, setStep] = useState<WizardStep>(0);
   const [reposRoot, setReposRoot] = useState('');
 
@@ -662,7 +663,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
 
           {step === 1 && (
             <div className="form-group">
-              <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+              <label className="form-label" htmlFor={`${idPrefix}-repos-root`} style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
                 Where do you keep your projects?
               </label>
               <p className="form-hint" style={{ marginBottom: 12 }}>
@@ -671,6 +672,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
               </p>
               <div className="form-row">
                 <input
+                  id={`${idPrefix}-repos-root`}
                   className="form-input"
                   value={reposRoot}
                   onChange={e => setReposRoot(e.target.value)}
@@ -685,13 +687,14 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
           {step === 2 && (
             <>
               <div className="form-group">
-                <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+                <label className="form-label" htmlFor={`${idPrefix}-theme`} style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
                   Pick a theme
                 </label>
                 <p className="form-hint" style={{ marginBottom: 12 }}>
                   Choose a theme. You can change this later in Settings → Appearance.
                 </p>
                 <select
+                  id={`${idPrefix}-theme`}
                   className="form-input"
                   value={wizardTheme}
                   onChange={e => {
@@ -714,9 +717,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
           {step === 3 && (
             <>
               <div className="form-group">
-                <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+                <div className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
                   Secure secrets with Vault
-                </label>
+                </div>
                 <p className="form-hint" style={{ marginBottom: 12 }}>
                   Vault lets Tether store SSH passwords, API keys, and Git provider tokens as
                   <code>vault://</code> references instead of plaintext values.
@@ -737,8 +740,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
               {vaultEnabled && (
                 <>
                   <div className="form-group">
-                    <label className="form-label">Vault Address</label>
+                    <label className="form-label" htmlFor={`${idPrefix}-vault-address`}>Vault Address</label>
                     <input
+                      id={`${idPrefix}-vault-address`}
                       className="form-input"
                       value={vaultAddr}
                       onChange={e => setVaultAddr(e.target.value)}
@@ -747,8 +751,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">OIDC Role</label>
+                    <label className="form-label" htmlFor={`${idPrefix}-vault-role`}>OIDC Role</label>
                     <input
+                      id={`${idPrefix}-vault-role`}
                       className="form-input"
                       value={vaultRole}
                       onChange={e => setVaultRole(e.target.value)}
@@ -758,8 +763,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                   </div>
                   <div className="form-row">
                     <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">KV Mount Path</label>
+                      <label className="form-label" htmlFor={`${idPrefix}-vault-mount`}>KV Mount Path</label>
                       <input
+                        id={`${idPrefix}-vault-mount`}
                         className="form-input"
                         value={vaultMount}
                         onChange={e => setVaultMount(e.target.value)}
@@ -768,8 +774,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                       />
                     </div>
                     <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">Namespace (optional)</label>
+                      <label className="form-label" htmlFor={`${idPrefix}-vault-namespace`}>Namespace (optional)</label>
                       <input
+                        id={`${idPrefix}-vault-namespace`}
                         className="form-input"
                         value={vaultNamespace}
                         onChange={e => setVaultNamespace(e.target.value)}
@@ -815,9 +822,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
           {step === 4 && (
             <>
               <div className="form-group">
-                <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+                <div className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
                   Choose your default CLI and environment
-                </label>
+                </div>
                 <p className="form-hint" style={{ marginBottom: 12 }}>
                   Local is already available. Add SSH or Coder here only if you want the first session
                   to run somewhere else.
@@ -825,8 +832,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
               </div>
 
               <div className="form-group">
-                <label className="form-label">Default CLI Tool</label>
+                <label className="form-label" htmlFor={`${idPrefix}-default-cli-tool`}>Default CLI Tool</label>
                 <select
+                  id={`${idPrefix}-default-cli-tool`}
                   className="form-input"
                   value={defaultCliTool}
                   onChange={e => setDefaultCliTool(e.target.value as CliToolId)}
@@ -838,7 +846,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                 {defaultCliTool === 'custom' ? (
                   <div style={{ marginTop: 8 }}>
                     <input
+                      id={`${idPrefix}-custom-cli-binary`}
                       className="form-input"
+                      aria-label="Custom CLI binary"
                       value={customCliBinary}
                       onChange={e => setCustomCliBinary(e.target.value)}
                       placeholder="my-agent-cli"
@@ -868,13 +878,14 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
               </div>
 
               <div className="form-group" style={{ marginTop: 16 }}>
-                <label className="form-label">Environment setup</label>
+                <label className="form-label" htmlFor={`${idPrefix}-environment-setup`}>Environment setup</label>
                 {environments.length > 0 && (
                   <p className="form-hint" style={{ marginBottom: 8 }}>
                     Existing environments: {environments.map(env => `${env.name} (${env.type})`).join(', ')}
                   </p>
                 )}
                 <select
+                  id={`${idPrefix}-environment-setup`}
                   className="form-input"
                   value={remoteEnvChoice}
                   onChange={e => {
@@ -891,8 +902,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
               {remoteEnvChoice !== 'none' && (
                 <div className="wizard-nested-form">
                   <div className="form-group">
-                    <label className="form-label">Environment Name</label>
+                    <label className="form-label" htmlFor={`${idPrefix}-environment-name`}>Environment Name</label>
                     <input
+                      id={`${idPrefix}-environment-name`}
                       className="form-input"
                       value={remoteEnvName}
                       onChange={e => setRemoteEnvName(e.target.value)}
@@ -904,8 +916,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                     <>
                       <div className="form-row">
                         <div className="form-group" style={{ flex: 2 }}>
-                          <label className="form-label">Host</label>
+                          <label className="form-label" htmlFor={`${idPrefix}-ssh-host`}>Host</label>
                           <input
+                            id={`${idPrefix}-ssh-host`}
                             className="form-input"
                             value={sshHost}
                             onChange={e => setSshHost(e.target.value)}
@@ -914,8 +927,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                           />
                         </div>
                         <div className="form-group" style={{ flex: 1 }}>
-                          <label className="form-label">Port</label>
+                          <label className="form-label" htmlFor={`${idPrefix}-ssh-port`}>Port</label>
                           <input
+                            id={`${idPrefix}-ssh-port`}
                             className="form-input"
                             value={sshPort}
                             onChange={e => setSshPort(e.target.value)}
@@ -926,8 +940,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                       </div>
                       <div className="form-row">
                         <div className="form-group" style={{ flex: 1 }}>
-                          <label className="form-label">Username</label>
+                          <label className="form-label" htmlFor={`${idPrefix}-ssh-username`}>Username</label>
                           <input
+                            id={`${idPrefix}-ssh-username`}
                             className="form-input"
                             value={sshUsername}
                             onChange={e => setSshUsername(e.target.value)}
@@ -936,8 +951,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                           />
                         </div>
                         <div className="form-group" style={{ flex: 1 }}>
-                          <label className="form-label">Default Directory</label>
+                          <label className="form-label" htmlFor={`${idPrefix}-ssh-default-directory`}>Default Directory</label>
                           <input
+                            id={`${idPrefix}-ssh-default-directory`}
                             className="form-input"
                             value={sshDefaultDir}
                             onChange={e => setSshDefaultDir(e.target.value)}
@@ -947,11 +963,12 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                         </div>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Authentication</label>
-                        <div className="form-radio-group">
+                        <div className="form-label" id={`${idPrefix}-ssh-authentication`}>Authentication</div>
+                        <div className="form-radio-group" role="radiogroup" aria-labelledby={`${idPrefix}-ssh-authentication`}>
                           <label className="form-radio-label">
                             <input
                               type="radio"
+                              name={`${idPrefix}-ssh-auth-method`}
                               checked={sshAuthMethod === 'agent'}
                               onChange={() => setSshAuthMethod('agent')}
                             />
@@ -960,6 +977,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                           <label className="form-radio-label">
                             <input
                               type="radio"
+                              name={`${idPrefix}-ssh-auth-method`}
                               checked={sshAuthMethod === 'key'}
                               onChange={() => setSshAuthMethod('key')}
                             />
@@ -968,6 +986,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                           <label className="form-radio-label">
                             <input
                               type="radio"
+                              name={`${idPrefix}-ssh-auth-method`}
                               checked={sshAuthMethod === 'password'}
                               onChange={() => setSshAuthMethod('password')}
                             />
@@ -977,8 +996,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                       </div>
                       {sshAuthMethod === 'key' && (
                         <div className="form-group">
-                          <label className="form-label">Private Key Path</label>
+                          <label className="form-label" htmlFor={`${idPrefix}-ssh-key-path`}>Private Key Path</label>
                           <input
+                            id={`${idPrefix}-ssh-key-path`}
                             className="form-input"
                             value={sshKeyPath}
                             onChange={e => setSshKeyPath(e.target.value)}
@@ -989,9 +1009,10 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                       )}
                       {sshAuthMethod === 'password' && (
                         <div className="form-group">
-                          <label className="form-label">Password</label>
+                          <label className="form-label" htmlFor={`${idPrefix}-ssh-password`}>Password</label>
                           <div className="form-row">
                             <input
+                              id={`${idPrefix}-ssh-password`}
                               className="form-input"
                               type={isVaultRef(sshPassword) ? 'text' : 'password'}
                               value={sshPassword}
@@ -1020,7 +1041,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                               </label>
                               {sshStoreInVault && (
                                 <input
+                                  id={`${idPrefix}-ssh-vault-path`}
                                   className="form-input"
+                                  aria-label="SSH password Vault path"
                                   value={sshVaultPath || suggestedSshVaultPath}
                                   onChange={e => setSshVaultPath(e.target.value)}
                                   placeholder={suggestedSshVaultPath}
@@ -1045,8 +1068,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
 
                   {remoteEnvChoice === 'coder' && (
                     <div className="form-group">
-                      <label className="form-label">Coder CLI Path</label>
+                      <label className="form-label" htmlFor={`${idPrefix}-coder-cli-path`}>Coder CLI Path</label>
                       <input
+                        id={`${idPrefix}-coder-cli-path`}
                         className="form-input"
                         value={coderBinary}
                         onChange={e => setCoderBinary(e.target.value)}
@@ -1072,9 +1096,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
           {step === 5 && (
             <>
               <div className="form-group">
-                <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+                <div className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
                   Install Tether CLI hooks?
-                </label>
+                </div>
                 <p className="form-hint" style={{ marginBottom: 12 }}>
                   Tether can install hook entries into <code>~/.claude/settings.json</code> and
                   {' '}<code>~/.codex/config.toml</code> so it gets notified when a session finishes a
@@ -1101,9 +1125,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
           {step === 6 && (
             <>
               <div className="form-group">
-                <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+                <div className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
                   Desktop notifications
-                </label>
+                </div>
                 <p className="form-hint" style={{ marginBottom: 12 }}>
                   Tether can notify you when sessions need attention. Pick the events you want — you
                   can change this later in Settings → Notifications.
@@ -1178,9 +1202,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
           {step === 7 && (
             <>
               <div className="form-group">
-                <label className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+                <div className="form-label" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
                   Connect a Git provider
-                </label>
+                </div>
                 <p className="form-hint" style={{ marginBottom: 12 }}>
                   Add GitHub, Azure DevOps, or Gitea if you want repo browse, clone, and remote-create
                   from the New Session dialog.
@@ -1208,12 +1232,12 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
               {!providerAdded ? (
                 <>
                   <div className="form-group">
-                    <label className="form-label">Type</label>
-                    <div className="form-radio-group">
+                    <div className="form-label" id={`${idPrefix}-provider-type`}>Type</div>
+                    <div className="form-radio-group" role="radiogroup" aria-labelledby={`${idPrefix}-provider-type`}>
                       <label className="form-radio-label">
                         <input
                           type="radio"
-                          name="providerType"
+                          name={`${idPrefix}-provider-type`}
                           checked={providerType === 'github'}
                           onChange={() => setProviderType('github')}
                         />
@@ -1222,7 +1246,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                       <label className="form-radio-label">
                         <input
                           type="radio"
-                          name="providerType"
+                          name={`${idPrefix}-provider-type`}
                           checked={providerType === 'ado'}
                           onChange={() => setProviderType('ado')}
                         />
@@ -1231,7 +1255,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                       <label className="form-radio-label">
                         <input
                           type="radio"
-                          name="providerType"
+                          name={`${idPrefix}-provider-type`}
                           checked={providerType === 'gitea'}
                           onChange={() => setProviderType('gitea')}
                         />
@@ -1240,8 +1264,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                     </div>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Name</label>
+                    <label className="form-label" htmlFor={`${idPrefix}-provider-name`}>Name</label>
                     <input
+                      id={`${idPrefix}-provider-name`}
                       className="form-input"
                       value={providerName}
                       onChange={e => setProviderName(e.target.value)}
@@ -1249,8 +1274,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Base URL</label>
+                    <label className="form-label" htmlFor={`${idPrefix}-provider-url`}>Base URL</label>
                     <input
+                      id={`${idPrefix}-provider-url`}
                       className="form-input"
                       value={providerUrl}
                       onChange={e => setProviderUrl(e.target.value)}
@@ -1269,8 +1295,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                   {providerType === 'ado' && (
                     <>
                       <div className="form-group">
-                        <label className="form-label">Organization</label>
+                        <label className="form-label" htmlFor={`${idPrefix}-provider-org`}>Organization</label>
                         <input
+                          id={`${idPrefix}-provider-org`}
                           className="form-input"
                           value={providerOrg}
                           onChange={e => setProviderOrg(e.target.value)}
@@ -1279,8 +1306,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Default Project (optional)</label>
+                        <label className="form-label" htmlFor={`${idPrefix}-provider-default-project`}>Default Project (optional)</label>
                         <input
+                          id={`${idPrefix}-provider-default-project`}
                           className="form-input"
                           value={providerDefaultProject}
                           onChange={e => setProviderDefaultProject(e.target.value)}
@@ -1291,9 +1319,10 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                     </>
                   )}
                   <div className="form-group">
-                    <label className="form-label">Personal Access Token</label>
+                    <label className="form-label" htmlFor={`${idPrefix}-provider-token`}>Personal Access Token</label>
                     <div className="form-row">
                       <input
+                        id={`${idPrefix}-provider-token`}
                         type={isVaultRef(providerToken) ? 'text' : 'password'}
                         className="form-input"
                         value={providerToken}
@@ -1339,7 +1368,9 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                         </label>
                         {providerStoreInVault && (
                           <input
+                            id={`${idPrefix}-provider-vault-path`}
                             className="form-input"
+                            aria-label="Git provider token Vault path"
                             value={providerVaultPath || suggestedProviderVaultPath}
                             onChange={e => setProviderVaultPath(e.target.value)}
                             placeholder={suggestedProviderVaultPath}

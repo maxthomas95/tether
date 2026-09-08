@@ -729,6 +729,7 @@ export interface TetherAPI {
     set(overrides: KeybindingOverrides): Promise<void>;
     resetAll(): Promise<void>;
   };
+  gifPanel: import('./gif-panel').GifPanelAPI;
   jobs: {
     getSettings(): Promise<JobsSettings>;
     saveSettings(settings: JobsSettings): Promise<JobsStatus>;

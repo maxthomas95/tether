@@ -124,6 +124,14 @@ export const IPC = {
   JOBS_REMOVE: 'jobs:remove',
   JOBS_REFRESH: 'jobs:refresh',
 
+  // Local GIF panel
+  GIF_PANEL_GET_SETTINGS: 'gif-panel:get-settings',
+  GIF_PANEL_UPDATE_SETTINGS: 'gif-panel:update-settings',
+  GIF_PANEL_ADD_SOURCES: 'gif-panel:add-sources',
+  GIF_PANEL_REMOVE_SOURCE: 'gif-panel:remove-source',
+  GIF_PANEL_GET_LIBRARY: 'gif-panel:get-library',
+  GIF_PANEL_READ_IMAGE: 'gif-panel:read-image',
+
   // Diagnostics
   DIAGNOSTICS_EXPORT: 'diagnostics:export',
   DIAGNOSTICS_OPEN_USER_DATA_FOLDER: 'diagnostics:open-user-data-folder',

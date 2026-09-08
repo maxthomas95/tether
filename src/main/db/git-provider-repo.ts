@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb, saveDb } from './database';
 import type { GitProviderRow } from './database';
 import { encryptSecretForStorage } from './secret-storage';
+import { trimTrailingCharacter } from '../../shared/string-trim';
 
 export type { GitProviderRow };
 
@@ -16,7 +17,7 @@ export interface CreateGitProviderInput {
 }
 
 export function listGitProviders(): GitProviderRow[] {
-  return getDb().gitProviders.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  return getDb().gitProviders.toSorted((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
 export function getGitProvider(id: string): GitProviderRow | undefined {
@@ -29,7 +30,7 @@ export function createGitProvider(input: CreateGitProviderInput): GitProviderRow
     id: uuidv4(),
     name: input.name,
     type: input.type,
-    baseUrl: input.baseUrl.replace(/\/+$/, ''),
+    baseUrl: trimTrailingCharacter(input.baseUrl, '/'),
     organization: input.organization || null,
     defaultProject: input.defaultProject || null,
     token: encryptSecretForStorage(input.token, 'Git provider token'),
@@ -46,7 +47,7 @@ export function updateGitProvider(id: string, updates: Partial<CreateGitProvider
   if (!provider) return;
   if (updates.name !== undefined) provider.name = updates.name;
   if (updates.type !== undefined) provider.type = updates.type;
-  if (updates.baseUrl !== undefined) provider.baseUrl = updates.baseUrl.replace(/\/+$/, '');
+  if (updates.baseUrl !== undefined) provider.baseUrl = trimTrailingCharacter(updates.baseUrl, '/');
   if (updates.organization !== undefined) provider.organization = updates.organization || null;
   if (updates.defaultProject !== undefined) provider.defaultProject = updates.defaultProject || null;
   if (updates.token !== undefined) {
