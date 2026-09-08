@@ -2763,6 +2763,110 @@ input[type="password"].form-input {
 .pane-status-strip-model {
   color: var(--accent);
   opacity: 0.85;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.pane-status-strip-spacer {
+  flex: 1;
+  min-width: var(--space-1);
+}
+
+.pane-status-strip-details {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.pane-status-strip-details:hover,
+.pane-status-strip-details:focus {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.session-inspector-overlay {
+  z-index: 20;
+}
+
+.session-inspector-dialog {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.session-inspector-subtitle {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  margin-top: 2px;
+}
+
+.session-inspector-body {
+  max-height: min(68vh, 560px);
+  overflow-y: auto;
+}
+
+.session-inspector-grid {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  background: var(--border-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.session-inspector-row {
+  display: grid;
+  grid-template-columns: minmax(128px, 0.34fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  background: var(--surface-2);
+  padding: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.session-inspector-row dt {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.session-inspector-row dd {
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.session-inspector-muted {
+  color: var(--text-muted) !important;
+}
+
+@container (max-width: 420px) {
+  .pane-status-strip-estimate {
+    display: none;
+  }
+
+  .pane-status-strip-model {
+    max-width: 120px;
+  }
+}
+
+@media (max-width: 560px) {
+  .session-inspector-row {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
 }
 
 .terminal-pane-body--placeholder {

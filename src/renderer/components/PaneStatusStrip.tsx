@@ -1,105 +1,90 @@
-import React from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { EnvironmentInfo } from '../../shared/types';
 import { useSessionUsage } from '../hooks/useSessionUsage';
-import type { SessionUsage } from '../../shared/types';
+import { buildInspectorViewModel, type InspectableSession, type InspectorConfig } from '../utils/session-inspector';
+import { SessionInspector } from './SessionInspector';
 
 interface Props {
   sessionId: string | undefined;
+  tetherSessionId?: string | null;
+  session?: InspectableSession;
+  environment?: EnvironmentInfo;
 }
 
-/** Shorten "claude-opus-4-6" → "opus-4-6". */
-function shortenModel(model: string): string {
-  return model.startsWith('claude-') ? model.slice('claude-'.length) : model;
-}
-
-/** Pick the model with the highest cost as the "dominant" one. */
-function dominantModel(usage: SessionUsage): string | null {
-  if (usage.models.length === 0) return null;
-  if (usage.models.length === 1) return usage.models[0].model;
-  let best = usage.models[0];
-  for (const m of usage.models) {
-    if (m.cost > best.cost) best = m;
-  }
-  return best.model;
-}
-
-function formatCost(cost: number): string {
-  if (cost === 0) return '$0.00';
-  if (cost < 0.01) return '<$0.01';
-  if (cost >= 1000) return `$${(cost / 1000).toFixed(1)}k`;
-  return `$${cost.toFixed(2)}`;
-}
-
-function formatTokens(n: number): string {
-  if (n === 0) return '0';
-  if (n < 1000) return n.toString();
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
-  return `${(n / 1_000_000).toFixed(2)}M`;
-}
-
-function buildTooltip(usage: SessionUsage): string {
-  const lines: string[] = [];
-  lines.push(`Total cost: ${formatCost(usage.totalCost)} (API equivalent)`);
-  lines.push(`Messages: ${usage.messageCount}`);
-  if (usage.currentModel || usage.currentReasoningEffort || usage.contextWindowTokens) {
-    lines.push('');
-    lines.push('Current session:');
-    if (usage.currentModel) lines.push(`  Model:           ${shortenModel(usage.currentModel)}`);
-    if (usage.currentReasoningEffort) lines.push(`  Reasoning:       ${usage.currentReasoningEffort}`);
-    if (usage.contextWindowTokens) lines.push(`  Context window:  ${formatTokens(usage.contextWindowTokens)} tokens`);
-  }
-  lines.push('');
-  lines.push('Tokens:');
-  lines.push(`  Input:          ${formatTokens(usage.inputTokens)}`);
-  lines.push(`  Output:         ${formatTokens(usage.outputTokens)}`);
-  if ((usage.reasoningTokens ?? 0) > 0) {
-    lines.push(`  Reasoning:      ${formatTokens(usage.reasoningTokens ?? 0)}`);
-  }
-  lines.push(`  Cache created:  ${formatTokens(usage.cacheCreationTokens)}`);
-  lines.push(`  Cache read:     ${formatTokens(usage.cacheReadTokens)}`);
-
-  if (usage.models.length > 1) {
-    lines.push('');
-    lines.push('Per-model cost:');
-    for (const m of usage.models) {
-      lines.push(`  ${shortenModel(m.model)}: ${formatCost(m.cost)}`);
-    }
-  }
-
-  if (usage.lastMessageAt) {
-    lines.push('');
-    lines.push(`Last message: ${new Date(usage.lastMessageAt).toLocaleString()}`);
-  }
-
-  return lines.join('\n');
-}
-
-export function PaneStatusStrip({ sessionId }: Props) {
+export function PaneStatusStrip({ sessionId, tetherSessionId, session, environment }: Props) {
   const { usage, enabled } = useSessionUsage(sessionId);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [config, setConfig] = useState<InspectorConfig>({
+    cliHooksEnabled: false,
+    codexLifecycleHooksEnabled: false,
+  });
+
+  const refreshConfig = useCallback(() => {
+    let cancelled = false;
+    Promise.all([
+      window.electronAPI.config.get('cliHooksEnabled').catch(() => null),
+      window.electronAPI.config.get('codexLifecycleHooksEnabled').catch(() => null),
+    ]).then(([cliHooksEnabled, codexLifecycleHooksEnabled]) => {
+      if (cancelled) return;
+      setConfig({
+        cliHooksEnabled: cliHooksEnabled === 'true',
+        codexLifecycleHooksEnabled: codexLifecycleHooksEnabled !== 'false',
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const cancelInitial = refreshConfig();
+    const handleSettingsChanged = () => {
+      refreshConfig();
+    };
+    window.addEventListener('tether:settings-changed', handleSettingsChanged);
+    return () => {
+      cancelInitial();
+      window.removeEventListener('tether:settings-changed', handleSettingsChanged);
+    };
+  }, [refreshConfig]);
 
   if (!enabled) return null;
-  if (!sessionId) return null;
-  if (!usage) {
-    return <div className="pane-status-strip"><span className="pane-status-strip-item">Usage unavailable</span></div>;
-  }
+  if (!sessionId && !session) return null;
 
-  const model = usage ? usage.currentModel ?? dominantModel(usage) : null;
-  const messageCount = usage?.messageCount ?? 0;
-  const cost = usage?.totalCost ?? 0;
-  const tooltip = usage ? buildTooltip(usage) : 'No usage data yet';
+  const view = buildInspectorViewModel({
+    nativeSessionId: sessionId,
+    tetherSessionId,
+    session,
+    environment,
+    usage,
+    config,
+  });
 
   return (
-    <div className="pane-status-strip" title={tooltip}>
+    <div className="pane-status-strip">
       <span className="pane-status-strip-item pane-status-strip-model">
-        {model ? shortenModel(model) : '—'}
+        {view.stripModel ?? 'Unknown model'}
       </span>
       <span className="pane-status-strip-separator">·</span>
       <span className="pane-status-strip-item">
-        {messageCount} {messageCount === 1 ? 'msg' : 'msgs'}
+        {view.messageLabel}
       </span>
       <span className="pane-status-strip-separator">·</span>
       <span className="pane-status-strip-item pane-status-strip-cost">
-        {formatCost(cost)} <span className="pane-status-strip-estimate">API equivalent</span>
+        {view.costLabel} <span className="pane-status-strip-estimate">API equivalent</span>
       </span>
+      <span className="pane-status-strip-spacer" />
+      <SessionInspector
+        nativeSessionId={sessionId}
+        tetherSessionId={tetherSessionId}
+        session={session}
+        environment={environment}
+        usage={usage}
+        config={config}
+        isOpen={inspectorOpen}
+        onOpen={() => setInspectorOpen(true)}
+        onClose={() => setInspectorOpen(false)}
+      />
     </div>
   );
 }
