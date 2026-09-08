@@ -1,17 +1,21 @@
 import { useRef, useEffect, useCallback } from 'react';
 import '@xterm/xterm/css/xterm.css';
-import type { SessionInfo, SessionState } from '../../shared/types';
+import type { EnvironmentInfo, SessionInfo, SessionState } from '../../shared/types';
 import type { TerminalManagerAPI } from '../hooks/useTerminalManager';
 import type { LayoutAction } from '../hooks/useLayoutState';
 import { DropZoneOverlay } from './DropZoneOverlay';
 import { CliToolBadge } from './CliToolBadge';
 import { PaneStatusStrip } from './PaneStatusStrip';
 import { abbreviatePath } from '../utils/paths';
+import { Icon } from './Icon';
 
 interface TerminalPaneProps {
   paneId: string;
   sessionId: string | null;
   session: SessionInfo | undefined;
+  environment?: EnvironmentInfo;
+  isMaximized: boolean;
+  onChooseSession: () => void;
   isFocused: boolean;
   isDragging: boolean;
   draggingPaneId: string | null;
@@ -34,6 +38,9 @@ export function TerminalPane({
   paneId,
   sessionId,
   session,
+  environment,
+  isMaximized,
+  onChooseSession,
   isFocused,
   isDragging,
   draggingPaneId,
@@ -153,6 +160,9 @@ export function TerminalPane({
   const path = session ? abbreviatePath(session.workingDir) : '';
   const headerLabel = isPlaceholder ? 'Empty pane' : label;
   const headerPath = isPlaceholder ? '' : path;
+  const environmentLabel = environment
+    ? environment.type === 'local' ? environment.name : `${environment.type === 'ssh' ? 'SSH' : 'Coder'}: ${environment.name}`
+    : session?.environmentId ? 'Unknown environment' : 'Local';
   const canDragPane = enablePaneSplitting && sessionId !== null;
   let broadcastTitle = 'Include this pane in broadcast input';
   if (isBroadcastTarget) {
@@ -186,9 +196,12 @@ export function TerminalPane({
       >
         <span className={`status-dot status-dot--${getStatusClass(session?.state)}`} />
         {session && <CliToolBadge session={session} />}
-        <span className="terminal-pane-header-label">
-          {headerLabel}{headerPath ? ` \u00b7 ${headerPath}` : ''}
+        <span className="terminal-pane-header-label" title={session ? `${headerLabel}\n${environmentLabel}\n${session.workingDir}` : headerLabel}>
+          <span className="terminal-pane-title">{headerLabel}</span>
+          {headerPath && <span className="terminal-pane-path">{headerPath}</span>}
         </span>
+        {!isPlaceholder && <span className="terminal-pane-environment" title={environmentLabel}>{environmentLabel}</span>}
+        {isBroadcastTarget && <span className="terminal-pane-broadcast-label">{isBroadcastActive ? 'Broadcasting' : 'Broadcast selected'}</span>}
         {enablePaneSplitting && sessionId && !isDead && (
           <button
             type="button"
@@ -198,22 +211,25 @@ export function TerminalPane({
             aria-label={broadcastTitle}
             aria-pressed={isBroadcastTarget}
           >
-            {'\u21c9'}
+            <Icon name="broadcast" />
           </button>
         )}
         <button
           className="terminal-pane-header-btn"
           onClick={handleMaximize}
-          title="Toggle maximize"
+          title={isMaximized ? 'Restore panes' : 'Maximize pane'}
+          aria-label={isMaximized ? 'Restore panes' : 'Maximize pane'}
+          aria-pressed={isMaximized}
         >
-          {'\u2610'}
+          <Icon name={isMaximized ? 'restore' : 'maximize'} />
         </button>
         <button
           className="terminal-pane-header-btn"
           onClick={handleClose}
           title={isPlaceholder ? 'Remove slot' : 'Close pane'}
+          aria-label={isPlaceholder ? 'Remove slot' : 'Close pane'}
         >
-          {'\u2715'}
+          <Icon name="close" />
         </button>
       </div>
       <div className={`terminal-pane-body ${isPlaceholder ? 'terminal-pane-body--placeholder' : ''}`}>
@@ -221,10 +237,11 @@ export function TerminalPane({
           <button
             type="button"
             className="terminal-pane-placeholder"
-            onClick={handleFocus}
+            onClick={() => { handleFocus(); onChooseSession(); }}
           >
-            <span>Drag a session here</span>
-            <span>Click a session in the sidebar</span>
+            <Icon name="plus" size={22} />
+            <span>Choose a session</span>
+            <span>Or drag a session here from the sidebar</span>
           </button>
         ) : (
           <div className="terminal-pane-content">

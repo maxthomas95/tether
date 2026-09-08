@@ -15,7 +15,7 @@ Backfill runs at startup; live updates piggyback on filesystem watchers. Pricing
 
 ## Per-Session Cost Strip
 
-Each terminal pane shows a footer strip with that session's cumulative cost and token counts (`PaneStatusStrip`). Hover for a breakdown by model.
+For a session with a known conversation ID, the footer shows the model, message count, and cost labeled **API equivalent**. This estimate is not your subscription bill. Hover for token and model details. If usage has not arrived, the strip says **Usage unavailable** instead of presenting a measured zero.
 
 ## Global Usage Footer
 
@@ -61,6 +61,8 @@ The footer tooltip groups today's cost by environment ID (sorted, with an "Unatt
 Both serialize via `src/main/usage/usage-exporter.ts` and prompt for a save location.
 
 ## Quota Tracking
+
+Bar values explicitly show the percentage **left**, for example **63% left**. Reset times are shown alongside the bars when available. Hover for both used and remaining percentages.
 
 Optional. If you're on an Anthropic Pro / Max or OpenAI Plus subscription, Tether can poll the provider's quota endpoint and surface remaining budget in the sidebar footer (`QuotaFooter`).
 

@@ -1,5 +1,5 @@
 import type { LayoutNode } from '../../shared/layout-types';
-import type { SessionInfo } from '../../shared/types';
+import type { EnvironmentInfo, SessionInfo } from '../../shared/types';
 import type { TerminalManagerAPI } from '../hooks/useTerminalManager';
 import type { LayoutAction } from '../hooks/useLayoutState';
 import { TerminalPane } from './TerminalPane';
@@ -9,6 +9,8 @@ interface SplitLayoutProps {
   layoutDispatch: React.Dispatch<LayoutAction>;
   termManager: TerminalManagerAPI;
   sessions: SessionInfo[];
+  environments: EnvironmentInfo[];
+  onChooseSession: (paneId: string) => void;
   isDragging: boolean;
   draggingPaneId: string | null;
   onDragStateChange: (dragging: boolean, sourcePaneId?: string) => void;
@@ -30,6 +32,8 @@ export function SplitLayout({
   layoutDispatch,
   termManager,
   sessions,
+  environments,
+  onChooseSession,
   isDragging,
   draggingPaneId,
   onDragStateChange,
@@ -52,6 +56,9 @@ export function SplitLayout({
         paneId={node.id}
         sessionId={node.sessionId}
         session={session}
+        environment={environments.find(e => e.id === session?.environmentId) ?? (!session?.environmentId ? environments.find(e => e.type === 'local') : undefined)}
+        isMaximized={maximizedPaneId === node.id}
+        onChooseSession={() => onChooseSession(node.id)}
         isFocused={focusedPaneId === node.id}
         isDragging={isDragging}
         draggingPaneId={draggingPaneId}
@@ -77,6 +84,8 @@ export function SplitLayout({
       layoutDispatch={layoutDispatch}
       termManager={termManager}
       sessions={sessions}
+      environments={environments}
+      onChooseSession={onChooseSession}
       isDragging={isDragging}
       draggingPaneId={draggingPaneId}
       onDragStateChange={onDragStateChange}
@@ -100,6 +109,8 @@ interface SplitContainerProps {
   layoutDispatch: React.Dispatch<LayoutAction>;
   termManager: TerminalManagerAPI;
   sessions: SessionInfo[];
+  environments: EnvironmentInfo[];
+  onChooseSession: (paneId: string) => void;
   isDragging: boolean;
   draggingPaneId: string | null;
   onDragStateChange: (dragging: boolean, sourcePaneId?: string) => void;
@@ -121,6 +132,8 @@ function SplitContainer({
   layoutDispatch,
   termManager,
   sessions,
+  environments,
+  onChooseSession,
   isDragging,
   draggingPaneId,
   onDragStateChange,
@@ -151,6 +164,8 @@ function SplitContainer({
           layoutDispatch={layoutDispatch}
           termManager={termManager}
           sessions={sessions}
+          environments={environments}
+          onChooseSession={onChooseSession}
           isDragging={isDragging}
           draggingPaneId={draggingPaneId}
           onDragStateChange={onDragStateChange}
@@ -177,6 +192,8 @@ function SplitContainer({
           layoutDispatch={layoutDispatch}
           termManager={termManager}
           sessions={sessions}
+          environments={environments}
+          onChooseSession={onChooseSession}
           isDragging={isDragging}
           draggingPaneId={draggingPaneId}
           onDragStateChange={onDragStateChange}

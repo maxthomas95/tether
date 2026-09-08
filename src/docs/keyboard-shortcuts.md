@@ -1,5 +1,7 @@
 # Keyboard Shortcuts
 
+The title bar's **Find session** button opens the session switcher and displays its current shortcut, including custom bindings. Session rows also support **Shift+F10** for their action menu; use arrow keys to move and **Escape** to dismiss it.
+
 All shortcuts below are the defaults. Every one is **remappable** in [Settings → Shortcuts](settings#shortcuts) — click a row, press a new chord, and it's saved. Reserved chords (e.g. **Ctrl+C** for copy / SIGINT) prompt for explicit confirmation before rebinding.
 
 ## Session Management

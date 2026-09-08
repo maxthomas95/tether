@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { ResumeChatDialog } from './ResumeChatDialog';
 import { EnvVarEditor } from '../EnvVarEditor';
 import { HelpAnchor } from '../HelpAnchor';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
@@ -234,10 +235,14 @@ interface NewSessionDialogProps {
   onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean) => void;
   /** Optional environment to preselect when the dialog opens. Used by the welcome pane CTAs. */
   initialEnvId?: string;
+  initialDirectory?: string;
 }
 
-export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate, initialEnvId }: NewSessionDialogProps) {
+export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate, initialEnvId, initialDirectory }: NewSessionDialogProps) {
   const [envId, setEnvId] = useState<string>('');
+  const initializedOpen = useRef(false);
+  const [resumeOpen, setResumeOpen] = useState(false);
+  const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [directory, setDirectory] = useState('');
   const [label, setLabel] = useState('');
   const [reposRoot, setReposRoot] = useState<string | null>(null);
@@ -327,6 +332,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   // Load repos root, app default env vars, CLI flags, and git providers
   useEffect(() => {
     if (!isOpen) return;
+    window.electronAPI.config.get('enableResumePicker').then(value => setEnableResumePicker(value !== 'false')).catch(() => {});
     window.electronAPI.config.getDefaultEnvVars?.()?.then(setAppDefaultEnvVars).catch(() => {});
     window.electronAPI.config.getDefaultCliFlagsPerTool?.()?.then(v => setDefaultCliFlagsPerTool(v || {})).catch(() => {});
     window.electronAPI.config.get('reposRoot').then(val => {
@@ -357,15 +363,16 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     }
   }, [envId, environments, directory]);
 
-  // Set default env when dialog opens
+  // Initialize once per opening so the user can change a suggested environment.
   useEffect(() => {
-    if (!isOpen) return;
-    if (initialEnvId && environments.some(e => e.id === initialEnvId)) {
-      setEnvId(initialEnvId);
-    } else if (environments.length > 0 && !envId) {
-      setEnvId(environments[0].id);
-    }
-  }, [isOpen, environments, envId, initialEnvId]);
+    if (!isOpen) { initializedOpen.current = false; return; }
+    if (initializedOpen.current || environments.length === 0) return;
+    initializedOpen.current = true;
+    const env = environments.find(e => e.id === initialEnvId) ?? environments[0];
+    setEnvId(env.id);
+    setDirectory(initialDirectory ?? (typeof env.config?.defaultDir === 'string' ? env.config.defaultDir : ''));
+    setActiveTab('local');
+  }, [isOpen, environments, initialEnvId, initialDirectory]);
 
   // Pre-select default profile when dialog opens
   useEffect(() => {
@@ -666,9 +673,9 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     return `${trimmed}/${repoName}`;
   }, [activeTab, derivedRepoName, selectedRepo, coderClonePath]);
 
-  useEscapeKey(() => resetAndClose(), isOpen);
+  useEscapeKey(() => resetAndClose(), isOpen && !resumeOpen);
   const dialogRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(dialogRef, isOpen);
+  useFocusTrap(dialogRef, isOpen && !resumeOpen);
 
   if (!isOpen) return null;
 
@@ -678,7 +685,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     if (dir) setDirectory(dir);
   };
 
-  const handleCreate = async () => {
+  const handleCreate = async (resumeToolSessionId?: string) => {
     if (!directory.trim()) return;
 
     let effectiveDir = directory.trim();
@@ -712,7 +719,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
     const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
     const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
-    onCreate(effectiveDir, label.trim(), envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, worktreeSourceRepo, helmEnabled || undefined);
+    onCreate(effectiveDir, label.trim(), envId || undefined, env, args, resumeToolSessionId, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, worktreeSourceRepo, helmEnabled || undefined);
     resetAndClose();
   };
 
@@ -852,6 +859,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   };
 
   const resetAndClose = () => {
+    setResumeOpen(false);
     setDirectory('');
     setLabel('');
     setEnvId('');
@@ -942,7 +950,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const matchingProviders = gitProviders.filter(p => p.type === activeTab);
 
   return (
-    <div className="dialog-overlay">
+    <>
+    <div className="dialog-overlay" inert={resumeOpen} aria-hidden={resumeOpen || undefined}>
       <div ref={dialogRef} className={dialogClass} role="dialog" aria-modal="true" aria-label="New session" onKeyDown={handleKeyDown}>
         <div className="dialog-header">
           <span>New session</span>
@@ -955,7 +964,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
             <button
               className={`source-tab ${activeTab === 'local' ? 'source-tab--active' : ''}`}
               onClick={() => setActiveTab('local')}
-            >Local</button>
+            >{isCoder ? 'Workspace' : 'Existing directory'}</button>
             {!isSSH && !isCoder && (
               <button
                 className={`source-tab ${activeTab === 'newfolder' ? 'source-tab--active' : ''}`}
@@ -989,8 +998,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
           {/* Environment selector (shared across tabs) */}
           {environments.length > 1 && (
             <div className="form-group">
-              <label className="form-label">Environment</label>
-              <select
+              <label className="form-label" htmlFor="new-session-environment">Environment</label>
+              <select id="new-session-environment"
                 className="form-input"
                 value={envId}
                 onChange={e => { setEnvId(e.target.value); setDirectory(''); }}
@@ -1006,8 +1015,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
 
           {/* CLI tool selector */}
           <div className="form-group">
-            <label className="form-label">CLI Tool</label>
-            <select
+            <label className="form-label" htmlFor="new-session-cli">CLI tool</label>
+            <select id="new-session-cli"
               className="form-input"
               value={cliTool}
               onChange={e => setCliTool(e.target.value as CliToolId)}
@@ -1168,11 +1177,11 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                 </>
               ) : (
                 <div className="form-group">
-                  <label className="form-label">
-                    {isSSH ? 'Remote Directory' : 'Directory'}
+                  <label className="form-label" htmlFor="new-session-directory">
+                    {isSSH ? 'Remote directory' : 'Directory'}
                   </label>
                   <div className="form-row">
-                    <input
+                    <input id="new-session-directory"
                       className="form-input"
                       value={directory}
                       onChange={e => setDirectory(e.target.value)}
@@ -1234,8 +1243,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               )}
 
               <div className="form-group">
-                <label className="form-label">Label (optional)</label>
-                <input
+                <label className="form-label" htmlFor="new-session-label">Label (optional)</label>
+                <input id="new-session-label"
                   className="form-input"
                   value={label}
                   onChange={e => setLabel(e.target.value)}
@@ -1246,7 +1255,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               {/* Env var overrides */}
               <details className="form-group">
                 <summary className="form-label" style={{ cursor: 'pointer' }}>
-                  Environment Variables
+                  Environment variables
                   {Object.keys(inheritedVars).length > 0 && (
                     <span className="form-hint" style={{ display: 'inline', marginLeft: 8 }}>
                       ({Object.keys(inheritedVars).length} inherited)
@@ -1268,7 +1277,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               {/* CLI flags */}
               <details className="form-group">
                 <summary className="form-label" style={{ cursor: 'pointer' }}>
-                  CLI Flags
+                  CLI flags
                   {effectiveDefaultFlags.length > 0 && (
                     <span className="form-hint" style={{ display: 'inline', marginLeft: 8 }}>
                       ({effectiveDefaultFlags.length} from defaults)
@@ -1817,6 +1826,9 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
         </div>
 
         <div className="dialog-footer">
+          {activeTab === 'local' && !isSSH && !isCoder && enableResumePicker && CLI_TOOL_REGISTRY[cliTool].historyProvider && (
+            <button className="form-btn dialog-footer-secondary" disabled={!canCreateLocalSession || createWorktree} title={createWorktree ? 'Resume from the original directory without creating a new worktree' : 'Choose a previous conversation in this directory'} onClick={() => setResumeOpen(true)}>Resume conversation</button>
+          )}
           <button className="form-btn" onClick={resetAndClose}>Cancel</button>
           {activeTab === 'local' ? (
             <button
@@ -1824,7 +1836,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               onClick={() => { void handleCreate(); }}
               disabled={!canCreateLocalSession}
             >
-              {creatingWorktree ? 'Creating worktree...' : 'Create Session'}
+              {creatingWorktree ? 'Creating worktree...' : 'Create session'}
             </button>
           ) : activeTab === 'newfolder' ? (
             <button
@@ -1832,7 +1844,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               onClick={() => { void handleCreateNewFolder(); }}
               disabled={!canCreateNewFolderSession}
             >
-              {creatingNewFolder ? 'Creating...' : 'Create Session'}
+              {creatingNewFolder ? 'Creating...' : 'Create session'}
             </button>
           ) : (
             <button
@@ -1846,11 +1858,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                 return !cloneDestination.trim();
               })()}
             >
-              {cloning ? 'Cloning...' : 'Clone & Create Session'}
+              {cloning ? 'Cloning...' : 'Clone and create session'}
             </button>
           )}
         </div>
       </div>
     </div>
+    {resumeOpen && <ResumeChatDialog isOpen workingDir={directory.trim()} cliTool={cliTool} onClose={() => setResumeOpen(false)} onPick={id => { void handleCreate(id); }} />}
+    </>
   );
 }

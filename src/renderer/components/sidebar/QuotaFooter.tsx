@@ -41,7 +41,7 @@ function QuotaBar({ label, used, resetsAt }: QuotaBarProps) {
           style={{ width: `${remaining}%` }}
         />
       </div>
-      <span className="quota-pct">{remaining}%</span>
+      <span className="quota-pct">{remaining}% left</span>
       {resetsAt && <span className="quota-reset">{formatResetTime(resetsAt)}</span>}
     </div>
   );
