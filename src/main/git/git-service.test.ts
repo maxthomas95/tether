@@ -242,6 +242,31 @@ describe('git-service hardening', () => {
   });
 });
 
+describe.each(['win32', 'linux'])('literal branch arguments on %s', (platform) => {
+  beforeEach(() => {
+    vi.stubGlobal('process', { ...process, platform });
+    spawnMock.mockReset();
+    existsSyncMock.mockReset();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each(['feature/日本語', 'feature/$(whoami)', 'feature/topic+1'])(
+    'passes valid branch %j as one literal argument without a shell', async (branch) => {
+      existsSyncMock.mockReturnValueOnce(true).mockReturnValueOnce(false);
+      const proc = fakeProc();
+      spawnMock.mockReturnValue(proc);
+      const sourceRepo = platform === 'win32' ? 'C:\\source' : '/source';
+      const worktreePath = platform === 'win32' ? 'C:\\target' : '/target';
+      const result = gitWorktreeAdd({ sourceRepo, worktreePath, branch });
+      proc.emit('close', 0);
+      await result;
+      expect(spawnMock).toHaveBeenCalledWith(gitExecutable,
+        ['worktree', 'add', '-b', branch, '--', worktreePath],
+        { cwd: sourceRepo, stdio: ['ignore', 'pipe', 'pipe'] });
+    },
+  );
+});
+
 describe('parsePorcelainStatus', () => {
   it('parses a clean repo (branch only, no entries)', () => {
     const stdout = [
@@ -285,19 +310,6 @@ describe('gitBranchStatus', () => {
     expect(spawnMock.mock.calls).toHaveLength(calls);
   });
 
-  it.each(['feature/日本語', 'feature/$(whoami)', 'feature/topic+1'])(
-    'passes valid branch %j as one literal argument without a shell', async (branch) => {
-      existsSyncMock.mockReturnValueOnce(true).mockReturnValueOnce(false);
-      const proc = fakeProc();
-      spawnMock.mockReturnValue(proc);
-      const result = gitWorktreeAdd({ sourceRepo: 'C:/source', worktreePath: 'C:/target', branch });
-      proc.emit('close', 0);
-      await result;
-      expect(spawnMock).toHaveBeenCalledWith(gitExecutable,
-        ['worktree', 'add', '-b', branch, '--', 'C:\\target'],
-        { cwd: 'C:\\source', stdio: ['ignore', 'pipe', 'pipe'] });
-    },
-  );
   it('resolves branch + dirty count on success', async () => {
     const proc = fakeProc();
     spawnMock.mockReturnValue(proc);
