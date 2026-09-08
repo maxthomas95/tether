@@ -107,6 +107,8 @@ If a session inside a split pane dies, the pane shows an in-pane overlay with **
 
 ## Broadcast Input
 
+Broadcast input is available in split layouts. Entering Canvas clears broadcast targets; typing in Canvas goes to the focused terminal.
+
 Toggle broadcast targets from each pane header. With at least two live targets selected, input from a selected pane is sent to every selected session. Input from an unselected pane stays in that pane. Dead or stopped sessions are removed from the targets. Use **Session → Clear Broadcast Input Targets** to reset.
 
 ## Bulk Actions on a Group
@@ -136,7 +138,7 @@ Press **Ctrl+P** (or **Session → Find Session…**) to open the quick switcher
 - **Esc** closes the switcher
 - Clicking a row opens it too
 
-Opening a session from the switcher behaves exactly like clicking it in the sidebar: if it's already mounted in a pane, that pane is focused (and un-maximized if it was hidden behind a maximized pane); otherwise it replaces the focused/empty pane.
+Opening a session from the switcher behaves exactly like clicking it in the sidebar: if it's already mounted in a pane, that pane is focused (and un-maximized if it was hidden behind a maximized pane); otherwise it replaces the focused/empty pane in a standard layout or adds a panel in Canvas.
 
 ## Attention queue
 
@@ -150,4 +152,18 @@ Hover any session row for about a third of a second and a small popover shows it
 
 ## Workspace Persistence
 
-Tether saves open sessions, sidebar order, and pane layout to `{userData}/data.json` when you close the app. On next launch your workspace is restored — same sessions, same positions, same active session. Writes are atomic (tmp file → fsync → rename) and survive AV / OneDrive transient locks via a short retry loop.
+Tether saves open sessions and their order to `{userData}/data.json` as the workspace changes. Writes are atomic (tmp file → fsync → rename) and survive AV / OneDrive transient locks via a short retry loop. On next launch, saved sessions reopen when **Restore sessions on launch** is enabled.
+
+### Canvas workspace
+
+Select **Layout → Canvas** or **View → Canvas Mode** to use movable, resizable session panels. Canvas is independent of the split-pane setting and its four-pane limit.
+
+- On first use, existing sessions are placed on the canvas. Click a session in the sidebar or use **Add session** to open another panel. Selecting a session already on the canvas brings its panel into view and focuses it.
+- Drag a sidebar session onto the canvas to place it at the drop position. Drag panel headers to move them and panel edges or corners to resize them.
+- Click inside a terminal to type. Selecting text and scrolling terminal history keep their normal behavior; drag empty canvas space to pan.
+- **Arrange panels** resizes and places all canvas panels in a grid. Panels keep a minimum usable size, so large workspaces can extend below the visible area.
+- Maximize a panel with its header button or a double-click on the header. Restore returns to its previous size and location.
+- **Close pane** removes the panel from the canvas and leaves its session running in the sidebar. Session stop/remove actions still control the process.
+- Returning to a single or split layout keeps the canvas arrangement for later. Panel positions, sizes, stacking order, focus, and canvas position are saved with the workspace and remapped to restored sessions on launch. The selected layout mode is remembered. Restoring sessions on launch must be enabled to reopen them after quitting.
+
+Offscreen panels detach their terminal views while their sessions keep running. Bringing a panel back into view reuses its terminal buffer. Canvas does not change the terminal stream or the behavior of Local, SSH, or Coder transports.

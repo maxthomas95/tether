@@ -48,8 +48,10 @@ function getFocusable(container: HTMLElement): HTMLElement[] {
  *
  * @param ref      Ref to the dialog container element.
  * @param enabled  Whether the trap is active (typically the dialog's isOpen).
+ * @param restoreFocusRef Optional live flag for dialogs that hand focus to a
+ *                        selected destination instead of returning to the opener.
  */
-export function useFocusTrap(ref: RefObject<HTMLElement | null>, enabled = true): void {
+export function useFocusTrap(ref: RefObject<HTMLElement | null>, enabled = true, restoreFocusRef?: RefObject<boolean>): void {
   useEffect(() => {
     if (!enabled) return;
     const container = ref.current;
@@ -101,9 +103,9 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, enabled = true)
       container.removeEventListener('keydown', onKeyDown);
       // Restore focus to the opener, but only if it's still in the document
       // and still focusable (it may have been unmounted alongside the dialog).
-      if (previouslyFocused && document.contains(previouslyFocused)) {
+      if (restoreFocusRef?.current !== false && previouslyFocused && document.contains(previouslyFocused)) {
         previouslyFocused.focus();
       }
     };
-  }, [enabled, ref]);
+  }, [enabled, ref, restoreFocusRef]);
 }

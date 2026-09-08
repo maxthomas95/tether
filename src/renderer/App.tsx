@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { ITheme } from '@xterm/xterm';
 import { SplitLayout } from './components/SplitLayout';
+import { CanvasLayout } from './components/CanvasLayout';
+import { adjacentCanvasPanel, saveCanvas, visibleCanvasPanels } from './lib/canvas-layout';
 import { RepoGroup } from './components/sidebar/RepoGroup';
 import { NewSessionDialog } from './components/sidebar/NewSessionDialog';
 import { NewEnvironmentDialog } from './components/sidebar/NewEnvironmentDialog';
@@ -24,7 +26,7 @@ import type { UsageBudgetAlert } from './utils/usage-budget';
 import { formatCost } from './utils/usage-format';
 import { useTerminalManager } from './hooks/useTerminalManager';
 import type { TerminalCursorStyle } from './hooks/useTerminalManager';
-import { useLayoutState } from './hooks/useLayoutState';
+import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
@@ -161,7 +163,8 @@ export function App() {
     terminalCursorBlink,
     terminalScrollback,
   );
-  const { layoutState, layoutDispatch } = useLayoutState();
+  const { layoutState, layoutDispatch, splitLayoutState, splitDispatch,
+    canvasState, canvasDispatch, canvasEnabled, setCanvasEnabled } = useWorkspaceLayout();
   const { notifications, notify, dismiss } = useNotifications();
   const notifyError = useCallback((title: string, err: unknown) => {
     notify({ type: 'error', title, message: extractErrorMessage(err) });
@@ -205,7 +208,27 @@ export function App() {
   // workspace before workspace.load() can read it. Ref (not state) so the
   // flag flip doesn't itself trigger a persist with empty sessions.
   const restorationCompleteRef = useRef(false);
-  const effectiveMaxPanes = enablePaneSplitting ? maxPanes : 1;
+  const [workspaceReady, setWorkspaceReady] = useState(false);
+  const effectiveMaxPanes = canvasEnabled ? Number.POSITIVE_INFINITY : enablePaneSplitting ? maxPanes : 1;
+
+  const handleCanvasMode = useCallback((enabled: boolean) => {
+    if (enabled) {
+      const focused = splitLayoutState.root && splitLayoutState.focusedPaneId
+        ? findLeaf(splitLayoutState.root, splitLayoutState.focusedPaneId)?.sessionId ?? null : null;
+      canvasDispatch({ type: 'SEED', sessionIds: sessions.map(s => s.id), focusedSessionId: focused });
+    } else if (!splitLayoutState.root) {
+      const sessionId = canvasState.panels.find(p => p.id === canvasState.focusedPaneId)?.sessionId;
+      if (sessionId) {
+        const paneId = generatePaneId();
+        splitDispatch({ type: 'SET_ROOT', root: { type: 'leaf', id: paneId, sessionId } });
+        splitDispatch({ type: 'SET_FOCUS', paneId });
+      }
+    }
+    setCanvasEnabled(enabled);
+    setBroadcastPaneIds(new Set());
+    void window.electronAPI.config.set('sessionLayoutMode', enabled ? 'canvas' : 'split')
+      .catch(error => notifyError('Could not save the layout mode', error));
+  }, [sessions, splitLayoutState, splitDispatch, canvasState, canvasDispatch, setCanvasEnabled, notifyError]);
 
   const markExpectedSessionExit = useCallback((sessionId: string) => {
     expectedSessionExitIds.current.add(sessionId);
@@ -272,8 +295,9 @@ export function App() {
   // "needs attention" affordance — sessions you can't see should call out
   // when they enter waiting state, sessions you're looking at should not.
   const visibleSessionIds = useMemo(
-    () => collectVisibleSessionIds(layoutState.root, layoutState.maximizedPaneId),
-    [layoutState.root, layoutState.maximizedPaneId],
+    () => canvasEnabled ? new Set(visibleCanvasPanels(canvasState).map(p => p.sessionId))
+      : collectVisibleSessionIds(layoutState.root, layoutState.maximizedPaneId),
+    [canvasEnabled, canvasState, layoutState.root, layoutState.maximizedPaneId],
   );
   // When a session becomes visible while in a needs-attention state
   // (waiting OR idle), the user has effectively acknowledged the wait —
@@ -405,6 +429,10 @@ export function App() {
         if (!mounted) return;
         setEnvironments(envs);
 
+        const restoreCanvasMode = await window.electronAPI.config.get('sessionLayoutMode') === 'canvas';
+        if (!mounted) return;
+        setCanvasEnabled(restoreCanvasMode);
+
         // --- Reconnect path: renderer reload while main process has live sessions ---
         const liveSessions = await window.electronAPI.session.list();
         const activeSessions = liveSessions.filter(s => s.state !== 'stopped');
@@ -423,6 +451,7 @@ export function App() {
           // use the order from the main process session list.
           let orderedSessions: SessionInfo[];
           let activeIndex = 0;
+          const reconnectedCanvasIds: Array<string | null> = [];
 
           if (workspace && workspace.sessions.length > 0) {
             // Match workspace order to live sessions by toolSessionId or workingDir+label
@@ -441,6 +470,7 @@ export function App() {
                 matched.push(found);
                 remaining.delete(found.id);
               }
+              reconnectedCanvasIds.push(found?.id ?? null);
             }
             // Append any sessions not matched by workspace (created after last save)
             for (const s of activeSessions) {
@@ -489,6 +519,10 @@ export function App() {
 
           if (mounted) {
             setSessions(allSessions);
+            canvasDispatch({ type: 'RESTORE', saved: workspace?.canvas, sessionIds: reconnectedCanvasIds });
+            if (restoreCanvasMode && !workspace?.canvas) {
+              canvasDispatch({ type: 'SEED', sessionIds: orderedSessions.map(s => s.id), focusedSessionId: orderedSessions[activeIndex]?.id ?? null });
+            }
 
             if (root) {
               const normalizedRoot = normalizeToConstrained(root, reconnectMaxPanes, focusPaneId);
@@ -498,8 +532,8 @@ export function App() {
                   ?? getLeaves(normalizedRoot).find(l => l.sessionId !== null)?.id
                   ?? getLeaves(normalizedRoot)[0]?.id
                 : null;
-              layoutDispatch({ type: 'SET_ROOT', root: normalizedRoot });
-              if (normalizedFocusPaneId) layoutDispatch({ type: 'SET_FOCUS', paneId: normalizedFocusPaneId });
+              splitDispatch({ type: 'SET_ROOT', root: normalizedRoot });
+              if (normalizedFocusPaneId) splitDispatch({ type: 'SET_FOCUS', paneId: normalizedFocusPaneId });
             }
           }
           return;
@@ -517,6 +551,7 @@ export function App() {
 
         const workspace = await window.electronAPI.workspace?.load?.();
         if (!workspace || !workspace.sessions.length) return;
+        const restoredCanvasIds: Array<string | null> = workspace.sessions.map(() => null);
 
         // Build layout tree from restored sessions
         let root: LayoutNode | null = null;
@@ -541,6 +576,7 @@ export function App() {
               parentSessionId: saved.parentSessionId,
             });
             if (!mounted) return;
+            restoredCanvasIds[i] = session.id;
             termManager.getOrCreate(session.id);
             setSessions(prev => [...prev, session]);
 
@@ -581,6 +617,10 @@ export function App() {
           });
         }
 
+        canvasDispatch({ type: 'RESTORE', saved: workspace.canvas, sessionIds: restoredCanvasIds });
+        if (restoreCanvasMode && !workspace.canvas) {
+          canvasDispatch({ type: 'SEED', sessionIds: restoredCanvasIds.filter((id): id is string => id !== null), focusedSessionId: restoredCanvasIds[workspace.activeIndex] ?? null });
+        }
         if (root) {
           const normalizedRoot = normalizeToConstrained(root, restoreMaxPanes, focusPaneId);
           const focusedSessionId = focusPaneId ? findLeaf(root, focusPaneId)?.sessionId : null;
@@ -589,19 +629,24 @@ export function App() {
               ?? getLeaves(normalizedRoot).find(l => l.sessionId !== null)?.id
               ?? getLeaves(normalizedRoot)[0]?.id
             : null;
-          layoutDispatch({ type: 'SET_ROOT', root: normalizedRoot });
-          if (normalizedFocusPaneId) layoutDispatch({ type: 'SET_FOCUS', paneId: normalizedFocusPaneId });
+          splitDispatch({ type: 'SET_ROOT', root: normalizedRoot });
+          if (normalizedFocusPaneId) splitDispatch({ type: 'SET_FOCUS', paneId: normalizedFocusPaneId });
         }
       } finally {
         // Open the persist gate. Done in finally so every exit path (early
         // return for `restoreOnLaunch=false`, empty workspace, partial loop
         // failure, or full restore) flips the flag — otherwise persist would
         // be permanently silent and subsequent user actions wouldn't save.
-        if (mounted) restorationCompleteRef.current = true;
+        if (mounted) {
+          restorationCompleteRef.current = true;
+          setWorkspaceReady(true);
+        }
       }
     });
     return () => { mounted = false; };
   }, []);
+
+  const savedCanvas = useMemo(() => saveCanvas(canvasState, sessions.map(s => s.id)), [canvasState, sessions]);
 
   // Persist workspace on every change. Sync (no debounce) so a close/remove
   // is on disk before the user can quit — `beforeunload` IPC races renderer
@@ -627,12 +672,24 @@ export function App() {
         parentSessionId: s.parentSessionId,
       })),
       Math.max(0, activeIndex),
+      savedCanvas,
     );
-  }, [sessions, activeSessionId]);
+  }, [sessions, activeSessionId, savedCanvas]);
+
+  useEffect(() => {
+    if (!workspaceReady) return;
+    canvasDispatch({ type: 'PRUNE', sessionIds: sessions.map(s => s.id) });
+    for (const leaf of getLeaves(splitLayoutState.root)) {
+      if (leaf.sessionId && !sessions.some(s => s.id === leaf.sessionId)) {
+        splitDispatch({ type: 'REMOVE_SESSION', sessionId: leaf.sessionId });
+      }
+    }
+  }, [sessions, workspaceReady, canvasDispatch, splitLayoutState.root, splitDispatch]);
 
   // Enforce the constrained 1/2/4 layout invariant after setting changes,
   // workspace restore, or legacy arbitrary split trees.
   useEffect(() => {
+    if (canvasEnabled) return;
     if (
       layoutState.maxPanes === effectiveMaxPanes
       && isConstrainedLayout(layoutState.root, effectiveMaxPanes)
@@ -642,6 +699,7 @@ export function App() {
     layoutDispatch({ type: 'SET_MAX_PANES', maxPanes: effectiveMaxPanes });
   }, [
     effectiveMaxPanes,
+    canvasEnabled,
     layoutState.root,
     layoutState.focusedPaneId,
     layoutState.maxPanes,
@@ -782,7 +840,9 @@ export function App() {
       setSessions(prev => [...prev, session]);
 
       const paneId = generatePaneId();
-      if (!layoutState.root) {
+      if (canvasEnabled) {
+        canvasDispatch({ type: 'OPEN', sessionId: session.id });
+      } else if (!layoutState.root) {
         const root: LayoutNode = { type: 'leaf', id: paneId, sessionId: session.id };
         layoutDispatch({ type: 'SET_ROOT', root });
         layoutDispatch({ type: 'SET_FOCUS', paneId });
@@ -813,7 +873,7 @@ export function App() {
       console.error('Failed to create session:', err);
       notifyError('Failed to create session', err);
     }
-  }, [termManager, layoutState.root, layoutState.focusedPaneId, layoutDispatch, notifyError, enablePaneSplitting, effectiveMaxPanes]);
+  }, [termManager, layoutState.root, layoutState.focusedPaneId, layoutDispatch, notifyError, enablePaneSplitting, effectiveMaxPanes, canvasEnabled, canvasDispatch]);
 
   const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
     try {
@@ -1140,6 +1200,12 @@ export function App() {
 
   // Sidebar session click: focus existing pane or replace focused pane
   const handleSelectSession = useCallback((sessionId: string) => {
+    if (canvasEnabled) {
+      canvasDispatch({ type: 'OPEN', sessionId });
+      const paneId = canvasState.panels.find(p => p.sessionId === sessionId)?.id;
+      if (paneId) requestAnimationFrame(() => termManager.focusPane(paneId));
+      return;
+    }
     if (layoutState.root) {
       const leaves = getLeaves(layoutState.root);
       const existingLeaf = leaves.find(l => l.sessionId === sessionId);
@@ -1169,7 +1235,7 @@ export function App() {
       layoutDispatch({ type: 'SET_ROOT', root });
       layoutDispatch({ type: 'SET_FOCUS', paneId });
     }
-  }, [layoutState.root, layoutState.focusedPaneId, layoutDispatch, termManager]);
+  }, [layoutState.root, layoutState.focusedPaneId, layoutDispatch, termManager, canvasEnabled, canvasState.panels, canvasDispatch]);
 
   /**
    * Activate a session chosen from the Ctrl+P quick switcher. Deliberately
@@ -1500,7 +1566,8 @@ export function App() {
     onNextWaiting: handleJumpToNextWaiting,
     onFocusPaneDirection: (direction: 'left' | 'right' | 'up' | 'down') => {
       if (!layoutState.root || !layoutState.focusedPaneId) return;
-      const neighborId = getAdjacentPane(layoutState.root, layoutState.focusedPaneId, direction);
+      const neighborId = canvasEnabled ? adjacentCanvasPanel(canvasState, direction)
+        : getAdjacentPane(layoutState.root, layoutState.focusedPaneId, direction);
       if (!neighborId) return;
       // Un-maximize so the focus move is visible (mirrors the sidebar pane-location badge click).
       if (layoutState.maximizedPaneId) {
@@ -1511,7 +1578,8 @@ export function App() {
     },
     onSwapPaneDirection: (direction: 'left' | 'right' | 'up' | 'down') => {
       if (!layoutState.root || !layoutState.focusedPaneId) return;
-      const neighborId = getAdjacentPane(layoutState.root, layoutState.focusedPaneId, direction);
+      const neighborId = canvasEnabled ? adjacentCanvasPanel(canvasState, direction)
+        : getAdjacentPane(layoutState.root, layoutState.focusedPaneId, direction);
       if (!neighborId) return;
       layoutDispatch({
         type: 'SWAP_PANES',
@@ -1519,7 +1587,7 @@ export function App() {
         targetPaneId: neighborId,
       });
     },
-  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom, handleJumpToNextWaiting]);
+  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom, handleJumpToNextWaiting, canvasEnabled, canvasState]);
 
   useKeyboardShortcuts(shortcutActions, resolvedBindings);
 
@@ -1553,7 +1621,7 @@ export function App() {
     () => getBroadcastSessionIds(layoutState.root, broadcastPaneIds, sessions),
     [layoutState.root, broadcastPaneIds, sessions],
   );
-  const broadcastActive = broadcastSessionIds.length > 1;
+  const broadcastActive = !canvasEnabled && broadcastSessionIds.length > 1;
 
   useEffect(() => {
     termManager.setBroadcastTargets(broadcastActive ? broadcastSessionIds : []);
@@ -1561,14 +1629,14 @@ export function App() {
 
   useEffect(() => {
     setBroadcastPaneIds(prev => {
-      if (!enablePaneSplitting || currentLeafCount < 2) {
+      if (canvasEnabled || !enablePaneSplitting || currentLeafCount < 2) {
         return prev.size === 0 ? prev : new Set();
       }
 
       const next = pruneBroadcastPaneIds(layoutState.root, prev, sessions);
       return setsEqual(prev, next) ? prev : next;
     });
-  }, [currentLeafCount, enablePaneSplitting, layoutState.root, sessions]);
+  }, [currentLeafCount, enablePaneSplitting, layoutState.root, sessions, canvasEnabled]);
 
   const handleToggleBroadcastTarget = useCallback((paneId: string) => {
     setBroadcastPaneIds(prev => {
@@ -1588,14 +1656,14 @@ export function App() {
 
   const paneLocations = useMemo<Map<string, PaneLocation>>(() => {
     const map = new Map<string, PaneLocation>();
-    if (!enablePaneSplitting || !layoutState.root) return map;
+    if (canvasEnabled || !enablePaneSplitting || !layoutState.root) return map;
     for (const leaf of getLeaves(layoutState.root)) {
       if (!leaf.sessionId) continue;
       const loc = getPaneLocationForSession(layoutState.root, leaf.sessionId);
       if (loc) map.set(leaf.sessionId, loc);
     }
     return map;
-  }, [layoutState.root, enablePaneSplitting]);
+  }, [layoutState.root, enablePaneSplitting, canvasEnabled]);
 
   const hiddenPaneIds = useMemo<Set<string>>(() => {
     const set = new Set<string>();
@@ -1625,7 +1693,7 @@ export function App() {
   // Keep the focused session visible when switching to a single pane.
   // Other sessions stay alive in the sidebar; only their layout slots are removed.
   useEffect(() => {
-    if (enablePaneSplitting || !layoutState.root) return;
+    if (canvasEnabled || enablePaneSplitting || !layoutState.root) return;
     const leaves = getLeaves(layoutState.root);
     const hasEmpty = leaves.some(l => !l.sessionId);
     if (leaves.length > 1 || hasEmpty) {
@@ -1634,7 +1702,7 @@ export function App() {
       layoutDispatch({ type: 'SET_ROOT', root: retained });
       layoutDispatch({ type: 'SET_FOCUS', paneId: retained?.id ?? null });
     }
-  }, [enablePaneSplitting, layoutState.root, layoutState.focusedPaneId, layoutDispatch]);
+  }, [enablePaneSplitting, layoutState.root, layoutState.focusedPaneId, layoutDispatch, canvasEnabled]);
 
   /**
    * Defensive recovery for a dead session inside a layout: spawn a fresh
@@ -1790,6 +1858,7 @@ export function App() {
     {
       label: 'View',
       items: [
+        { label: 'Canvas Mode', checked: canvasEnabled, disabled: !workspaceReady, onClick: () => handleCanvasMode(!canvasEnabled) },
         { label: 'Toggle Sidebar', shortcut: formatChord(resolvedBindings['sidebar.toggle']) || undefined, onClick: () => setSidebarVisible(v => !v) },
         { label: 'GIF Panel', checked: gifPanel.settings?.enabled ?? false, disabled: !gifPanel.settings, onClick: () => { void gifPanel.toggle(); setSidebarVisible(true); } },
         ...(jobsStatus?.detected ? [
@@ -1817,19 +1886,21 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, gifPanel.settings, gifPanel.toggle]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle]);
 
   return (
     <div className="app-layout" data-density={uiDensity}>
       <MenuBar menus={menus} onSearch={() => setSearchOpen(true)} searchShortcut={formatChord(resolvedBindings['search.open'])}
-        paneLimit={effectiveMaxPanes}
+        paneLimit={canvasEnabled ? 'canvas' : effectiveMaxPanes} layoutReady={workspaceReady}
         onPaneLimitChange={limit => {
+          if (limit === 'canvas') { handleCanvasMode(true); return; }
           void (async () => {
             try {
               await window.electronAPI.config.set('maxPanes', String(limit));
               await window.electronAPI.config.set('enablePaneSplitting', limit > 1 ? 'true' : 'false');
               setMaxPanes(limit);
               setEnablePaneSplitting(limit > 1);
+              handleCanvasMode(false);
             } catch (error) {
               notifyError('Could not update the pane layout', error);
             }
@@ -2021,7 +2092,13 @@ export function App() {
         onDrop={handleMainDrop}
         style={{ position: 'relative' }}
       >
-        {layoutState.root ? (
+        {canvasEnabled ? (
+          <CanvasLayout state={canvasState} dispatch={canvasDispatch} termManager={termManager}
+            sessions={sessions} environments={environments} defaultFontSize={defaultTerminalFontSize}
+            onFontSizeDelta={handleSessionFontSizeChange} onRestartInPane={handleRestartInPane}
+            onChooseSession={() => sessions.length ? setSearchOpen(true) : setSessionDialogOpen(true)}
+            onDropComplete={() => setIsDragging(false)} />
+        ) : layoutState.root ? (
           <SplitLayout
             node={layoutState.maximizedPaneId
               ? findLeaf(layoutState.root, layoutState.maximizedPaneId) || layoutState.root

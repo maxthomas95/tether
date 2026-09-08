@@ -30,6 +30,7 @@ export interface SavedSession {
 export interface SavedWorkspace {
   sessions: SavedSession[];
   activeIndex: number;
+  canvas?: import('../../shared/canvas-types').SavedCanvas;
 }
 
 export interface GitProviderRow {
