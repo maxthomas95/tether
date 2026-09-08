@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react';
 import { ResumeChatDialog } from './ResumeChatDialog';
 import { EnvVarEditor } from '../EnvVarEditor';
 import { HelpAnchor } from '../HelpAnchor';
@@ -42,11 +42,12 @@ function CoderCreateInline({
   params, loadingParams, paramValues, setParamValue,
   creating, progress, error, onCancel, onCreate,
 }: CoderCreateInlineProps) {
+  const formId = useId();
   const nameValid = workspaceName === '' || /^[a-z][a-z0-9-]*$/.test(workspaceName);
   return (
     <div className="form-group" style={{ borderLeft: '2px solid var(--accent)', paddingLeft: 12, marginTop: 8 }}>
-      <label className="form-label">Template</label>
-      <select
+      <label className="form-label" htmlFor={`${formId}-template`}>Template</label>
+      <select id={`${formId}-template`}
         className="form-input"
         value={selectedTemplate}
         onChange={e => setSelectedTemplate(e.target.value)}
@@ -62,8 +63,8 @@ function CoderCreateInline({
         ))}
       </select>
 
-      <label className="form-label" style={{ marginTop: 8 }}>Workspace Name</label>
-      <input
+      <label className="form-label" htmlFor={`${formId}-name`} style={{ marginTop: 8 }}>Workspace Name</label>
+      <input id={`${formId}-name`}
         className="form-input"
         value={workspaceName}
         onChange={e => setWorkspaceName(e.target.value)}
@@ -82,7 +83,7 @@ function CoderCreateInline({
 
       {!loadingParams && params.length > 0 && params.map(p => (
         <div key={p.name} style={{ marginTop: 8 }}>
-          <label className="form-label">
+          <label className="form-label" htmlFor={`${formId}-param-${encodeURIComponent(p.name)}`}>
             {p.displayName}
             {!p.required && <span style={{ opacity: 0.5, fontWeight: 'normal' }}> (optional)</span>}
           </label>
@@ -90,7 +91,7 @@ function CoderCreateInline({
             <span className="form-hint" style={{ marginBottom: 4, display: 'block' }}>{p.description}</span>
           )}
           {p.options.length > 0 ? (
-            <select
+            <select id={`${formId}-param-${encodeURIComponent(p.name)}`}
               className="form-input"
               value={paramValues[p.name] ?? p.defaultValue}
               onChange={e => setParamValue(p.name, e.target.value)}
@@ -104,7 +105,7 @@ function CoderCreateInline({
               ))}
             </select>
           ) : (
-            <input
+            <input id={`${formId}-param-${encodeURIComponent(p.name)}`}
               className="form-input"
               value={paramValues[p.name] ?? p.defaultValue}
               onChange={e => setParamValue(p.name, e.target.value)}
@@ -170,12 +171,13 @@ function CoderCloneTarget({
   onToggleCreate,
   createProps,
 }: CoderCloneTargetProps) {
+  const formId = useId();
   return (
     <>
       <div className="form-group">
-        <label className="form-label">Coder workspace</label>
+        <label className="form-label" htmlFor={`${formId}-workspace`}>Coder workspace</label>
         <div className="form-row">
-          <select
+          <select id={`${formId}-workspace`}
             className="form-input"
             value={workspace}
             onChange={e => setWorkspace(e.target.value)}
@@ -211,8 +213,8 @@ function CoderCloneTarget({
       )}
 
       <div className="form-group">
-        <label className="form-label">Clone into (path inside workspace)</label>
-        <input
+        <label className="form-label" htmlFor={`${formId}-clone-path`}>Clone into (path inside workspace)</label>
+        <input id={`${formId}-clone-path`}
           className="form-input"
           value={clonePath}
           onChange={e => setClonePath(e.target.value)}
@@ -239,6 +241,7 @@ interface NewSessionDialogProps {
 }
 
 export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCreate, initialEnvId, initialDirectory }: NewSessionDialogProps) {
+  const formId = useId();
   const [envId, setEnvId] = useState<string>('');
   const initializedOpen = useRef(false);
   const [resumeOpen, setResumeOpen] = useState(false);
@@ -1029,8 +1032,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
 
           {cliTool === 'custom' && (
             <div className="form-group">
-              <label className="form-label">Binary Name</label>
-              <input
+              <label className="form-label" htmlFor={`${formId}-binary`}>Binary Name</label>
+              <input id={`${formId}-binary`}
                 className="form-input"
                 value={customBinary}
                 onChange={e => setCustomBinary(e.target.value)}
@@ -1063,10 +1066,11 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
           {/* Profile picker */}
           {profiles.length > 0 && (
             <div className="form-group">
-              <label className="form-label">Profile</label>
-              <div className="repo-picker">
+              <div className="form-label" id={`${formId}-profile`}>Profile</div>
+              <fieldset className="repo-picker" aria-labelledby={`${formId}-profile`} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
                 <button
                   className={`repo-picker-item ${profileId === null ? 'repo-picker-item--selected' : ''}`}
+                  aria-pressed={profileId === null}
                   onClick={() => setProfileId(null)}
                 >
                   None
@@ -1075,12 +1079,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                   <button
                     key={p.id}
                     className={`repo-picker-item ${profileId === p.id ? 'repo-picker-item--selected' : ''}`}
+                    aria-pressed={profileId === p.id}
                     onClick={() => setProfileId(p.id)}
                   >
                     {p.name}
                   </button>
                 ))}
-              </div>
+              </fieldset>
             </div>
           )}
 
@@ -1089,27 +1094,28 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
             <>
               {!isSSH && !isCoder && reposRoot && repoDirs.length > 0 && (
                 <div className="form-group">
-                  <label className="form-label">Quick Pick</label>
-                  <div className="repo-picker">
+                  <div className="form-label" id={`${formId}-quick-pick`}>Quick Pick</div>
+                  <fieldset className="repo-picker" aria-labelledby={`${formId}-quick-pick`} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
                     {repoDirs.map(dir => (
                       <button
                         key={dir}
                         className={`repo-picker-item ${directory === dir ? 'repo-picker-item--selected' : ''}`}
+                        aria-pressed={directory === dir}
                         onClick={() => setDirectory(dir)}
                       >
                         {dirName(dir)}
                       </button>
                     ))}
-                  </div>
+                  </fieldset>
                 </div>
               )}
 
               {isCoder ? (
                 <>
                   <div className="form-group">
-                    <label className="form-label">Workspace</label>
+                    <label className="form-label" htmlFor={`${formId}-workspace`}>Workspace</label>
                     <div className="form-row">
-                      <select
+                      <select id={`${formId}-workspace`}
                         className="form-input"
                         value={directory}
                         onChange={e => setDirectory(e.target.value)}
@@ -1215,8 +1221,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                   </span>
                   {createWorktree && (
                     <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: '2px solid var(--accent)' }}>
-                      <label className="form-label">New branch name</label>
-                      <input
+                      <label className="form-label" htmlFor={`${formId}-branch`}>New branch name</label>
+                      <input id={`${formId}-branch`}
                         className="form-input"
                         value={worktreeBranch}
                         onChange={e => setWorktreeBranch(e.target.value)}
@@ -1224,8 +1230,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                         disabled={creatingWorktree}
                         autoFocus
                       />
-                      <label className="form-label" style={{ marginTop: 8 }}>Worktree path</label>
-                      <input
+                      <label className="form-label" htmlFor={`${formId}-worktree-path`} style={{ marginTop: 8 }}>Worktree path</label>
+                      <input id={`${formId}-worktree-path`}
                         className="form-input"
                         value={worktreePath}
                         onChange={e => { setWorktreePath(e.target.value); setWorktreePathEdited(true); }}
@@ -1336,6 +1342,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                     <input
                       className="form-input"
                       value={customFlag}
+                      aria-label="Additional CLI flag"
                       onChange={e => setCustomFlag(e.target.value)}
                       placeholder="--flag-name"
                       onKeyDown={e => {
@@ -1384,6 +1391,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                     <div className="form-row">
                       <input
                         className="form-input"
+                        aria-label="Repos directory"
                         value={reposRootInput}
                         onChange={e => setReposRootInput(e.target.value)}
                         placeholder="C:\repo"
@@ -1408,6 +1416,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                   <div className="form-row" style={{ marginTop: 8 }}>
                     <input
                       className="form-input"
+                      aria-label="Repos directory"
                       value={reposRootInput}
                       onChange={e => setReposRootInput(e.target.value)}
                       placeholder="C:\repo"
@@ -1419,8 +1428,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               ) : (
                 <>
                   <div className="form-group">
-                    <label className="form-label">Folder name</label>
-                    <input
+                    <label className="form-label" htmlFor={`${formId}-folder`}>Folder name</label>
+                    <input id={`${formId}-folder`}
                       className="form-input"
                       value={newFolderName}
                       onChange={e => setNewFolderName(e.target.value)}
@@ -1535,8 +1544,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                   )}
 
                   <div className="form-group">
-                    <label className="form-label">Label (optional)</label>
-                    <input
+                    <label className="form-label" htmlFor={`${formId}-label`}>Label (optional)</label>
+                    <input id={`${formId}-label`}
                       className="form-input"
                       value={label}
                       onChange={e => setLabel(e.target.value)}
@@ -1555,6 +1564,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                       <div className="form-row" style={{ marginTop: 8 }}>
                         <input
                           className="form-input"
+                          aria-label="Repos directory"
                           value={reposRootInput}
                           onChange={e => setReposRootInput(e.target.value)}
                           placeholder="C:\repo"
@@ -1577,8 +1587,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
           {activeTab === 'clone' && (
             <>
               <div className="form-group">
-                <label className="form-label">Git URL</label>
-                <input
+                <label className="form-label" htmlFor={`${formId}-git-url`}>Git URL</label>
+                <input id={`${formId}-git-url`}
                   className="form-input"
                   value={cloneUrl}
                   onChange={e => setCloneUrl(e.target.value)}
@@ -1622,9 +1632,9 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                 />
               ) : (
                 <div className="form-group">
-                  <label className="form-label">Destination directory</label>
+                  <label className="form-label" htmlFor={`${formId}-destination`}>Destination directory</label>
                   <div className="form-row">
-                    <input
+                    <input id={`${formId}-destination`}
                       className="form-input"
                       value={cloneDestination}
                       onChange={e => setCloneDestination(e.target.value)}
@@ -1643,8 +1653,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               )}
 
               <div className="form-group">
-                <label className="form-label">Label (optional)</label>
-                <input
+                <label className="form-label" htmlFor={`${formId}-label`}>Label (optional)</label>
+                <input id={`${formId}-label`}
                   className="form-input"
                   value={label}
                   onChange={e => setLabel(e.target.value)}
@@ -1673,8 +1683,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
             <>
               {matchingProviders.length > 1 && (
                 <div className="form-group">
-                  <label className="form-label">Provider</label>
-                  <select
+                  <label className="form-label" htmlFor={`${formId}-provider`}>Provider</label>
+                  <select id={`${formId}-provider`}
                     className="form-input"
                     value={selectedProviderId}
                     onChange={e => {
@@ -1693,8 +1703,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               )}
 
               <div className="form-group">
-                <label className="form-label">Search repos</label>
-                <input
+                <label className="form-label" htmlFor={`${formId}-search`}>Search repos</label>
+                <input id={`${formId}-search`}
                   className="form-input"
                   value={providerSearchQuery}
                   onChange={e => setProviderSearchQuery(e.target.value)}
@@ -1776,9 +1786,9 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
                 />
               ) : (
                 <div className="form-group">
-                  <label className="form-label">Destination directory</label>
+                  <label className="form-label" htmlFor={`${formId}-destination`}>Destination directory</label>
                   <div className="form-row">
-                    <input
+                    <input id={`${formId}-destination`}
                       className="form-input"
                       value={cloneDestination}
                       onChange={e => setCloneDestination(e.target.value)}
@@ -1799,8 +1809,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
               )}
 
               <div className="form-group">
-                <label className="form-label">Label (optional)</label>
-                <input
+                <label className="form-label" htmlFor={`${formId}-label`}>Label (optional)</label>
+                <input id={`${formId}-label`}
                   className="form-input"
                   value={label}
                   onChange={e => setLabel(e.target.value)}

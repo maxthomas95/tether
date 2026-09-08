@@ -43,11 +43,11 @@ export function HostKeyVerifyDialog({ request, onTrust, onReject }: HostKeyVerif
             handing them your credentials.
           </div>
           <div className="form-group">
-            <label className="form-label">Host</label>
+            <div className="form-label">Host</div>
             <div style={{ fontFamily: 'var(--font-mono-ui, monospace)', fontSize: 13 }}>{target}</div>
           </div>
           <div className="form-group">
-            <label className="form-label">Fingerprint</label>
+            <div className="form-label">Fingerprint</div>
             <div
               style={{
                 fontFamily: 'var(--font-mono-ui, monospace)',

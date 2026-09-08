@@ -1237,7 +1237,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                       <label className="form-radio-label">
                         <input
                           type="radio"
-                          name="providerType"
+                          name={`${idPrefix}-provider-type`}
                           checked={providerType === 'github'}
                           onChange={() => setProviderType('github')}
                         />
@@ -1246,7 +1246,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                       <label className="form-radio-label">
                         <input
                           type="radio"
-                          name="providerType"
+                          name={`${idPrefix}-provider-type`}
                           checked={providerType === 'ado'}
                           onChange={() => setProviderType('ado')}
                         />
@@ -1255,7 +1255,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
                       <label className="form-radio-label">
                         <input
                           type="radio"
-                          name="providerType"
+                          name={`${idPrefix}-provider-type`}
                           checked={providerType === 'gitea'}
                           onChange={() => setProviderType('gitea')}
                         />
