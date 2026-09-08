@@ -4,6 +4,9 @@ A **session** in Tether is a running CLI process in a specific directory and env
 
 ## Creating Sessions
 
+On Windows, npm-installed CLI tools use their Windows command shim (for example,
+`codex.cmd`), even when npm also installs an extensionless Unix script beside it.
+
 Click **+ New session** or press **Ctrl+N**. The dialog has three tabs for picking a working directory:
 
 - **Existing directory** — browse to or paste a path you already use

@@ -136,6 +136,8 @@ npm run start     # launch in dev mode (Electron Forge + Vite)
 
 For a reproducible contributor install, use Node 24 and `npx npm@10.9.4 ci`, matching CI. Run `npm run typecheck`, `npm run lint`, `npm test`, and `npm run test:packaging` before submitting changes. Packaging changes also need `npm run package` and `npm run verify:package`; the Helm package has its own build and audit in CI.
 
+Use `npm run test:coverage` to generate application coverage and a local HTML report. CI publishes the report to SonarQube Cloud; see [coverage and Sonar setup](docs/SONAR.md) for scope and configuration.
+
 ## Tech Stack
 
 | | Technology | Why |
