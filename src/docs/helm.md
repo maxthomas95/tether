@@ -1,35 +1,35 @@
 # Helm
 
-Helm is an **opt-in, experimental** capability that lets a designated "parent" session dispatch pre-briefed child sessions through an MCP server (`tether-helm`). It's the in-progress evolution of multi-agent orchestration inside Tether — currently personal-experimental, not a polished feature.
-
-## Status
-
-Helm is intentionally low-key. There is no flagship UI for it yet, and it isn't on the 1.0 critical path. The feature stays behind a per-session toggle so it doesn't affect anyone who hasn't opted in.
-
-If you're not actively trying to use Helm, you can ignore this page.
+Helm is an **opt-in, experimental** integration that lets a local Claude Code parent session dispatch child sessions through the `tether-helm` MCP server. It is not on the 1.0 critical path.
 
 ## Enabling Helm on a Session
 
-1. Right-click a session in the sidebar
-2. Choose **Enable Helm**
-3. Tether configures the session to expose the `tether-helm` MCP, which gives the CLI tools for spawning child sessions, listing them, and brokering messages
+1. Enable **Settings → Sessions → Advanced session options → Allow Helm**, then **Save**.
+2. Enable **Helm** when creating a local Claude Code session, or choose **Enable Helm** from an existing session's action menu.
+3. Restart an existing session to wire the MCP into its CLI process. Disabling Helm also takes effect on the next session launch.
 
-The toggle is persisted on the session record; you can disable it the same way.
+The MCP bridge is local to Tether. Use a local Claude Code session as the parent; remote SSH/Coder parents cannot reach that local socket and resource path. Other parent CLI tools are not wired with the MCP configuration. Node.js must be on the local PATH to run the MCP server.
 
-## What Helm Does (today)
+## Available Tools
 
-- Adds Tether-aware MCP tools for the parent session
-- Spawns child sessions with the same environment / repos root / CLI as the parent, plus a brief
-- Routes status and exit signals between parent and children
+| Tool | Purpose |
+|------|---------|
+| `list_environments` | Discover configured environment IDs and types. |
+| `list_profiles` | List launch profiles and their env-var names, without exposing values. |
+| `spawn_session` | Launch a child in a chosen environment with a label and initial prompt. |
+| `get_session_status` | Query a session's state and metadata by ID. |
+| `kill_session` | Force-stop a session by ID. |
+| `list_coder_workspaces` | Find existing Coder workspaces. |
+| `list_coder_templates` | Discover templates. |
+| `get_coder_template_params` | Inspect required workspace parameters. |
+| `create_coder_workspace` | Provision a workspace before dispatching a child into it. |
 
-## What Helm Does **Not** Do
+Children use the requested environment. The CLI and working directory default to the parent's unless supplied; the user's default launch profile applies unless overridden or disabled. For Coder, the working directory is a workspace name, optionally followed by `::<subdirectory>`.
 
-- It does not bypass the per-CLI cost cap or quota
-- It does not give children network access the parent doesn't have
-- It does not orchestrate beyond the explicit dispatch — there is no scheduler
+Children appear in the sidebar and use the normal session transports. Their permissions, credentials, and network access come from the selected environment and CLI configuration. Tether's budget guardrails only warn; they do not enforce spending limits.
 
-## Why It's Opt-In
+## Limits
 
-The roadmap principle is "dumb pipe, smart shell" — Tether deliberately avoids agent orchestration as a built-in feature. Helm is the carve-out for users who want it, kept behind a per-session toggle so it doesn't change the default Tether experience.
+There is no session-list tool, inter-session message broker, automatic completion delivery, or task scheduler. A parent can query a known child's status. Configure only environments and profiles you intend the parent to use.
 
-Expect changes; this page will get longer as Helm stabilizes.
+Helm stays behind the global and per-session toggles. The normal terminal path remains a raw PTY stream.
