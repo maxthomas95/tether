@@ -18,7 +18,10 @@ import { detectNewCopilotSession, releaseCopilotSessionClaim } from '../copilot/
 import { opencodeTranscriptExists } from '../opencode/transcripts';
 import { detectNewOpencodeSession, releaseOpencodeSessionClaim } from '../opencode/session-watcher';
 import type { SessionState, SessionInfo, CreateSessionOptions, CliToolId, SessionExitInfo, WaitingReason } from '../../shared/types';
-import { getCliBinary, toolSupportsResume } from '../../shared/cli-tools';
+import { getCliBinary, getCodexLaunchSettings, toolSupportsResume } from '../../shared/cli-tools';
+import type { CodexLifecycleEventType, CodexLifecycleMetadata, CodexSessionActivity } from '../../shared/codex-activity';
+import { reduceCodexSessionActivity } from '../codex/activity';
+import type { HookEvent } from '../cli-config/hook-frame-server';
 import { setupHelmForSession, type HelmIntegration } from '../helm/integration';
 import { envForSession as hookEnvForSession, revokeSessionToken as revokeHookSessionToken } from '../cli-config/hook-service';
 import { envForRemoteSession, detachRemoteSession } from '../cli-config/remote/remote-hook-service';
@@ -140,6 +143,62 @@ const AUTO_MODE_FLAGS: Partial<Record<CliToolId, string>> = {
   copilot: '--allow-all-tools',
 };
 
+const CODEX_LIFECYCLE_TYPES: ReadonlySet<CodexLifecycleEventType> = new Set([
+  'session_start',
+  'turn_start',
+  'permission_prompt',
+  'tool_complete',
+  'compact_start',
+  'compact_complete',
+  'subagent_start',
+  'subagent_stop',
+  'turn_complete',
+  'turn_interrupted',
+  'session_end',
+]);
+
+const CODEX_METADATA_STRING_LIMITS: Record<Exclude<keyof CodexLifecycleMetadata, 'at'>, number> = {
+  toolSessionId: 256,
+  turnId: 256,
+  agentId: 256,
+  model: 128,
+};
+
+function boundedMetadataString(value: unknown, max: number): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  return value.slice(0, max);
+}
+
+function sanitizeCodexLifecycleMetadata(payload: Record<string, unknown> | undefined): CodexLifecycleMetadata | null {
+  const metadata: CodexLifecycleMetadata = {};
+  if (!payload) return metadata;
+  for (const [key, max] of Object.entries(CODEX_METADATA_STRING_LIMITS) as Array<[Exclude<keyof CodexLifecycleMetadata, 'at'>, number]>) {
+    const value = boundedMetadataString(payload[key], max);
+    if (value) metadata[key] = value;
+  }
+  if (payload.at !== undefined) {
+    if (typeof payload.at !== 'string') return null;
+    const ms = Date.parse(payload.at);
+    if (!Number.isFinite(ms)) return null;
+    metadata.at = new Date(ms).toISOString();
+  }
+  return metadata;
+}
+
+function isStaleCodexLifecycleEvent(
+  current: CodexSessionActivity | null,
+  type: CodexLifecycleEventType,
+  metadata: CodexLifecycleMetadata,
+): boolean {
+  if (!current) return false;
+  if (metadata.turnId && type !== 'turn_start' && type !== 'session_start') {
+    if (current.completedTurnIds?.includes(metadata.turnId)) return true;
+    if (current.currentTurnId && metadata.turnId !== current.currentTurnId) return true;
+  }
+  if (!current.lastHookAt || !metadata.at) return false;
+  return Date.parse(metadata.at) < Date.parse(current.lastHookAt);
+}
+
 /**
  * Build the CLI args list for a Helm child: caller-supplied flags plus the
  * CLI-appropriate auto-mode flag when `autoMode` is set.
@@ -217,11 +276,16 @@ export class Session {
   readonly parentSessionId: string | null;
   /** Active codex session-id watcher, so we can cancel on removal. */
   codexDetectCancel: (() => void) | null = null;
+  /** Passive lifecycle metadata from Codex hooks. */
+  activity: CodexSessionActivity | null = null;
   /** Active copilot session-id watcher, so we can cancel on removal. */
   copilotDetectCancel: (() => void) | null = null;
   /** Active opencode session-id watcher, so we can cancel on removal. */
   opencodeDetectCancel: (() => void) | null = null;
   readonly worktreeOf: string | null;
+  /** Allowlisted launch metadata; never retain arbitrary flags or environment values. */
+  launchProfileName?: string;
+  codexLaunch?: SessionInfo['codexLaunch'];
   usageSessionId?: string;
   remoteUsageStatus?: 'pending' | 'collecting' | 'unavailable';
 
@@ -261,10 +325,13 @@ export class Session {
       remoteUsageStatus: this.remoteUsageStatus,
       claudeSessionId: this.claudeSessionId || undefined,
       resumed: this.resumed || undefined,
+      activity: this.activity || undefined,
       worktreeOf: this.worktreeOf || undefined,
       helmEnabled: this.helmEnabled || undefined,
       parentSessionId: this.parentSessionId || undefined,
       notificationsMuted: this.notificationsMuted || undefined,
+      launchProfileName: this.launchProfileName,
+      codexLaunch: this.codexLaunch,
     };
   }
 }
@@ -466,8 +533,37 @@ export class SessionManager {
    *     responded or it auto-resolved), so we drop back to plain amber.
    *   - auth_success → informational, no state change.
    */
-  handleHookEvent(tetherSessionId: string, type: string): void {
-    if (!this.sessions.has(tetherSessionId)) return;
+  handleHookEvent(event: HookEvent): void;
+  handleHookEvent(tetherSessionId: string, type: string): void;
+  handleHookEvent(eventOrSessionId: HookEvent | string, maybeType?: string): void {
+    const event: HookEvent = typeof eventOrSessionId === 'string'
+      ? { tetherSessionId: eventOrSessionId, type: maybeType as HookEvent['type'], source: 'unknown' }
+      : eventOrSessionId;
+    const { tetherSessionId, type } = event;
+    const session = this.sessions.get(tetherSessionId);
+    if (!session || session.state === 'stopped' || session.state === 'dead') return;
+    if (event.source === 'codex') {
+      if (!this.handleCodexLifecycleEvent(session, event)) return;
+      if (
+        type === 'session_start' ||
+        type === 'turn_start' ||
+        type === 'tool_complete' ||
+        type === 'compact_start' ||
+        type === 'compact_complete'
+      ) {
+        statusDetector.markTurnStarted(tetherSessionId);
+        return;
+      }
+      if (type === 'turn_interrupted' || type === 'session_end') {
+        statusDetector.markTurnComplete(tetherSessionId);
+        return;
+      }
+      if (type === 'subagent_start' || type === 'subagent_stop') return;
+    }
+    if (type === 'session_start' || type === 'turn_start') {
+      statusDetector.markTurnStarted(tetherSessionId);
+      return;
+    }
     if (type === 'permission_prompt' || type === 'elicitation_dialog') {
       statusDetector.markPermissionWaiting(tetherSessionId);
       return;
@@ -482,6 +578,31 @@ export class SessionManager {
       return;
     }
     // auth_success and any future event types fall through silently.
+  }
+
+  private handleCodexLifecycleEvent(session: Session, event: HookEvent): boolean {
+    if (session.cliTool !== 'codex') return false;
+    if (!CODEX_LIFECYCLE_TYPES.has(event.type as CodexLifecycleEventType)) return false;
+
+    const metadata = sanitizeCodexLifecycleMetadata(event.payload);
+    if (!metadata) return false;
+    if (
+      session.toolSessionId &&
+      metadata.toolSessionId &&
+      metadata.toolSessionId !== session.toolSessionId
+    ) {
+      return false;
+    }
+    if (isStaleCodexLifecycleEvent(session.activity, event.type as CodexLifecycleEventType, metadata)) return false;
+    const next = reduceCodexSessionActivity(
+      session.activity ?? undefined,
+      event.type as CodexLifecycleEventType,
+      metadata,
+    );
+    if (next === session.activity) return false;
+    session.activity = next;
+    this.callbacksMap.get(session.id)?.onUpdate?.(session.id, session.toInfo());
+    return true;
   }
 
   async createSession(
@@ -555,6 +676,7 @@ export class SessionManager {
       const { exitCode } = exitInfo;
       if (!session.transport) return;
       log.info('Session exited', { id, exitCode });
+      session.activity = null;
       remoteUsageService.stop(id);
       statusDetector.markExited(id, exitCode);
       session.transport = null;
@@ -589,6 +711,7 @@ export class SessionManager {
         try { profileEnvVars = JSON.parse(profile.env_vars); } catch { /* ignore */ }
       }
       if (profile) {
+        session.launchProfileName = profile.name;
         const perToolProfileFlags = parseCliFlagsPerTool(profile.cli_flags_per_tool);
         profileCliFlags = perToolProfileFlags[cliTool] || (cliTool === 'claude' ? parseStringArray(profile.cli_flags) : []);
       }
@@ -628,6 +751,7 @@ export class SessionManager {
       const disabled = new Set(opts.disabledInheritedFlags);
       resolvedCliArgs = resolvedCliArgs.filter(f => !disabled.has(f));
     }
+    if (cliTool === 'codex') session.codexLaunch = getCodexLaunchSettings(resolvedCliArgs);
 
     // Wire the Helm MCP for this session if both the global Allow Helm setting
     // AND the per-session flag are on. Only Claude Code understands --mcp-config

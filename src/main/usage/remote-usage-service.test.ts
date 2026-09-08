@@ -56,7 +56,7 @@ describe('remote usage collection lifecycle', () => {
     usage.applyRemote(key, { ...reply, offset: 80, text: JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5' } }) + '\n' });
     const restarted = new UsageService();
     expect(restarted.trackRemote(key, '/work', 'codex', 'env', source)).toEqual({ offset: 80, identity: 'inode' });
-    restarted.applyRemote(key, { ...reply, text: JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 10, output_tokens: 4 } } } }) + '\n' });
+    restarted.applyRemote(key, { ...reply, text: JSON.stringify({ type: 'event_msg', timestamp: '2026-09-07T10:00:00Z', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 10, output_tokens: 4 } } } }) + '\n' });
     expect(restarted.getSessionUsage(key)?.models[0].model).toBe('gpt-5');
     restarted.applyRemote(key, { ...reply, text: message });
     expect(restarted.getSessionUsage(key)?.inputTokens).toBe(10);
@@ -68,6 +68,48 @@ describe('remote usage collection lifecycle', () => {
     usage.applyRemote('remote:a', reply);
     usage.applyRemote('remote:a', { ...reply, source: { ...source, identity: 'replacement' }, reset: true });
     expect(usage.getSessionUsage('remote:a')?.inputTokens).toBe(20);
+  });
+
+  it('keeps Codex cumulative checkpoints, event dates and metadata across chunks and restarts', () => {
+    const key = 'remote:codex';
+    const counters = (input: number, output: number) => ({ input_tokens: input, cached_input_tokens: input / 2, output_tokens: output, reasoning_output_tokens: output / 2, total_tokens: input + output });
+    const event = (timestamp: string, input: number, output: number) => JSON.stringify({ type: 'event_msg', timestamp, payload: { type: 'token_count', info: {
+      total_token_usage: counters(input, output), last_token_usage: counters(20, 4), model_context_window: 1000,
+    } } }) + '\n';
+    usage.trackRemote(key, '/work', 'codex', 'env', source);
+    const context = JSON.stringify({ type: 'turn_context', timestamp: '2026-09-06T23:59:00Z', payload: { model: 'gpt-5', effort: 'high' } }) + '\n';
+    usage.applyRemote(key, { ...reply, offset: 100, text: context + event('2026-09-06T23:59:00Z', 20, 4) });
+    const restarted = new UsageService();
+    restarted.start();
+    expect(restarted.trackRemote(key, '/work', 'codex', 'env', source)).toEqual({ offset: 100, identity: 'inode' });
+    restarted.applyRemote(key, { ...reply, offset: 200, text: event('2026-09-07T00:01:00Z', 20, 4) });
+    restarted.applyRemote(key, { ...reply, offset: 300, text: event('2026-09-07T00:02:00Z', 40, 8) });
+    const result = restarted.getSessionUsage(key)!;
+    expect(result).toMatchObject({ inputTokens: 20, cacheReadTokens: 20, outputTokens: 8, reasoningTokens: 4, messageCount: 2, currentModel: 'gpt-5', currentReasoningEffort: 'high', contextWindowTokens: 1000, contextUsedTokens: 24, observedAt: '2026-09-07T00:02:00Z', dayTiming: 'event' });
+    expect(result.daily?.map(d => [d.date, d.outputTokens])).toEqual([['2026-09-07', 4], ['2026-09-06', 4]]);
+    restarted.applyRemote(key, { ...reply, offset: 50, reset: true, text: event('2026-09-07T00:03:00Z', 40, 8) });
+    expect(restarted.getSessionUsage(key)).toMatchObject({ outputTokens: 8, messageCount: 1, currentReasoningEffort: null });
+    restarted.dispose();
+  });
+
+  it('preserves legacy remote totals until a successful full reread migrates them', async () => {
+    usage.trackRemote('remote:legacy', '/work', 'claude', 'env', source);
+    usage.applyRemote('remote:legacy', reply);
+    const saved = getDb().usageSummaries[0];
+    delete saved.usageSchemaVersion;
+    delete saved.dayTiming;
+    delete saved.daily;
+    const restarted = new UsageService();
+    restarted.start();
+    await restarted.refresh('remote:legacy');
+    expect(restarted.getSessionUsage('remote:legacy')).toMatchObject({ inputTokens: 20, dayTiming: 'legacy' });
+    expect(getDb().usageSummaries[0].usageSchemaVersion).toBeUndefined();
+    expect(restarted.trackRemote('remote:legacy', '/work', 'claude', 'env', source)).toEqual({ offset: 0, identity: '' });
+    restarted.applyRemote('remote:legacy', { ...reply, reset: true });
+    expect(restarted.getSessionUsage('remote:legacy')).toMatchObject({ inputTokens: 20, messageCount: 1, dayTiming: 'event' });
+    expect(restarted.getSessionUsage('remote:legacy')?.daily?.[0].date).toBe('2026-09-07');
+    expect(getDb().usageSummaries[0].usageSchemaVersion).toBe(2);
+    restarted.dispose();
   });
 
   it('shares a connection per workspace and separates different workspaces', async () => {

@@ -10,10 +10,6 @@ import {
   type UsageBudgetAlert,
 } from '../../utils/usage-budget';
 
-function todayDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /** Build last N days as an ordered array (oldest → newest), filling gaps with zeros. */
 function fillLastNDays(daily: DailyUsage[], n: number): DailyUsage[] {
   const map = new Map(daily.map(d => [d.date, d]));
@@ -26,6 +22,7 @@ function fillLastNDays(daily: DailyUsage[], n: number): DailyUsage[] {
     out.push(map.get(date) ?? {
       date,
       inputTokens: 0, outputTokens: 0,
+      reasoningTokens: 0,
       cacheCreationTokens: 0, cacheReadTokens: 0,
       totalCost: 0, sessionCount: 0,
     });
@@ -35,11 +32,17 @@ function fillLastNDays(daily: DailyUsage[], n: number): DailyUsage[] {
 
 function sumWindow(days: DailyUsage[]): { cost: number; tokens: number; sessions: number } {
   let cost = 0, tokens = 0, sessions = 0;
+  const sessionIds = new Set<string>();
   for (const d of days) {
     cost += d.totalCost;
     tokens += d.inputTokens + d.outputTokens + d.cacheCreationTokens + d.cacheReadTokens;
-    sessions += d.sessionCount;
+    if (d.sessionIds && d.sessionIds.length > 0) {
+      for (const id of d.sessionIds) sessionIds.add(id);
+    } else {
+      sessions += d.sessionCount;
+    }
   }
+  if (sessionIds.size > 0) sessions += sessionIds.size;
   return { cost, tokens, sessions };
 }
 
@@ -89,21 +92,16 @@ interface CliToolTodaySplit {
  * session rows because the daily aggregate is collapsed across tools.
  * Sessions with no `lastMessageAt` (never had activity) are skipped.
  */
-function computeTodayByCliTool(
-  sessions: Record<string, import('../../../shared/types').SessionUsage>,
-  today: string,
-): CliToolTodaySplit[] {
+function computeTodayByCliTool(todayUsage: DailyUsage | undefined): CliToolTodaySplit[] {
   const buckets = new Map<CliToolId, CliToolTodaySplit>();
-  for (const s of Object.values(sessions)) {
-    if (!s.lastMessageAt) continue;
-    if (s.lastMessageAt.slice(0, 10) !== today) continue;
-    let row = buckets.get(s.cliTool);
+  for (const tool of todayUsage?.byCliTool ?? []) {
+    let row = buckets.get(tool.cliTool);
     if (!row) {
-      row = { cliTool: s.cliTool, cost: 0, tokens: 0 };
-      buckets.set(s.cliTool, row);
+      row = { cliTool: tool.cliTool, cost: 0, tokens: 0 };
+      buckets.set(tool.cliTool, row);
     }
-    row.cost += s.totalCost;
-    row.tokens += s.inputTokens + s.outputTokens + s.cacheCreationTokens + s.cacheReadTokens;
+    row.cost += tool.totalCost;
+    row.tokens += tool.inputTokens + tool.outputTokens + tool.cacheCreationTokens + tool.cacheReadTokens;
   }
   const out = Array.from(buckets.values());
   out.sort((a, b) => {
@@ -164,10 +162,10 @@ export function GlobalUsageFooter({ onOpenHistory, onBudgetCrossed, environments
   const envMap = new Map<string, string>();
   for (const env of environments ?? []) envMap.set(env.id, env.name);
 
-  const today = todayDate();
   const last7 = fillLastNDays(usage.daily, 7);
   const last30 = fillLastNDays(usage.daily, 30);
   const todayData = last7[last7.length - 1];
+  const today = todayData.date;
   const week = sumWindow(last7);
   const month = sumWindow(last30);
 
@@ -208,7 +206,7 @@ export function GlobalUsageFooter({ onOpenHistory, onBudgetCrossed, environments
   // because the daily rollup is collapsed across tools. Only surfaces when
   // the per-tool breakdown setting is on AND 2+ tools had activity today.
   const todayByCliTool = cliToolBreakdownEnabled
-    ? computeTodayByCliTool(usage.sessions, today)
+    ? computeTodayByCliTool(todayData)
     : [];
   const showTodayByCliTool =
     cliToolBreakdownEnabled

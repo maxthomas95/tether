@@ -10,6 +10,10 @@ export interface CodexParseInput {
    * (rare but possible mid-turn). Pass null on the first parse.
    */
   priorModel: string | null;
+  priorReasoningEffort?: string | null;
+  priorContextWindowTokens?: number | null;
+  priorContextUsedTokens?: number | null;
+  priorTokenUsage?: CodexTokenUsageCounters | null;
 }
 
 export interface CodexParseResult {
@@ -17,11 +21,34 @@ export interface CodexParseResult {
   newByteOffset: number;
   /** Model in effect at end of the parsed chunk; persist for the next call. */
   currentModel: string | null;
+  currentReasoningEffort: string | null;
+  contextWindowTokens: number | null;
+  contextUsedTokens: number | null;
+  observedAt: string | null;
+  tokenUsage: CodexTokenUsageCounters | null;
+}
+
+export interface CodexTokenUsageCounters {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
 }
 
 interface TurnContextEntry {
   type?: string;
-  payload?: { model?: unknown };
+  timestamp?: string;
+  payload?: {
+    model?: unknown;
+    effort?: unknown;
+    model_context_window?: unknown;
+    collaboration_mode?: {
+      settings?: {
+        reasoning_effort?: unknown;
+      };
+    };
+  };
 }
 
 interface TokenCountEntry {
@@ -35,8 +62,25 @@ interface TokenCountEntry {
         cached_input_tokens?: number;
         output_tokens?: number;
         reasoning_output_tokens?: number;
+        total_tokens?: number;
       } | null;
+      total_token_usage?: {
+        input_tokens?: number;
+        cached_input_tokens?: number;
+        output_tokens?: number;
+        reasoning_output_tokens?: number;
+        total_tokens?: number;
+      } | null;
+      model_context_window?: number;
     } | null;
+  };
+}
+
+interface TaskStartedEntry {
+  type?: string;
+  timestamp?: string;
+  payload?: {
+    model_context_window?: unknown;
   };
 }
 
@@ -44,7 +88,10 @@ interface TokenCountEntry {
  * Incrementally parse a Codex CLI JSONL transcript starting from a byte
  * offset. Codex emits per-turn token deltas as `event_msg` lines whose
  * `payload.type` is `token_count`; the accompanying `last_token_usage`
- * carries non-cumulative input/cached/output/reasoning counts. The active
+ * carries token counts. Newer Codex emits cumulative `total_token_usage`,
+ * which we diff against the last persisted counters so repeated snapshots do
+ * not double-count after incremental parses or app restarts. Older transcripts
+ * fall back to `last_token_usage` as a per-event delta. The active
  * model is published in `turn_context` lines and applies to every
  * subsequent `token_count` until the next `turn_context`.
  *
@@ -52,8 +99,8 @@ interface TokenCountEntry {
  * (`cached_input_tokens`) but not cache creation, so the 5m/1h fields are
  * always 0. `input_tokens` already includes the cached portion, so we
  * subtract `cached_input_tokens` to keep `inputTokens` non-cached for cost
- * calculation. Reasoning tokens are billed at output rates and folded
- * into `outputTokens`.
+ * calculation. `reasoning_output_tokens` is a subset of `output_tokens`, so it
+ * is retained as a separate metric but never added to billable output.
  */
 export function parseCodexJsonl(filePath: string, input: CodexParseInput): CodexParseResult {
   let fd: number | null = null;
@@ -63,7 +110,16 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
     const fileSize = stat.size;
 
     if (fileSize <= input.startOffset) {
-      return { messages: [], newByteOffset: input.startOffset, currentModel: input.priorModel };
+      return {
+        messages: [],
+        newByteOffset: input.startOffset,
+        currentModel: input.priorModel,
+        currentReasoningEffort: input.priorReasoningEffort ?? null,
+        contextWindowTokens: input.priorContextWindowTokens ?? null,
+        contextUsedTokens: input.priorContextUsedTokens ?? null,
+        observedAt: null,
+        tokenUsage: input.priorTokenUsage ?? null,
+      };
     }
 
     const readLength = fileSize - input.startOffset;
@@ -74,7 +130,16 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
     return parseCodexUsageText(text, input);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { messages: [], newByteOffset: 0, currentModel: input.priorModel };
+      return {
+        messages: [],
+        newByteOffset: 0,
+        currentModel: input.priorModel,
+        currentReasoningEffort: input.priorReasoningEffort ?? null,
+        contextWindowTokens: input.priorContextWindowTokens ?? null,
+        contextUsedTokens: input.priorContextUsedTokens ?? null,
+        observedAt: null,
+        tokenUsage: input.priorTokenUsage ?? null,
+      };
     }
     throw err;
   } finally {
@@ -82,7 +147,7 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
   }
 }
 
-/** Parse complete transcript records without requiring a local file. */
+/** Parse sanitized remote records and local transcript chunks through the same accounting rules. */
 export function parseCodexUsageText(text: string, input: CodexParseInput): CodexParseResult {
   let usableText = text;
   let consumedBytes = Buffer.byteLength(text, 'utf8');
@@ -90,7 +155,16 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
   if (text.length > 0 && !text.endsWith('\n')) {
     const lastNewline = text.lastIndexOf('\n');
     if (lastNewline === -1) {
-      return { messages: [], newByteOffset: input.startOffset, currentModel: input.priorModel };
+      return {
+        messages: [],
+        newByteOffset: input.startOffset,
+        currentModel: input.priorModel,
+        currentReasoningEffort: input.priorReasoningEffort ?? null,
+        contextWindowTokens: input.priorContextWindowTokens ?? null,
+        contextUsedTokens: input.priorContextUsedTokens ?? null,
+        observedAt: null,
+        tokenUsage: input.priorTokenUsage ?? null,
+      };
     }
     usableText = text.slice(0, lastNewline + 1);
     consumedBytes = Buffer.byteLength(usableText, 'utf-8');
@@ -98,6 +172,11 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
 
   const messages: ParsedMessage[] = [];
   let currentModel = input.priorModel;
+  let currentReasoningEffort = input.priorReasoningEffort ?? null;
+  let contextWindowTokens = input.priorContextWindowTokens ?? null;
+  let contextUsedTokens = input.priorContextUsedTokens ?? null;
+  let observedAt: string | null = null;
+  let tokenUsage = input.priorTokenUsage ?? null;
 
   for (const line of usableText.split('\n')) {
     if (!line.startsWith('{')) continue;
@@ -109,8 +188,27 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
     const type = (parsed as { type?: string }).type;
 
     if (type === 'turn_context') {
-      const model = (parsed as TurnContextEntry).payload?.model;
+      const payload = (parsed as TurnContextEntry).payload;
+      const timestamp = validTimestamp((parsed as TurnContextEntry).timestamp);
+      const model = payload?.model;
       if (typeof model === 'string' && model) currentModel = model;
+      const effort = payload?.effort ?? payload?.collaboration_mode?.settings?.reasoning_effort;
+      if (typeof effort === 'string' && effort) currentReasoningEffort = effort;
+      const windowTokens = payload?.model_context_window;
+      if (isNonNegativeSafeInteger(windowTokens)) {
+        contextWindowTokens = windowTokens;
+      }
+      if (timestamp) observedAt = timestamp;
+      continue;
+    }
+
+    if (type === 'event_msg' && (parsed as { payload?: { type?: string } }).payload?.type === 'task_started') {
+      const timestamp = validTimestamp((parsed as TaskStartedEntry).timestamp);
+      const windowTokens = (parsed as TaskStartedEntry).payload?.model_context_window;
+      if (isNonNegativeSafeInteger(windowTokens)) {
+        contextWindowTokens = windowTokens;
+      }
+      if (timestamp) observedAt = timestamp;
       continue;
     }
 
@@ -118,17 +216,36 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
 
     const entry = parsed as TokenCountEntry;
     if (entry.payload?.type !== 'token_count') continue;
-    const usage = entry.payload.info?.last_token_usage;
-    if (!usage) continue;
+    const timestamp = validTimestamp(entry.timestamp);
+    if (!timestamp) continue;
 
-    const rawInput = usage.input_tokens || 0;
-    const cacheRead = usage.cached_input_tokens || 0;
+    const cumulativeUsage = toTokenUsage(entry.payload.info?.total_token_usage);
+    const lastUsage = toTokenUsage(entry.payload.info?.last_token_usage);
+    const usageDelta = cumulativeUsage
+      ? diffCumulativeUsage(cumulativeUsage, tokenUsage)
+      : lastUsage;
+    if (!usageDelta) continue;
+
+    if (cumulativeUsage) {
+      tokenUsage = cumulativeUsage;
+    }
+
+    const rawInput = usageDelta.inputTokens;
+    const cacheRead = usageDelta.cachedInputTokens;
     const inputTokens = Math.max(0, rawInput - cacheRead);
-    const outputTokens = (usage.output_tokens || 0) + (usage.reasoning_output_tokens || 0);
+    const outputTokens = usageDelta.outputTokens;
+    const reasoningTokens = usageDelta.reasoningOutputTokens;
+    const requestTotal = lastUsage?.totalTokens ?? 0;
+    if (requestTotal > 0) contextUsedTokens = requestTotal;
+    observedAt = timestamp;
+    const windowTokens = entry.payload.info?.model_context_window;
+    if (isNonNegativeSafeInteger(windowTokens)) {
+      contextWindowTokens = windowTokens;
+    }
 
     // Skip empty deltas — the first token_count after session_meta sometimes
     // has zeros while the rate-limit info is the only payload of interest.
-    if (inputTokens === 0 && cacheRead === 0 && outputTokens === 0) continue;
+    if (inputTokens === 0 && cacheRead === 0 && outputTokens === 0 && reasoningTokens === 0) continue;
 
     const model = currentModel || 'unknown';
     const cost = calculateMessageCost(model, inputTokens, outputTokens, 0, 0, cacheRead);
@@ -137,10 +254,11 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
       model,
       inputTokens,
       outputTokens,
+      reasoningTokens,
       cacheCreation5m: 0,
       cacheCreation1h: 0,
       cacheReadTokens: cacheRead,
-      timestamp: entry.timestamp || new Date().toISOString(),
+      timestamp,
       cost,
     });
   }
@@ -149,5 +267,80 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
     messages,
     newByteOffset: input.startOffset + consumedBytes,
     currentModel,
+    currentReasoningEffort,
+    contextWindowTokens,
+    contextUsedTokens,
+    observedAt,
+    tokenUsage,
+  };
+}
+
+function validTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : value;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === 'number'
+    && Number.isSafeInteger(value)
+    && value >= 0;
+}
+
+function optionalCounter(value: unknown): number | null {
+  return isNonNegativeSafeInteger(value) ? value : null;
+}
+
+function toTokenUsage(value: unknown): CodexTokenUsageCounters | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const inputTokens = optionalCounter(record.input_tokens) ?? 0;
+  const cachedInputTokens = optionalCounter(record.cached_input_tokens) ?? 0;
+  const outputTokens = optionalCounter(record.output_tokens) ?? 0;
+  const reasoningOutputTokens = optionalCounter(record.reasoning_output_tokens) ?? 0;
+  const explicitTotal = optionalCounter(record.total_tokens);
+  if (inputTokens === 0 && cachedInputTokens === 0 && outputTokens === 0 && reasoningOutputTokens === 0 && (explicitTotal ?? 0) === 0) {
+    return null;
+  }
+  if (
+    optionalCounter(record.input_tokens) === null && record.input_tokens !== undefined
+    || optionalCounter(record.cached_input_tokens) === null && record.cached_input_tokens !== undefined
+    || optionalCounter(record.output_tokens) === null && record.output_tokens !== undefined
+    || optionalCounter(record.reasoning_output_tokens) === null && record.reasoning_output_tokens !== undefined
+    || explicitTotal === null && record.total_tokens !== undefined
+    || cachedInputTokens > inputTokens
+    || reasoningOutputTokens > outputTokens
+    || (explicitTotal !== null && explicitTotal !== inputTokens + outputTokens)
+  ) {
+    return null;
+  }
+  return {
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    reasoningOutputTokens,
+    totalTokens: explicitTotal ?? inputTokens + outputTokens,
+  };
+}
+
+function diffCumulativeUsage(current: CodexTokenUsageCounters, previous: CodexTokenUsageCounters | null): CodexTokenUsageCounters {
+  if (!previous || current.totalTokens < previous.totalTokens) {
+    return current;
+  }
+  if (current.totalTokens === previous.totalTokens) {
+    return {
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      reasoningOutputTokens: 0,
+      totalTokens: current.totalTokens,
+    };
+  }
+  return {
+    inputTokens: Math.max(0, current.inputTokens - previous.inputTokens),
+    cachedInputTokens: Math.max(0, current.cachedInputTokens - previous.cachedInputTokens),
+    outputTokens: Math.max(0, current.outputTokens - previous.outputTokens),
+    reasoningOutputTokens: Math.max(0, current.reasoningOutputTokens - previous.reasoningOutputTokens),
+    totalTokens: current.totalTokens,
   };
 }

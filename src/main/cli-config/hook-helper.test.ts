@@ -30,7 +30,7 @@ function runHelper(args: {
   socket: string;
   token: string;
   sessionId: string;
-  mode: '--claude' | '--codex';
+  mode: '--claude' | '--codex' | '--codex-hook';
   payload: unknown;
   events: HookEvent[];
 }): Promise<HelperResult> {
@@ -44,7 +44,7 @@ function runHelper(args: {
     },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
-  if (args.mode === '--claude') {
+  if (args.mode === '--claude' || args.mode === '--codex-hook') {
     child.stdin.write(JSON.stringify(args.payload));
     child.stdin.end();
   } else {
@@ -117,7 +117,12 @@ describe('tether-cli-hook helper (end-to-end against the bridge)', () => {
       token: bridge.token,
       sessionId: 'session-codex-1',
       mode: '--codex',
-      payload: { type: 'agent-turn-complete', 'turn-id': 'abc', cwd: '/x' },
+      payload: {
+        type: 'agent-turn-complete',
+        'turn-id': 'abc',
+        cwd: '/x',
+        prompt: 'do not forward',
+      },
       events,
     });
 
@@ -128,6 +133,53 @@ describe('tether-cli-hook helper (end-to-end against the bridge)', () => {
       type: 'turn_complete',
       source: 'codex',
     });
+    expect(result.events[0].payload).toMatchObject({
+      type: 'agent-turn-complete',
+      turnId: 'abc',
+    });
+    expect(result.events[0].payload).not.toHaveProperty('cwd');
+    expect(result.events[0].payload).not.toHaveProperty('prompt');
+  });
+
+  it('classifies Codex lifecycle hooks and redacts non-metadata fields', async () => {
+    const events: HookEvent[] = [];
+    const bridge = await createHookBridge((e) => events.push(e));
+    handles.push(bridge);
+
+    const result = await runHelper({
+      socket: bridge.socketPath,
+      token: bridge.token,
+      sessionId: 'session-codex-life-1',
+      mode: '--codex-hook',
+      payload: {
+        session_id: 'codex-thread-1',
+        turn_id: 'turn-1',
+        agent_id: 'agent-1',
+        hook_event_name: 'SubagentStart',
+        model: 'gpt-5.4',
+        prompt: 'do not forward',
+        tool_input: { command: 'do not forward' },
+        transcript_path: '/secret/path.jsonl',
+      },
+      events,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      tetherSessionId: 'session-codex-life-1',
+      type: 'subagent_start',
+      source: 'codex',
+      payload: {
+        toolSessionId: 'codex-thread-1',
+        turnId: 'turn-1',
+        agentId: 'agent-1',
+        model: 'gpt-5.4',
+      },
+    });
+    expect(result.events[0].payload).not.toHaveProperty('prompt');
+    expect(result.events[0].payload).not.toHaveProperty('tool_input');
+    expect(result.events[0].payload).not.toHaveProperty('transcript_path');
   });
 
   it('silently exits 0 when env is not wired (degrades cleanly)', async () => {

@@ -7,8 +7,15 @@ const CSV_COLUMNS = [
   'firstMessageAt',
   'lastMessageAt',
   'messageCount',
+  'currentModel',
+  'currentReasoningEffort',
+  'contextWindowTokens',
+  'contextUsedTokens',
+  'observedAt',
+  'dayTiming',
   'inputTokens',
   'outputTokens',
+  'reasoningTokens',
   'cacheCreationTokens',
   'cacheReadTokens',
   'totalCost',
@@ -33,7 +40,7 @@ function csvRow(values: ReadonlyArray<string | number | null | undefined>): stri
   return values.map(csvField).join(',');
 }
 
-function sessionToCsvValues(s: SessionUsage & { workingDir: string }): Array<string | number | null> {
+function sessionToCsvValues(s: SessionUsage & { workingDir: string }): Array<string | number | null | undefined> {
   return [
     s.sessionId,
     s.cliTool,
@@ -41,8 +48,15 @@ function sessionToCsvValues(s: SessionUsage & { workingDir: string }): Array<str
     s.firstMessageAt,
     s.lastMessageAt,
     s.messageCount,
+    s.currentModel,
+    s.currentReasoningEffort,
+    s.contextWindowTokens,
+    s.contextUsedTokens,
+    s.observedAt,
+    s.dayTiming,
     s.inputTokens,
     s.outputTokens,
+    s.reasoningTokens ?? 0,
     s.cacheCreationTokens,
     s.cacheReadTokens,
     s.totalCost,

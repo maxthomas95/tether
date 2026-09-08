@@ -25,6 +25,15 @@ export type HookEventType =
   | 'permission_prompt'
   | 'idle_prompt'
   | 'turn_complete'
+  | 'session_start'
+  | 'turn_start'
+  | 'tool_complete'
+  | 'compact_start'
+  | 'compact_complete'
+  | 'subagent_start'
+  | 'subagent_stop'
+  | 'turn_interrupted'
+  | 'session_end'
   | 'auth_success'
   | 'elicitation_dialog'
   | 'elicitation_complete'
@@ -40,6 +49,25 @@ export interface HookEvent {
 }
 
 export type HookEventHandler = (event: HookEvent) => void;
+
+const HOOK_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'permission_prompt',
+  'idle_prompt',
+  'turn_complete',
+  'session_start',
+  'turn_start',
+  'tool_complete',
+  'compact_start',
+  'compact_complete',
+  'subagent_start',
+  'subagent_stop',
+  'turn_interrupted',
+  'session_end',
+  'auth_success',
+  'elicitation_dialog',
+  'elicitation_complete',
+  'elicitation_response',
+]);
 
 /**
  * Validates a supplied token against an optional Tether session id. Returns
@@ -191,6 +219,10 @@ export function handleConnection(
     const type = typeof req.type === 'string' ? req.type : '';
     if (!tetherSessionId || !type) {
       writeFrame({ id, error: { code: -32602, message: 'tetherSessionId and type are required' } });
+      return;
+    }
+    if (!HOOK_EVENT_TYPES.has(type)) {
+      writeFrame({ id, error: { code: -32602, message: 'unknown hook event type' } });
       return;
     }
     const source = req.source === 'claude' || req.source === 'codex' ? req.source : 'unknown';

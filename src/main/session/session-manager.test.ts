@@ -184,6 +184,18 @@ describe('SessionManager', () => {
     manager.dispose();
   });
 
+  it('captures only selected Codex launch metadata after inherited flags are disabled', async () => {
+    dbState.defaultCliFlagsPerTool.codex = ['--model=old-model', '--profile=work'];
+    const cliArgs = ['--model', 'new-model', '-c model_reasoning_effort=xhigh', '-c private_value=SECRET'];
+    const session = await manager.createSession({
+      workingDir: 'C:/projects/tether', cliTool: 'codex', cliArgs,
+      disabledInheritedFlags: ['--model=old-model'],
+    }, callbacks());
+    expect(session.toInfo().codexLaunch).toEqual({ model: 'new-model', profile: 'work', reasoningEffort: 'xhigh' });
+    expect(JSON.stringify(session.toInfo())).not.toContain('SECRET');
+    expect(cliArgs).toEqual(['--model', 'new-model', '-c model_reasoning_effort=xhigh', '-c private_value=SECRET']);
+  });
+
   it.each([
     ['ssh', 'claude'], ['ssh', 'codex'], ['coder', 'claude'], ['coder', 'codex'],
   ] as const)('collects %s/%s usage with hooks off and leaves terminal bytes unchanged', async (transport, cli) => {
@@ -303,6 +315,246 @@ describe('SessionManager', () => {
     expect(transportHarness.state.instances).toHaveLength(1);
     expect(transportHarness.state.instances[0].dispose).toHaveBeenCalled();
     expect(cb.onExit).not.toHaveBeenCalled();
+  });
+
+  describe('Codex lifecycle hook handling', () => {
+    async function createCodexSession() {
+      const cb = callbacks();
+      const session = await manager.createSession({
+        workingDir: 'C:\\repo\\codex-hooks',
+        cliTool: 'codex',
+      }, cb);
+      session.toolSessionId = 'native-codex-1';
+      cb.onStateChange.mockClear();
+      cb.onUpdate.mockClear();
+      return { session, cb };
+    }
+
+    it('rejects a wrong native Codex session id before status mutation', async () => {
+      const { session, cb } = await createCodexSession();
+
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'permission_prompt',
+        payload: {
+          toolSessionId: 'someone-else',
+          at: '2026-09-07T00:00:01.000Z',
+        },
+      });
+
+      expect(session.activity).toBeNull();
+      expect(cb.onUpdate).not.toHaveBeenCalled();
+      expect(cb.onStateChange).not.toHaveBeenCalled();
+    });
+
+    it('rejects Codex lifecycle events for non-Codex sessions before status mutation', async () => {
+      const cb = callbacks();
+      const session = await manager.createSession({
+        workingDir: 'C:\\repo\\claude-hooks',
+        cliTool: 'claude',
+      }, cb);
+      cb.onStateChange.mockClear();
+      cb.onUpdate.mockClear();
+
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'permission_prompt',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          at: '2026-09-07T00:00:01.000Z',
+        },
+      });
+
+      expect(session.activity).toBeNull();
+      expect(cb.onUpdate).not.toHaveBeenCalled();
+      expect(cb.onStateChange).not.toHaveBeenCalled();
+    });
+
+    it('rejects stale Codex lifecycle events before status mutation', async () => {
+      const { session, cb } = await createCodexSession();
+
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'turn_start',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          at: '2026-09-07T00:00:02.000Z',
+        },
+      });
+      cb.onStateChange.mockClear();
+      cb.onUpdate.mockClear();
+
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'permission_prompt',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          at: '2026-09-07T00:00:01.000Z',
+        },
+      });
+
+      expect(session.activity?.phase).toBe('running');
+      expect(cb.onUpdate).not.toHaveBeenCalled();
+      expect(cb.onStateChange).not.toHaveBeenCalled();
+    });
+
+    it('rejects older turn permission and stop events after a newer turn starts', async () => {
+      const { session, cb } = await createCodexSession();
+
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'turn_start',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          turnId: 'turn-old',
+          at: '2026-09-07T00:00:01.000Z',
+        },
+      });
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'turn_start',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          turnId: 'turn-new',
+          at: '2026-09-07T00:00:02.000Z',
+        },
+      });
+      cb.onStateChange.mockClear();
+      cb.onUpdate.mockClear();
+
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'permission_prompt',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          turnId: 'turn-old',
+          at: '2026-09-07T00:00:03.000Z',
+        },
+      });
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'turn_complete',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          turnId: 'turn-old',
+          at: '2026-09-07T00:00:04.000Z',
+        },
+      });
+
+      expect(session.activity?.currentTurnId).toBe('turn-new');
+      expect(session.activity?.phase).toBe('running');
+      expect(cb.onUpdate).not.toHaveBeenCalled();
+      expect(cb.onStateChange).not.toHaveBeenCalled();
+    });
+
+    it('clears a resolved permission wait when Codex reports tool completion', async () => {
+      const { session, cb } = await createCodexSession();
+
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'permission_prompt',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          turnId: 'turn-1',
+          at: '2026-09-07T00:00:01.000Z',
+        },
+      });
+      expect(cb.onStateChange).toHaveBeenLastCalledWith(session.id, 'waiting', 'permission');
+      cb.onStateChange.mockClear();
+
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'tool_complete',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          turnId: 'turn-1',
+          at: '2026-09-07T00:00:02.000Z',
+        },
+      });
+
+      expect(session.activity?.phase).toBe('running');
+      expect(cb.onStateChange).toHaveBeenCalledWith(session.id, 'running', undefined);
+    });
+
+    it.each(['turn_interrupted', 'session_end'] as const)(
+      'maps accepted Codex %s events to waiting idle status',
+      async (type) => {
+        const { session, cb } = await createCodexSession();
+
+        manager.handleHookEvent({
+          tetherSessionId: session.id,
+          source: 'codex',
+          type: 'turn_start',
+          payload: {
+            toolSessionId: 'native-codex-1',
+            turnId: 'turn-1',
+            at: '2026-09-07T00:00:01.000Z',
+          },
+        });
+        cb.onStateChange.mockClear();
+
+        manager.handleHookEvent({
+          tetherSessionId: session.id,
+          source: 'codex',
+          type,
+          payload: {
+            toolSessionId: 'native-codex-1',
+            turnId: 'turn-1',
+            at: '2026-09-07T00:00:02.000Z',
+          },
+        });
+
+        expect(cb.onStateChange).toHaveBeenCalledWith(session.id, 'waiting', 'idle');
+      },
+    );
+
+    it('clears activity before exit state observers run', async () => {
+      const { session } = await createCodexSession();
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'turn_start',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          turnId: 'turn-1',
+          at: '2026-09-07T00:00:01.000Z',
+        },
+      });
+      expect(session.activity).not.toBeNull();
+      const observedActivity: Array<unknown> = [];
+      manager.addLifecycleObserver({
+        onStateChanged: (changed) => observedActivity.push(changed.activity),
+      });
+
+      const transport = transportHarness.state.instances[transportHarness.state.instances.length - 1];
+      const exitHandler = transport?.onExit.mock.calls[0][0] as (info: TransportExitInfo) => void;
+      exitHandler({ exitCode: 0 });
+
+      expect(observedActivity).toEqual([null]);
+    });
+
+    it('keeps the legacy handleHookEvent(id, type) call shape working', async () => {
+      const cb = callbacks();
+      const session = await manager.createSession({
+        workingDir: 'C:\\repo\\legacy-hooks',
+        cliTool: 'claude',
+      }, cb);
+      cb.onStateChange.mockClear();
+
+      manager.handleHookEvent(session.id, 'permission_prompt');
+
+      expect(cb.onStateChange).toHaveBeenCalledWith(session.id, 'waiting', 'permission');
+    });
   });
 
   describe('forceKill', () => {

@@ -97,6 +97,13 @@ function numberFields(obj, fields) {
   }
   return out;
 }
+function codexCounters(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const fields = ['input_tokens', 'cached_input_tokens', 'output_tokens', 'reasoning_output_tokens', 'total_tokens'];
+  // Reject malformed counters rather than turning them into measured zeros.
+  if (fields.some(name => value[name] !== undefined && (!Number.isSafeInteger(value[name]) || value[name] < 0))) return null;
+  return numberFields(value, fields);
+}
 function sanitize(entry) {
   const timestamp = typeof entry.timestamp === 'string' && Number.isFinite(Date.parse(entry.timestamp))
     ? new Date(entry.timestamp).toISOString() : undefined;
@@ -108,11 +115,20 @@ function sanitize(entry) {
     return { type: 'assistant', timestamp, message: { model: model(entry.message.model), usage } };
   }
   if (request.cli === 'codex' && entry.type === 'turn_context') {
-    return { type: 'turn_context', payload: { model: model(entry.payload?.model) } };
+    const effort = entry.payload?.effort ?? entry.payload?.collaboration_mode?.settings?.reasoning_effort;
+    return { type: 'turn_context', timestamp, payload: {
+      model: model(entry.payload?.model), effort: model(effort),
+      ...numberFields(entry.payload, ['model_context_window'])
+    } };
   }
-  if (request.cli === 'codex' && entry.type === 'event_msg' && entry.payload?.type === 'token_count' && entry.payload.info?.last_token_usage) {
+  if (request.cli === 'codex' && entry.type === 'event_msg' && entry.payload?.type === 'task_started') {
+    return { type: 'event_msg', timestamp, payload: { type: 'task_started', ...numberFields(entry.payload, ['model_context_window']) } };
+  }
+  if (request.cli === 'codex' && entry.type === 'event_msg' && entry.payload?.type === 'token_count' && entry.payload.info) {
     return { type: 'event_msg', timestamp, payload: { type: 'token_count', info: {
-      last_token_usage: numberFields(entry.payload.info.last_token_usage, ['input_tokens', 'cached_input_tokens', 'output_tokens', 'reasoning_output_tokens'])
+      last_token_usage: codexCounters(entry.payload.info.last_token_usage),
+      total_token_usage: codexCounters(entry.payload.info.total_token_usage),
+      ...numberFields(entry.payload.info, ['model_context_window'])
     } } };
   }
   return null;

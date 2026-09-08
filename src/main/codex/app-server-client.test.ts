@@ -1,0 +1,370 @@
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { callCodexAppServer, resetCodexAppServerClientForTests } from './app-server-client';
+import packageJson from '../../../package.json';
+
+function jsonl(message: unknown): Buffer {
+  return Buffer.from(`${JSON.stringify(message)}\n`, 'utf-8');
+}
+
+function makeChild(pid?: number) {
+  const child = new EventEmitter() as EventEmitter & {
+    stdin: PassThrough;
+    stdout: PassThrough;
+    stderr: PassThrough;
+    pid: number | undefined;
+    killed: boolean;
+    kill: ReturnType<typeof vi.fn>;
+    exitCode: number | null;
+    signalCode: NodeJS.Signals | null;
+  };
+  child.stdin = new PassThrough();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.pid = pid;
+  child.killed = false;
+  child.exitCode = null;
+  child.signalCode = null;
+  child.kill = vi.fn(() => {
+    child.killed = true;
+    return true;
+  });
+  return child;
+}
+
+function clientOptions(options: Parameters<typeof callCodexAppServer>[1] = {}): Parameters<typeof callCodexAppServer>[1] {
+  return {
+    resolveCodexExecutableImpl: vi.fn(() => ({
+      kind: 'direct' as const,
+      file: 'C:\\Program Files\\Codex\\codex.exe',
+      args: ['app-server'],
+    })),
+    resolveWindowsSystemExecutableImpl: vi.fn(() => 'C:\\Windows\\System32\\taskkill.exe'),
+    ...options,
+  };
+}
+
+describe('codex app-server client', () => {
+  beforeEach(() => {
+    resetCodexAppServerClientForTests();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('initializes over JSONL, sends initialized, then reads allowlisted methods', async () => {
+    const child = makeChild();
+    const spawnImpl = vi.fn(() => child);
+    const writes: string[] = [];
+    child.stdin.on('data', chunk => writes.push(String(chunk)));
+
+    const promise = callCodexAppServer([
+      { method: 'account/read', params: { refreshToken: false } },
+    ], clientOptions({ spawnImpl: spawnImpl as never }));
+
+    child.stdout.write(jsonl({ id: 1, result: { codexHome: 'x', platformFamily: 'windows', platformOs: 'windows', userAgent: 'codex' } }));
+    await vi.waitFor(() => expect(writes.join('')).toContain('"method":"initialized"'));
+    expect(writes.every(write => write.endsWith('\n'))).toBe(true);
+    expect(writes.join('')).not.toContain('Content-Length');
+    expect(writes.join('')).toContain('"method":"account/read"');
+    expect(writes.join('')).toContain('"refreshToken":false');
+    expect(writes.join('')).toContain(`"version":"${packageJson.version}"`);
+
+    child.stdout.write(jsonl({ id: 2, result: { account: { type: 'apiKey' }, requiresOpenaiAuth: false } }));
+    await expect(promise).resolves.toEqual([
+      { method: 'account/read', ok: true, result: { account: { type: 'apiKey' }, requiresOpenaiAuth: false } },
+    ]);
+    expect(spawnImpl).toHaveBeenCalledWith('C:\\Program Files\\Codex\\codex.exe', ['app-server'], expect.any(Object));
+  });
+
+  it('handles fragmented UTF-8 JSONL frames', async () => {
+    const child = makeChild();
+    const promise = callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
+    const modelFrame = jsonl({ id: 2, result: { data: [{ id: 'm', displayName: 'GPT café', description: 'café', model: 'm' }] } });
+    const splitAt = modelFrame.indexOf(Buffer.from('é'));
+
+    child.stdout.write(jsonl({ id: 1, result: {} }));
+    child.stdout.write(modelFrame.subarray(0, splitAt + 1));
+    child.stdout.write(modelFrame.subarray(splitAt + 1));
+
+    await expect(promise).resolves.toEqual([
+      { method: 'model/list', ok: true, result: { data: [{ id: 'm', displayName: 'GPT café', description: 'café', model: 'm' }] } },
+    ]);
+  });
+
+  it('rejects non-allowlisted methods before spawning', async () => {
+    const spawnImpl = vi.fn(() => makeChild());
+    await expect(callCodexAppServer([
+      { method: 'thread/start' as never },
+    ], clientOptions({ spawnImpl: spawnImpl as never }))).rejects.toThrow('allowlisted');
+    expect(spawnImpl).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty result without spawning for empty calls', async () => {
+    const spawnImpl = vi.fn(() => makeChild());
+
+    await expect(callCodexAppServer([], clientOptions({ spawnImpl: spawnImpl as never }))).resolves.toEqual([]);
+    expect(spawnImpl).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate methods before spawning', async () => {
+    const spawnImpl = vi.fn(() => makeChild());
+
+    await expect(callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+      { method: 'model/list', params: { limit: 200 } },
+    ], clientOptions({ spawnImpl: spawnImpl as never }))).rejects.toThrow('repeat a method');
+    expect(spawnImpl).not.toHaveBeenCalled();
+  });
+
+  it('returns unavailable when Codex cannot be resolved from a trusted executable path', async () => {
+    const spawnImpl = vi.fn(() => makeChild());
+
+    await expect(callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({
+      spawnImpl: spawnImpl as never,
+      resolveCodexExecutableImpl: vi.fn(() => null),
+    }))).resolves.toEqual([
+      { method: 'model/list', ok: false, error: 'Codex app-server unavailable', unavailable: true },
+    ]);
+    expect(spawnImpl).not.toHaveBeenCalled();
+  });
+
+  it('launches a resolved Windows npm shim through an absolute cmd.exe path', async () => {
+    const child = makeChild();
+    const spawnImpl = vi.fn(() => child);
+    const promise = callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({
+      spawnImpl: spawnImpl as never,
+      resolveCodexExecutableImpl: vi.fn(() => ({
+        kind: 'cmd',
+        file: 'C:\\Windows\\System32\\cmd.exe',
+        args: ['/d', '/s', '/c', '"C:\\Program Files\\nodejs\\codex.cmd" app-server'],
+      })),
+    }));
+
+    child.stdout.write(jsonl({ id: 1, result: {} }));
+    child.stdout.write(jsonl({ id: 2, result: { data: [] } }));
+
+    await expect(promise).resolves.toEqual([
+      { method: 'model/list', ok: true, result: { data: [] } },
+    ]);
+    expect(spawnImpl).toHaveBeenCalledWith(
+      'C:\\Windows\\System32\\cmd.exe',
+      ['/d', '/s', '/c', '"C:\\Program Files\\nodejs\\codex.cmd" app-server'],
+      expect.any(Object),
+    );
+  });
+
+  it('stops after initialize errors without sending read calls', async () => {
+    const child = makeChild();
+    const writes: string[] = [];
+    child.stdin.on('data', chunk => writes.push(String(chunk)));
+    const promise = callCodexAppServer([
+      { method: 'config/read', params: { includeLayers: true, cwd: null } },
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
+
+    child.stdout.write(jsonl({ id: 1, error: { code: -32000, message: 'SECRET backend detail' } }));
+
+    await expect(promise).resolves.toEqual([
+      { method: 'config/read', ok: false, error: 'Codex app-server initialize failed' },
+    ]);
+    expect(writes.join('')).not.toContain('"config/read"');
+    expect(writes.join('')).not.toContain('SECRET');
+  });
+
+  it('stops when initialize has no result', async () => {
+    const child = makeChild();
+    const promise = callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
+
+    child.stdout.write(jsonl({ id: 1 }));
+
+    await expect(promise).resolves.toEqual([
+      { method: 'model/list', ok: false, error: 'Codex app-server initialize failed' },
+    ]);
+  });
+
+  it('treats missing method results as invalid responses while allowing explicit null', async () => {
+    const child = makeChild();
+    const promise = callCodexAppServer([
+      { method: 'account/read' },
+      { method: 'config/read' },
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
+
+    child.stdout.write(jsonl({ id: 1, result: {} }));
+    child.stdout.write(jsonl({ id: 2 }));
+    child.stdout.write(jsonl({ id: 3, result: null }));
+
+    await expect(promise).resolves.toEqual([
+      { method: 'account/read', ok: false, error: 'Codex app-server sent an invalid response' },
+      { method: 'config/read', ok: true, result: null },
+    ]);
+  });
+
+  it('ignores null, array, scalar, and notifications safely', async () => {
+    const child = makeChild();
+    const promise = callCodexAppServer([
+      { method: 'account/usage/read' },
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
+
+    child.stdout.write(jsonl(null));
+    child.stdout.write(jsonl(['unexpected']));
+    child.stdout.write(jsonl('unexpected'));
+    child.stdout.write(jsonl({ method: 'account/updated', params: { token: 'SECRET' } }));
+    child.stdout.write(jsonl({ id: 1, result: {} }));
+    child.stdout.write(jsonl({ id: 2, result: { summary: {} } }));
+
+    await expect(promise).resolves.toEqual([
+      { method: 'account/usage/read', ok: true, result: { summary: {} } },
+    ]);
+  });
+
+  it('turns missing old methods into partial unavailable results without raw errors', async () => {
+    const child = makeChild();
+    const promise = callCodexAppServer([
+      { method: 'account/usage/read' },
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
+
+    child.stdout.write(jsonl({ id: 1, result: {} }));
+    child.stdout.write(jsonl({ id: 2, error: { code: -32601, message: 'Method not found SECRET detail' } }));
+    child.stdout.write(jsonl({ id: 3, result: { data: [] } }));
+
+    await expect(promise).resolves.toEqual([
+      { method: 'account/usage/read', ok: false, error: 'Codex app-server method unavailable', unavailable: true },
+      { method: 'model/list', ok: true, result: { data: [] } },
+    ]);
+  });
+
+  it('fails safely on oversized JSONL frames', async () => {
+    const child = makeChild();
+    const promise = callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never, maxFrameBytes: 10 }));
+
+    child.stdout.write(Buffer.from('{"id":1,"result":{}}\n', 'utf-8'));
+    await expect(promise).resolves.toEqual([
+      { method: 'model/list', ok: false, error: 'Codex app-server sent an invalid response' },
+    ]);
+  });
+
+  it('applies the frame byte limit per JSONL line', async () => {
+    const child = makeChild();
+    const promise = callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never, maxFrameBytes: 30 }));
+
+    child.stdout.write(Buffer.from('{"id":1,"result":{}}\n{"id":2,"result":{"data":[]}}\n', 'utf-8'));
+
+    await expect(promise).resolves.toEqual([
+      { method: 'model/list', ok: true, result: { data: [] } },
+    ]);
+  });
+
+  it('reports stdin EPIPE as a generic request failure', async () => {
+    const child = makeChild();
+    const promise = callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
+
+    child.stdin.emit('error', Object.assign(new Error('write EPIPE SECRET'), { code: 'EPIPE' }));
+
+    await expect(promise).resolves.toEqual([
+      { method: 'model/list', ok: false, error: 'Codex app-server request failed' },
+    ]);
+  });
+
+  it.each(['win32', 'linux'] as const)('cancels and disposes the spawned helper on %s', async platform => {
+    const child = makeChild(456);
+    const cleanup = makeChild();
+    const cleanupSpawnImpl = vi.fn(() => cleanup);
+    const controller = new AbortController();
+    const killProcess = vi.fn(() => true);
+    vi.stubGlobal('process', { ...process, platform, kill: killProcess });
+    const promise = callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({
+      signal: controller.signal,
+      spawnImpl: vi.fn(() => child) as never,
+      cleanupSpawnImpl: cleanupSpawnImpl as never,
+    }));
+
+    controller.abort();
+
+    await expect(promise).resolves.toEqual([
+      { method: 'model/list', ok: false, error: 'Codex app-server request cancelled' },
+    ]);
+    if (platform === 'win32') {
+      expect(cleanupSpawnImpl).toHaveBeenCalledWith('C:\\Windows\\System32\\taskkill.exe', ['/pid', '456', '/t', '/f'], expect.any(Object));
+      expect(killProcess).not.toHaveBeenCalled();
+      expect(child.kill).not.toHaveBeenCalled();
+      cleanup.emit('error', new Error('taskkill failed'));
+      expect(child.kill).toHaveBeenCalledOnce();
+    } else {
+      expect(killProcess).toHaveBeenCalledWith(-456, 'SIGTERM');
+      expect(cleanupSpawnImpl).not.toHaveBeenCalled();
+      expect(child.kill).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not coalesce signalled calls with unsignalled callers', async () => {
+    const signalledChild = makeChild();
+    const unsignalledChild = makeChild();
+    const spawnImpl = vi.fn()
+      .mockReturnValueOnce(signalledChild)
+      .mockReturnValueOnce(unsignalledChild);
+    const controller = new AbortController();
+
+    const signalled = callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({ signal: controller.signal, spawnImpl: spawnImpl as never }));
+    const unsignalled = callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({ spawnImpl: spawnImpl as never }));
+
+    controller.abort();
+    unsignalledChild.stdout.write(jsonl({ id: 1, result: {} }));
+    unsignalledChild.stdout.write(jsonl({ id: 2, result: { data: [{ id: 'still-running' }] } }));
+
+    await expect(Promise.all([signalled, unsignalled])).resolves.toEqual([
+      [{ method: 'model/list', ok: false, error: 'Codex app-server request cancelled' }],
+      [{ method: 'model/list', ok: true, result: { data: [{ id: 'still-running' }] } }],
+    ]);
+    expect(spawnImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('coalesces identical in-flight reads without caching completed raw payloads', async () => {
+    const firstChild = makeChild();
+    const secondChild = makeChild();
+    const spawnImpl = vi.fn()
+      .mockReturnValueOnce(firstChild)
+      .mockReturnValueOnce(secondChild);
+    const first = callCodexAppServer([{ method: 'model/list', params: { limit: 100 } }], clientOptions({ spawnImpl: spawnImpl as never }));
+    const coalesced = callCodexAppServer([{ method: 'model/list', params: { limit: 100 } }], clientOptions({ spawnImpl: spawnImpl as never }));
+
+    firstChild.stdout.write(jsonl({ id: 1, result: {} }));
+    firstChild.stdout.write(jsonl({ id: 2, result: { data: [] } }));
+
+    await expect(Promise.all([first, coalesced])).resolves.toEqual([
+      [{ method: 'model/list', ok: true, result: { data: [] } }],
+      [{ method: 'model/list', ok: true, result: { data: [] } }],
+    ]);
+
+    const afterCompletion = callCodexAppServer([{ method: 'model/list', params: { limit: 100 } }], clientOptions({ spawnImpl: spawnImpl as never }));
+    secondChild.stdout.write(jsonl({ id: 1, result: {} }));
+    secondChild.stdout.write(jsonl({ id: 2, result: { data: [{ id: 'new' }] } }));
+
+    await expect(afterCompletion).resolves.toEqual([
+      { method: 'model/list', ok: true, result: { data: [{ id: 'new' }] } },
+    ]);
+    expect(spawnImpl).toHaveBeenCalledTimes(2);
+  });
+});

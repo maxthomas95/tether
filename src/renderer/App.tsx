@@ -187,6 +187,9 @@ export function App() {
       },
     });
   }, [notify]);
+  const notifyCodexQuotaLow = useCallback((message: string) => {
+    notify({ type: 'warning', title: 'Codex quota running low', message });
+  }, [notify]);
   const { confirm: confirmDialog, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [vaultPrompt, setVaultPrompt] = useState<{ reason?: string; onDone: (loggedIn: boolean) => void } | null>(null);
   const expectedSessionExitIds = useRef<Set<string>>(new Set());
@@ -2077,7 +2080,7 @@ export function App() {
           onOpenHistory={() => setUsageHistoryOpen(true)}
           onBudgetCrossed={notifyBudgetCrossed}
         />
-        <QuotaFooter />
+        <QuotaFooter onQuotaLow={notifyCodexQuotaLow} />
         <VaultStatusPill onAuthError={notifyVaultAuthError} />
         <JobsOfficePill status={jobsStatus} active={officeOpen} onToggle={() => setOfficeOpen(v => !v)}
           onConfigure={() => { setSettingsInitialSection('integrations'); setSettingsOpen(true); }} />

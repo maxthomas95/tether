@@ -17,17 +17,21 @@ export function useUsage(): { usage: UsageInfo | null; enabled: boolean; cliTool
 
   // Read toggle setting and re-read on settings changes
   useEffect(() => {
+    let active = true;
+    let generation = 0;
     const refresh = () => {
+      const request = ++generation;
       window.electronAPI.config.get('globalUsageEnabled').then(val => {
-        setEnabled(val !== 'false');
-      });
+        if (active && request === generation) setEnabled(val !== 'false');
+      }).catch(() => {});
       window.electronAPI.config.get('cliToolBreakdownEnabled').then(val => {
-        setCliToolBreakdownEnabled(val === 'true');
-      });
+        if (active && request === generation) setCliToolBreakdownEnabled(val === 'true');
+      }).catch(() => {});
       Promise.all([
         window.electronAPI.config.get('usageBudget.dailyUsd').catch(() => null),
         window.electronAPI.config.get('usageBudget.weeklyUsd').catch(() => null),
       ]).then(([dailyUsd, weeklyUsd]) => {
+        if (!active || request !== generation) return;
         setBudgetThresholds({
           dailyUsd: parseBudgetThreshold(dailyUsd),
           weeklyUsd: parseBudgetThreshold(weeklyUsd),
@@ -36,7 +40,7 @@ export function useUsage(): { usage: UsageInfo | null; enabled: boolean; cliTool
     };
     refresh();
     window.addEventListener('tether:settings-changed', refresh);
-    return () => window.removeEventListener('tether:settings-changed', refresh);
+    return () => { active = false; window.removeEventListener('tether:settings-changed', refresh); };
   }, []);
 
   // Load + subscribe
@@ -46,9 +50,16 @@ export function useUsage(): { usage: UsageInfo | null; enabled: boolean; cliTool
       return;
     }
 
-    window.electronAPI.usage.getAll().then(setUsage);
-    const remove = window.electronAPI.usage.onUpdate(setUsage);
-    return () => remove();
+    let active = true;
+    let updated = false;
+    const remove = window.electronAPI.usage.onUpdate(info => {
+      updated = true;
+      if (active) setUsage(info);
+    });
+    window.electronAPI.usage.getAll().then(info => {
+      if (active && !updated) setUsage(info);
+    }).catch(() => {});
+    return () => { active = false; remove(); };
   }, [enabled]);
 
   return { usage, enabled, cliToolBreakdownEnabled, budgetThresholds };

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { PaneStatusStrip } from './PaneStatusStrip';
-import type { SessionUsage, UsageInfo } from '../../shared/types';
+import type { SessionInfo, SessionUsage, UsageInfo } from '../../shared/types';
 
 const usage: SessionUsage = { sessionId: 'remote:source', cliTool: 'codex', inputTokens: 10, outputTokens: 5,
   cacheCreationTokens: 0, cacheReadTokens: 0, totalCost: 0.25, messageCount: 1,
@@ -41,6 +41,17 @@ describe('remote usage pane smoke', () => {
     expect(container.textContent).toContain('Last collected');
     expect(container.textContent).toContain('$0.25');
     expect(container.firstElementChild?.getAttribute('title')).toContain('Retrying automatically');
+  });
+
+  it('shows the native conversation identity and stale coverage in remote session details', async () => {
+    getSession.mockResolvedValue(usage);
+    const session = { id: 'pane', cliTool: 'codex', toolSessionId: 'native-id', usageSessionId: usage.sessionId, remoteUsageStatus: 'unavailable', workingDir: '/work' } as SessionInfo;
+    await act(async () => root.render(React.createElement(PaneStatusStrip, { sessionId: usage.sessionId, session, remoteStatus: 'unavailable' })));
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Show session details"]')!.click());
+    const rows = [...document.querySelectorAll('.session-inspector-row')];
+    const value = (label: string) => rows.find(row => row.querySelector('dt')?.textContent === label)?.querySelector('dd')?.textContent;
+    expect(value('Native ID')).toBe('native-id');
+    expect(value('Usage Tracking')).toBe('Last collected remote totals; retrying');
   });
 
   it('ignores an old pending-id response after remote discovery and a stale snapshot after a live update', async () => {

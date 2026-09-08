@@ -5,6 +5,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import vm from 'node:vm';
 import { REMOTE_USAGE_PROBE } from './remote-probe';
+import { parseCodexUsageText } from './codex-jsonl-parser';
 import type { RemoteUsageReply, RemoteUsageRequest } from './remote-protocol';
 
 const dirs: string[] = [];
@@ -110,6 +111,26 @@ describe('remote usage probe', () => {
     expect(result.text).toContain('gpt-5');
     expect(result.text).toContain('cached_input_tokens');
     expect(result.offset).toBe(Buffer.byteLength(data));
+  });
+
+  it('projects cumulative Codex usage and observed metadata into the shared parser without private fields', () => {
+    const timestamp = '2026-09-07T10:00:00Z';
+    const total = { input_tokens: 20, cached_input_tokens: 5, output_tokens: 8, reasoning_output_tokens: 2, total_tokens: 28, secret: 'private' };
+    const data = codexHeader('a') + [
+      { type: 'turn_context', timestamp, payload: { model: 'gpt-5', instructions: 'private', collaboration_mode: { settings: { reasoning_effort: 'high', developer_instructions: 'private' } } } },
+      { type: 'event_msg', timestamp, payload: { type: 'task_started', model_context_window: 1000, prompt: 'private' } },
+      { type: 'event_msg', timestamp, payload: { type: 'token_count', info: { total_token_usage: total, last_token_usage: total } } },
+      // Newer formats may omit last_token_usage while repeating the same cumulative snapshot.
+      { type: 'event_msg', timestamp, payload: { type: 'token_count', info: { total_token_usage: total, model_context_window: 2000 } } },
+    ].map(v => JSON.stringify(v)).join('\n') + '\n';
+    const f = fixture('codex', data);
+    const source = probe(f.request, { '10': { marker: 'pane-a', files: [f.file] } }).source;
+    const result = probe({ ...f.request, source, cursor: { offset: 0, identity: '' } });
+    expect(result.text).not.toMatch(/private|instructions|secret|prompt/);
+    const parsed = parseCodexUsageText(result.text!, { startOffset: 0, priorModel: null });
+    expect(parsed).toMatchObject({ currentModel: 'gpt-5', currentReasoningEffort: 'high', contextWindowTokens: 2000, contextUsedTokens: 28, observedAt: '2026-09-07T10:00:00.000Z' });
+    expect(parsed.messages).toHaveLength(1);
+    expect(parsed.messages[0]).toMatchObject({ inputTokens: 15, cacheReadTokens: 5, outputTokens: 8, reasoningTokens: 2 });
   });
 
   it('discovers Codex even when session metadata contains large base instructions', () => {

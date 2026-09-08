@@ -110,6 +110,7 @@ export interface PersistedSessionUsage {
   filePath?: string;
   inputTokens: number;
   outputTokens: number;
+  reasoningTokens?: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
   totalCost: number;
@@ -117,10 +118,44 @@ export interface PersistedSessionUsage {
     model: string;
     inputTokens: number;
     outputTokens: number;
+    reasoningTokens?: number;
     cacheCreationTokens: number;
     cacheReadTokens: number;
     cost: number;
   }>;
+  daily?: Array<{
+    date: string;
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens?: number;
+    cacheCreationTokens: number;
+    cacheReadTokens: number;
+    totalCost: number;
+    messageCount: number;
+    models: Array<{
+      model: string;
+      inputTokens: number;
+      outputTokens: number;
+      reasoningTokens?: number;
+      cacheCreationTokens: number;
+      cacheReadTokens: number;
+      cost: number;
+    }>;
+  }>;
+  usageSchemaVersion?: number;
+  dayTiming?: 'event' | 'snapshot' | 'legacy';
+  contextUsedTokens?: number | null;
+  observedAt?: string | null;
+  currentModel?: string | null;
+  currentReasoningEffort?: string | null;
+  contextWindowTokens?: number | null;
+  codexTokenUsage?: {
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+    reasoningOutputTokens: number;
+    totalTokens: number;
+  } | null;
   messageCount: number;
   firstMessageAt: string | null;
   lastMessageAt: string | null;

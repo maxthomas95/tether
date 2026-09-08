@@ -4,6 +4,7 @@ import { app } from 'electron';
 import { createHookBridge, type HookBridgeHandle } from './hook-bridge';
 import { installClaudeHooks, uninstallClaudeHooks } from './claude-settings-overlay';
 import { installCodexHooks, uninstallCodexHooks } from './codex-config-overlay';
+import { installCodexLifecycleHooks, uninstallCodexLifecycleHooks } from './codex-lifecycle-overlay';
 import { sessionManager } from '../session/session-manager';
 import { getDb } from '../db/database';
 import { createLogger } from '../logger';
@@ -53,6 +54,10 @@ function isEnabled(): boolean {
   return getDb().config?.cliHooksEnabled === 'true';
 }
 
+function isCodexLifecycleEnabled(): boolean {
+  return isEnabled() && getDb().config?.codexLifecycleHooksEnabled === 'true';
+}
+
 export async function startHookService(): Promise<void> {
   const helper = getHelperPath();
   if (!fs.existsSync(helper)) {
@@ -73,6 +78,11 @@ export async function startHookService(): Promise<void> {
   } catch (err) {
     log.warn('Boot-time Codex orphan scrub failed', { error: err instanceof Error ? err.message : String(err) });
   }
+  try {
+    await uninstallCodexLifecycleHooks({ helperPath: helper });
+  } catch (err) {
+    log.warn('Boot-time Codex lifecycle orphan scrub failed', { error: err instanceof Error ? err.message : String(err) });
+  }
 
   if (!isEnabled()) {
     log.info('CLI hooks disabled by user setting — skipping bridge + install');
@@ -81,7 +91,7 @@ export async function startHookService(): Promise<void> {
 
   try {
     bridge = await createHookBridge((event) => {
-      sessionManager.handleHookEvent(event.tetherSessionId, event.type);
+      sessionManager.handleHookEvent(event);
     });
   } catch (err) {
     log.warn('Hook bridge failed to start — falling back to byte-level only', {
@@ -108,6 +118,16 @@ export async function startHookService(): Promise<void> {
       error: err instanceof Error ? err.message : String(err),
     });
   }
+  if (isCodexLifecycleEnabled()) {
+    try {
+      await installCodexLifecycleHooks({ helperPath: helper });
+      anyInstalled = true;
+    } catch (err) {
+      log.warn('Codex lifecycle hook install failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   installed = anyInstalled;
 }
 
@@ -125,6 +145,13 @@ export async function stopHookService(): Promise<void> {
       await uninstallCodexHooks({ helperPath: helper });
     } catch (err) {
       log.warn('Codex notify uninstall failed during shutdown', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    try {
+      await uninstallCodexLifecycleHooks({ helperPath: helper });
+    } catch (err) {
+      log.warn('Codex lifecycle hook uninstall failed during shutdown', {
         error: err instanceof Error ? err.message : String(err),
       });
     }

@@ -14,6 +14,7 @@ import { registerSshHandlers } from './ssh-handlers';
 import { registerKeybindingsHandlers } from './keybindings-handlers';
 import { registerNotificationsHandlers } from './notifications-handlers';
 import { registerJobsHandlers } from './jobs-handlers';
+import { registerCodexHandlers } from './codex-handlers';
 import { registerGifPanelHandlers } from './gif-panel-handlers';
 
 /**
@@ -44,5 +45,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerKeybindingsHandlers(ctx);
   registerNotificationsHandlers(ctx);
   registerJobsHandlers(ctx);
+  registerCodexHandlers(ctx);
   registerGifPanelHandlers(ctx);
 }

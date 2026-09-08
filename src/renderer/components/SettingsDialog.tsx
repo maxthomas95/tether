@@ -8,11 +8,12 @@ import { themeList } from '../styles/themes';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../utils/vault-path';
 
 const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
-import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo, UsageExportFormat, NotificationPrefs, JobsStatus, JobsSettings } from '../../shared/types';
+import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo, UsageExportFormat, NotificationPrefs, JobsStatus, JobsSettings, SessionInfo } from '../../shared/types';
 import { DEFAULT_NOTIFICATION_PREFS } from '../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 import { KeybindingsEditor } from './KeybindingsEditor';
 import { HelpAnchor } from './HelpAnchor';
+import { CodexLaunchControls, CodexSettingsSection } from './CodexSettingsSection';
 import { JobsSettingsSection } from './JobsSettingsSection';
 import { DEFAULT_JOBS_SETTINGS } from '../../shared/jobs';
 import type { KeybindingAction, Chord } from '../../shared/keybindings';
@@ -109,13 +110,14 @@ function formatExpiry(expiresAt?: string): string {
   return `in ${Math.round(hours / 24)}d`;
 }
 
-type SettingsSection = 'appearance' | 'general' | 'terminal' | 'sessions' | 'notifications' | 'shortcuts' | 'integrations' | 'usage';
+type SettingsSection = 'appearance' | 'general' | 'terminal' | 'sessions' | 'codex' | 'notifications' | 'shortcuts' | 'integrations' | 'usage';
 
 const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
   { id: 'general', label: 'General' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'terminal', label: 'Terminal' },
   { id: 'sessions', label: 'Sessions' },
+  { id: 'codex', label: 'Codex' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'integrations', label: 'Integrations' },
@@ -128,6 +130,7 @@ const SECTION_HELP: Record<SettingsSection, { title: string; anchor: string }> =
   general:       { title: 'General',       anchor: 'general' },
   terminal:      { title: 'Terminal',      anchor: 'terminal' },
   sessions:      { title: 'Sessions',      anchor: 'sessions' },
+  codex:         { title: 'Codex',         anchor: 'codex' },
   notifications: { title: 'Notifications', anchor: 'notifications' },
   shortcuts:     { title: 'Shortcuts',     anchor: 'shortcuts' },
   integrations:  { title: 'Integrations',  anchor: 'integrations' },
@@ -172,9 +175,11 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
   const [maxPanes, setMaxPanes] = useState(4);
   const [allowHelm, setAllowHelm] = useState(false);
   const [cliHooksEnabled, setCliHooksEnabled] = useState(false);
+  const [codexLifecycleHooksEnabled, setCodexLifecycleHooksEnabled] = useState(false);
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true);
   const [updateChannel, setUpdateChannel] = useState<'stable' | 'beta'>('stable');
   const [quotaEnabled, setQuotaEnabled] = useState(true);
+  const [codexQuotaWarningPercent, setCodexQuotaWarningPercent] = useState(0);
   const [usageStripEnabled, setUsageStripEnabled] = useState(true);
   const [globalUsageEnabled, setGlobalUsageEnabled] = useState(true);
   const [cliToolBreakdownEnabled, setCliToolBreakdownEnabled] = useState(false);
@@ -209,6 +214,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
   }, [isOpen, initialSection]);
 
   // Profile state
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [profiles, setProfiles] = useState<LaunchProfileInfo[]>([]);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [newProfileName, setNewProfileName] = useState('');
@@ -266,6 +272,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       window.electronAPI.config.get?.('maxPanes')?.catch(() => null),
       window.electronAPI.config.get?.('updateCheckEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('quotaEnabled')?.catch(() => null),
+      window.electronAPI.config.get?.('codexQuotaWarningPercent')?.catch(() => null),
       window.electronAPI.config.get?.('usageStripEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('globalUsageEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('cliToolBreakdownEnabled')?.catch(() => null),
@@ -280,9 +287,10 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       window.electronAPI.config.get?.('terminalCursorBlink')?.catch(() => null),
       window.electronAPI.config.get?.('terminalScrollback')?.catch(() => null),
       window.electronAPI.config.get?.('cliHooksEnabled')?.catch(() => null),
+      window.electronAPI.config.get?.('codexLifecycleHooksEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('updateChannel')?.catch(() => null),
       window.electronAPI.config.get('uiDensity').catch(() => null),
-    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, usageStrip, globalUsage, cliBreakdown, dailyBudget, weeklyBudget, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, updateCh, densityValue]) => {
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, codexQuotaWarning, usageStrip, globalUsage, cliBreakdown, dailyBudget, weeklyBudget, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, codexLifecycleHooks, updateCh, densityValue]) => {
       if (cancelled) return;
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
@@ -296,6 +304,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       setMaxPanes(parseMaxPanes(maxPaneValue));
       setUpdateCheckEnabled(updateCheck !== 'false');
       setQuotaEnabled(quota !== 'false');
+      setCodexQuotaWarningPercent(parsePercentSetting(codexQuotaWarning));
       setUsageStripEnabled(usageStrip !== 'false');
       setGlobalUsageEnabled(globalUsage !== 'false');
       setCliToolBreakdownEnabled(cliBreakdown === 'true');
@@ -321,10 +330,12 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       // matches the read on the main side (`=== 'true'`). Missing key, empty
       // string, or any other value counts as disabled.
       setCliHooksEnabled(cliHooks === 'true');
+      setCodexLifecycleHooksEnabled(codexLifecycleHooks === 'true');
       setUpdateChannel(updateCh === 'beta' ? 'beta' : 'stable');
       setUiDensity(densityValue === 'compact' ? 'compact' : 'comfortable');
       setLoaded(true);
     });
+    window.electronAPI.session.list().then(setSessions).catch(() => {});
     window.electronAPI.profile.list().then(setProfiles).catch(() => {});
     window.electronAPI.gitProvider.list().then(setGitProviders).catch(() => {});
     window.electronAPI.knownHosts.list().then(setKnownHosts).catch(() => {});
@@ -393,6 +404,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       await window.electronAPI.config.set?.('updateChannel', updateChannel);
       await window.electronAPI.config.set?.('quotaEnabled', quotaEnabled ? 'true' : 'false');
       await window.electronAPI.quota.setEnabled(quotaEnabled);
+      await window.electronAPI.config.set?.('codexQuotaWarningPercent', String(parsePercentSetting(String(codexQuotaWarningPercent))));
       await window.electronAPI.config.set?.('usageStripEnabled', usageStripEnabled ? 'true' : 'false');
       await window.electronAPI.config.set?.('globalUsageEnabled', globalUsageEnabled ? 'true' : 'false');
       await window.electronAPI.config.set?.('cliToolBreakdownEnabled', cliToolBreakdownEnabled ? 'true' : 'false');
@@ -406,6 +418,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       // opt-in semantics live on the read side: only the exact string 'true'
       // enables CLI hooks. Missing key / any other value counts as disabled.
       await window.electronAPI.config.set?.('cliHooksEnabled', cliHooksEnabled ? 'true' : 'false');
+      await window.electronAPI.config.set?.('codexLifecycleHooksEnabled', codexLifecycleHooksEnabled ? 'true' : 'false');
       await window.electronAPI.config.set?.('terminalFontSize', String(terminalFontSize));
       await window.electronAPI.config.set?.('terminalScrollback', String(terminalScrollback));
       await window.electronAPI.config.set?.('terminalFontFamily', terminalFontFamily);
@@ -427,7 +440,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
     } finally {
       setSaving(false);
     }
-  }, [saving, loaded, currentTheme, uiDensity, envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, updateChannel, quotaEnabled, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, dailyBudgetUsd, weeklyBudgetUsd, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsSettings, jobsDirty, jobsTesting, onClose]);
+  }, [saving, loaded, currentTheme, uiDensity, envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, updateChannel, quotaEnabled, codexQuotaWarningPercent, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, dailyBudgetUsd, weeklyBudgetUsd, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, codexLifecycleHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsSettings, jobsDirty, jobsTesting, onClose]);
 
   const handleJobsAction = async (action: 'save' | 'disable' | 'remove') => {
     if (jobsTesting || saving || (action === 'save' && !jobsSettings)) return;
@@ -607,6 +620,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
     general: 'restore resume startup launch update folder logs',
     terminal: 'terminal cursor font size scrollback blink',
     sessions: 'cli tool default flags profiles environment variables helm hooks splitting maximum panes advanced',
+    codex: 'codex account usage quota configuration model reasoning profile hooks lifecycle mcp skill',
     notifications: 'notifications alerts sound waiting idle webhook',
     shortcuts: 'shortcuts keyboard keybindings remap',
     integrations: 'integrations git github ado gitea vault ssh known hosts jobs office',
@@ -1211,6 +1225,14 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
                         }
                       }}>Add</button>
                     </div>
+                    {profileFlagTool === 'codex' && (
+                      <CodexLaunchControls
+                        title="Guided Codex launch"
+                        flags={currentProfileToolFlags}
+                        onFlagsChange={flags => setNewProfileCliFlagsPerTool(prev => ({ ...prev, codex: flags }))}
+                        configuration={null}
+                      />
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="form-btn form-btn--primary" onClick={async () => {
@@ -1338,6 +1360,25 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
           </div>
 
           </details>
+            </>
+          )}
+
+          {activeSection === 'codex' && matchingSections.length > 0 && (
+            <>
+              <SectionHeader section="codex" />
+              <CodexSettingsSection
+                cliFlagsPerTool={cliFlagsPerTool}
+                onCliFlagsPerToolChange={setCliFlagsPerTool}
+                profileCliFlagsPerTool={newProfileCliFlagsPerTool}
+                onProfileCliFlagsPerToolChange={setNewProfileCliFlagsPerTool}
+                showProfileControls={showNewProfile && profileFlagTool === 'codex'}
+                cliHooksEnabled={cliHooksEnabled}
+                codexLifecycleHooksEnabled={codexLifecycleHooksEnabled}
+                onCodexLifecycleHooksEnabledChange={setCodexLifecycleHooksEnabled}
+                quotaWarningPercent={codexQuotaWarningPercent}
+                onQuotaWarningPercentChange={setCodexQuotaWarningPercent}
+                sessions={sessions}
+              />
             </>
           )}
 
@@ -1957,7 +1998,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
               Show usage quota in sidebar
             </label>
             <p className="form-hint">
-              Display Claude and Codex subscription usage (5-hour and 7-day windows) in the sidebar footer. Polls every 5 minutes.
+              Display Claude and Codex subscription usage in the sidebar footer, with the quota windows each provider reports. Polls every 5 minutes.
             </p>
             <label className="form-radio-label" style={{ marginTop: 8 }}>
               <input
@@ -2095,4 +2136,10 @@ function parseMaxPanes(value: string | null | undefined): number {
   if (parsed <= 1) return 1;
   if (parsed <= 2) return 2;
   return 4;
+}
+
+function parsePercentSetting(value: string | null | undefined): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(100, Math.round(parsed)));
 }

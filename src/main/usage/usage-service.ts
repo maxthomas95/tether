@@ -3,22 +3,33 @@ import { createLogger } from '../logger';
 import { transcriptPath, scanAllTranscripts } from '../claude/transcripts';
 import { scanAllCodexTranscripts } from '../codex/transcripts';
 import { parseJsonlFile, parseClaudeUsageText, type ParsedMessage } from './jsonl-parser';
-import { parseCodexJsonl, parseCodexUsageText } from './codex-jsonl-parser';
+import { parseCodexJsonl, parseCodexUsageText, type CodexTokenUsageCounters } from './codex-jsonl-parser';
 import { readCrushSessions } from '../opencode/usage-reader';
 import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
 import { aggregateByEnvironment } from './env-aggregator';
 import { aggregateByCliTool } from './cli-tool-aggregator';
+import type {
+  SessionUsage,
+  UsageModelBreakdown,
+  UsageInfo,
+  DailyUsage,
+  DailyCliToolUsage,
+  SessionDailyUsage,
+  CliToolId,
+} from '../../shared/types';
+
 import type { RemoteUsageCli, RemoteUsageReply, RemoteUsageSource } from './remote-protocol';
-import type { SessionUsage, UsageModelBreakdown, UsageInfo, DailyUsage, DailyCliToolUsage, CliToolId } from '../../shared/types';
 
 const log = createLogger('usage');
 
 const WATCH_DEBOUNCE_MS = 300;
 const WATCH_POLL_INTERVAL_MS = 2_000;
 const RESCAN_INTERVAL_MS = 5 * 60 * 1_000;
+const USAGE_SCHEMA_VERSION = 2;
 
 interface TrackedSession {
   remote?: RemoteUsageSource;
+  remoteNeedsReparse?: boolean;
   sessionId: string;
   cliTool: CliToolId;
   workingDir: string;
@@ -33,6 +44,7 @@ interface TrackedSession {
    * cost-attribute correctly.
    */
   lastSeenModel?: string | null;
+  codexTokenUsage?: CodexTokenUsageCounters | null;
 }
 
 function emptySessionUsage(sessionId: string, cliTool: CliToolId, environmentId?: string): SessionUsage {
@@ -42,10 +54,18 @@ function emptySessionUsage(sessionId: string, cliTool: CliToolId, environmentId?
     environmentId,
     inputTokens: 0,
     outputTokens: 0,
+    reasoningTokens: 0,
     cacheCreationTokens: 0,
     cacheReadTokens: 0,
     totalCost: 0,
     models: [],
+    daily: [],
+    dayTiming: 'event',
+    contextUsedTokens: null,
+    observedAt: null,
+    currentModel: null,
+    currentReasoningEffort: null,
+    contextWindowTokens: null,
     messageCount: 0,
     firstMessageAt: null,
     lastMessageAt: null,
@@ -54,29 +74,133 @@ function emptySessionUsage(sessionId: string, cliTool: CliToolId, environmentId?
 }
 
 export function resetUsageForReparse(existing: SessionUsage): SessionUsage {
-  return emptySessionUsage(existing.sessionId, existing.cliTool, existing.environmentId);
+  return {
+    ...emptySessionUsage(existing.sessionId, existing.cliTool, existing.environmentId),
+    workingDir: existing.workingDir,
+    dayTiming: existing.cliTool === 'opencode' ? 'snapshot' : 'event',
+  };
 }
 
-function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOffset: number): SessionUsage {
+function hydrateUsage(summary: PersistedSessionUsage, cliTool: CliToolId, environmentId?: string): SessionUsage {
+  return {
+    sessionId: summary.sessionId,
+    cliTool,
+    environmentId: summary.environmentId ?? environmentId,
+    inputTokens: summary.inputTokens,
+    outputTokens: summary.outputTokens,
+    reasoningTokens: summary.reasoningTokens ?? 0,
+    cacheCreationTokens: summary.cacheCreationTokens,
+    cacheReadTokens: summary.cacheReadTokens,
+    totalCost: summary.totalCost,
+    models: summary.models.map(cloneModelBreakdown),
+    daily: summary.daily?.map(cloneDailyUsage) ?? [],
+    dayTiming: summary.dayTiming ?? ((summary.daily?.length ?? 0) > 0 ? 'event' : undefined),
+    workingDir: summary.workingDir,
+    contextUsedTokens: summary.contextUsedTokens ?? null,
+    observedAt: summary.observedAt ?? null,
+    currentModel: summary.currentModel ?? null,
+    currentReasoningEffort: summary.currentReasoningEffort ?? null,
+    contextWindowTokens: summary.contextWindowTokens ?? null,
+    messageCount: summary.messageCount,
+    firstMessageAt: summary.firstMessageAt,
+    lastMessageAt: summary.lastMessageAt,
+    parsedByteOffset: summary.parsedByteOffset,
+  };
+}
+
+function needsUsageReparse(summary: PersistedSessionUsage, filePath: string): boolean {
+  return summary.usageSchemaVersion !== USAGE_SCHEMA_VERSION
+    && summary.cliTool !== 'opencode'
+    && !!filePath
+    && fs.existsSync(filePath);
+}
+
+function needsTrackedUsageReparse(usage: SessionUsage, filePath: string): boolean {
+  return usage.dayTiming === 'legacy'
+    && usage.cliTool !== 'opencode'
+    && !!filePath
+    && fs.existsSync(filePath);
+}
+
+function markLegacyIfTranscriptUnavailable(usage: SessionUsage, filePath: string): SessionUsage {
+  if (usage.dayTiming || usage.daily?.length) return usage;
+  if (filePath && fs.existsSync(filePath)) return usage;
+  return { ...usage, daily: [], dayTiming: 'legacy' };
+}
+
+function cloneModelBreakdown(model: UsageModelBreakdown): UsageModelBreakdown {
+  return {
+    ...model,
+    reasoningTokens: model.reasoningTokens ?? 0,
+  };
+}
+
+function emptyModelBreakdown(model: string): UsageModelBreakdown {
+  return {
+    model,
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    cost: 0,
+  };
+}
+
+function messageDate(timestamp: string): string {
+  const parsed = new Date(timestamp);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}/.test(timestamp) ? timestamp.slice(0, 10) : new Date().toISOString().slice(0, 10);
+}
+
+function cloneDailyUsage(day: SessionDailyUsage): SessionDailyUsage {
+  return {
+    ...day,
+    reasoningTokens: day.reasoningTokens ?? 0,
+    models: day.models.map(cloneModelBreakdown),
+  };
+}
+
+function addMessageToBreakdown(modelMap: Map<string, UsageModelBreakdown>, msg: ParsedMessage): void {
+  const mb = modelMap.get(msg.model) || emptyModelBreakdown(msg.model);
+  mb.inputTokens += msg.inputTokens;
+  mb.outputTokens += msg.outputTokens;
+  mb.reasoningTokens = (mb.reasoningTokens ?? 0) + (msg.reasoningTokens ?? 0);
+  mb.cacheCreationTokens += msg.cacheCreation5m + msg.cacheCreation1h;
+  mb.cacheReadTokens += msg.cacheReadTokens;
+  mb.cost += msg.cost;
+  modelMap.set(msg.model, mb);
+}
+
+export function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOffset: number): SessionUsage {
   if (messages.length === 0) return { ...existing, parsedByteOffset: newOffset };
 
   // Accumulate model breakdowns
   const modelMap = new Map<string, UsageModelBreakdown>();
   for (const m of existing.models) {
-    modelMap.set(m.model, { ...m });
+    modelMap.set(m.model, cloneModelBreakdown(m));
+  }
+
+  const dailyMap = new Map<string, SessionDailyUsage>();
+  for (const d of existing.daily ?? []) {
+    dailyMap.set(d.date, cloneDailyUsage(d));
   }
 
   let { inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, totalCost, messageCount } = existing;
+  let reasoningTokens = existing.reasoningTokens ?? 0;
   let firstMessageAt = existing.firstMessageAt;
   let lastMessageAt = existing.lastMessageAt;
+  let currentModel = existing.currentModel ?? null;
 
   for (const msg of messages) {
     inputTokens += msg.inputTokens;
     outputTokens += msg.outputTokens;
+    reasoningTokens += msg.reasoningTokens ?? 0;
     cacheCreationTokens += msg.cacheCreation5m + msg.cacheCreation1h;
     cacheReadTokens += msg.cacheReadTokens;
     totalCost += msg.cost;
     messageCount++;
+    currentModel = msg.model;
 
     if (!firstMessageAt || msg.timestamp < firstMessageAt) {
       firstMessageAt = msg.timestamp;
@@ -85,17 +209,31 @@ function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOff
       lastMessageAt = msg.timestamp;
     }
 
-    const mb = modelMap.get(msg.model) || {
-      model: msg.model,
-      inputTokens: 0, outputTokens: 0,
-      cacheCreationTokens: 0, cacheReadTokens: 0, cost: 0,
+    addMessageToBreakdown(modelMap, msg);
+
+    const date = messageDate(msg.timestamp);
+    const daily = dailyMap.get(date) || {
+      date,
+      inputTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalCost: 0,
+      messageCount: 0,
+      models: [],
     };
-    mb.inputTokens += msg.inputTokens;
-    mb.outputTokens += msg.outputTokens;
-    mb.cacheCreationTokens += msg.cacheCreation5m + msg.cacheCreation1h;
-    mb.cacheReadTokens += msg.cacheReadTokens;
-    mb.cost += msg.cost;
-    modelMap.set(msg.model, mb);
+    daily.inputTokens += msg.inputTokens;
+    daily.outputTokens += msg.outputTokens;
+    daily.reasoningTokens = (daily.reasoningTokens ?? 0) + (msg.reasoningTokens ?? 0);
+    daily.cacheCreationTokens += msg.cacheCreation5m + msg.cacheCreation1h;
+    daily.cacheReadTokens += msg.cacheReadTokens;
+    daily.totalCost += msg.cost;
+    daily.messageCount++;
+    const dailyModelMap = new Map<string, UsageModelBreakdown>(daily.models.map(m => [m.model, cloneModelBreakdown(m)]));
+    addMessageToBreakdown(dailyModelMap, msg);
+    daily.models = Array.from(dailyModelMap.values());
+    dailyMap.set(date, daily);
   }
 
   return {
@@ -104,10 +242,15 @@ function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOff
     environmentId: existing.environmentId,
     inputTokens,
     outputTokens,
+    reasoningTokens,
     cacheCreationTokens,
     cacheReadTokens,
     totalCost,
     models: Array.from(modelMap.values()),
+    daily: Array.from(dailyMap.values()).sort((a, b) => b.date.localeCompare(a.date)),
+    currentModel,
+    currentReasoningEffort: existing.currentReasoningEffort ?? null,
+    contextWindowTokens: existing.contextWindowTokens ?? null,
     messageCount,
     firstMessageAt,
     lastMessageAt,
@@ -140,33 +283,27 @@ export class UsageService {
     for (const summary of db.usageSummaries) {
       if (!this.tracked.has(summary.sessionId)) {
         const cliTool = (summary.cliTool as CliToolId) || 'claude';
+        const filePath = summary.remote ? '' : summary.filePath ?? (cliTool === 'claude' ? claudeUsagePath(summary.workingDir, summary.sessionId) : '');
+        const usage = markLegacyIfTranscriptUnavailable(hydrateUsage(summary, cliTool), filePath);
         this.tracked.set(summary.sessionId, {
           sessionId: summary.sessionId,
           cliTool,
           workingDir: summary.workingDir,
-          filePath: summary.remote ? '' : summary.filePath ?? (cliTool === 'claude' ? claudeUsagePath(summary.workingDir, summary.sessionId) : ''),
+          filePath,
           remote: summary.remote,
+          remoteNeedsReparse: !!summary.remote && summary.usageSchemaVersion !== USAGE_SCHEMA_VERSION,
           watching: false,
           debounceTimer: null,
-          usage: {
-            sessionId: summary.sessionId,
-            cliTool,
-            environmentId: summary.environmentId,
-            inputTokens: summary.inputTokens,
-            outputTokens: summary.outputTokens,
-            cacheCreationTokens: summary.cacheCreationTokens,
-            cacheReadTokens: summary.cacheReadTokens,
-            totalCost: summary.totalCost,
-            models: summary.models,
-            messageCount: summary.messageCount,
-            firstMessageAt: summary.firstMessageAt,
-            lastMessageAt: summary.lastMessageAt,
-            parsedByteOffset: summary.parsedByteOffset,
-          },
-          // Restore the model alongside the cursor; the next chunk can begin
-          // with token_count before another turn_context is written.
-          lastSeenModel: summary.lastSeenModel ?? null,
+          usage,
+          lastSeenModel: summary.remote ? usage.currentModel ?? summary.lastSeenModel ?? null : usage.dayTiming === 'legacy' ? null : usage.currentModel ?? null,
+          codexTokenUsage: summary.codexTokenUsage ?? null,
         });
+        const tracked = this.tracked.get(summary.sessionId);
+        if (tracked && needsUsageReparse(summary, filePath)) {
+          this.reparseSessionPreservingLegacy(tracked);
+        } else if (usage.dayTiming === 'legacy' && usage.dayTiming !== summary.dayTiming) {
+          this.persistSession(this.tracked.get(summary.sessionId)!, false);
+        }
       }
     }
 
@@ -217,11 +354,17 @@ export class UsageService {
         newSessions++;
         continue;
       }
+      existing.filePath = d.filePath;
+      if (!existing.watching) this.startWatching(existing);
+      if (needsTrackedUsageReparse(existing.usage, existing.filePath)) {
+        this.reparseSessionPreservingLegacy(existing);
+        updatedSessions++;
+        continue;
+      }
       // Already known. Re-parse if the file grew; if it shrank, reset the full
       // accumulator first so a replacement/truncation cannot double-count.
       if (d.size < existing.usage.parsedByteOffset) {
-        existing.usage = resetUsageForReparse(existing.usage);
-        this.parseSession(existing);
+        this.reparseSessionPreservingLegacy(existing);
         updatedSessions++;
       } else if (d.size > existing.usage.parsedByteOffset) {
         this.parseSession(existing);
@@ -255,10 +398,17 @@ export class UsageService {
         newSessions++;
         continue;
       }
+      existing.workingDir = d.cwd;
+      existing.filePath = d.filePath;
+      existing.usage.workingDir = d.cwd;
+      if (!existing.watching) this.startWatching(existing);
+      if (needsTrackedUsageReparse(existing.usage, existing.filePath)) {
+        this.reparseSessionPreservingLegacy(existing);
+        updatedSessions++;
+        continue;
+      }
       if (d.size < existing.usage.parsedByteOffset) {
-        existing.usage = resetUsageForReparse(existing.usage);
-        existing.lastSeenModel = null;
-        this.parseSession(existing);
+        this.reparseSessionPreservingLegacy(existing);
         updatedSessions++;
       } else if (d.size > existing.usage.parsedByteOffset) {
         this.parseSession(existing);
@@ -276,6 +426,7 @@ export class UsageService {
           model: cs.model,
           inputTokens: cs.promptTokens,
           outputTokens: cs.completionTokens,
+          reasoningTokens: 0,
           cacheCreationTokens: 0,
           cacheReadTokens: 0,
           cost: cs.cost,
@@ -283,6 +434,7 @@ export class UsageService {
           model: 'unknown',
           inputTokens: cs.promptTokens,
           outputTokens: cs.completionTokens,
+          reasoningTokens: 0,
           cacheCreationTokens: 0,
           cacheReadTokens: 0,
           cost: cs.cost,
@@ -300,10 +452,29 @@ export class UsageService {
             cliTool: 'opencode',
             inputTokens: cs.promptTokens,
             outputTokens: cs.completionTokens,
+            reasoningTokens: 0,
             cacheCreationTokens: 0,
             cacheReadTokens: 0,
             totalCost: cs.cost,
             models: [modelBreakdown],
+            dayTiming: 'snapshot',
+            workingDir: cs.directory,
+            contextUsedTokens: null,
+            observedAt: cs.updatedAt,
+            daily: [{
+              date: messageDate(cs.updatedAt),
+              inputTokens: cs.promptTokens,
+              outputTokens: cs.completionTokens,
+              reasoningTokens: 0,
+              cacheCreationTokens: 0,
+              cacheReadTokens: 0,
+              totalCost: cs.cost,
+              messageCount: cs.messageCount,
+              models: [modelBreakdown],
+            }],
+            currentModel: modelBreakdown.model,
+            currentReasoningEffort: null,
+            contextWindowTokens: null,
             messageCount: cs.messageCount,
             firstMessageAt: cs.createdAt,
             lastMessageAt: cs.updatedAt,
@@ -329,6 +500,12 @@ export class UsageService {
   trackSession(sessionId: string, workingDir: string, cliTool: CliToolId = 'claude', environmentId?: string): void {
     const existing = this.tracked.get(sessionId);
     if (existing) {
+      let changed = false;
+      if (workingDir && existing.workingDir !== workingDir) {
+        existing.workingDir = workingDir;
+        existing.usage.workingDir = workingDir;
+        changed = true;
+      }
       // start() pre-loads DB summaries into `tracked` without a watcher,
       // so a subsequent trackSession from session:create used to silently
       // skip the watcher. Attach one for any transcript-backed CLI whose
@@ -342,6 +519,12 @@ export class UsageService {
       // per-environment rollup attributes the cost on the next refresh.
       if (environmentId && !existing.usage.environmentId) {
         existing.usage.environmentId = environmentId;
+        changed = true;
+      }
+      if (needsTrackedUsageReparse(existing.usage, existing.filePath)) {
+        this.reparseSessionPreservingLegacy(existing);
+        this.notifyUpdate();
+      } else if (changed) {
         this.persistSession(existing);
         this.notifyUpdate();
       }
@@ -361,6 +544,10 @@ export class UsageService {
     // so the path can't be derived from sessionId + cwd alone. We fall back
     // to the periodic backfill which discovers the file via session_meta.
     const filePath = persisted?.filePath ?? (cliTool === 'claude' ? claudeUsagePath(workingDir, sessionId) : '');
+    const sessionUsage = persisted ? {
+      ...markLegacyIfTranscriptUnavailable(hydrateUsage(persisted, (persisted.cliTool as CliToolId) || cliTool, environmentId), filePath),
+      workingDir,
+    } : { ...emptySessionUsage(sessionId, cliTool, environmentId), workingDir };
     log.info('Tracking session', { sessionId, cliTool, filePath, environmentId: environmentId ?? null });
 
     const session: TrackedSession = {
@@ -370,27 +557,17 @@ export class UsageService {
       filePath,
       watching: false,
       debounceTimer: null,
-      usage: persisted ? {
-        sessionId,
-        cliTool: (persisted.cliTool as CliToolId) || cliTool,
-        environmentId: persisted.environmentId ?? environmentId,
-        inputTokens: persisted.inputTokens,
-        outputTokens: persisted.outputTokens,
-        cacheCreationTokens: persisted.cacheCreationTokens,
-        cacheReadTokens: persisted.cacheReadTokens,
-        totalCost: persisted.totalCost,
-        models: persisted.models,
-        messageCount: persisted.messageCount,
-        firstMessageAt: persisted.firstMessageAt,
-        lastMessageAt: persisted.lastMessageAt,
-        parsedByteOffset: persisted.parsedByteOffset,
-      } : emptySessionUsage(sessionId, cliTool, environmentId),
-      lastSeenModel: cliTool === 'codex' && persisted && persisted.models.length > 0
-        ? persisted.models[persisted.models.length - 1].model
+      usage: sessionUsage,
+      lastSeenModel: cliTool === 'codex' && persisted && sessionUsage.dayTiming !== 'legacy'
+        ? persisted.currentModel ?? null
         : null,
     };
 
     this.tracked.set(sessionId, session);
+    session.codexTokenUsage = persisted?.codexTokenUsage ?? null;
+    if (persisted && needsUsageReparse(persisted, filePath)) {
+      this.reparseSessionPreservingLegacy(session);
+    }
 
     // Initial parse (Claude/Codex parse from JSONL; Crush is from SQLite)
     if (cliTool === 'claude') {
@@ -415,36 +592,51 @@ export class UsageService {
     let session = this.tracked.get(sessionId);
     if (!session) {
       const saved = getDb().usageSummaries.find(s => s.sessionId === sessionId && s.remote);
-      const usage = saved ? {
-        ...emptySessionUsage(sessionId, cliTool, environmentId),
-        inputTokens: saved.inputTokens, outputTokens: saved.outputTokens,
-        cacheCreationTokens: saved.cacheCreationTokens, cacheReadTokens: saved.cacheReadTokens,
-        totalCost: saved.totalCost, models: saved.models, messageCount: saved.messageCount,
-        firstMessageAt: saved.firstMessageAt, lastMessageAt: saved.lastMessageAt,
-        parsedByteOffset: saved.parsedByteOffset,
-      } : emptySessionUsage(sessionId, cliTool, environmentId);
+      const usage = saved
+        ? markLegacyIfTranscriptUnavailable(hydrateUsage(saved, cliTool, environmentId), '')
+        : emptySessionUsage(sessionId, cliTool, environmentId);
       session = { sessionId, cliTool, workingDir, filePath: '', watching: false, debounceTimer: null,
-        remote: saved?.remote ?? remote, usage, lastSeenModel: saved?.lastSeenModel ?? null };
+        remote: saved?.remote ?? remote, usage, lastSeenModel: saved?.currentModel ?? saved?.lastSeenModel ?? null,
+        codexTokenUsage: saved?.codexTokenUsage ?? null,
+        remoteNeedsReparse: !!saved && saved.usageSchemaVersion !== USAGE_SCHEMA_VERSION };
       this.tracked.set(sessionId, session);
     }
+    if (session.remoteNeedsReparse) return { offset: 0, identity: '' };
     return { offset: session.usage.parsedByteOffset, identity: session.remote?.identity ?? '' };
   }
 
   applyRemote(sessionId: string, reply: RemoteUsageReply): void {
     const session = this.tracked.get(sessionId);
     if (!session?.remote || !reply.source || reply.offset === undefined || reply.text === undefined) return;
-    if (!reply.reset && reply.offset <= session.usage.parsedByteOffset) return;
-    if (reply.reset) {
-      session.usage = resetUsageForReparse(session.usage);
-      session.lastSeenModel = null;
-    }
-    const parsed = session.cliTool === 'codex'
-      ? parseCodexUsageText(reply.text, { startOffset: 0, priorModel: session.lastSeenModel ?? null })
-      : parseClaudeUsageText(reply.text);
+    if (!session.remoteNeedsReparse && !reply.reset && reply.offset <= session.usage.parsedByteOffset) return;
+    if (reply.reset || session.remoteNeedsReparse) this.resetTrackedSessionForReparse(session);
+    const codexResult = session.cliTool === 'codex'
+      ? parseCodexUsageText(reply.text, {
+        startOffset: 0, priorModel: session.lastSeenModel ?? null,
+        priorReasoningEffort: session.usage.currentReasoningEffort,
+        priorContextWindowTokens: session.usage.contextWindowTokens,
+        priorContextUsedTokens: session.usage.contextUsedTokens,
+        priorTokenUsage: session.codexTokenUsage,
+      })
+      : null;
+    const parsed = codexResult ?? parseClaudeUsageText(reply.text);
     // Sanitized text has a different byte length. The cursor always refers to
     // the remote original and advances across non-usage records as well.
     session.usage = mergeMessages(session.usage, parsed.messages, reply.offset);
-    if ('currentModel' in parsed) session.lastSeenModel = typeof parsed.currentModel === 'string' ? parsed.currentModel : null;
+    session.usage.dayTiming = 'event';
+    session.usage.workingDir = session.workingDir;
+    if (codexResult) {
+      session.lastSeenModel = codexResult.currentModel;
+      session.codexTokenUsage = codexResult.tokenUsage;
+      session.usage.currentModel = codexResult.currentModel;
+      session.usage.currentReasoningEffort = codexResult.currentReasoningEffort;
+      session.usage.contextWindowTokens = codexResult.contextWindowTokens;
+      session.usage.contextUsedTokens = codexResult.contextUsedTokens;
+      session.usage.observedAt = codexResult.observedAt ?? session.usage.observedAt ?? null;
+    } else {
+      session.usage.observedAt = parsed.messages.at(-1)?.timestamp ?? session.usage.observedAt ?? null;
+    }
+    session.remoteNeedsReparse = false;
     session.remote = reply.source;
     this.persistSession(session);
     this.notifyUpdate();
@@ -479,8 +671,9 @@ export class UsageService {
     let totalCost = 0;
 
     for (const [id, tracked] of this.tracked) {
-      sessions[id] = tracked.usage;
-      allUsage.push(tracked.usage);
+      const usage = { ...tracked.usage, workingDir: tracked.workingDir };
+      sessions[id] = usage;
+      allUsage.push(usage);
       totalCost += tracked.usage.totalCost;
     }
 
@@ -525,37 +718,71 @@ export class UsageService {
     return this.getAll();
   }
 
-  private parseSession(session: TrackedSession): void {
-    if (session.remote || !session.filePath) return;
+  private parseSession(session: TrackedSession): boolean {
+    if (session.remote || !session.filePath) return false;
     try {
       if (session.cliTool === 'codex') {
         const result = parseCodexJsonl(session.filePath, {
           startOffset: session.usage.parsedByteOffset,
           priorModel: session.lastSeenModel ?? null,
+          priorReasoningEffort: session.usage.currentReasoningEffort ?? null,
+          priorContextWindowTokens: session.usage.contextWindowTokens ?? null,
+          priorContextUsedTokens: session.usage.contextUsedTokens ?? null,
+          priorTokenUsage: session.codexTokenUsage ?? null,
         });
         if (result.messages.length > 0 || result.newByteOffset !== session.usage.parsedByteOffset) {
           session.usage = mergeMessages(session.usage, result.messages, result.newByteOffset);
           session.lastSeenModel = result.currentModel;
+          session.codexTokenUsage = result.tokenUsage;
+          session.usage.dayTiming = 'event';
+          session.usage.workingDir = session.workingDir;
+          session.usage.currentModel = result.currentModel ?? session.usage.currentModel ?? null;
+          session.usage.currentReasoningEffort = result.currentReasoningEffort;
+          session.usage.contextWindowTokens = result.contextWindowTokens;
+          session.usage.contextUsedTokens = result.contextUsedTokens;
+          session.usage.observedAt = result.observedAt ?? session.usage.observedAt ?? null;
           this.persistSession(session);
           this.notifyUpdate();
-        } else if (result.currentModel && result.currentModel !== session.lastSeenModel) {
+          return true;
+        } else if (
+          (result.currentModel && result.currentModel !== session.lastSeenModel)
+          || result.currentReasoningEffort !== session.usage.currentReasoningEffort
+          || result.contextWindowTokens !== session.usage.contextWindowTokens
+          || result.contextUsedTokens !== session.usage.contextUsedTokens
+          || (result.observedAt !== null && result.observedAt !== session.usage.observedAt)
+          || result.tokenUsage !== session.codexTokenUsage
+        ) {
           session.lastSeenModel = result.currentModel;
+          session.codexTokenUsage = result.tokenUsage;
+          session.usage.currentModel = result.currentModel;
+          session.usage.currentReasoningEffort = result.currentReasoningEffort;
+          session.usage.contextWindowTokens = result.contextWindowTokens;
+          session.usage.contextUsedTokens = result.contextUsedTokens;
+          session.usage.observedAt = result.observedAt ?? session.usage.observedAt ?? null;
+          this.persistSession(session);
+          return true;
         }
-        return;
+        return false;
       }
 
       const result = parseJsonlFile(session.filePath, session.usage.parsedByteOffset);
       if (result.messages.length > 0 || result.newByteOffset !== session.usage.parsedByteOffset) {
         session.usage = mergeMessages(session.usage, result.messages, result.newByteOffset);
+        session.usage.dayTiming = 'event';
+        session.usage.workingDir = session.workingDir;
+        session.usage.observedAt = result.messages[result.messages.length - 1]?.timestamp ?? session.usage.observedAt ?? null;
         this.persistSession(session);
         this.notifyUpdate();
+        return true;
       }
+      return false;
     } catch (err) {
       log.warn('Failed to parse session JSONL', {
         sessionId: session.sessionId,
         cliTool: session.cliTool,
         error: err instanceof Error ? err.message : String(err),
       });
+      return false;
     }
   }
 
@@ -572,6 +799,7 @@ export class UsageService {
       model: found.model,
       inputTokens: found.promptTokens,
       outputTokens: found.completionTokens,
+      reasoningTokens: 0,
       cacheCreationTokens: 0,
       cacheReadTokens: 0,
       cost: found.cost,
@@ -579,6 +807,7 @@ export class UsageService {
       model: 'unknown',
       inputTokens: found.promptTokens,
       outputTokens: found.completionTokens,
+      reasoningTokens: 0,
       cacheCreationTokens: 0,
       cacheReadTokens: 0,
       cost: found.cost,
@@ -590,10 +819,29 @@ export class UsageService {
       environmentId: session.usage.environmentId,
       inputTokens: found.promptTokens,
       outputTokens: found.completionTokens,
+      reasoningTokens: 0,
       cacheCreationTokens: 0,
       cacheReadTokens: 0,
       totalCost: found.cost,
       models: [modelBreakdown],
+      dayTiming: 'snapshot',
+      workingDir: found.directory,
+      contextUsedTokens: null,
+      observedAt: found.updatedAt,
+      daily: [{
+        date: messageDate(found.updatedAt),
+        inputTokens: found.promptTokens,
+        outputTokens: found.completionTokens,
+        reasoningTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+        totalCost: found.cost,
+        messageCount: found.messageCount,
+        models: [modelBreakdown],
+      }],
+      currentModel: modelBreakdown.model,
+      currentReasoningEffort: null,
+      contextWindowTokens: null,
       messageCount: found.messageCount,
       firstMessageAt: found.createdAt,
       lastMessageAt: found.updatedAt,
@@ -604,7 +852,7 @@ export class UsageService {
     this.notifyUpdate();
   }
 
-  private persistSession(session: TrackedSession): void {
+  private persistSession(session: TrackedSession, markSchemaComplete = true): void {
     const db = getDb();
     const entry: PersistedSessionUsage = {
       sessionId: session.sessionId,
@@ -616,15 +864,27 @@ export class UsageService {
       environmentId: session.usage.environmentId,
       inputTokens: session.usage.inputTokens,
       outputTokens: session.usage.outputTokens,
+      reasoningTokens: session.usage.reasoningTokens ?? 0,
       cacheCreationTokens: session.usage.cacheCreationTokens,
       cacheReadTokens: session.usage.cacheReadTokens,
       totalCost: session.usage.totalCost,
       models: session.usage.models,
+      daily: session.usage.daily,
+      dayTiming: session.usage.dayTiming,
+      contextUsedTokens: session.usage.contextUsedTokens ?? null,
+      observedAt: session.usage.observedAt ?? null,
+      currentModel: session.usage.currentModel ?? null,
+      currentReasoningEffort: session.usage.currentReasoningEffort ?? null,
+      contextWindowTokens: session.usage.contextWindowTokens ?? null,
+      codexTokenUsage: session.codexTokenUsage ?? null,
       messageCount: session.usage.messageCount,
       firstMessageAt: session.usage.firstMessageAt,
       lastMessageAt: session.usage.lastMessageAt,
       parsedByteOffset: session.usage.parsedByteOffset,
     };
+    if (markSchemaComplete) {
+      entry.usageSchemaVersion = USAGE_SCHEMA_VERSION;
+    }
 
     const idx = db.usageSummaries.findIndex(s => s.sessionId === session.sessionId);
     if (idx >= 0) {
@@ -650,8 +910,7 @@ export class UsageService {
       // replace) means the file is effectively new; reset the offset so we
       // re-parse from the top without keeping old token totals.
       if ((prev.ino !== 0 && curr.ino !== prev.ino) || curr.size < session.usage.parsedByteOffset) {
-        session.usage = resetUsageForReparse(session.usage);
-        if (session.cliTool === 'codex') session.lastSeenModel = null;
+        this.resetTrackedSessionForReparse(session);
       }
       if (curr.size === prev.size && curr.mtimeMs === prev.mtimeMs) return;
       this.debouncedParse(session);
@@ -677,34 +936,81 @@ export class UsageService {
     }
   }
 
+  private resetTrackedSessionForReparse(session: TrackedSession): void {
+    session.usage = resetUsageForReparse(session.usage);
+    session.lastSeenModel = null;
+    session.codexTokenUsage = null;
+  }
+
+  private reparseSessionPreservingLegacy(session: TrackedSession): boolean {
+    const previousUsage = session.usage;
+    const previousLastSeenModel = session.lastSeenModel ?? null;
+    const previousCodexTokenUsage = session.codexTokenUsage ?? null;
+    this.resetTrackedSessionForReparse(session);
+    const parsed = this.parseSession(session);
+    if (!parsed) {
+      session.usage = { ...previousUsage, dayTiming: 'legacy' };
+      session.lastSeenModel = previousUsage.dayTiming === 'legacy' ? null : previousLastSeenModel;
+      session.codexTokenUsage = previousCodexTokenUsage;
+      this.persistSession(session, false);
+      return false;
+    }
+    return true;
+  }
+
   private buildDailyRollups(): DailyUsage[] {
     const dayMap = new Map<string, DailyUsage>();
     // Side-channel map of per-day → per-tool buckets. Stored separately so the
     // existing DailyUsage day object stays clean during accumulation; merged
     // into each day's `byCliTool` in the finalize pass.
     const dayToolMap = new Map<string, Map<CliToolId, DailyCliToolUsage>>();
+    const daySessionMap = new Map<string, Set<string>>();
+    const dayToolSessionMap = new Map<string, Map<CliToolId, Set<string>>>();
 
-    for (const tracked of this.tracked.values()) {
-      const u = tracked.usage;
-      if (!u.lastMessageAt) continue;
+    const addSessionId = (date: string, cliTool: CliToolId, sessionId: string): void => {
+      let sessions = daySessionMap.get(date);
+      if (!sessions) {
+        sessions = new Set();
+        daySessionMap.set(date, sessions);
+      }
+      sessions.add(sessionId);
 
-      const date = u.lastMessageAt.slice(0, 10); // YYYY-MM-DD
+      let toolSessions = dayToolSessionMap.get(date);
+      if (!toolSessions) {
+        toolSessions = new Map();
+        dayToolSessionMap.set(date, toolSessions);
+      }
+      let ids = toolSessions.get(cliTool);
+      if (!ids) {
+        ids = new Set();
+        toolSessions.set(cliTool, ids);
+      }
+      ids.add(sessionId);
+    };
+
+    const addUsage = (
+      date: string,
+      cliTool: CliToolId,
+      sessionId: string,
+      usage: Pick<SessionUsage, 'inputTokens' | 'outputTokens' | 'reasoningTokens' | 'cacheCreationTokens' | 'cacheReadTokens' | 'totalCost'>,
+    ): void => {
       const day = dayMap.get(date) || {
         date,
         inputTokens: 0,
         outputTokens: 0,
+        reasoningTokens: 0,
         cacheCreationTokens: 0,
         cacheReadTokens: 0,
         totalCost: 0,
         sessionCount: 0,
       };
 
-      day.inputTokens += u.inputTokens;
-      day.outputTokens += u.outputTokens;
-      day.cacheCreationTokens += u.cacheCreationTokens;
-      day.cacheReadTokens += u.cacheReadTokens;
-      day.totalCost += u.totalCost;
-      day.sessionCount++;
+      day.inputTokens += usage.inputTokens;
+      day.outputTokens += usage.outputTokens;
+      day.reasoningTokens = (day.reasoningTokens ?? 0) + (usage.reasoningTokens ?? 0);
+      day.cacheCreationTokens += usage.cacheCreationTokens;
+      day.cacheReadTokens += usage.cacheReadTokens;
+      day.totalCost += usage.totalCost;
       dayMap.set(date, day);
 
       let toolMap = dayToolMap.get(date);
@@ -712,36 +1018,63 @@ export class UsageService {
         toolMap = new Map();
         dayToolMap.set(date, toolMap);
       }
-      let toolRow = toolMap.get(u.cliTool);
+      let toolRow = toolMap.get(cliTool);
       if (!toolRow) {
         toolRow = {
-          cliTool: u.cliTool,
+          cliTool,
           totalCost: 0,
           inputTokens: 0,
           outputTokens: 0,
+          reasoningTokens: 0,
           cacheCreationTokens: 0,
           cacheReadTokens: 0,
           sessionCount: 0,
         };
-        toolMap.set(u.cliTool, toolRow);
+        toolMap.set(cliTool, toolRow);
       }
-      toolRow.totalCost += u.totalCost;
-      toolRow.inputTokens += u.inputTokens;
-      toolRow.outputTokens += u.outputTokens;
-      toolRow.cacheCreationTokens += u.cacheCreationTokens;
-      toolRow.cacheReadTokens += u.cacheReadTokens;
-      toolRow.sessionCount += 1;
+      toolRow.totalCost += usage.totalCost;
+      toolRow.inputTokens += usage.inputTokens;
+      toolRow.outputTokens += usage.outputTokens;
+      toolRow.reasoningTokens = (toolRow.reasoningTokens ?? 0) + (usage.reasoningTokens ?? 0);
+      toolRow.cacheCreationTokens += usage.cacheCreationTokens;
+      toolRow.cacheReadTokens += usage.cacheReadTokens;
+
+      addSessionId(date, cliTool, sessionId);
+    };
+
+    for (const tracked of this.tracked.values()) {
+      const u = tracked.usage;
+      if (u.dayTiming === 'legacy') continue;
+      if (u.daily && u.daily.length > 0) {
+        for (const d of u.daily) {
+          addUsage(d.date, u.cliTool, u.sessionId, d);
+        }
+        continue;
+      }
     }
 
     // Attach per-tool breakdowns, sorted by cost desc, tie-break on cliTool
     // asc to match the aggregator's stable ordering. Drop all-zero tool rows.
     for (const [date, day] of dayMap) {
+      const sessionIds = daySessionMap.get(date);
+      if (sessionIds) {
+        day.sessionIds = Array.from(sessionIds).sort((a, b) => a.localeCompare(b));
+        day.sessionCount = day.sessionIds.length;
+      }
+
       const toolMap = dayToolMap.get(date);
       if (!toolMap) continue;
       const rows = Array.from(toolMap.values()).filter(
         r => r.totalCost > 0 || r.inputTokens > 0 || r.outputTokens > 0
-          || r.cacheCreationTokens > 0 || r.cacheReadTokens > 0 || r.sessionCount > 0,
+          || (r.reasoningTokens ?? 0) > 0 || r.cacheCreationTokens > 0 || r.cacheReadTokens > 0 || r.sessionCount > 0,
       );
+      const toolSessionMap = dayToolSessionMap.get(date);
+      for (const row of rows) {
+        const ids = toolSessionMap?.get(row.cliTool);
+        if (!ids) continue;
+        row.sessionIds = Array.from(ids).sort((a, b) => a.localeCompare(b));
+        row.sessionCount = row.sessionIds.length;
+      }
       rows.sort((a, b) => {
         if (a.totalCost !== b.totalCost) return b.totalCost - a.totalCost;
         return a.cliTool.localeCompare(b.cliTool);

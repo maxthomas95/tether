@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { SessionUsage } from '../../shared/types';
 
 /**
@@ -12,40 +12,55 @@ export function useSessionUsage(sessionId: string | undefined): {
 } {
   const [usage, setUsage] = useState<SessionUsage | null>(null);
   const [enabled, setEnabled] = useState(true);
+  const settingsGenerationRef = useRef(0);
+  const usageGenerationRef = useRef(0);
 
   // Read the toggle setting on mount and re-read on settings changes
   useEffect(() => {
     const refresh = () => {
+      const generation = ++settingsGenerationRef.current;
       window.electronAPI.config.get('usageStripEnabled').then(val => {
+        if (generation !== settingsGenerationRef.current) return;
         setEnabled(val !== 'false');
-      });
+      }).catch(() => {});
     };
     refresh();
     window.addEventListener('tether:settings-changed', refresh);
-    return () => window.removeEventListener('tether:settings-changed', refresh);
+    return () => {
+      settingsGenerationRef.current++;
+      window.removeEventListener('tether:settings-changed', refresh);
+    };
   }, []);
 
   // Load initial data + subscribe to updates for this specific session
   useEffect(() => {
+    const generation = ++usageGenerationRef.current;
     if (!sessionId || !enabled) {
       setUsage(null);
       return;
     }
 
-    let disposed = false;
     let updated = false;
     setUsage(null);
-    window.electronAPI.usage.getSession(sessionId).then(value => {
-      if (!disposed && !updated) setUsage(value);
-    }).catch(() => { /* wait for the next usage update */ });
+    window.electronAPI.usage.getSession(sessionId).then(nextUsage => {
+      if (generation !== usageGenerationRef.current || updated) return;
+      setUsage(nextUsage);
+    }).catch(() => {
+      if (generation !== usageGenerationRef.current || updated) return;
+      setUsage(null);
+    });
 
     const remove = window.electronAPI.usage.onUpdate((info) => {
+      if (generation !== usageGenerationRef.current) return;
       updated = true;
       const sessionUsage = info.sessions[sessionId] ?? null;
       setUsage(sessionUsage);
     });
 
-    return () => { disposed = true; remove(); };
+    return () => {
+      usageGenerationRef.current++;
+      remove();
+    };
   }, [sessionId, enabled]);
 
   return { usage, enabled };

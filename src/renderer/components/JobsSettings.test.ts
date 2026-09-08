@@ -18,6 +18,7 @@ const nothing = async () => {};
 const subscribe = () => () => {};
 function makeApi() {
   return {
+    session: { list: async () => [] },
     config: { get: async () => null, set: vi.fn(nothing), getDefaultEnvVars: async () => ({}), getDefaultCliFlagsPerTool: async () => ({}), setDefaultEnvVars: nothing, setDefaultCliFlagsForTool: nothing },
     profile: { list: async () => [] }, gitProvider: { list: async () => [] }, knownHosts: { list: async () => [] },
     vault: { getConfig: async () => ({ enabled: false, addr: '', role: '', mount: 'secret', namespace: '' }), status: async () => ({ enabled: false, loggedIn: false }), onStatusChange: subscribe, setConfig: nothing },

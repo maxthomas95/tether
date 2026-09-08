@@ -258,7 +258,13 @@ export function TerminalPane({
               ref={containerRef}
               className="terminal-pane-xterm"
             />
-            <PaneStatusStrip sessionId={session?.usageSessionId || session?.claudeSessionId || session?.toolSessionId} remoteStatus={session?.remoteUsageStatus} />
+            <PaneStatusStrip
+              sessionId={session?.usageSessionId || session?.claudeSessionId || session?.toolSessionId}
+              remoteStatus={session?.remoteUsageStatus}
+              tetherSessionId={sessionId}
+              session={session}
+              environment={environment}
+            />
             {isDead && sessionId && (
               <div className="dead-pane-overlay" role="status">
                 <div className="dead-pane-overlay-card">

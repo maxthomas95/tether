@@ -31,6 +31,10 @@ import type {
 } from '../shared/types';
 
 const api: TetherAPI = {
+  codex: {
+    account: () => ipcRenderer.invoke(IPC.CODEX_ACCOUNT),
+    configuration: (sessionId?: string) => ipcRenderer.invoke(IPC.CODEX_CONFIGURATION, sessionId),
+  },
   platform: process.platform,
   homeDir: process.env.USERPROFILE || process.env.HOME || '',
 
