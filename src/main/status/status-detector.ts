@@ -272,6 +272,21 @@ export class StatusDetector {
   }
 
   /**
+   * Hook signal: a new user turn started. Return to running immediately and
+   * suppress byte-level idle inference until a completion hook arrives or the
+   * safety timer expires.
+   */
+  markTurnStarted(sessionId: string): void {
+    if (!this.states.has(sessionId)) return;
+    this.clearTimer(this.waitingTimers, sessionId);
+    this.clearTimer(this.idleTimers, sessionId);
+    this.clearTimer(this.debounceTimers, sessionId);
+    this.hookSignaledDone.set(sessionId, false);
+    this.resetSafetyTimer(sessionId);
+    this.setState(sessionId, 'running');
+  }
+
+  /**
    * Hook signal: Claude/Codex says the turn is over (Stop hook, Codex
    * agent-turn-complete, or Notification.idle_prompt). Flip to waiting+idle
    * — the existing byte-level fallback would have gotten here eventually, we

@@ -4,7 +4,8 @@
 //
 // Invocation:
 //   node index.js --claude        # reads Claude hook payload from stdin
-//   node index.js --codex <json>  # Codex passes payload as argv[1]
+//   node index.js --codex <json>  # Codex notify passes payload as argv[1]
+//   node index.js --codex-hook    # reads Codex lifecycle hook payload from stdin
 //
 // Environment (set by Tether at CLI spawn time, inherited through the CLI
 // process to this helper):
@@ -85,7 +86,7 @@ if (!SOCKET || !TOKEN || !SESSION_ID) {
 }
 
 const mode = process.argv[2];
-if (mode !== '--claude' && mode !== '--codex') {
+if (mode !== '--claude' && mode !== '--codex' && mode !== '--codex-hook') {
   dbg('exit-bad-mode');
   process.exit(0);
 }
@@ -126,9 +127,52 @@ function classifyCodex(payload) {
   return null;
 }
 
+const CODEX_HOOK_EVENTS = {
+  SessionStart: 'session_start',
+  UserPromptSubmit: 'turn_start',
+  PermissionRequest: 'permission_prompt',
+  PostToolUse: 'tool_complete',
+  PreCompact: 'compact_start',
+  PostCompact: 'compact_complete',
+  SubagentStart: 'subagent_start',
+  SubagentStop: 'subagent_stop',
+  Stop: 'turn_complete',
+  Interrupt: 'turn_interrupted',
+  SessionEnd: 'session_end',
+};
+
+function classifyCodexHook(payload) {
+  return CODEX_HOOK_EVENTS[payload.hook_event_name] || null;
+}
+
+function cappedString(value, max) {
+  if (typeof value !== 'string') return undefined;
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+function codexHookMetadata(payload) {
+  return {
+    toolSessionId: cappedString(payload.session_id, 256),
+    turnId: cappedString(payload.turn_id, 256),
+    agentId: cappedString(payload.agent_id, 256),
+    model: cappedString(payload.model, 128),
+    at: new Date().toISOString(),
+  };
+}
+
+function codexNotifyMetadata(payload) {
+  return {
+    type: cappedString(payload.type, 128),
+    toolSessionId: cappedString(payload.session_id, 256),
+    turnId: cappedString(payload.turn_id || payload['turn-id'], 256),
+    model: cappedString(payload.model, 128),
+    at: new Date().toISOString(),
+  };
+}
+
 async function main() {
   let payloadText = '';
-  if (mode === '--claude') {
+  if (mode === '--claude' || mode === '--codex-hook') {
     payloadText = await readStdin();
   } else {
     payloadText = process.argv[3] || '';
@@ -139,7 +183,11 @@ async function main() {
   catch { dbg('exit-bad-json', { rawLen: payloadText.length }); process.exit(0); }
   if (!payload || typeof payload !== 'object') { dbg('exit-payload-not-object'); process.exit(0); }
 
-  const type = source === 'claude' ? classifyClaude(payload) : classifyCodex(payload);
+  const type = source === 'claude'
+    ? classifyClaude(payload)
+    : mode === '--codex-hook'
+      ? classifyCodexHook(payload)
+      : classifyCodex(payload);
   if (!type) {
     dbg('exit-unclassified', {
       hookEventName: payload.hook_event_name,
@@ -148,6 +196,11 @@ async function main() {
     });
     process.exit(0);
   }
+  const forwardedPayload = source === 'codex'
+    ? mode === '--codex-hook'
+      ? codexHookMetadata(payload)
+      : codexNotifyMetadata(payload)
+    : payload;
   dbg('classified', { type });
 
   // Connect, auth, send, exit. Hard 1s timeout on the whole round-trip —
@@ -203,7 +256,7 @@ async function main() {
             tetherSessionId: SESSION_ID,
             type,
             source,
-            payload,
+            payload: forwardedPayload,
           }) + '\n');
         } else {
           dbg('exit-auth-failed', { frame });

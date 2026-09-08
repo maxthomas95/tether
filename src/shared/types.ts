@@ -1,5 +1,6 @@
 import type { CliToolId } from './cli-tools';
 import type { KeybindingOverrides } from './keybindings';
+import type { CodexSessionActivity } from './codex-activity';
 
 export type { CliToolId };
 export type SessionState = 'starting' | 'running' | 'waiting' | 'idle' | 'stopped' | 'dead';
@@ -186,6 +187,8 @@ export interface SessionInfo {
   claudeSessionId?: string;
   /** True if this session was started by resuming a prior tool transcript. */
   resumed?: boolean;
+  /** Passive Codex lifecycle metadata, present only for Codex sessions that emitted hooks. */
+  activity?: CodexSessionActivity;
   /** Source repo path when this session was created as a Tether-managed worktree. */
   worktreeOf?: string;
   /**

@@ -126,6 +126,15 @@ describe('handleConnection auth', () => {
     expect(onEvent).not.toHaveBeenCalled();
   });
 
+  it('rejects unknown hook event types after auth', () => {
+    const onEvent = vi.fn();
+    const d = serve(defaultTokenValidator(BOOT_TOKEN), onEvent);
+    d.clientSend({ id: 'auth', method: 'authenticate', token: BOOT_TOKEN });
+    d.clientSend({ id: '1', method: 'event', tetherSessionId: 'sess', type: 'made_up', source: 'codex' });
+    expect(d.outFrames[1].error).toMatchObject({ code: -32602 });
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
   it('destroys the connection on malformed JSON', () => {
     const d = serve(defaultTokenValidator(BOOT_TOKEN), vi.fn());
     d.clientRaw('{ not json\n');

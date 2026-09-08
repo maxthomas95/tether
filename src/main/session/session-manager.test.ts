@@ -251,6 +251,105 @@ describe('SessionManager', () => {
     expect(cb.onExit).not.toHaveBeenCalled();
   });
 
+  describe('Codex lifecycle hook handling', () => {
+    async function createCodexSession() {
+      const cb = callbacks();
+      const session = await manager.createSession({
+        workingDir: 'C:\\repo\\codex-hooks',
+        cliTool: 'codex',
+      }, cb);
+      session.toolSessionId = 'native-codex-1';
+      cb.onStateChange.mockClear();
+      cb.onUpdate.mockClear();
+      return { session, cb };
+    }
+
+    it('rejects a wrong native Codex session id before status mutation', async () => {
+      const { session, cb } = await createCodexSession();
+
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'permission_prompt',
+        payload: {
+          toolSessionId: 'someone-else',
+          at: '2026-09-07T00:00:01.000Z',
+        },
+      });
+
+      expect(session.activity).toBeNull();
+      expect(cb.onUpdate).not.toHaveBeenCalled();
+      expect(cb.onStateChange).not.toHaveBeenCalled();
+    });
+
+    it('rejects Codex lifecycle events for non-Codex sessions before status mutation', async () => {
+      const cb = callbacks();
+      const session = await manager.createSession({
+        workingDir: 'C:\\repo\\claude-hooks',
+        cliTool: 'claude',
+      }, cb);
+      cb.onStateChange.mockClear();
+      cb.onUpdate.mockClear();
+
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'permission_prompt',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          at: '2026-09-07T00:00:01.000Z',
+        },
+      });
+
+      expect(session.activity).toBeNull();
+      expect(cb.onUpdate).not.toHaveBeenCalled();
+      expect(cb.onStateChange).not.toHaveBeenCalled();
+    });
+
+    it('rejects stale Codex lifecycle events before status mutation', async () => {
+      const { session, cb } = await createCodexSession();
+
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'turn_start',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          at: '2026-09-07T00:00:02.000Z',
+        },
+      });
+      cb.onStateChange.mockClear();
+      cb.onUpdate.mockClear();
+
+      manager.handleHookEvent({
+        tetherSessionId: session.id,
+        source: 'codex',
+        type: 'permission_prompt',
+        payload: {
+          toolSessionId: 'native-codex-1',
+          at: '2026-09-07T00:00:01.000Z',
+        },
+      });
+
+      expect(session.activity?.phase).toBe('running');
+      expect(cb.onUpdate).not.toHaveBeenCalled();
+      expect(cb.onStateChange).not.toHaveBeenCalled();
+    });
+
+    it('keeps the legacy handleHookEvent(id, type) call shape working', async () => {
+      const cb = callbacks();
+      const session = await manager.createSession({
+        workingDir: 'C:\\repo\\legacy-hooks',
+        cliTool: 'claude',
+      }, cb);
+      cb.onStateChange.mockClear();
+
+      manager.handleHookEvent(session.id, 'permission_prompt');
+
+      expect(cb.onStateChange).toHaveBeenCalledWith(session.id, 'waiting', 'permission');
+    });
+  });
+
   describe('forceKill', () => {
     async function createHelmSession(cb: ReturnType<typeof callbacks>) {
       dbState.config.allowHelm = 'true';
