@@ -65,6 +65,8 @@ import { Icon } from './components/Icon';
 import { useRecentProjects } from './hooks/useRecentProjects';
 import { OfficePane } from './components/OfficePane';
 import { JobsOfficePill } from './components/sidebar/JobsOfficePill';
+import { GifPanel } from './components/sidebar/GifPanel';
+import { useGifPanelSettings } from './hooks/useGifPanelSettings';
 
 /**
  * Delay before dropping a waiting-ack when a session transitions back to
@@ -163,6 +165,7 @@ export function App() {
   const notifyError = useCallback((title: string, err: unknown) => {
     notify({ type: 'error', title, message: extractErrorMessage(err) });
   }, [notify]);
+  const gifPanel = useGifPanelSettings(notifyError);
   const notifyVaultAuthError = useCallback((err: unknown) => {
     const message = extractErrorMessage(err);
     if (/cancel/i.test(message)) return;
@@ -1787,6 +1790,7 @@ export function App() {
       label: 'View',
       items: [
         { label: 'Toggle Sidebar', shortcut: formatChord(resolvedBindings['sidebar.toggle']) || undefined, onClick: () => setSidebarVisible(v => !v) },
+        { label: 'GIF Panel', checked: gifPanel.settings?.enabled ?? false, disabled: !gifPanel.settings, onClick: () => { void gifPanel.toggle(); setSidebarVisible(true); } },
         ...(jobsStatus?.detected ? [
           { label: 'J.O.B.S. Office', checked: officeOpen, onClick: () => setOfficeOpen(v => !v) },
         ] : []),
@@ -1812,7 +1816,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, gifPanel.settings, gifPanel.toggle]);
 
   return (
     <div className="app-layout" data-density={uiDensity}>
@@ -1995,6 +1999,7 @@ export function App() {
             );
           })}
         </div>
+        {sidebarVisible && gifPanel.settings?.enabled && <GifPanel settings={gifPanel.settings} onSettingsChange={gifPanel.setSettings} />}
         <GlobalUsageFooter
           environments={environments}
           onOpenHistory={() => setUsageHistoryOpen(true)}
