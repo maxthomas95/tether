@@ -138,9 +138,20 @@ export interface PersistedSessionUsage {
       cost: number;
     }>;
   }>;
+  usageSchemaVersion?: number;
+  dayTiming?: 'event' | 'snapshot' | 'legacy';
+  contextUsedTokens?: number | null;
+  observedAt?: string | null;
   currentModel?: string | null;
   currentReasoningEffort?: string | null;
   contextWindowTokens?: number | null;
+  codexTokenUsage?: {
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+    reasoningOutputTokens: number;
+    totalTokens: number;
+  } | null;
   messageCount: number;
   firstMessageAt: string | null;
   lastMessageAt: string | null;

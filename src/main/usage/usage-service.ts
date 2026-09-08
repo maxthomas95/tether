@@ -3,7 +3,7 @@ import { createLogger } from '../logger';
 import { transcriptPath, scanAllTranscripts } from '../claude/transcripts';
 import { scanAllCodexTranscripts } from '../codex/transcripts';
 import { parseJsonlFile, type ParsedMessage } from './jsonl-parser';
-import { parseCodexJsonl } from './codex-jsonl-parser';
+import { parseCodexJsonl, type CodexTokenUsageCounters } from './codex-jsonl-parser';
 import { readCrushSessions } from '../opencode/usage-reader';
 import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
 import { aggregateByEnvironment } from './env-aggregator';
@@ -23,6 +23,7 @@ const log = createLogger('usage');
 const WATCH_DEBOUNCE_MS = 300;
 const WATCH_POLL_INTERVAL_MS = 2_000;
 const RESCAN_INTERVAL_MS = 5 * 60 * 1_000;
+const USAGE_SCHEMA_VERSION = 2;
 
 interface TrackedSession {
   sessionId: string;
@@ -39,6 +40,7 @@ interface TrackedSession {
    * cost-attribute correctly.
    */
   lastSeenModel?: string | null;
+  codexTokenUsage?: CodexTokenUsageCounters | null;
 }
 
 function emptySessionUsage(sessionId: string, cliTool: CliToolId, environmentId?: string): SessionUsage {
@@ -54,6 +56,9 @@ function emptySessionUsage(sessionId: string, cliTool: CliToolId, environmentId?
     totalCost: 0,
     models: [],
     daily: [],
+    dayTiming: 'event',
+    contextUsedTokens: null,
+    observedAt: null,
     currentModel: null,
     currentReasoningEffort: null,
     contextWindowTokens: null,
@@ -65,7 +70,51 @@ function emptySessionUsage(sessionId: string, cliTool: CliToolId, environmentId?
 }
 
 export function resetUsageForReparse(existing: SessionUsage): SessionUsage {
-  return emptySessionUsage(existing.sessionId, existing.cliTool, existing.environmentId);
+  return {
+    ...emptySessionUsage(existing.sessionId, existing.cliTool, existing.environmentId),
+    workingDir: existing.workingDir,
+    dayTiming: existing.cliTool === 'opencode' ? 'snapshot' : 'event',
+  };
+}
+
+function hydrateUsage(summary: PersistedSessionUsage, cliTool: CliToolId, environmentId?: string): SessionUsage {
+  return {
+    sessionId: summary.sessionId,
+    cliTool,
+    environmentId: summary.environmentId ?? environmentId,
+    inputTokens: summary.inputTokens,
+    outputTokens: summary.outputTokens,
+    reasoningTokens: summary.reasoningTokens ?? 0,
+    cacheCreationTokens: summary.cacheCreationTokens,
+    cacheReadTokens: summary.cacheReadTokens,
+    totalCost: summary.totalCost,
+    models: summary.models.map(cloneModelBreakdown),
+    daily: summary.daily?.map(cloneDailyUsage) ?? [],
+    dayTiming: summary.dayTiming ?? ((summary.daily?.length ?? 0) > 0 ? 'event' : undefined),
+    workingDir: summary.workingDir,
+    contextUsedTokens: summary.contextUsedTokens ?? null,
+    observedAt: summary.observedAt ?? null,
+    currentModel: summary.currentModel ?? null,
+    currentReasoningEffort: summary.currentReasoningEffort ?? null,
+    contextWindowTokens: summary.contextWindowTokens ?? null,
+    messageCount: summary.messageCount,
+    firstMessageAt: summary.firstMessageAt,
+    lastMessageAt: summary.lastMessageAt,
+    parsedByteOffset: summary.parsedByteOffset,
+  };
+}
+
+function needsUsageReparse(summary: PersistedSessionUsage, filePath: string): boolean {
+  return summary.usageSchemaVersion !== USAGE_SCHEMA_VERSION
+    && summary.cliTool !== 'opencode'
+    && !!filePath
+    && fs.existsSync(filePath);
+}
+
+function markLegacyIfTranscriptUnavailable(usage: SessionUsage, filePath: string): SessionUsage {
+  if (usage.dayTiming || usage.daily?.length) return usage;
+  if (filePath && fs.existsSync(filePath)) return usage;
+  return { ...usage, daily: [], dayTiming: 'legacy' };
 }
 
 function cloneModelBreakdown(model: UsageModelBreakdown): UsageModelBreakdown {
@@ -198,7 +247,7 @@ export function mergeMessages(existing: SessionUsage, messages: ParsedMessage[],
   };
 }
 
-class UsageService {
+export class UsageService {
   private tracked = new Map<string, TrackedSession>();
   private callback: ((info: UsageInfo) => void) | null = null;
   private rescanTimer: ReturnType<typeof setInterval> | null = null;
@@ -214,38 +263,27 @@ class UsageService {
     for (const summary of db.usageSummaries) {
       if (!this.tracked.has(summary.sessionId)) {
         const cliTool = (summary.cliTool as CliToolId) || 'claude';
+        const filePath = summary.filePath ?? (cliTool === 'claude' ? transcriptPath(summary.workingDir, summary.sessionId) : '');
+        const usage = markLegacyIfTranscriptUnavailable(hydrateUsage(summary, cliTool), filePath);
         this.tracked.set(summary.sessionId, {
           sessionId: summary.sessionId,
           cliTool,
           workingDir: summary.workingDir,
-          filePath: summary.filePath ?? (cliTool === 'claude' ? transcriptPath(summary.workingDir, summary.sessionId) : ''),
+          filePath,
           watching: false,
           debounceTimer: null,
-          usage: {
-            sessionId: summary.sessionId,
-            cliTool,
-            environmentId: summary.environmentId,
-            inputTokens: summary.inputTokens,
-            outputTokens: summary.outputTokens,
-            reasoningTokens: summary.reasoningTokens ?? 0,
-            cacheCreationTokens: summary.cacheCreationTokens,
-            cacheReadTokens: summary.cacheReadTokens,
-            totalCost: summary.totalCost,
-            models: summary.models.map(cloneModelBreakdown),
-            daily: summary.daily?.map(cloneDailyUsage) ?? [],
-            currentModel: summary.currentModel ?? null,
-            currentReasoningEffort: summary.currentReasoningEffort ?? null,
-            contextWindowTokens: summary.contextWindowTokens ?? null,
-            messageCount: summary.messageCount,
-            firstMessageAt: summary.firstMessageAt,
-            lastMessageAt: summary.lastMessageAt,
-            parsedByteOffset: summary.parsedByteOffset,
-          },
-          // lastSeenModel isn't persisted; the next turn_context line resets it.
-          // A handful of token_count events appended pre-turn_context after a
-          // restart will attribute to 'unknown' until the next turn_context.
-          lastSeenModel: null,
+          usage,
+          lastSeenModel: usage.currentModel ?? null,
+          codexTokenUsage: summary.codexTokenUsage ?? null,
         });
+        const tracked = this.tracked.get(summary.sessionId);
+        if (tracked && needsUsageReparse(summary, filePath)) {
+          tracked.usage = resetUsageForReparse(tracked.usage);
+          tracked.codexTokenUsage = null;
+          this.parseSession(tracked);
+        } else if (usage.dayTiming === 'legacy' && usage.dayTiming !== summary.dayTiming) {
+          this.persistSession(this.tracked.get(summary.sessionId)!);
+        }
       }
     }
 
@@ -296,6 +334,16 @@ class UsageService {
         newSessions++;
         continue;
       }
+      existing.workingDir = d.projectDirName;
+      existing.filePath = d.filePath;
+      existing.usage.workingDir = d.projectDirName;
+      if (!existing.watching) this.startWatching(existing);
+      if (existing.usage.dayTiming === 'legacy') {
+        existing.usage = resetUsageForReparse(existing.usage);
+        this.parseSession(existing);
+        updatedSessions++;
+        continue;
+      }
       // Already known. Re-parse if the file grew; if it shrank, reset the full
       // accumulator first so a replacement/truncation cannot double-count.
       if (d.size < existing.usage.parsedByteOffset) {
@@ -334,9 +382,22 @@ class UsageService {
         newSessions++;
         continue;
       }
+      existing.workingDir = d.cwd;
+      existing.filePath = d.filePath;
+      existing.usage.workingDir = d.cwd;
+      if (!existing.watching) this.startWatching(existing);
+      if (existing.usage.dayTiming === 'legacy') {
+        existing.usage = resetUsageForReparse(existing.usage);
+        existing.lastSeenModel = null;
+        existing.codexTokenUsage = null;
+        this.parseSession(existing);
+        updatedSessions++;
+        continue;
+      }
       if (d.size < existing.usage.parsedByteOffset) {
         existing.usage = resetUsageForReparse(existing.usage);
         existing.lastSeenModel = null;
+        existing.codexTokenUsage = null;
         this.parseSession(existing);
         updatedSessions++;
       } else if (d.size > existing.usage.parsedByteOffset) {
@@ -386,6 +447,10 @@ class UsageService {
             cacheReadTokens: 0,
             totalCost: cs.cost,
             models: [modelBreakdown],
+            dayTiming: 'snapshot',
+            workingDir: cs.directory,
+            contextUsedTokens: null,
+            observedAt: cs.updatedAt,
             daily: [{
               date: messageDate(cs.updatedAt),
               inputTokens: cs.promptTokens,
@@ -467,31 +532,16 @@ class UsageService {
       watching: false,
       debounceTimer: null,
       usage: persisted ? {
-        sessionId,
-        cliTool: (persisted.cliTool as CliToolId) || cliTool,
-        environmentId: persisted.environmentId ?? environmentId,
-        inputTokens: persisted.inputTokens,
-        outputTokens: persisted.outputTokens,
-        reasoningTokens: persisted.reasoningTokens ?? 0,
-        cacheCreationTokens: persisted.cacheCreationTokens,
-        cacheReadTokens: persisted.cacheReadTokens,
-        totalCost: persisted.totalCost,
-        models: persisted.models.map(cloneModelBreakdown),
-        daily: persisted.daily?.map(cloneDailyUsage) ?? [],
-        currentModel: persisted.currentModel ?? null,
-        currentReasoningEffort: persisted.currentReasoningEffort ?? null,
-        contextWindowTokens: persisted.contextWindowTokens ?? null,
-        messageCount: persisted.messageCount,
-        firstMessageAt: persisted.firstMessageAt,
-        lastMessageAt: persisted.lastMessageAt,
-        parsedByteOffset: persisted.parsedByteOffset,
-      } : emptySessionUsage(sessionId, cliTool, environmentId),
+        ...markLegacyIfTranscriptUnavailable(hydrateUsage(persisted, (persisted.cliTool as CliToolId) || cliTool, environmentId), filePath),
+        workingDir,
+      } : { ...emptySessionUsage(sessionId, cliTool, environmentId), workingDir },
       lastSeenModel: cliTool === 'codex' && persisted && persisted.models.length > 0
         ? persisted.currentModel ?? persisted.models[persisted.models.length - 1].model
         : null,
     };
 
     this.tracked.set(sessionId, session);
+    session.codexTokenUsage = persisted?.codexTokenUsage ?? null;
 
     // Initial parse (Claude/Codex parse from JSONL; Crush is from SQLite)
     if (cliTool === 'claude') {
@@ -540,8 +590,9 @@ class UsageService {
     let totalCost = 0;
 
     for (const [id, tracked] of this.tracked) {
-      sessions[id] = tracked.usage;
-      allUsage.push(tracked.usage);
+      const usage = { ...tracked.usage, workingDir: tracked.workingDir };
+      sessions[id] = usage;
+      allUsage.push(usage);
       totalCost += tracked.usage.totalCost;
     }
 
@@ -594,20 +645,31 @@ class UsageService {
           priorModel: session.lastSeenModel ?? null,
           priorReasoningEffort: session.usage.currentReasoningEffort ?? null,
           priorContextWindowTokens: session.usage.contextWindowTokens ?? null,
+          priorContextUsedTokens: session.usage.contextUsedTokens ?? null,
+          priorTokenUsage: session.codexTokenUsage ?? null,
         });
         if (result.messages.length > 0 || result.newByteOffset !== session.usage.parsedByteOffset) {
           session.usage = mergeMessages(session.usage, result.messages, result.newByteOffset);
           session.lastSeenModel = result.currentModel;
+          session.codexTokenUsage = result.tokenUsage;
+          session.usage.dayTiming = 'event';
+          session.usage.workingDir = session.workingDir;
           session.usage.currentModel = result.currentModel ?? session.usage.currentModel ?? null;
           session.usage.currentReasoningEffort = result.currentReasoningEffort;
           session.usage.contextWindowTokens = result.contextWindowTokens;
+          session.usage.contextUsedTokens = result.contextUsedTokens;
+          session.usage.observedAt = result.observedAt ?? session.usage.observedAt ?? null;
           this.persistSession(session);
           this.notifyUpdate();
         } else if (result.currentModel && result.currentModel !== session.lastSeenModel) {
           session.lastSeenModel = result.currentModel;
+          session.codexTokenUsage = result.tokenUsage;
           session.usage.currentModel = result.currentModel;
           session.usage.currentReasoningEffort = result.currentReasoningEffort;
           session.usage.contextWindowTokens = result.contextWindowTokens;
+          session.usage.contextUsedTokens = result.contextUsedTokens;
+          session.usage.observedAt = result.observedAt ?? session.usage.observedAt ?? null;
+          this.persistSession(session);
         }
         return;
       }
@@ -615,6 +677,9 @@ class UsageService {
       const result = parseJsonlFile(session.filePath, session.usage.parsedByteOffset);
       if (result.messages.length > 0 || result.newByteOffset !== session.usage.parsedByteOffset) {
         session.usage = mergeMessages(session.usage, result.messages, result.newByteOffset);
+        session.usage.dayTiming = 'event';
+        session.usage.workingDir = session.workingDir;
+        session.usage.observedAt = result.messages[result.messages.length - 1]?.timestamp ?? session.usage.observedAt ?? null;
         this.persistSession(session);
         this.notifyUpdate();
       }
@@ -665,6 +730,10 @@ class UsageService {
       cacheReadTokens: 0,
       totalCost: found.cost,
       models: [modelBreakdown],
+      dayTiming: 'snapshot',
+      workingDir: found.directory,
+      contextUsedTokens: null,
+      observedAt: found.updatedAt,
       daily: [{
         date: messageDate(found.updatedAt),
         inputTokens: found.promptTokens,
@@ -705,9 +774,14 @@ class UsageService {
       totalCost: session.usage.totalCost,
       models: session.usage.models,
       daily: session.usage.daily,
+      usageSchemaVersion: USAGE_SCHEMA_VERSION,
+      dayTiming: session.usage.dayTiming,
+      contextUsedTokens: session.usage.contextUsedTokens ?? null,
+      observedAt: session.usage.observedAt ?? null,
       currentModel: session.usage.currentModel ?? null,
       currentReasoningEffort: session.usage.currentReasoningEffort ?? null,
       contextWindowTokens: session.usage.contextWindowTokens ?? null,
+      codexTokenUsage: session.codexTokenUsage ?? null,
       messageCount: session.usage.messageCount,
       firstMessageAt: session.usage.firstMessageAt,
       lastMessageAt: session.usage.lastMessageAt,
@@ -739,7 +813,10 @@ class UsageService {
       // re-parse from the top without keeping old token totals.
       if ((prev.ino !== 0 && curr.ino !== prev.ino) || curr.size < session.usage.parsedByteOffset) {
         session.usage = resetUsageForReparse(session.usage);
-        if (session.cliTool === 'codex') session.lastSeenModel = null;
+        if (session.cliTool === 'codex') {
+          session.lastSeenModel = null;
+          session.codexTokenUsage = null;
+        }
       }
       if (curr.size === prev.size && curr.mtimeMs === prev.mtimeMs) return;
       this.debouncedParse(session);
@@ -851,57 +928,13 @@ class UsageService {
 
     for (const tracked of this.tracked.values()) {
       const u = tracked.usage;
+      if (u.dayTiming === 'legacy') continue;
       if (u.daily && u.daily.length > 0) {
         for (const d of u.daily) {
           addUsage(d.date, u.cliTool, u.sessionId, d);
         }
         continue;
       }
-      if (!u.lastMessageAt) continue;
-
-      const date = u.lastMessageAt.slice(0, 10); // YYYY-MM-DD
-      const day = dayMap.get(date) || {
-        date,
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheCreationTokens: 0,
-        cacheReadTokens: 0,
-        totalCost: 0,
-        sessionCount: 0,
-      };
-
-      day.inputTokens += u.inputTokens;
-      day.outputTokens += u.outputTokens;
-      day.cacheCreationTokens += u.cacheCreationTokens;
-      day.cacheReadTokens += u.cacheReadTokens;
-      day.totalCost += u.totalCost;
-      day.sessionCount++;
-      dayMap.set(date, day);
-
-      let toolMap = dayToolMap.get(date);
-      if (!toolMap) {
-        toolMap = new Map();
-        dayToolMap.set(date, toolMap);
-      }
-      let toolRow = toolMap.get(u.cliTool);
-      if (!toolRow) {
-        toolRow = {
-          cliTool: u.cliTool,
-          totalCost: 0,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheCreationTokens: 0,
-          cacheReadTokens: 0,
-          sessionCount: 0,
-        };
-        toolMap.set(u.cliTool, toolRow);
-      }
-      toolRow.totalCost += u.totalCost;
-      toolRow.inputTokens += u.inputTokens;
-      toolRow.outputTokens += u.outputTokens;
-      toolRow.cacheCreationTokens += u.cacheCreationTokens;
-      toolRow.cacheReadTokens += u.cacheReadTokens;
-      toolRow.sessionCount += 1;
     }
 
     // Attach per-tool breakdowns, sorted by cost desc, tie-break on cliTool

@@ -35,7 +35,7 @@ function sumWindow(days: DailyUsage[]): { cost: number; tokens: number; sessions
   const sessionIds = new Set<string>();
   for (const d of days) {
     cost += d.totalCost;
-    tokens += d.inputTokens + d.outputTokens + (d.reasoningTokens ?? 0) + d.cacheCreationTokens + d.cacheReadTokens;
+    tokens += d.inputTokens + d.outputTokens + d.cacheCreationTokens + d.cacheReadTokens;
     if (d.sessionIds && d.sessionIds.length > 0) {
       for (const id of d.sessionIds) sessionIds.add(id);
     } else {
@@ -101,7 +101,7 @@ function computeTodayByCliTool(todayUsage: DailyUsage | undefined): CliToolToday
       buckets.set(tool.cliTool, row);
     }
     row.cost += tool.totalCost;
-    row.tokens += tool.inputTokens + tool.outputTokens + (tool.reasoningTokens ?? 0) + tool.cacheCreationTokens + tool.cacheReadTokens;
+    row.tokens += tool.inputTokens + tool.outputTokens + tool.cacheCreationTokens + tool.cacheReadTokens;
   }
   const out = Array.from(buckets.values());
   out.sort((a, b) => {

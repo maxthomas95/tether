@@ -1,9 +1,63 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionUsage } from '../../shared/types';
+import type { DbData } from '../db/database';
 
 vi.mock('electron', () => ({ app: { getPath: () => '' } }));
 
-import { mergeMessages, resetUsageForReparse } from './usage-service';
+const mocks = vi.hoisted(() => ({
+  db: {
+    environments: [],
+    sessions: [],
+    launchProfiles: [],
+    config: {},
+    defaultEnvVars: {},
+    defaultCliFlags: [],
+    defaultCliFlagsPerTool: {},
+    savedWorkspace: null,
+    gitProviders: [],
+    repoGroupPrefs: [],
+    sessionOrderPrefs: [],
+    usageSummaries: [],
+    knownHosts: [],
+    keybindings: {},
+  } as DbData,
+  saveDb: vi.fn(),
+  scanAllTranscripts: vi.fn(() => []),
+  scanAllCodexTranscripts: vi.fn(() => []),
+  readCrushSessions: vi.fn(() => []),
+}));
+
+vi.mock('../db/database', () => ({
+  getDb: () => mocks.db,
+  saveDb: mocks.saveDb,
+}));
+
+vi.mock('../claude/transcripts', () => ({
+  transcriptPath: (workingDir: string, sessionId: string) => `${workingDir}/${sessionId}.jsonl`,
+  scanAllTranscripts: mocks.scanAllTranscripts,
+}));
+
+vi.mock('../codex/transcripts', () => ({
+  scanAllCodexTranscripts: mocks.scanAllCodexTranscripts,
+}));
+
+vi.mock('../opencode/usage-reader', () => ({
+  readCrushSessions: mocks.readCrushSessions,
+}));
+
+vi.mock('../logger', () => ({
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}));
+
+import { mergeMessages, resetUsageForReparse, UsageService } from './usage-service';
+
+beforeEach(() => {
+  mocks.db.usageSummaries = [];
+  mocks.saveDb.mockClear();
+  mocks.scanAllTranscripts.mockReturnValue([]);
+  mocks.scanAllCodexTranscripts.mockReturnValue([]);
+  mocks.readCrushSessions.mockReturnValue([]);
+});
 
 describe('usage-service helpers', () => {
   it('resets accumulated totals while preserving session identity', () => {
@@ -50,6 +104,10 @@ describe('usage-service helpers', () => {
       totalCost: 0,
       models: [],
       daily: [],
+      dayTiming: 'event',
+      workingDir: undefined,
+      contextUsedTokens: null,
+      observedAt: null,
       currentModel: null,
       currentReasoningEffort: null,
       contextWindowTokens: null,
@@ -116,5 +174,170 @@ describe('usage-service helpers', () => {
       totalCost: 0.02,
       messageCount: 1,
     });
+  });
+
+  it('keeps unavailable historical totals as legacy all-time usage without date buckets', () => {
+    mocks.db.usageSummaries = [{
+      sessionId: 'legacy',
+      cliTool: 'codex',
+      workingDir: 'C:\\repo\\old',
+      filePath: 'C:\\repo\\missing\\rollout.jsonl',
+      inputTokens: 100,
+      outputTokens: 20,
+      reasoningTokens: 5,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalCost: 0.5,
+      models: [{ model: 'gpt-5-codex', inputTokens: 100, outputTokens: 20, reasoningTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 0, cost: 0.5 }],
+      messageCount: 1,
+      firstMessageAt: '2026-05-08T00:00:00.000Z',
+      lastMessageAt: '2026-05-08T00:01:00.000Z',
+      parsedByteOffset: 123,
+    }];
+
+    const service = new UsageService();
+    service.start();
+    service.stop();
+    const all = service.getAll();
+
+    expect(all.totalCost).toBe(0.5);
+    expect(all.daily).toEqual([]);
+    expect(all.sessions.legacy.dayTiming).toBe('legacy');
+    expect(all.sessions.legacy.workingDir).toBe('C:\\repo\\old');
+  });
+
+  it('forces a one-time full reparse for unchanged-size persisted transcript summaries', () => {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const os = require('node:os') as typeof import('node:os');
+    const path = require('node:path') as typeof import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-usage-reparse-'));
+    const filePath = path.join(dir, 'session.jsonl');
+    fs.writeFileSync(filePath, JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-05-08T23:00:00.000Z',
+      message: { model: 'claude-sonnet-4', usage: { input_tokens: 10, output_tokens: 5 } },
+    }) + '\n' + JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-05-09T01:00:00.000Z',
+      message: { model: 'claude-sonnet-4', usage: { input_tokens: 20, output_tokens: 7 } },
+    }) + '\n');
+    const size = fs.statSync(filePath).size;
+    mocks.db.usageSummaries = [{
+      sessionId: 'reparse',
+      cliTool: 'claude',
+      workingDir: dir,
+      filePath,
+      inputTokens: 30,
+      outputTokens: 12,
+      reasoningTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalCost: 0.00027,
+      models: [{ model: 'claude-sonnet-4', inputTokens: 30, outputTokens: 12, reasoningTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, cost: 0.00027 }],
+      messageCount: 2,
+      firstMessageAt: '2026-05-08T23:00:00.000Z',
+      lastMessageAt: '2026-05-09T01:00:00.000Z',
+      parsedByteOffset: size,
+    }];
+
+    const service = new UsageService();
+    service.start();
+    service.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    expect(service.getAll().daily.map(d => d.date)).toEqual(['2026-05-09', '2026-05-08']);
+    expect(mocks.db.usageSummaries[0].usageSchemaVersion).toBe(2);
+  });
+
+  it('attaches a discovered Codex transcript path to an initially tracked empty path', () => {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const os = require('node:os') as typeof import('node:os');
+    const path = require('node:path') as typeof import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-usage-attach-'));
+    const filePath = path.join(dir, 'rollout.jsonl');
+    fs.writeFileSync(filePath, [
+      JSON.stringify({ type: 'session_meta', payload: { id: 'codex-empty-path', cwd: dir } }),
+      JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5-codex' } }),
+      JSON.stringify({
+        timestamp: '2026-05-09T00:00:00.000Z',
+        type: 'event_msg',
+        payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 50, output_tokens: 5 } } },
+      }),
+    ].join('\n') + '\n');
+    mocks.scanAllCodexTranscripts.mockReturnValue([{
+      sessionId: 'codex-empty-path',
+      filePath,
+      cwd: dir,
+      size: fs.statSync(filePath).size,
+      mtimeMs: Date.now(),
+    }]);
+
+    const service = new UsageService();
+    service.trackSession('codex-empty-path', dir, 'codex');
+    (service as unknown as { backfillFromDisk: () => void }).backfillFromDisk();
+    service.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    const all = service.getAll();
+    expect(all.sessions['codex-empty-path'].inputTokens).toBe(50);
+    expect(all.sessions['codex-empty-path'].workingDir).toBe(dir);
+    expect(mocks.db.usageSummaries[0].filePath).toBe(filePath);
+  });
+
+  it('reparses a persisted empty Codex path after scan discovery even when size is unchanged', () => {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const os = require('node:os') as typeof import('node:os');
+    const path = require('node:path') as typeof import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-usage-empty-persisted-'));
+    const filePath = path.join(dir, 'rollout.jsonl');
+    fs.writeFileSync(filePath, [
+      JSON.stringify({ type: 'session_meta', payload: { id: 'persisted-empty-path', cwd: dir } }),
+      JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5-codex' } }),
+      JSON.stringify({
+        timestamp: '2026-05-08T23:30:00.000Z',
+        type: 'event_msg',
+        payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 20, output_tokens: 2 } } },
+      }),
+      JSON.stringify({
+        timestamp: '2026-05-09T00:30:00.000Z',
+        type: 'event_msg',
+        payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 30, output_tokens: 3 } } },
+      }),
+    ].join('\n') + '\n');
+    mocks.db.usageSummaries = [{
+      sessionId: 'persisted-empty-path',
+      cliTool: 'codex',
+      workingDir: dir,
+      filePath: '',
+      inputTokens: 50,
+      outputTokens: 5,
+      reasoningTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalCost: 0.01,
+      models: [{ model: 'gpt-5-codex', inputTokens: 50, outputTokens: 5, reasoningTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, cost: 0.01 }],
+      messageCount: 2,
+      firstMessageAt: '2026-05-08T23:30:00.000Z',
+      lastMessageAt: '2026-05-09T00:30:00.000Z',
+      parsedByteOffset: fs.statSync(filePath).size,
+    }];
+    mocks.scanAllCodexTranscripts.mockReturnValue([{
+      sessionId: 'persisted-empty-path',
+      filePath,
+      cwd: dir,
+      size: fs.statSync(filePath).size,
+      mtimeMs: Date.now(),
+    }]);
+
+    const service = new UsageService();
+    service.start();
+    (service as unknown as { backfillFromDisk: () => void }).backfillFromDisk();
+    service.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    const all = service.getAll();
+    expect(all.sessions['persisted-empty-path'].dayTiming).toBe('event');
+    expect(all.daily.map(d => d.date)).toEqual(['2026-05-09', '2026-05-08']);
+    expect(mocks.db.usageSummaries[0].filePath).toBe(filePath);
   });
 });

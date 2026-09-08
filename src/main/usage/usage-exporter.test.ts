@@ -19,6 +19,9 @@ function makeSession(overrides: Partial<EnrichedSession> = {}): EnrichedSession 
       { model: 'claude-sonnet-4-5', inputTokens: 100, outputTokens: 200, reasoningTokens: 0, cacheCreationTokens: 50, cacheReadTokens: 25, cost: 1.25 },
     ],
     daily: [],
+    dayTiming: 'event',
+    contextUsedTokens: null,
+    observedAt: null,
     currentModel: 'claude-sonnet-4-5',
     currentReasoningEffort: null,
     contextWindowTokens: null,
@@ -54,7 +57,7 @@ describe('serializeUsageCsv', () => {
     const csv = serializeUsageCsv([]);
     const lines = csv.split('\r\n').filter(l => l.length > 0);
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toBe('sessionId,cliTool,workingDir,firstMessageAt,lastMessageAt,messageCount,currentModel,currentReasoningEffort,contextWindowTokens,inputTokens,outputTokens,reasoningTokens,cacheCreationTokens,cacheReadTokens,totalCost');
+    expect(lines[0]).toBe('sessionId,cliTool,workingDir,firstMessageAt,lastMessageAt,messageCount,currentModel,currentReasoningEffort,contextWindowTokens,contextUsedTokens,observedAt,dayTiming,inputTokens,outputTokens,reasoningTokens,cacheCreationTokens,cacheReadTokens,totalCost');
   });
 
   it('serializes a single session with all numeric fields', () => {
@@ -62,7 +65,7 @@ describe('serializeUsageCsv', () => {
     const lines = csv.split('\r\n');
     expect(lines[0]).toMatch(/^sessionId,/);
     expect(lines[1]).toBe(
-      'sess-1,claude,C:\\repo\\tether,2026-05-09T08:00:00.000Z,2026-05-09T09:30:00.000Z,4,claude-sonnet-4-5,,,100,200,0,50,25,1.25',
+      'sess-1,claude,C:\\repo\\tether,2026-05-09T08:00:00.000Z,2026-05-09T09:30:00.000Z,4,claude-sonnet-4-5,,,,,event,100,200,0,50,25,1.25',
     );
     // Trailing CRLF after last row
     expect(csv.endsWith('\r\n')).toBe(true);

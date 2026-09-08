@@ -22,6 +22,14 @@ function tokenCountEvent(opts: {
   cached?: number;
   output?: number;
   reasoning?: number;
+  total?: number;
+  cumulative?: {
+    input?: number;
+    cached?: number;
+    output?: number;
+    reasoning?: number;
+    total?: number;
+  };
 }): object {
   return {
     timestamp: opts.timestamp ?? '2026-05-09T03:28:10.172Z',
@@ -34,7 +42,17 @@ function tokenCountEvent(opts: {
           cached_input_tokens: opts.cached ?? 0,
           output_tokens: opts.output ?? 0,
           reasoning_output_tokens: opts.reasoning ?? 0,
+          ...(opts.total !== undefined ? { total_tokens: opts.total } : {}),
         },
+        ...(opts.cumulative ? {
+          total_token_usage: {
+            input_tokens: opts.cumulative.input ?? 0,
+            cached_input_tokens: opts.cumulative.cached ?? 0,
+            output_tokens: opts.cumulative.output ?? 0,
+            reasoning_output_tokens: opts.cumulative.reasoning ?? 0,
+            ...(opts.cumulative.total !== undefined ? { total_tokens: opts.cumulative.total } : {}),
+          },
+        } : {}),
       },
     },
   };
@@ -79,6 +97,21 @@ describe('parseCodexJsonl', () => {
     expect(result.currentModel).toBe('gpt-5-codex');
   });
 
+  it('does not bill Codex reasoning tokens in addition to output tokens', () => {
+    const dir = makeTempDir();
+    const file = path.join(dir, 'rollout.jsonl');
+    writeJsonl(file, [
+      turnContext('unknown-model-for-default-pricing'),
+      tokenCountEvent({ input: 1000, cached: 200, output: 50, reasoning: 10 }),
+    ]);
+
+    const result = parseCodexJsonl(file, { startOffset: 0, priorModel: null });
+
+    expect(result.messages[0].outputTokens).toBe(50);
+    expect(result.messages[0].reasoningTokens).toBe(10);
+    expect(result.messages[0].cost).toBeCloseTo(0.00321, 8);
+  });
+
   it('captures current Codex reasoning and context metadata from turn_context', () => {
     const dir = makeTempDir();
     const file = path.join(dir, 'rollout.jsonl');
@@ -92,6 +125,108 @@ describe('parseCodexJsonl', () => {
     expect(result.currentModel).toBe('gpt-5.6-sol');
     expect(result.currentReasoningEffort).toBe('xhigh');
     expect(result.contextWindowTokens).toBe(258400);
+    expect(result.contextUsedTokens).toBe(110);
+    expect(result.observedAt).toBe('2026-05-09T03:28:10.172Z');
+  });
+
+  it('dedupes repeated cumulative total_token_usage snapshots', () => {
+    const dir = makeTempDir();
+    const file = path.join(dir, 'rollout.jsonl');
+    writeJsonl(file, [
+      turnContext('gpt-5-codex'),
+      tokenCountEvent({
+        input: 100,
+        output: 10,
+        cumulative: { input: 100, output: 10, total: 110 },
+      }),
+      tokenCountEvent({
+        input: 100,
+        output: 10,
+        cumulative: { input: 100, output: 10, total: 110 },
+      }),
+      tokenCountEvent({
+        input: 250,
+        cached: 50,
+        output: 25,
+        reasoning: 5,
+        cumulative: { input: 250, cached: 50, output: 25, reasoning: 5, total: 275 },
+      }),
+    ]);
+
+    const result = parseCodexJsonl(file, { startOffset: 0, priorModel: null });
+
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[0]).toMatchObject({ inputTokens: 100, outputTokens: 10 });
+    expect(result.messages[1]).toMatchObject({ inputTokens: 100, cacheReadTokens: 50, outputTokens: 15, reasoningTokens: 5 });
+    expect(result.contextUsedTokens).toBe(275);
+    expect(result.tokenUsage).toMatchObject({ inputTokens: 250, cachedInputTokens: 50, outputTokens: 25, reasoningOutputTokens: 5, totalTokens: 275 });
+  });
+
+  it('dedupes a cumulative snapshot after restart when prior counters are supplied', () => {
+    const dir = makeTempDir();
+    const file = path.join(dir, 'rollout.jsonl');
+    writeJsonl(file, [
+      turnContext('gpt-5-codex'),
+      tokenCountEvent({
+        input: 250,
+        output: 25,
+        reasoning: 5,
+        cumulative: { input: 250, output: 25, reasoning: 5, total: 275 },
+      }),
+    ]);
+
+    const first = parseCodexJsonl(file, { startOffset: 0, priorModel: null });
+    fs.appendFileSync(file, JSON.stringify(tokenCountEvent({
+      input: 250,
+      output: 25,
+      reasoning: 5,
+      cumulative: { input: 250, output: 25, reasoning: 5, total: 275 },
+    })) + '\n');
+
+    const second = parseCodexJsonl(file, {
+      startOffset: first.newByteOffset,
+      priorModel: first.currentModel,
+      priorTokenUsage: first.tokenUsage,
+    });
+
+    expect(second.messages).toEqual([]);
+    expect(second.tokenUsage).toEqual(first.tokenUsage);
+  });
+
+  it('treats lower cumulative counters as a reset after truncation', () => {
+    const dir = makeTempDir();
+    const file = path.join(dir, 'rollout.jsonl');
+    writeJsonl(file, [
+      turnContext('gpt-5-codex'),
+      tokenCountEvent({
+        input: 40,
+        output: 4,
+        cumulative: { input: 40, output: 4, total: 44 },
+      }),
+    ]);
+
+    const result = parseCodexJsonl(file, {
+      startOffset: 0,
+      priorModel: null,
+      priorTokenUsage: { inputTokens: 200, cachedInputTokens: 0, outputTokens: 20, reasoningOutputTokens: 0, totalTokens: 220 },
+    });
+
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0]).toMatchObject({ inputTokens: 40, outputTokens: 4 });
+  });
+
+  it('ignores negative and non-finite token fields', () => {
+    const dir = makeTempDir();
+    const file = path.join(dir, 'rollout.jsonl');
+    fs.writeFileSync(file, [
+      JSON.stringify(turnContext('gpt-5-codex')),
+      '{"timestamp":"2026-05-09T03:28:10.172Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":-1,"cached_input_tokens":null,"output_tokens":20,"reasoning_output_tokens":null}}}}',
+    ].join('\n') + '\n');
+
+    const result = parseCodexJsonl(file, { startOffset: 0, priorModel: null });
+
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0]).toMatchObject({ inputTokens: 0, outputTokens: 20, reasoningTokens: 0 });
   });
 
   it('updates the active model when a new turn_context appears mid-file', () => {
