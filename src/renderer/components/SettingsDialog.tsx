@@ -731,7 +731,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                 Resume previous conversations
               </label>
               <p className="form-hint">
-                Reopen the same Claude Code or Codex CLI conversation each session was on, instead of starting fresh.
+                Reopen the saved Claude Code, Codex CLI, GitHub Copilot CLI, or OpenCode conversation when its history is available.
                 Local environments only; SSH and Coder sessions always start fresh.
               </p>
 
@@ -757,7 +757,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                 Enable conversation resume
               </label>
               <p className="form-hint">
-                Lets you manually pick an older Claude Code or Codex CLI conversation for a session&rsquo;s working directory.
+                Lets you pick an older Claude Code, Codex CLI, GitHub Copilot CLI, or OpenCode conversation for a local working directory.
               </p>
             </div>
           </div>
@@ -940,7 +940,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               Lines of scrollback kept per pane (100&ndash;100,000; default 10,000).
               xterm.js&rsquo;s built-in default of 1,000 is exhausted in seconds by
               agentic CLI output. Larger values keep more history but cost more
-              memory per pane; changes apply immediately to existing panes.
+              memory per pane; changes apply to existing panes when you save.
             </p>
           </div>
 
@@ -961,10 +961,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               ))}
             </select>
             <p className="form-hint">
-              Applies to xterm.js panes only. Tether&rsquo;s own UI keeps IBM Plex
-              Sans / JetBrains Mono regardless of this choice. Fonts other than
-              the default rely on the OS having them installed; falls back to
-              Cascadia Code or Consolas if missing.
+              Applies to terminal panes only; Appearance controls the UI font separately.
+              JetBrains Mono is bundled with Tether. Other fonts use installed system
+              faces, with fallback fonts if the selected face is unavailable.
             </p>
           </div>
 
@@ -2028,7 +2027,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               Show per-session cost strip below terminal
             </label>
             <p className="form-hint">
-              Display the active session's model, message count, and API-equivalent cost below each terminal pane. Updates live as Claude responds.
+              Display the session's model, message count, and API-equivalent cost below each terminal pane when supported local usage data is available.
             </p>
             <label className="form-radio-label" style={{ marginTop: 8 }}>
               <input

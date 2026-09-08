@@ -1,363 +1,153 @@
-# Architecture Design — Tether
+# Architecture — Tether
 
 ## System Overview
 
-Tether is an Electron desktop application with a React frontend. The Electron main process owns all session lifecycle (PTY management, SSH connections, state persistence). The renderer process owns the UI (sidebar, terminal panels, configuration). Communication between them uses Electron IPC for both commands and real-time PTY data streaming.
+Tether is an Electron + React + TypeScript desktop application for managing agent CLI sessions across Local, SSH, and Coder environments.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Renderer Process (React + xterm.js)                        │
-│  ┌──────────┐  ┌──────────────────────────┐  ┌───────────┐ │
-│  │ Sidebar   │  │ Terminal Panel            │  │ Config    │ │
-│  │ (sessions │  │ (xterm.js per session,    │  │ (env/     │ │
-│  │  grouped  │  │  only active one visible) │  │  session  │ │
-│  │  by env)  │  │                           │  │  settings)│ │
-│  └──────────┘  └──────────────────────────┘  └───────────┘ │
-│         │              ▲  │                        │        │
-│         └──────────────┼──┼────────────────────────┘        │
-│                  IPC   │  │  IPC                            │
-├─────────────────────────┼──┼────────────────────────────────┤
-│  Main Process           │  │                                │
-│  ┌──────────────────────┼──┼──────────────────────────────┐ │
-│  │ Session Manager      │  ▼                              │ │
-│  │  ┌─────────────┐  ┌────────────┐  ┌─────────────────┐ │ │
-│  │  │ Session      │  │ Transport  │  │ Status Detector │ │ │
-│  │  │ Registry     │  │ Adapters   │  │ (passive tap)   │ │ │
-│  │  │ (JSON file)  │  │            │  │                 │ │ │
-│  │  └─────────────┘  │ ┌────────┐ │  └─────────────────┘ │ │
-│  │                    │ │ Local  │ │                      │ │
-│  │                    │ │ SSH    │ │                      │ │
-│  │                    │ │ Coder  │ │                      │ │
-│  │                    │ └────────┘ │                      │ │
-│  │                    └────────────┘                      │ │
-│  └────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+**Dumb pipe, smart shell:** the terminal stream reaches xterm.js unchanged. Status, hooks, usage, and notifications are passive side channels; they do not render or rewrite CLI output.
+
+```text
+Renderer: React UI + xterm.js
+  input / resize / commands ──IPC──► Main: session manager + transports
+  terminal output / state   ◄─IPC──  Local node-pty / ssh2 / coder ssh
 ```
 
-> **Note:** This is a simplified diagram showing the core data flow. Additional subsystems (Notifications, Vault, Usage/Quota, Keybindings, Helm, Diagnostics, Auto-Update) are described in their own sections below.
-
-## Component Design
-
-### Session Registry
-
-**Purpose:** Single source of truth for all session and environment state.
-
-**Storage:** JSON file at `{app.getPath('userData')}/data.json`. Data is loaded into memory on first access and written to disk on mutations. SQLite was originally planned but deferred due to native module ABI issues with VS 2025 + Electron 41.
-
-**Data schema (TypeScript interfaces in `src/main/db/database.ts`):**
-
-```typescript
-// Top-level data file structure
-interface DbData {
-  environments: EnvironmentRow[]
-  sessions: SessionRow[]
-  launchProfiles: LaunchProfileRow[]       // Named env-var + CLI-flag presets
-  config: Record<string, string>           // Key-value config (theme, reposRoot, restoreOnLaunch)
-  defaultEnvVars: Record<string, string>   // App-wide env vars
-  defaultCliFlags: string[]                // App-wide CLI flags (legacy single list)
-  defaultCliFlagsPerTool: Partial<Record<CliToolId, string[]>>  // Per-CLI-tool flag presets
-  savedWorkspace: SavedWorkspace | null    // Session restore state
-  gitProviders: GitProviderRow[]           // Git provider credentials (GitHub/ADO/Gitea)
-  repoGroupPrefs: RepoGroupPref[]          // Sidebar group pin/sort preferences
-  sessionOrderPrefs: SessionOrderPref[]    // Drag-reorder ordering within groups
-  usageSummaries: PersistedSessionUsage[]  // Persisted per-session usage rollups
-  knownHosts: KnownHostEntry[]             // SSH TOFU host key pins
-  keybindings?: Partial<Record<KeybindingAction, Chord | null>>  // User shortcut overrides
-}
-
-// EnvironmentRow
-interface EnvironmentRow {
-  id: string                   // UUID
-  name: string
-  type: 'local' | 'ssh' | 'coder'
-  config: string               // JSON blob — host, port, username, etc.
-  env_vars: string             // JSON-encoded Record<string, string>
-  auth_mode: string | null     // Placeholder for future auth modes
-  model: string | null         // Placeholder for model selection
-  small_model: string | null   // Placeholder for small/fast model
-  sort_order: number
-  created_at: string           // ISO timestamp
-  updated_at: string           // ISO timestamp
-}
-
-// SessionRow
-interface SessionRow {
-  id: string                   // UUID
-  environment_id: string | null
-  label: string
-  working_dir: string
-  state: string                // SessionState enum value
-  auth_mode: string | null     // Placeholder
-  model: string | null         // Placeholder
-  small_model: string | null   // Placeholder
-  pid: number | null           // Local PTY PID
-  sort_order: number
-  created_at: string           // ISO timestamp
-  updated_at: string           // ISO timestamp
-  last_active_at: string | null
-}
-```
-
-**Notes:**
-- Environment variable config cascades: app defaults -> environment -> session overrides.
-- `auth_mode`, `model`, and `small_model` fields exist as placeholders for future auth/model selection features. Currently unused.
-- `state` is updated by the Status Detector, not by the transport adapters directly.
-- `pid` is only meaningful for local sessions. SSH sessions track connection state internally.
-- On startup, `markAllRunningAsStopped()` resets any sessions left in running states from a previous crash.
-
-### Session Manager
-
-**Purpose:** Orchestrates session lifecycle and coordinates between the registry, transport adapters, and status detection.
-
-**Responsibilities:**
-- Create session: validate inputs → write to registry → spawn via adapter → start status detection
-- Stop session: send SIGTERM to PTY → wait for graceful exit → update registry
-- Kill session: send SIGKILL → clean up → update registry
-- Reconnect session: re-establish transport (SSH reconnect, PTY reattach) → resume status detection
-- Heartbeat loop: periodically check all sessions for liveness (PTY process alive? SSH channel open?)
-
-**Session State Machine:**
-
-```
-                ┌──────────┐
-                │ starting │
-                └────┬─────┘
-                     │ PTY spawned + first output
-                     ▼
-              ┌──────────────┐
-         ┌───►│   running    │◄───┐
-         │    └──────┬───────┘    │
-         │           │            │
-   output resumed    │      output resumed
-         │           │            │
-         │     ▼           ▼
-    ┌────┴────┐    ┌──────────┐
-    │  idle   │    │ waiting  │
-    └─────────┘    └──────────┘
-         │              │
-         │    PTY exit / SSH drop
-         │              │
-         ▼              ▼
-    ┌──────────────────────┐
-    │    stopped / dead    │
-    └──────────────────────┘
-```
+Main owns transports, persistence, credentials, host-key verification, usage/quota, notifications, updates, and integrations. The renderer owns dialogs, sidebar state, terminal instances, pane layouts, shortcuts, and themes. [Transport Design](TRANSPORT_DESIGN.md) describes the adapter contract and launch boundaries.
 
-- `starting` → PTY spawn in progress, no output yet
-- `running` → Claude Code is producing output (streaming response, running tools)
-- `waiting` → Claude Code is showing the input prompt, waiting for user
-- `idle` → No output for >30s (background, compacting, or user walked away)
-- `stopped` → Graceful shutdown (user-initiated)
-- `dead` → Unexpected exit, SSH disconnect, or force-killed
+## Source Map
 
-### Transport Adapters
+| Area | Authoritative source |
+|------|----------------------|
+| Main lifecycle and windows | `src/main/index.ts` |
+| Session lifecycle and configuration cascade | `src/main/session/session-manager.ts` |
+| Transport contract and adapters | `src/main/transport/` |
+| CLI registry, resume args, common flag presets | `src/shared/cli-tools.ts` |
+| IPC channel names | `src/shared/constants.ts` |
+| IPC handler dispatch and domain modules | `src/main/ipc/` |
+| Preload API | `src/preload/preload.ts`, `src/preload/docs-preload.ts` |
+| Persistence schema and repositories | `src/main/db/` |
+| Settings UI | `src/renderer/components/SettingsDialog.tsx` |
+| Terminal lifetime and off-DOM buffers | `src/renderer/hooks/useTerminalManager.ts` |
+| Pane layout | `src/renderer/lib/layout-tree.ts`, `src/renderer/hooks/useLayoutState.ts` |
+| Shortcut defaults and overrides | `src/shared/keybindings.ts` |
+| In-app help and renderer | `src/docs/`, `src/docs-renderer/` |
 
-All adapters implement a common interface (detailed in [Transport Design](TRANSPORT_DESIGN.md)).
+## Session Lifecycle
 
-**Local Adapter** (`local-transport.ts`)
-- Spawns the configured CLI binary (`claude`, `codex`, `opencode`, or custom) via `node-pty` with configured env vars
-- Native binaries are spawned directly on every platform; on Windows, `cmd.exe /c` is retained only for batch shims or unresolved command names that require its PATH/PATHEXT fallback. Batch-launch arguments cannot contain double quotes.
-- CLI flag entries are tokenized on whitespace before spawn so multi-token presets like `--permission-mode plan` work
-- PTY process is a direct child of the Electron main process
-- Resize events propagated via `pty.resize(cols, rows)`
-- Survives Electron renderer crashes (PTY lives in main process)
+The session manager creates a transport, registers data/exit callbacks, resolves launch configuration, starts the CLI, and maintains session metadata. It cleans up transports, status timers, transcript watchers, and optional integrations on exit/removal.
 
-**SSH Adapter** (`ssh-transport.ts`)
-- Connects via `ssh2` library with TOFU host key verification (`src/main/ssh/host-verifier.ts`) backed by `known-hosts-repo.ts`
-- First-connect host keys surface a `HostKeyVerifyDialog`; subsequent connects fail closed if the key changes
-- Optional sudo elevation on connect (configured per environment)
-- Opens a PTY channel (`session.shell()` with pty option)
-- Spawns the CLI as the shell command on the remote host
-- UTF-8 chunk reassembly across network reads so split multi-byte glyphs don't render as replacement characters
-- Requires the chosen CLI binary to be pre-installed on the remote host
+Env vars merge as global defaults → environment → launch profile → session overrides. CLI flags concatenate as per-tool global defaults → per-tool profile flags → session flags, with selected inherited entries removable. Tokenization happens at the transport boundary.
 
-**Coder Adapter** (`coder-transport.ts`)
-- Connects to a Coder workspace via the Coder REST API + SSH-style PTY exec
-- Two flows: connect to an existing workspace, or create a new workspace from a template (with parameter forms, live progress, and self-signed cert support)
-- Workspace start is idempotent so workspace restarts don't fail re-clones
+Local Claude Code, Codex CLI, Copilot CLI, and OpenCode can resume a known conversation when its history exists. Custom binaries have no tool-specific resume integration. SSH and Coder do not use the local transcript picker.
 
-### Status Detector
+A stop request delegates to the transport, then escalates if the session remains alive after the 3-second grace period. A second stop during that period forces a kill. Local/Coder stop terminates the local PTY; SSH sends Ctrl+C, then `exit`, and closes the connection. There is no automatic terminal reconnection or remote PTY reattachment.
 
-**Purpose:** Passively observe PTY output to infer session state without modifying the stream.
+### Session States
 
-**Approach:** A tap on the data stream that runs pattern heuristics. The full, unmodified data always flows through to xterm.js first; the detector receives a copy.
+| State | Meaning |
+|-------|---------|
+| `starting` | Launch is in progress. |
+| `running` | Output is flowing, or a hook-capable turn is active. |
+| `waiting` | A completion/permission signal or silence fallback indicates attention is needed. |
+| `idle` | The cadence fallback has observed extended silence. |
+| `stopped` | Exit code zero or an explicitly completed stop. |
+| `dead` | Nonzero exit or transport failure. |
 
-**Heuristics (not parsing — pattern matching on output cadence):**
+Startup marks stale active registry entries stopped. It does not scan an app PID file for orphan CLI processes.
 
-| Signal | Detection Method | State |
-|---|---|---|
-| Bytes flowing | Any data received in last 3s | `running` |
-| Input prompt | Output pause + last bytes match prompt patterns | `waiting` |
-| Hook event (Claude) | `Notification`/`Stop` hook fires via `cli-config/hook-bridge.ts` token-authed local socket | `waiting` (with `waitingReason: 'permission'`) / `idle` |
-| Extended silence | No data for 30s+ | `idle` |
-| PTY exit event | `pty.onExit` / SSH channel close | `stopped` or `dead` |
-| Error output | Exit code != 0 | `dead` |
+## Status Detection and Hooks
 
-**CLI hook overlay (Claude + Codex — local sessions).** `src/main/cli-config/claude-settings-overlay.ts` writes a sentinel-scoped block into the user's `~/.claude/settings.json` so Claude Code's Notification/Stop hooks call a bundled stdlib-only Node helper (`tether-cli-hook`, shipped as a Forge `extraResource`). `codex-config-overlay.ts` does the same for Codex's `~/.codex/config.toml` notify hook. The helper posts to a token-authed local socket; `hook-bridge.ts` plumbs the events into the status detector. The overlay is additive, scrubbed on clean shutdown, and recovered on next boot after a crash. The `cliHooksEnabled` settings toggle gates the feature (opt-in, off by default). SSH remote hook installation is complete; Coder workspace remote hook installation remains deferred.
+`src/main/status/status-detector.ts` observes a copy of the output and input timing. It recognizes OSC 9 notification sequences and BEL bytes as passive signals; neither is stripped from the terminal stream. It does not interpret prompt text or rebuild CLI screens.
 
-**Important:** The detector does NOT attempt to parse ANSI escape sequences or understand Claude Code's UI structure. It operates on timing and byte-level patterns only. This makes it resilient to Claude Code UI changes across versions.
+For sessions without working hooks, the silence fallback moves to waiting after roughly 3 seconds and idle after 30 seconds, with a 500 ms transition debounce. BEL notifications are coalesced over 2 seconds.
 
-**Debounce:** State transitions are debounced (e.g., 500ms delay before transitioning from `running` to `waiting`) to avoid flickering during brief pauses in output.
+For hook-capable Claude/Codex sessions, active turns suppress the normal silence fallback. Completion sets `waitingReason: 'idle'`; permission prompts set `waitingReason: 'permission'`. Hook transitions are immediate. A safety timeout handles missing completion hooks.
 
-### IPC Design
+`src/main/cli-config/` installs additive Claude settings and Codex notify overlays, plus a token-authenticated hook bridge. Installation is opt-in through `cliHooksEnabled`. Local overlays are cleaned on shutdown and recovered after crashes. SSH additionally requires the environment's remote-hook opt-in, Node on the host, and a non-sudo environment. Coder remote hooks remain deferred.
 
-The IPC surface has grown to ~92 channels across these families, split since 0.4.3-beta.4 into per-domain modules under `src/main/ipc/` (`session-handlers`, `env-handlers`, `config-handlers`, `vault-handlers`, `usage-handlers`, `git-handlers`, `coder-handlers`, `ssh-handlers`, `profile-handlers`, `keybindings-handlers`, `dialog-handlers`, `system-handlers`). `handlers.ts` is now a thin dispatcher:
+## Terminal Lifetime and IPC
 
-**Sessions:** `session:create`, `session:list`, `session:stop`, `session:kill`, `session:rename`, `session:remove`, plus per-session usage queries
+`session:data` is sent as positional arguments `(sessionId, data)`. State changes use `(sessionId, state, waitingReason)`; exits use `(sessionId, exitInfo)`. Input and resize are fire-and-forget messages. Other command handlers generally use invoke/handle.
 
-**Environments:** `environment:list|create|update|delete`
+Current main-process IPC forwards data for all sessions. The renderer retains background xterm.js instances off-DOM and reuses them across switching, splitting, swapping, and maximizing. Only visible panes attach to the DOM. Scrollback is held in memory and is not saved across app restarts.
 
-**Workspace:** `workspace:save`, `workspace:load`
+This off-DOM buffering behavior matches `AGENTS.md`. Reducing background IPC in the future would need a separate buffering/replay design that preserves the raw stream and scrollback.
 
-**Config:** `config:get|set` (key-value), per-tool default env vars / CLI flags, default settings
+The preload exposes domain APIs for sessions, environments, workspace, config, profiles, Vault, usage/quota, providers/git, transcripts, Coder, notifications, keybindings, diagnostics, docs, and updates. Consult `constants.ts` and the preload for exact channels instead of maintaining a copied count. Updates expose check/open-release-page actions; there is no in-app download/install channel.
 
-**Launch profiles:** `profile:list|create|update|delete` — named bundles of env vars + per-tool CLI flags
+## Configuration and Persistence
 
-**Vault:** auth (token + OIDC), status/expiry, KV browse for the picker, `vault://` resolution
+App state is JSON at `{app.getPath('userData')}/data.json`. `src/main/db/database.ts` defines the schema. Repository mutations save through atomic temporary-file writes with fsync/rename and transient-lock retries. Corrupt data is moved aside for recovery.
 
-**Coder:** workspace list, template list, parameter introspection, create-workspace with progress streaming
+The file contains:
 
-**Git providers:** Azure DevOps and Gitea repo browse for the New Session dialog quick-pick
+- Environment and session metadata.
+- Config values, global env vars, and per-tool default flags.
+- Launch profiles and GitHub/ADO/Gitea provider records.
+- Saved workspace and layout configuration, sidebar ordering, and recent projects.
+- Usage summaries, budget-warning periods, known-host fingerprints, and shortcut overrides.
 
-**Transcripts:** list and read Claude / Codex transcripts for the Resume Chat dialog
+Session records do not contain a terminal-output archive. CLI transcripts remain in their own storage. Workspace restoration launches sessions again; it does not resume the original PTY process.
 
-**SSH known hosts:** list / remove
+### Secrets
 
-**Updates:** `update:check`, `update:download`, `update:install`
+SSH private keys remain at user-selected paths. Stored SSH passwords, provider tokens, sensitive env vars, and secret-bearing settings use Electron `safeStorage`. Vault references remain references; main resolves them before launch. Non-sensitive configuration values remain plaintext.
 
-**Dialogs and OS:** directory picker, repo dir scan, titlebar color sync
+Vault login uses browser OIDC. The token is cached encrypted in `data.json` along with identity/expiry metadata. Settings offers no token-file or pasted-token auth mode. Expiry warnings prompt the user to log in again; there is no automatic Vault-token renewal.
 
-**Renderer -> Main (send/on — fire-and-forget):**
-- `session:input` — send keystroke data to session PTY
-- `session:resize` — resize PTY dimensions
+`src/main/diagnostics/` exports a scrubbed database, rotated logs, and a manifest. Scrubbing covers secret-bearing keys, encrypted values, recognized credential patterns, and credential-bearing URL fields; Vault references remain visible.
 
-**Renderer -> Main (send/on — fire-and-forget):**
-- `session:input` — send keystroke data to session PTY
-- `session:resize` — resize PTY dimensions
+## Settings and User Interface
 
-**Main -> Renderer (events):**
-- `session:data` — { sessionId, data } (raw PTY bytes — high frequency)
-- `session:state-change` — { sessionId, state } (status detector updates)
-- `session:exited` - { sessionId, exitInfo: { exitCode, signal? } } (PTY exit notification)
+Settings has eight searchable sections: General, Appearance, Terminal, Sessions, Notifications, Shortcuts, Integrations, and Usage.
 
-**Data streaming consideration:** PTY data (`session:data`) is the highest-frequency event. For local sessions this can be thousands of events per second during heavy output. Electron IPC handles this fine for a single active session, but if we're streaming data for background sessions (for status detection), we need to be mindful of IPC overhead. The main process should only send `session:data` for the **currently visible session** to the renderer. Background session data is consumed only by the status detector in the main process.
+Most settings apply on **Save**. Theme changes preview and revert on Cancel. Actions with their own persistence paths (shortcuts, profiles/providers, known-host revocation, Vault auth/migration, J.O.B.S. Test now, and font resets) apply immediately. CLI status-hook changes require a Tether restart.
 
-### Configuration & Storage
+Seven themes and independent UI/terminal font settings are defined in the renderer. The default theme key is `mocha`; the theme labeled **Tether (Default Dark)** is another choice, not the startup default.
 
-**All data is stored in a single JSON file:** `{app.getPath('userData')}/data.json`
+Pane splitting is opt-in, with maximum counts of 1, 2, or 4. Layout and session selection stay in the renderer. Keyboard defaults live in `src/shared/keybindings.ts`. Broadcast input is selected from pane headers and only fans out from a selected pane when at least two live targets are selected.
 
-This file contains:
-- Environment definitions (Local, SSH, Coder)
-- Session records (metadata, not terminal output)
-- App config (theme, reposRoot, restoreOnLaunch, etc.)
-- Default environment variables (per-tool) and CLI flags (per-tool)
-- Launch profiles (named bundles of env vars + per-tool CLI flags)
-- Git provider credentials (ADO, Gitea)
-- SSH known-hosts entries
-- Vault config (URL, namespace, auth mode)
-- Saved workspace state (for session restore on launch) — written synchronously on every change so installs/restarts don't restore stale state
+## Usage and Quota
 
-**SSH keys:** Tether does not store or manage SSH keys. It references the user's existing SSH key paths (e.g., `~/.ssh/id_ed25519`). SSH agent forwarding is supported — on Windows, uses `\\.\pipe\openssh-ssh-agent`.
+`src/main/usage/` reads local Claude and Codex transcripts and sanitized usage records from Tether-launched SSH/Coder conversations, aggregates session/global totals, and prices tokens with a bundled LiteLLM table. Remote collection uses separate authenticated command channels, independently of status hooks. Source-scoped cursors and Codex model state are persisted with usage summaries. A cached table at `{userData}/litellm-prices.json` is refreshed at most daily.
 
-**SSH host keys:** First-connect host keys are pinned via TOFU and stored in the registry (managed from Settings).
+The OpenCode usage path reads local Crush `crush.db` through built-in `node:sqlite`; it does not cover every OpenCode storage format. Copilot has resume/history support but no cost reader. Full SSH/Coder transcripts stay remote; only usage fields and source/cursor metadata return to Tether. Remote Node.js and Linux `/proc` access for automatic Codex discovery are required; see [remote usage requirements](../src/docs/usage-quota.md#ssh-and-coder-sessions).
 
-**Secrets handling:** Env var values can be literal strings or `vault://` references. Vault refs are resolved at session start by `vault-resolver.ts` so the secret is never persisted to `data.json`. Vault auth tokens live in OS keychain via Electron's `safeStorage`; OIDC flows open a browser and complete via local callback. The legacy plaintext-API-key path still exists for non-Vault users; encrypted at-rest storage for those values is still a placeholder.
+Usage UI includes session strips, a global footer, history rollups, CSV/JSON export, and optional daily/weekly budget warnings. Display toggles do not disable usage collection. Budget thresholds only warn.
 
-### Vault Integration
+`src/main/quota/quota-service.ts` separately queries Claude and Codex subscription quota using local login credentials. It starts about 5 seconds after launch and polls every 5 minutes when enabled. It may refresh Claude OAuth credentials. Its network calls are separate from transcript usage collection.
 
-`src/main/vault/` implements a HashiCorp Vault KV v2 client with token and OIDC auth. The renderer surfaces:
-- A Vault status pill in the sidebar showing auth state and token TTL
-- A `VaultPickerDialog` to browse Vault paths and pick a secret when authoring an env var
-- A pre-session preflight that warns if any required `vault://` ref will fail to resolve
-- A `MigrateToVaultDialog` to lift a plaintext value into Vault
+## Notifications and Updates
 
-### Usage and Quota Tracking
+`src/main/notifications/notification-service.ts` handles waiting, idle, unexpected exit, and terminal-bell desktop notifications, with focus suppression and per-session muting. Clicking a desktop notification focuses its session.
 
-`src/main/usage/` and `src/main/quota/` are passive readers of the CLI tools' own session transcripts (Claude Code JSONL, Codex transcripts):
-- `jsonl-parser.ts` extracts token usage events from transcripts
-- `model-pricing.ts` maps tokens → cost per model
-- `usage-service.ts` aggregates per-session and global usage
-- `quota-service.ts` tracks subscription quota windows (Claude weekly resets, Codex daily resets)
+Generic outbound webhooks have separate trigger preferences and an optional encrypted bearer token. Payloads contain session metadata, not terminal output or env vars. Session muting suppresses both desktop notifications and generic webhooks. J.O.B.S. narration is a separate integration.
 
-Surfaced in the UI as a sidebar global usage footer (today's cost + 7-day sparkline), a per-session cost strip below each terminal pane, and an optional quota footer.
+Update checking runs once roughly 15 seconds after launch when enabled. Stable/beta selection controls which GitHub releases are considered. Notifications link to the release page; users download and install releases themselves.
 
-### Auto-Update
+## Optional Integrations
 
-`src/main/update/update-checker.ts` polls GitHub Releases for newer versions and surfaces a notification in the renderer. The user opts in to download/install; the install is delegated to the OS installer.
+### Vault and Git Providers
 
-### Desktop Notifications
+Vault KV v2 resolution, the secret picker, OIDC login, and migration live in `src/main/vault/`. Git provider clients live in `src/main/git/providers/` and support browsing, cloning, and remote creation for GitHub, Azure DevOps, and Gitea.
 
-`src/main/notifications/notification-service.ts` manages OS-level desktop notifications with:
-- Five configurable triggers: waiting, idle, unexpected exit, terminal bell, and a suppress-when-focused toggle
-- Per-session mute (right-click menu in sidebar; persisted as `notificationsMuted` on the session)
-- Bell coalescing to prevent notification spam from noisy sessions
-- Click-to-select: clicking a notification focuses Tether and selects the originating session
+### Helm
 
-Preferences are stored in `data.json` under the `notificationPrefs` config key and managed from Settings → Notifications.
+`src/main/helm/` creates a local authenticated bridge and MCP config for Claude Code. Both the global `allowHelm` setting and the session toggle must be on. Use a local Claude parent; the bridge and resource paths are not forwarded to remote parents. The MCP requires Node on PATH.
 
-### Split Pane Layout
+Tools can discover environments/profiles, dispatch children, query/kill sessions, and discover/create Coder workspaces. There is no generic message broker or scheduler. See [Helm help](../src/docs/helm.md) and `mcp-servers/tether-helm/src/index.ts`.
 
-`src/renderer/components/SplitLayout.tsx` and `SplitDivider.tsx` implement a tree-based multi-pane terminal layout:
-- Drag sessions from the sidebar onto edge drop zones (left/right/top/bottom) or center (replace)
-- Keyboard-driven: **Alt+Arrow** to focus neighbors, **Alt+Shift+Arrow** to swap panes
-- Layout state persisted in `savedWorkspace` so pane arrangements survive restarts
-- Pane recovery overlay on session exit: **Restart in this pane** or **Close pane**
-- Gated by the `enablePaneSplitting` config toggle in Settings → Sessions
+### J.O.B.S. Office
 
-### Broadcast Input
+`src/main/jobs/` probes the configured server's `/healthz` once a minute. Auto-detection is on by default. If a built local checkout is configured and no instance answers, Tether can launch it with Node and stop that owned process on quit.
 
-When multiple panes are open, keystrokes can be echoed to several sessions simultaneously. Managed by `src/renderer/lib/broadcast-targets.ts`; toggled from the pane status strip. The terminal manager (`useTerminalManager.ts`) fans out `session:input` IPC calls to all broadcast targets.
+Remote SSH/Coder sessions are narrated through JOBS webhooks; local sessions are left to JOBS's own watcher. An Office pill and webview appear when detected. The guest has no preload or Node access.
 
-### Keybindings System
+## Design Decisions
 
-`src/main/ipc/keybindings-handlers.ts` and `src/renderer/components/KeybindingsEditor.tsx` provide user-remappable keyboard shortcuts:
-- Bindings stored in `data.json` as a `keybindings` record (action → chord)
-- Reserved-chord warn list prevents accidental rebinding of Ctrl+C, etc.
-- Defaults defined in `useKeyboardShortcuts.ts`; editor UI in Settings → Shortcuts
+- **Electron:** main-process Node APIs provide PTY/SSH integration while xterm.js supplies terminal emulation.
+- **JSON persistence:** avoids a native database dependency for app state. A future usage-index migration can consider built-in `node:sqlite`; it is not the current app-state store.
+- **Native CLI processes:** preserve interactive terminal behavior. Structured agent APIs are not a replacement for the PTY path.
+- **Separate side channels:** hooks, usage, and notifications can improve status and visibility without changing terminal content.
 
-### Helm Integration
-
-`src/main/helm/` implements an opt-in MCP capability where a designated Claude session can dispatch pre-briefed child sessions:
-- `bridge.ts` exposes a `spawn_session` tool to the MCP server
-- `integration.ts` manages the MCP server lifecycle per helm-enabled session
-- Gated by the `allowHelm` config toggle in Settings → Sessions, plus a per-session enable in the right-click menu
-
-### J.O.B.S. Office Integration
-
-`src/main/jobs/` integrates the external [J.O.B.S.](https://github.com/maxthomas95/JOBS) pixel-art office visualizer as an optional, auto-detected side feature:
-- `jobs-service.ts` probes `{url}/healthz` once a minute for `{ app: "jobs" }` (positive identification — a stranger service on the port never matches). When a local checkout path is configured and nothing answers, it spawns the built server with Node.js from PATH (falling back to `ELECTRON_RUN_AS_NODE` in dev only — packaged builds disable the RunAsNode fuse) and kills it on quit; instances Tether didn't start are never touched.
-- `jobs-bridge.ts` subscribes to `SessionManager.addLifecycleObserver` and narrates **SSH/Coder sessions only** into the JOBS webhook API (`start`/`status`/`error`/`stop` + 60s heartbeats). Local sessions are excluded — JOBS watches `~/.claude/projects` itself, and bridging them would duplicate agents.
-- Renderer: an Office pill in the sidebar footer plus a `<webview>` pane (`OfficePane.tsx`) over the terminal area, shown only while detected. Requires `webviewTag: true` on the main window; the guest page has no preload and no node access.
-- Config keys: `jobsEnabled` (`auto`/`off`), `jobsUrl`, `jobsToken`, `jobsPath` — managed in Settings → Integrations.
-
-### Diagnostics
-
-`src/main/diagnostics/diagnostics-service.ts` bundles a scrubbed diagnostic export (sanitized `data.json` + rotated logs) for bug reports. Triggered from About → **Export diagnostics for support**.
-
-### Setup Wizard
-
-`src/renderer/components/SetupWizard.tsx` runs on first launch, walking the user through repos root, Vault config, environment/CLI selection, and git provider setup. Only marks setup complete on explicit user action (not window dismiss).
-
-## Key Design Decisions
-
-### Why Electron (not Tauri, not web-only)
-
-- `node-pty` requires Node.js native bindings — Tauri's Rust backend would need a different PTY library and the xterm.js integration is less proven.
-- Electron's main process model maps perfectly to our architecture: PTYs live in main (long-lived, survives renderer reloads), UI lives in renderer.
-- xterm.js is built for Electron/browser environments. The VS Code terminal stack (xterm.js + node-pty) is the most battle-tested terminal-in-an-app implementation available.
-- Electron's IPC is fast enough for PTY data streaming (proven by VS Code).
-
-### Why JSON Persistence (originally planned SQLite)
-
-SQLite via `better-sqlite3` was the original plan for its atomic writes and query capabilities. However, native module ABI incompatibilities between VS 2025 and Electron 41 made `better-sqlite3` impractical to build. JSON file persistence was adopted as a pragmatic workaround:
-
-- Zero native dependencies — no ABI issues
-- Simple to debug (human-readable file)
-- In-memory object with save-on-mutate is fast enough for the current scale
-- A future SQLite migration can use built-in `node:sqlite`, avoiding native ABI issues; JSON persistence remains unchanged today
-
-### Why not the Claude Agent SDK for session management
-
-The Agent SDK is designed for programmatic agent orchestration — sending prompts, receiving structured responses, managing tool calls. Tether's use case is fundamentally different: we need a raw PTY stream for an interactive terminal, not a structured API. The SDK would give us a different (non-terminal) interaction model that loses the native feel. We use the Claude Code CLI binary directly, spawned in a PTY.
-
-The SDK could be useful later for features like "send a prompt to a background session programmatically" but it's not the right foundation for the core terminal experience.
+Current user instructions live in [src/docs](../src/docs/). Historical specifications under [archive](archive/) are frozen references, not current implementation contracts.

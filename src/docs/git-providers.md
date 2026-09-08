@@ -1,13 +1,14 @@
 # Git Providers
 
-Tether can browse and clone from **GitHub**, **Azure DevOps**, and **Gitea**, and can provision empty repos on each when you create a new folder. Register your provider credentials in [Settings → Integrations → Git providers](settings#integrations) and they show up in the **Clone** and **New folder** tabs of the New Session dialog.
+Tether can browse and clone from **GitHub**, **Azure DevOps**, and **Gitea**, and can provision empty repos on each when you create a new folder. Register your provider credentials in [Settings → Integrations → Git providers](settings.md#integrations) and they show up in the **Clone** and **New folder** tabs of the New Session dialog.
 
 ## Registering a Provider
 
 For each provider you need:
 
 - **Display name** — what shows in dropdowns
-- **API base URL** — `https://api.github.com`, `https://dev.azure.com/<org>`, or your self-hosted Gitea URL
+- **API base URL** — `https://api.github.com`, `https://dev.azure.com`, or your Gitea server URL (without `/api/v1`)
+- **Organization** — a separate required field for Azure DevOps
 - **Auth token** — a personal access token with `repo`-equivalent scope on that provider
 
 Tokens are encrypted at rest in `data.json` via the OS keychain (safeStorage). Vault references are supported for centralized secrets management.
@@ -18,13 +19,13 @@ PAT scopes needed: `repo` (or fine-grained equivalents). Both `github.com` and G
 
 ### Azure DevOps
 
-PAT scopes needed: **Code (read & write)**, **Project and team (read)**. The base URL should include your organization (e.g. `https://dev.azure.com/contoso`). You can optionally pick a **default project** from the loaded project list — this pre-selects when creating a new repo.
+Use a PAT that can read projects and access the repositories you need; repository creation also needs write permission. Set **Base URL** to `https://dev.azure.com` and **Organization** to your organization name (e.g. `contoso`). Tether appends the organization itself. Enter a project name in **Default project (optional)** while adding the provider to prefill the project picker when creating a new repo.
 
 ### Gitea
 
-PAT with `repo` scope. Point the base URL at your Gitea instance (e.g. `https://gitea.internal/api/v1`).
+Use a token with repository access. Point **Base URL** at your Gitea server (e.g. `https://gitea.example.com`). Tether appends `/api/v1` itself.
 
-After saving, click **Test connection** to verify the token works against the API.
+Click **Save** inside the provider form, then **Test** on its row to verify API access. Provider changes apply immediately.
 
 ## Cloning a Repo
 
@@ -66,4 +67,4 @@ In `data.json`:
 - Token (encrypted at rest via OS keychain; Vault references also supported)
 - Per-provider preferences like ADO default project
 
-Tokens are scrubbed from the [diagnostics export](settings#diagnostics-export) for support bundles.
+Tokens are scrubbed from the [diagnostics export](settings.md#diagnostics-export) for support bundles.

@@ -84,4 +84,20 @@ describe('copilot transcript discovery', () => {
     expect(copilotTranscriptExists(workingDir, 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', home)).toBe(false);
     expect(copilotTranscriptExists(workingDir, 'ffffffff-ffff-ffff-ffff-ffffffffffff', home)).toBe(false);
   });
+
+  it('does not read workspace metadata outside session-state through a resume ID', () => {
+    const home = makeTempDir();
+    const workingDir = path.join(home, 'repo');
+    fs.mkdirSync(path.join(home, 'outside'));
+    fs.writeFileSync(path.join(home, 'outside', 'workspace.yaml'), `cwd: ${workingDir}\n`);
+
+    expect(copilotTranscriptExists(workingDir, '../outside', home)).toBe(false);
+    expect(copilotTranscriptExists(workingDir, '..\\outside', home)).toBe(false);
+  });
+
+  it.each(['', '.', '..', '/absolute', 'C:\\absolute', 'a'.repeat(36), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\n'])(
+    'rejects malformed resume ID %j', (sessionId) => {
+      expect(copilotTranscriptExists('/repo', sessionId, makeTempDir())).toBe(false);
+    },
+  );
 });

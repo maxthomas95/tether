@@ -115,6 +115,15 @@ function mergeMessages(existing: SessionUsage, messages: ParsedMessage[], newOff
   };
 }
 
+// Invalid resume metadata must not create a watcher or abort session startup.
+function claudeUsagePath(workingDir: string, sessionId: string): string {
+  try {
+    return transcriptPath(workingDir, sessionId);
+  } catch {
+    return '';
+  }
+}
+
 export class UsageService {
   private tracked = new Map<string, TrackedSession>();
   private callback: ((info: UsageInfo) => void) | null = null;
@@ -135,7 +144,7 @@ export class UsageService {
           sessionId: summary.sessionId,
           cliTool,
           workingDir: summary.workingDir,
-          filePath: summary.remote ? '' : summary.filePath ?? (cliTool === 'claude' ? transcriptPath(summary.workingDir, summary.sessionId) : ''),
+          filePath: summary.remote ? '' : summary.filePath ?? (cliTool === 'claude' ? claudeUsagePath(summary.workingDir, summary.sessionId) : ''),
           remote: summary.remote,
           watching: false,
           debounceTimer: null,
@@ -351,7 +360,7 @@ export class UsageService {
     // Codex stores transcripts at `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`,
     // so the path can't be derived from sessionId + cwd alone. We fall back
     // to the periodic backfill which discovers the file via session_meta.
-    const filePath = persisted?.filePath ?? (cliTool === 'claude' ? transcriptPath(workingDir, sessionId) : '');
+    const filePath = persisted?.filePath ?? (cliTool === 'claude' ? claudeUsagePath(workingDir, sessionId) : '');
     log.info('Tracking session', { sessionId, cliTool, filePath, environmentId: environmentId ?? null });
 
     const session: TrackedSession = {
@@ -517,7 +526,7 @@ export class UsageService {
   }
 
   private parseSession(session: TrackedSession): void {
-    if (session.remote) return;
+    if (session.remote || !session.filePath) return;
     try {
       if (session.cliTool === 'codex') {
         const result = parseCodexJsonl(session.filePath, {
@@ -632,7 +641,7 @@ export class UsageService {
     // change. This replaces the old fs.watch + ENOENT-retry loop which gave
     // up after 60s and missed sessions where the user took longer than that
     // to send their first prompt (claude doesn't create the JSONL until then).
-    if (session.remote || session.watching) return;
+    if (session.remote || session.watching || !session.filePath) return;
     session.watching = true;
     fs.watchFile(session.filePath, { interval: WATCH_POLL_INTERVAL_MS, persistent: false }, (curr, prev) => {
       // File vanished or never existed yet — nothing to parse.
