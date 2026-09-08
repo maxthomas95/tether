@@ -8,6 +8,39 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.6.5-beta.4] — 2026-09-07
+
+Beta release carrying the changes since `0.6.4-beta.3`, including a refreshed workspace, optional session canvas, remote usage collection, and security and packaging fixes. Available on the Beta update channel.
+
+### New Features
+- **Refreshed workspace and session launcher** — updated navigation, themes, settings, and recent-project access (#213).
+- **Optional session canvas** — arrange sessions in movable, resizable panels through Layout → Canvas (#224).
+- **Remote usage collection** — collect Claude and Codex usage over SSH and Coder connections (#223).
+- **Remote status hooks** — install CLI status hooks on SSH hosts for more reliable passive session status (#202).
+- **J.O.B.S. integration controls** — explicit connection setup, optional remote-session sharing, automatic-launch controls, and removal. New setups are off by default; saved integrations retain their configured behavior (#221).
+- **Local GIF sidebar panel** — an optional viewer for your own GIF folders, with shuffle, rotation, and reduced-motion controls. Off by default and ships without media (#219).
+- **Session navigation and visibility** — attention queue for waiting sessions, terminal hover previews, and branch/dirty badges on repository groups (#195–#197).
+- **Usage budgets and state webhooks** — configurable cost guardrails and outbound session-state notifications.
+
+### Bug Fixes
+- **Vault browser login cancellation** — abandon an in-progress browser login without leaving the dialog stuck (#214).
+- **Windows launch arguments** — harden the cmd.exe launch boundary for local and Coder sessions (#207).
+- **Packaged runtime dependencies** — include required archive support, use Node's built-in SQLite for Crush usage, and verify packaged native modules and resources (#204).
+- **Dialog accessibility and repository reads** — associate labels with controls, make path trimming linear, and prevent reads from mutating repository state (#220, #222).
+- **Documentation and navigation** — correct pane-cycle labels, settings help, and GitHub navigation; reconcile shipped help with current behavior (#198, #205, #218).
+
+### Security and Internal
+- Encrypt secret-bearing settings and strengthen diagnostics redaction; harden IPC and Git boundaries (#206, #217).
+- Update Electron to 41.10.3 and remediate dependency vulnerabilities, including archive extraction (#210–#212, #215).
+- Expand parsing, layout, and launch regression coverage; enforce tests, type checking, lint, audits, Helm build, and Windows package verification in CI (#208, #216).
+
+### Beta Notes
+- This release includes changes to saved layout, usage, and integration settings. Existing JSON persistence remains in use.
+- Terminal output continues to flow through the raw PTY path; usage, hooks, and notifications remain passive side channels.
+- Windows installer and portable builds are unsigned.
+
+---
+
 ## [0.6.4-beta.3] — 2026-07-03
 
 Beta follow-up to `0.6.3-beta.2`, focused on repairing the renderer CSP regression that made xterm.js output lose its ANSI colors.
