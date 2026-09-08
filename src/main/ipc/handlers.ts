@@ -15,6 +15,7 @@ import { registerKeybindingsHandlers } from './keybindings-handlers';
 import { registerNotificationsHandlers } from './notifications-handlers';
 import { registerJobsHandlers } from './jobs-handlers';
 import { registerCodexHandlers } from './codex-handlers';
+import { registerGifPanelHandlers } from './gif-panel-handlers';
 
 /**
  * Wire up every IPC handler against the renderer window. The actual handler
@@ -45,4 +46,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerNotificationsHandlers(ctx);
   registerJobsHandlers(ctx);
   registerCodexHandlers(ctx);
+  registerGifPanelHandlers(ctx);
 }

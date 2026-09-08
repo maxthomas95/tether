@@ -84,6 +84,20 @@ Pick the font used in the sidebar, dialogs, and menus:
 
 **Comfortable** provides a wider initial sidebar and roomier pane headers. **Compact** reduces sidebar spacing and header height. Density and UI font changes apply when you save; terminal text keeps its independent font size. You can still resize the sidebar manually.
 
+### GIF panel
+
+Choose **View → GIF Panel** to show an optional animated-image viewer above the sidebar footers, then **Add GIF folder** to select local folders. This is Tether's native version of GIF Panel for VS Code; installing the VS Code extension is not required.
+
+- Use **Previous**, **Next**, or **Shuffle** to change images. **Rotate** starts automatic shuffling; **Pause** stops changing images (the current GIF keeps animating).
+- **Folders & options** lets you add or remove folders, include subfolders, choose **Fit panel** or **Original** size, and set a rotation interval from 1 to 60 seconds. Original-size images can be scrolled when they exceed the viewer.
+- Settings save immediately. Tether remembers the selected image, folders, panel visibility, collapse state, size mode, and rotation preference across launches.
+- Click the panel heading to collapse it, or **Hide GIF panel** to remove it from the sidebar. Reopen it from **View → GIF Panel**. Collapsing the panel, hiding the sidebar, or minimizing the window stops image loading and rotation until it is visible again.
+- With the system's reduced-motion preference enabled, images stay unloaded until you choose **Play GIFs**. **Stop animations** in the options restores that behavior.
+
+GIF, APNG, and WebP files are supported. Folders refresh every 30 seconds while the panel is visible; **Rescan** refreshes immediately. Images over 50 MB, empty files, and linked files or subfolders are skipped or rejected. Scans stop at 2,000 images, 20,000 directory entries, or 32 folder levels; choose smaller folders if a limit is reached. Missing folders and unreadable images show a message in the panel.
+
+The panel is off by default and ships without media. Files stay on your computer; folders belong to the machine running Tether, including when your terminal sessions use SSH or Coder. The panel does not affect terminal output, session status, or CLI input.
+
 ## Terminal
 
 ### Default font size

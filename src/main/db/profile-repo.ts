@@ -24,7 +24,7 @@ function findProfileRow(id: string): LaunchProfileRow | undefined {
 
 export function listProfiles(): LaunchProfileRow[] {
   return getDb().launchProfiles
-    .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
+    .toSorted((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
     .map(toPublicRow);
 }
 

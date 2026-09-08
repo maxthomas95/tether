@@ -276,6 +276,15 @@ const api: TetherAPI = {
     set: (overrides: KeybindingOverrides): Promise<void> => ipcRenderer.invoke(IPC.KEYBINDINGS_SET, overrides),
     resetAll: (): Promise<void> => ipcRenderer.invoke(IPC.KEYBINDINGS_RESET_ALL),
   },
+  gifPanel: {
+    getSettings: () => ipcRenderer.invoke(IPC.GIF_PANEL_GET_SETTINGS),
+    updateSettings: patch => ipcRenderer.invoke(IPC.GIF_PANEL_UPDATE_SETTINGS, patch),
+    addSources: () => ipcRenderer.invoke(IPC.GIF_PANEL_ADD_SOURCES),
+    removeSource: source => ipcRenderer.invoke(IPC.GIF_PANEL_REMOVE_SOURCE, source),
+    getLibrary: () => ipcRenderer.invoke(IPC.GIF_PANEL_GET_LIBRARY),
+    readImage: id => ipcRenderer.invoke(IPC.GIF_PANEL_READ_IMAGE, id),
+  },
+
   jobs: {
     getStatus: (): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_GET_STATUS),
     refresh: (): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_REFRESH),

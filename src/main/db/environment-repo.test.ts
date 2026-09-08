@@ -69,6 +69,21 @@ describe('environment-repo', () => {
     expect(parsed.port).toBe(22);
   });
 
+  it('sorts by display order and creation time without reordering stored rows', () => {
+    createEnvironment({ name: 'Last', type: 'local' });
+    createEnvironment({ name: 'Second', type: 'local' });
+    createEnvironment({ name: 'First', type: 'local' });
+    const stored = getDb().environments;
+    stored[0].sort_order = 1;
+    stored[1].created_at = '2026-02-01T00:00:00.000Z';
+    stored[2].created_at = '2026-01-01T00:00:00.000Z';
+    Object.freeze(stored);
+
+    expect(listEnvironments().map(row => row.name)).toEqual(['First', 'Second', 'Last']);
+    expect(getDb().environments).toBe(stored);
+    expect(stored.map(row => row.name)).toEqual(['Last', 'Second', 'First']);
+  });
+
   it('stores envVars as JSON', () => {
     const env = createEnvironment({
       name: 'WithVars',
