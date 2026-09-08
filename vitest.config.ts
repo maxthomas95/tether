@@ -10,7 +10,7 @@ export default defineConfig({
       reporter: ['text-summary', 'lcov', 'html'],
       // Include untested application code so the baseline is representative.
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/**/*.test.ts', 'src/**/*.test-helper.ts', 'src/**/*.d.ts'],
+      exclude: ['src/**/*.test.ts', 'src/**/*.test-helper.ts', 'src/**/__mocks__/**', 'src/**/*.d.ts'],
     },
     alias: {
       '@shared': '/src/shared',

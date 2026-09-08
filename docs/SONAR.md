@@ -7,7 +7,7 @@ separate `SonarQube scan` job imports that report into the existing
 
 Run `npm run test:coverage` locally and open `coverage/index.html` to inspect
 coverage. The suite includes untested application TS/TSX files in its baseline;
-tests, test helpers, and declaration files are excluded. Build scripts and the
+tests, test helpers, mocks, and declaration files are excluded. Build scripts and the
 Helm server are outside this coverage suite but remain statically analyzed.
 There is no local coverage threshold. Keep the coverage provider version aligned
 with Vitest when upgrading them.
