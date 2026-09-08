@@ -4,22 +4,22 @@ Tether integrates with [HashiCorp Vault](https://www.vaultproject.io/) so you do
 
 ## Setup
 
-Configure Vault in [Settings → Integrations → Vault](settings#integrations).
+Configure Vault in [Settings → Integrations → Vault](settings.md#integrations).
 
 You need:
 
 - **Vault address** — e.g. `https://vault.example.com:8200`
 - **Namespace** *(optional)* — for Vault Enterprise multi-tenancy
 - **KV mount** — defaults to `secret` (the KV v2 mount path)
-- **Auth method** — token or OIDC
+- **OIDC role** — the role configured for browser login on your Vault server
 
-### Token auth
+Enable the integration, fill in those fields, and click **Log In**. The login action saves the Vault configuration before opening your browser. There is no token-paste or token-file login control.
 
-Paste a token, or point Tether at a file path that contains one. Tether stores the *path*, not the raw token. The token must have read access to the KV paths you want to reference. Tether will warn you in advance if the token is close to expiring.
+### Browser login
 
-### OIDC auth
+Tether opens your browser for OIDC authentication and completes login through a local callback at `http://localhost:8250/oidc/callback`. Your Vault OIDC role must allow that redirect URI. The resulting token is cached encrypted in `data.json` using the OS keychain; Tether refuses to cache it if encryption is unavailable. Your Vault policy must permit reading the paths you reference, listing paths for the picker, and writing paths for migration.
 
-Click **Login with OIDC**. Tether opens your browser to your Vault OIDC role's auth endpoint; once you've authenticated there, Vault redirects back with a token that Tether captures and uses going forward. The token is held in memory and refreshed transparently as needed.
+Tether warns 30 minutes before a known token expiry. Click the sidebar Vault pill to log in again; tokens are not automatically renewed. **Log Out** clears the cached token.
 
 If you close the browser before finishing login, click **Cancel Vault login** in the sidebar or **Cancel login** in Settings or setup, then log in again. In the session login prompt, use **Cancel** or close the prompt. Tether cannot detect when an external browser tab closes; an abandoned login otherwise times out after five minutes.
 
@@ -30,19 +30,19 @@ A status pill in the sidebar shows current Vault state at a glance:
 | Green | Authenticated, token healthy |
 | Amber | Token expires soon |
 | Red | Not logged in or token expired |
-| Gray | Vault not configured |
+| No pill | Vault integration disabled |
 
 ## Vault References
 
 Once Vault is configured, any env-var value (global defaults, environment defaults, launch profiles, or per-session overrides) can be a Vault reference instead of a literal:
 
 ```
-vault://secret/data/anthropic#api_key
+vault://secret/anthropic#api_key
 ```
 
-Format: `vault://<KV path>#<key>`
+Format: `vault://<mount>/<logical path>#<key>`
 
-- The path is whatever you'd `vault kv get` (Tether handles the `/data/` segment that KV v2 inserts)
+- The first segment is the KV mount; the rest is the logical secret path. Omit the KV v2 API's `/data/` segment — Tether adds it when making the request.
 - The fragment after `#` is the key within that secret's data
 
 At session start, Tether resolves every `vault://` reference in parallel via `vault-resolver.ts`. If any reference fails to resolve, the session does not start and you get a toast with the specific error (missing key, no permission, vault not reachable, etc.).
@@ -55,14 +55,14 @@ In any env-var editor (Settings, the env editor for an environment, or the New S
 
 ## Migrating Plaintext Secrets to Vault
 
-Settings → Integrations → Vault has a **Migrate plaintext env vars** button. Tether scans your existing env-var values for ones that look like secrets, asks where to write them, copies them up to Vault, and rewrites the local value to a `vault://` reference. Originals are preserved until you confirm.
+**Settings → Integrations → Vault Integration → Migrate Existing Secrets…** lists supported local secrets, including SSH passwords, provider tokens, and sensitive env vars. Choose a secret and destination, then migrate it. Tether writes the value to Vault before replacing the local value with a `vault://` reference. Migration applies immediately.
 
 ## What Tether Stores Locally
 
 In `data.json`:
 
-- Vault config (address, namespace, mount, auth method)
-- Token *path* if you used file-based token auth (never the raw token)
+- Vault config (enabled state, address, namespace, mount, OIDC role)
+- Encrypted login token, identity, and expiry metadata
 - `vault://` references in env-var values
 
 Tether never persists raw secret values that come back from Vault. They're held in memory during the session and discarded when the session ends.

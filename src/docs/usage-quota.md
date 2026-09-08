@@ -1,15 +1,17 @@
 # Usage & Quota
 
-Tether tracks per-session and global token usage and cost for Claude Code, Codex CLI, and OpenCode sessions. There's no agent-side instrumentation — usage is computed from the CLI's own transcript files (or OpenCode's local DB) using a vendored copy of [LiteLLM](https://github.com/BerriAI/litellm)'s pricing table.
+Tether tracks per-session and global token usage and cost from local CLI data. Claude Code and Codex CLI estimates use a bundled [LiteLLM](https://github.com/BerriAI/litellm) pricing table. The OpenCode usage reader supports the Crush database described below. These are API-equivalent estimates, not subscription bills.
 
 ## How It Works
 
 | CLI | Source | Notes |
 |-----|--------|-------|
-| Claude Code | `~/.claude/projects/**/transcripts/*.jsonl` | Sums input / output / cache-create / cache-read tokens per event. |
+| Claude Code | `~/.claude/projects/<encoded-directory>/<session-id>.jsonl` | Sums input / output / cache-create / cache-read tokens per event. Respects `CLAUDE_CONFIG_DIR`. |
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | Tracks active model from `turn_context` and sums `last_token_usage` deltas from `token_count` events. |
-| OpenCode | `crush.db` (local SQLite) | Reads pre-computed cost per session; no token-level math. |
-| Copilot CLI | *(not supported)* | Blocked on upstream — `events.jsonl` doesn't persist token usage. See ROADMAP. |
+| OpenCode usage reader | Crush's `crush.db` (local SQLite) | Reads stored cost and token totals. This reader does not cover every OpenCode storage format. |
+| Copilot CLI | *(not supported)* | Tether currently has no Copilot cost reader. Resume and transcript browsing work independently. |
+
+The Crush reader looks in `%LOCALAPPDATA%/crush/crush.db` on Windows, or `~/.local/share/crush/crush.db` on other platforms. `CRUSH_GLOBAL_DATA` can override the directory. If the database is missing or incompatible, it returns no usage. SSH and Coder transcripts are not downloaded for usage tracking.
 
 Backfill runs at startup; live updates piggyback on filesystem watchers. Pricing data lives at `{userData}/litellm-prices.json` and refreshes at most once a day from `raw.githubusercontent.com`.
 
@@ -23,7 +25,7 @@ The bottom of the sidebar shows today's cost and a 7-day sparkline (`GlobalUsage
 
 ## Budget Guardrails
 
-[Settings -> Usage](settings#usage) has optional **Daily budget warning (USD)**
+[Settings -> Usage](settings.md#usage) has optional **Daily budget warning (USD)**
 and **Weekly budget warning (USD)** thresholds. Blank or `0` disables a
 guardrail; positive decimal dollar values enable it.
 
@@ -53,7 +55,7 @@ The footer tooltip groups today's cost by environment ID (sorted, with an "Unatt
 
 ## Export
 
-[Settings → Usage](settings#usage) has two export buttons:
+[Settings → Usage](settings.md#usage) has two export buttons:
 
 - **Export as CSV…** — one row per session with totals. RFC 4180 quoting; safe to drop into Excel or analytics tooling.
 - **Export as JSON…** — full structure: per-session, per-model breakdowns, daily rollups, working directory, environment ID, and the current Tether version.
@@ -66,10 +68,10 @@ Bar values explicitly show the percentage **left**, for example **63% left**. Re
 
 Optional. If you're on an Anthropic Pro / Max or OpenAI Plus subscription, Tether can poll the provider's quota endpoint and surface remaining budget in the sidebar footer (`QuotaFooter`).
 
-Toggle it on in [Settings → Usage → Subscription quota](settings#usage). Disable if you're on metered API billing instead — the poll just adds noise.
+**Show usage quota in sidebar** in [Settings → Usage](settings.md#usage) is on by default. Disabling it stops quota polling. It uses the Claude/Codex login credentials available on your machine; it is separate from local usage collection and cost-display toggles.
 
-When the quota service is enabled, it polls on a short timer at startup (5s delay) and refreshes periodically. Failures are silent and won't block startup.
+When enabled, polling starts about 5 seconds after launch and refreshes every 5 minutes. Failures do not block startup.
 
 ## Privacy
 
-Transcript files stay on your machine. Tether only reads them locally — nothing is uploaded. The pricing JSON refresh is the only network call this feature makes (one HTTP GET per day, to `raw.githubusercontent.com`).
+Usage collection reads local files without uploading transcripts. Pricing refresh downloads JSON from `raw.githubusercontent.com` at most once a day. Subscription quota is a separate network feature: it contacts `api.anthropic.com` and `chatgpt.com` with the corresponding local login credentials, and may refresh Claude credentials via `platform.claude.com`.

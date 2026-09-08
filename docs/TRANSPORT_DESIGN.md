@@ -2,279 +2,104 @@
 
 ## Overview
 
-The transport layer is the core abstraction that makes Tether environment-agnostic. Every session, regardless of where it runs, communicates through the same interface. The terminal panel doesn't know if it's talking to a local PTY, an SSH channel, or a container exec session.
+Every session uses a `SessionTransport` owned by Electron main. The renderer sends input and resize events through IPC and feeds unmodified output into xterm.js. Local, SSH, and Coder sessions share this contract.
 
-This document specifies the transport interface, the implementation details for each adapter, and the data flow from PTY to screen.
+This document describes the current implementation. The authoritative interface is [types.ts](../src/main/transport/types.ts); launch and lifecycle coordination live in [session-manager.ts](../src/main/session/session-manager.ts).
 
 ## Transport Interface
 
 ```typescript
-// src/main/transport/types.ts
-
 interface SessionTransport {
-  /** Spawn Claude Code in the target environment. Resolves when PTY is ready. */
   start(options: TransportStartOptions): Promise<void>;
-
-  /** Write raw bytes to PTY stdin (keyboard input from xterm.js). */
   write(data: string): void;
-
-  /** Resize the remote PTY (called on xterm.js dimension changes). */
   resize(cols: number, rows: number): void;
-
-  /** Graceful shutdown — sends Ctrl+C, waits for exit. */
   stop(): Promise<void>;
-
-  /** Force kill — immediate cleanup. */
   kill(): void;
-
-  /** Register callback for PTY output data (raw byte stream). */
   onData(callback: (data: string) => void): void;
-
-  /** Register callback for PTY exit (graceful or crash). */
   onExit(callback: (exitInfo: TransportExitInfo) => void): void;
-
-  /** Current connection state. */
   readonly connected: boolean;
-
-  /** Clean up all resources (called when session is removed). */
   dispose(): void;
 }
-
-interface TransportStartOptions {
-  workingDir: string;
-  env: Record<string, string>;
-  cols: number;
-  rows: number;
-  cliArgs?: string[];
-}
-
-interface TransportExitInfo {
-  exitCode: number;
-  signal?: string;
-}
 ```
+
+`TransportStartOptions` includes the working directory, resolved env vars, terminal dimensions, CLI args, CLI tool and binary, tool-native session/resume IDs, legacy Claude IDs, an optional Coder clone URL, and an optional initial prompt. `TransportExitInfo` carries an exit code and optional signal.
+
+CLI-specific resume arguments come from [cli-tools.ts](../src/shared/cli-tools.ts). [cli-args.ts](../src/main/transport/cli-args.ts) splits flag entries on whitespace, except entries in assignment form such as `--flag=value`, which stay intact. It is not a shell-style quote/escape parser. The initial prompt is appended as one argument after tokenization.
 
 ## Data Flow
 
-```
-User Keystroke
-     │
-     ▼
-xterm.js terminal.onData(data)
-     │
-     ▼ (IPC: session:input)
-Electron Main Process
-     │
-     ▼
-transport.write(data)           ◄── raw bytes, no modification
-     │
-     ▼
-PTY stdin (local) / SSH channel (remote)
-     │
-     ▼
-Claude Code process
-     │
-     ▼
-PTY stdout
-     │
-     ▼
-transport.onData callback
-     │
-     ├──► Status Detector (passive copy)
-     │         │
-     │         ▼
-     │    State machine update → IPC: session:state-change
-     │
-     ▼ (IPC: session:data)
-Renderer Process
-     │
-     ▼
-xterm.js terminal.write(data)   ◄── raw bytes, no modification
-     │
-     ▼
-Screen (rendered by xterm.js VT emulator)
+```text
+xterm.js onData → session:input IPC → transport.write → PTY stdin
+PTY stdout → transport.onData → session:data IPC → xterm.js write
+                             ↘ passive status/notification tap
 ```
 
-**Critical invariant:** At no point in this pipeline is the data modified, parsed, filtered, or buffered (beyond what IPC serialization requires). The bytes that Claude Code writes to stdout are the exact bytes that xterm.js receives.
+The terminal output is never filtered, rewritten, or re-rendered by Tether. SSH uses incremental UTF-8 decoding to preserve characters split across network chunks. Buffering for decoding, IPC, and xterm.js scrollback does not change the terminal content.
+
+Current IPC forwards output for all sessions. The renderer keeps background xterm.js terminals off-DOM so their buffers survive switching and re-layout; active panes attach to the DOM. Removing background traffic would need a separate buffering/replay design that preserves scrollback.
+
+## Configuration Cascade
+
+The session manager resolves env vars in this order, with later values winning:
+
+1. Global defaults.
+2. Environment defaults.
+3. Selected launch profile.
+4. Session overrides.
+
+Local and Coder PTYs also inherit the local process environment. SSH launches receive the resolved variables through a quoted remote command. Vault references resolve in main before launch.
+
+CLI flags concatenate: per-tool global defaults → per-tool profile flags → session flags. `disabledInheritedFlags` removes selected entries. There is no environment-level CLI-flag array in this cascade.
 
 ## Local Adapter
 
-### Implementation
+[local-transport.ts](../src/main/transport/local-transport.ts) lazily loads `node-pty` through `pty-loader.ts`.
 
-Uses `node-pty` (the same library VS Code uses for its integrated terminal).
+- Native executables spawn directly. On Windows, [win-binary-resolver.ts](../src/main/transport/win-binary-resolver.ts) resolves executable names and uses `cmd.exe` only for batch shims or unresolved names that need PATH/PATHEXT lookup.
+- The Windows shell fallback quotes arguments through the shared shell helpers and rejects embedded double quotes at that boundary.
+- PTYs use `xterm-256color` and `COLORTERM=truecolor`; resize calls reach `pty.resize`.
+- Both stop and kill use node-pty's process termination. Platform behavior differs; a Windows stop is not a promise of POSIX SIGTERM handling.
+- PTYs live in main and can survive a renderer reload. Renderer reattachment does not restore a buffer destroyed by a renderer crash.
 
-```typescript
-// Simplified from src/main/transport/local-transport.ts
-
-class LocalTransport implements SessionTransport {
-  private pty: IPty | null = null;
-
-  async start(options: TransportStartOptions): Promise<void> {
-    // Lazy-load node-pty to avoid ABI mismatch crashes at import time
-    const nodePty = require('node-pty');
-
-    // Tokenize each cliArgs entry on whitespace so multi-token presets like
-    // "--permission-mode plan" become separate process args.
-    const tokenized = cliArgs.flatMap(a => a.split(/\s+/).filter(Boolean));
-
-    // Spawn resolved native binaries directly (no shell; avoids metachar interpretation).
-    // On Windows, cmd.exe is a fallback only for batch shims or unresolved names;
-    // batch-launch arguments with double quotes are rejected.
-    const binary = options.binaryName || 'claude';
-    const plan = process.platform === 'win32' ? resolveWindowsLaunch(binary) : null;
-    const spawnFile = plan?.kind === 'direct' ? plan.file : plan?.kind === 'shell' ? 'cmd.exe' : binary;
-    const spawnArgs = plan?.kind === 'shell' ? ['/d', '/c', plan.file, ...tokenized] : tokenized;
-    this.pty = nodePty.spawn(spawnFile, spawnArgs, {
-      name: 'xterm-256color',
-      cols: options.cols,
-      rows: options.rows,
-      cwd: options.workingDir,
-      env: {
-        ...process.env,
-        ...options.env,
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-      },
-    });
-  }
-
-  // write(), resize(), stop(), kill(), onData(), onExit(), dispose()
-  // follow the SessionTransport interface
-}
-```
-
-### Environment Variables
-
-Environment variables are merged in this cascade (last wins):
-
-1. User's shell environment (`process.env`)
-2. App-level default env vars (configured in Settings)
-3. Environment-level env vars
-4. Session-level overrides (configured in New Session dialog)
-
-Common env vars (available as quick-add presets in the UI):
-- `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`
-- `ANTHROPIC_BASE_URL` (for OpenRouter or custom endpoints)
-- `CLAUDE_CODE_MAX_TURNS`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`
-- `AWS_PROFILE`, `AWS_REGION`
-
-### PTY Lifecycle
-
-- **Spawn:** `node-pty.spawn()` creates a child process with a pseudo-terminal.
-- **The PTY lives in the Electron main process.** If the renderer crashes and restarts, the PTY is still alive. The renderer reconnects by re-attaching the xterm.js instance to the existing data stream.
-- **Exit:** When Claude Code exits (user types `/exit`, process completes, crash), `onExit` fires with the exit code. The transport is now inert — `write()` and `resize()` become no-ops.
-- **Orphan cleanup:** On app startup, the session registry is scanned for sessions in `running`/`waiting`/`idle` state. If the app PID file shows a different PID than the current process (meaning previous crash), those sessions are marked `dead` and their PIDs are checked for zombie processes to kill.
+Conversation resume is supported for local Claude Code, Codex CLI, Copilot CLI, and OpenCode when the requested history exists. SSH and Coder do not use Tether's local history picker.
 
 ## SSH Adapter
 
-### Implementation
+[ssh-transport.ts](../src/main/transport/ssh-transport.ts) uses `ssh2` and opens a shell channel with a PTY.
 
-Uses the `ssh2` npm package for SSH connectivity.
+- Authentication uses the configured private-key path or password, with agent fallback when neither is supplied. [resolve-ssh-config.ts](../src/main/ssh/resolve-ssh-config.ts) handles stored password decryption and Vault references.
+- First contact requires host-key approval. A changed known key fails closed; it must be verified and the old entry revoked in Settings before a fresh prompt.
+- The connection uses SSH keepalives. The chosen CLI must already be installed and authenticated on the remote host.
+- The launch command changes directory and invokes the CLI with quoted env assignments and arguments. Optional sudo elevation is configured on the environment.
+- Stop sends Ctrl+C, waits, sends `exit`, then closes the SSH connection. Kill destroys the connection.
+- There is no automatic session reconnect or remote PTY reattachment. Restarting creates a new session.
 
-```typescript
-// Simplified from src/main/transport/ssh-transport.ts
-
-class SSHTransport implements SessionTransport {
-  private client: Client | null = null;
-  private stream: ClientChannel | null = null;
-  private sshConfig: SSHConfig;
-
-  async start(options: TransportStartOptions): Promise<void> {
-    this.client = new Client();
-
-    // Connect with keepalive (10s interval, max 3 missed)
-    this.client.connect({
-      host: this.sshConfig.host,
-      port: this.sshConfig.port || 22,
-      username: this.sshConfig.username,
-      // Auth: SSH agent (Windows: \\.\pipe\openssh-ssh-agent) or private key file
-      agent: this.sshConfig.useAgent ? agentPath : undefined,
-      privateKey: this.sshConfig.privateKeyPath ? readFileSync(...) : undefined,
-      keepaliveInterval: 10000,
-      keepaliveCountMax: 3,
-    });
-
-    // On ready: open shell with PTY, send cd + env + claude command
-    // Command: cd <workingDir> && env VAR1=val1 VAR2=val2 claude [args]
-    // Single quotes in env values are escaped
-  }
-
-  resize(cols: number, rows: number): void {
-    this.stream?.setWindow(rows, cols, 0, 0);
-  }
-
-  // write(), stop(), kill(), onData(), onExit(), dispose()
-  // follow the SessionTransport interface
-}
-```
-
-### Connection Management
-
-**Initial connection:** SSH handshake → authenticate → open shell channel with PTY → send env exports and `claude` command.
-
-**Keep-alive:** The `ssh2` client supports server keep-alive. Configured with `keepaliveInterval: 10000` (10s) and `keepaliveCountMax: 3` (drop after 30s of no response).
-
-**Reconnection strategy:**
-- On SSH channel close or connection error, the session is marked `dead` via the onExit callback
-- No automatic reconnection is implemented yet
-- The user can create a new session in the same environment to reconnect
-- True session resume (using Claude Code's `--resume` flag) is a future feature
-
-**Authentication methods supported (priority order):**
-1. SSH agent (if `SSH_AUTH_SOCK` is set)
-2. Private key file (user specifies path)
-3. Password (discouraged, but supported via prompt)
-
-### Remote Host Requirements
-
-The remote host must have:
-- Claude Code CLI installed and in PATH
-- A valid Claude Code authentication (logged in, or API key available)
-- SSH server accepting connections
-- Sufficient permissions for the target working directory
-
-Tether does NOT install Claude Code on remote hosts. This is a manual prerequisite.
-
-### Security Considerations
-
-- SSH private keys are never stored by Tether. We store the path to the key file.
-- API keys are injected via `env VAR=val ... <cli>` (see `ssh-transport.ts:buildLaunchCommand`), not `export`, so they don't enter interactive shell history. Vault references (`vault://`) resolve in the main process and inject the same way — plaintext never lands in config or on disk.
-- SSH agent forwarding is supported but disabled by default.
+The optional remote status-hook connection is separate from the terminal connection. It requires both the global CLI-hooks opt-in and the environment's **Install CLI status hooks on this host** setting. It installs additive user-config overlays and a Node helper, uses SSH channels without opening another public port, and does not support sudo environments. Its reconnect behavior does not reconnect the terminal session. See [in-app environment help](../src/docs/environments.md).
 
 ## Coder Adapter
 
-Implemented in `src/main/transport/coder-transport.ts`. Connects to a Coder workspace via the Coder REST API plus an SSH-style PTY exec into the workspace's `coder ssh` channel.
+[coder-transport.ts](../src/main/transport/coder-transport.ts) wraps `coder ssh <workspace>` in a local node-pty process. The Coder CLI handles authentication and routing; it must be installed and logged in.
 
-Two flows from the New Session dialog:
+[coder/workspace-service.ts](../src/main/coder/workspace-service.ts) lists workspaces/templates and creates workspaces through Coder CLI commands, with REST lookup for template parameters. The per-environment insecure-TLS opt-in applies to that API lookup.
 
-1. **Connect to an existing workspace** — pick from a list of workspaces fetched via the Coder API, then open a PTY into it.
-2. **Create a new workspace from a template** — pick a template, fill out its parameter form, watch live workspace-build progress stream into the dialog, then session opens once the workspace is `running`.
+- The session working directory identifies a workspace, optionally `workspace::subdirectory`.
+- An optional clone URL adds a guarded clone step before changing into the subdirectory and launching the CLI. An existing target directory skips the clone.
+- Stop and kill terminate the local Coder PTY process.
+- The UI supports workspace creation, not general start/stop management of existing workspaces.
+- Coder sessions use cadence-based status detection; remote hook installation is deferred.
 
-Other notes:
-- Self-signed Coder deployments are supported (cert validation can be relaxed per-environment)
-- Workspace start is idempotent — restarting a stopped workspace doesn't re-trigger init steps that would fail
-- Repos can be auto-cloned into the workspace as part of session creation (handled with platform-aware path/shell quoting)
+## Lifecycle and Performance
 
-No Docker adapter is planned. Coder is the target container runtime.
+The session manager registers output and exit callbacks, updates persisted metadata, and cleans up transports, watchers, timers, and optional integrations. A stop request allows a 3-second grace period before escalation; another stop during the grace period forces a kill. Exit code zero maps to `stopped`; errors map to `dead`.
 
-## Performance Considerations
+Startup marks stale active registry entries stopped. There is no app-PID-file zombie scan or heartbeat-based transport reattachment.
 
-### Data Throughput
+Scrollback defaults to 10,000 lines per terminal and is configurable from 100 to 100,000. It is retained in memory during the app run, not persisted to disk. Memory depends on terminal size, content, scrollback, and each CLI process. Profile IPC and rendering before introducing another streaming mechanism.
 
-Claude Code can produce high-volume output during tool calls (file reads, grep results, etc.). Peak throughput can reach several hundred KB/s of terminal data.
+## Security Boundaries
 
-- **Local adapter:** `node-pty` data events fire synchronously in the Node.js event loop. No bottleneck — this is how VS Code handles it.
-- **SSH adapter:** Throughput is bounded by network bandwidth and SSH encryption overhead. On a LAN (gigabit), this is negligible. Over WAN, latency is the bigger concern than throughput.
-- **Renderer bottleneck:** xterm.js can handle very high write rates, but the DOM rendering is the bottleneck. Only the **active session** should have its xterm.js attached to the DOM. Background sessions accumulate data in their xterm.js buffer (which is pure in-memory state, no DOM interaction).
-
-### Memory Usage per Session
-
-Each xterm.js `Terminal` instance maintains a screen buffer (default: 1000 lines of scrollback). At ~200 bytes per line (generous estimate for wide terminal with ANSI), that's ~200KB per session. With 20 sessions, that's ~4MB of terminal buffers — negligible.
-
-The `node-pty` process itself adds the memory footprint of a Claude Code CLI process per local session (~50-100MB each, mostly the Node.js runtime). This is the real scaling constraint for local sessions. SSH sessions don't have this cost locally — the Claude Code process runs on the remote host.
-
-### IPC Overhead
-
-Electron IPC serializes data as structured clones. For PTY data (strings), this is efficient. The `session:data` event is the hot path — it fires on every chunk of PTY output. Benchmark target: < 1ms overhead per data event including serialization and deserialization.
-
-Optimization: for the active session, consider using a `MessagePort` (transferable) for direct renderer↔main streaming instead of the default IPC channel. This avoids the Electron IPC broker and reduces latency by ~0.5ms per message. Only worth implementing if profiling shows IPC as a bottleneck.
+- Main owns transport credentials, host verification, Vault resolution, and process launch.
+- SSH private keys remain in their existing files; Tether stores their paths. Stored SSH passwords and sensitive configuration values use OS-backed encryption.
+- Vault references remain references in app configuration; resolved values are passed to the child process.
+- Shell quoting belongs at the transport boundary. Preserve the native-launch and Windows shell-fallback distinctions when changing arguments.
+- Status, usage, notifications, and hooks remain passive side channels. They must never alter the terminal stream.

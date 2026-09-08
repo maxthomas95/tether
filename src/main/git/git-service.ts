@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 import type { CloneProgressInfo, RepoBranchStatus } from '../../shared/types';
 import { gitProtocolEnv, validateGitRemoteUrl } from './git-url';
+import { resolveGitExecutable } from './git-executable';
 
 export interface CloneOptions {
   url: string;
@@ -10,6 +12,55 @@ export interface CloneOptions {
 }
 
 const PROGRESS_RE = /(Counting|Compressing|Receiving|Resolving)\s+\w+:\s+(\d+)%/;
+
+const INVALID_GIT_BRANCH_CHARS_RE = /[\x00-\x20\x7f~^:?*[\]\\]/;
+
+function validateLocalPath(input: string, label: string): string {
+  if (typeof input !== 'string' || input.length === 0) {
+    throw new Error(`${label} must be a non-empty absolute path`);
+  }
+  if (input.includes('\0') || /[\r\n]/.test(input)) {
+    throw new Error(`${label} contains invalid characters`);
+  }
+  if (process.platform === 'win32') {
+    const normalized = path.win32.normalize(input);
+    if (/^\\\\[.?]\\/.test(normalized)) {
+      throw new Error(`${label} must not use a Windows device path`);
+    }
+    if (/^\\(?!\\)/.test(normalized)) {
+      throw new Error(`${label} must be drive-absolute or a UNC path`);
+    }
+    if (!path.win32.isAbsolute(input)) {
+      throw new Error(`${label} must be an absolute path`);
+    }
+    return normalized;
+  }
+  if (!path.posix.isAbsolute(input)) {
+    throw new Error(`${label} must be an absolute path`);
+  }
+  return path.posix.normalize(input);
+}
+
+function validateBranchName(input: string): string {
+  if (typeof input !== 'string' || input.length === 0) {
+    throw new Error('Branch name must not be empty');
+  }
+  if (
+    input.startsWith('-') ||
+    input.startsWith('/') ||
+    input.endsWith('/') ||
+    input.endsWith('.') ||
+    input.endsWith('.lock') ||
+    input === 'HEAD' || input === '@' ||
+    input.split('/').some(part => !part || part.startsWith('.') || part.endsWith('.lock')) ||
+    input.includes('..') ||
+    input.includes('@{') ||
+    INVALID_GIT_BRANCH_CHARS_RE.test(input) || /\s/u.test(input)
+  ) {
+    throw new Error('Branch name is invalid');
+  }
+  return input;
+}
 
 function parsePhase(raw: string): CloneProgressInfo['phase'] {
   const lower = raw.toLowerCase();
@@ -22,12 +73,19 @@ function parsePhase(raw: string): CloneProgressInfo['phase'] {
 
 export function gitClone(opts: CloneOptions): Promise<string> {
   return new Promise((resolve, reject) => {
-    if (fs.existsSync(opts.destination)) {
-      return reject(new Error(`Destination already exists: ${opts.destination}`));
+    let destination: string;
+    try {
+      destination = validateLocalPath(opts.destination, 'Destination');
+    } catch (err) {
+      return reject(err instanceof Error ? err : new Error(String(err)));
+    }
+
+    if (fs.existsSync(destination)) {
+      return reject(new Error(`Destination already exists: ${destination}`));
     }
 
     const remoteUrl = validateGitRemoteUrl(opts.url);
-    const proc = spawn('git', ['clone', '--progress', '--', remoteUrl, opts.destination], { // NOSONAR(typescript:S4036)
+    const proc = spawn(resolveGitExecutable(), ['clone', '--progress', '--', remoteUrl, destination], {
       env: gitProtocolEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -53,7 +111,7 @@ export function gitClone(opts: CloneOptions): Promise<string> {
     proc.on('close', (code) => {
       if (code === 0) {
         opts.onProgress?.({ phase: 'done', percent: 100, message: 'Clone complete' });
-        resolve(opts.destination);
+        resolve(destination);
       } else {
         const errMsg = stderrBuf.trim() || `git clone exited with code ${code}`;
         opts.onProgress?.({ phase: 'error', percent: 0, message: errMsg });
@@ -70,11 +128,18 @@ export function gitClone(opts: CloneOptions): Promise<string> {
 
 export function gitInit(directory: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    if (!fs.existsSync(directory)) {
-      fs.mkdirSync(directory, { recursive: true });
+    let targetDirectory: string;
+    try {
+      targetDirectory = validateLocalPath(directory, 'Directory');
+    } catch (err) {
+      return reject(err instanceof Error ? err : new Error(String(err)));
     }
 
-    const proc = spawn('git', ['init', directory], {
+    if (!fs.existsSync(targetDirectory)) {
+      fs.mkdirSync(targetDirectory, { recursive: true });
+    }
+
+    const proc = spawn(resolveGitExecutable(), ['init', '--', targetDirectory], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -82,7 +147,7 @@ export function gitInit(directory: string): Promise<string> {
     proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
 
     proc.on('close', (code) => {
-      if (code === 0) resolve(directory);
+      if (code === 0) resolve(targetDirectory);
       else reject(new Error(stderr.trim() || `git init exited with code ${code}`));
     });
 
@@ -97,23 +162,28 @@ export interface CreateFolderOptions {
 
 export function createFolder(opts: CreateFolderOptions): Promise<string> {
   return new Promise((resolve, reject) => {
-    if (fs.existsSync(opts.path)) {
-      return reject(new Error(`Folder already exists: ${opts.path}`));
+    let folderPath: string;
+    try {
+      folderPath = validateLocalPath(opts.path, 'Folder path');
+    } catch (err) {
+      return reject(err instanceof Error ? err : new Error(String(err)));
+    }
+
+    if (fs.existsSync(folderPath)) {
+      return reject(new Error(`Folder already exists: ${folderPath}`));
     }
 
     try {
-      fs.mkdirSync(opts.path, { recursive: true });
+      fs.mkdirSync(folderPath, { recursive: true });
     } catch (err) {
       return reject(err instanceof Error ? err : new Error(String(err)));
     }
 
     if (!opts.initGit) {
-      return resolve(opts.path);
+      return resolve(folderPath);
     }
 
-    // Spawning by binary name (PATH lookup) matches the rest of git-service.ts;
-    // Tether shells out to whichever `git` is on the user's PATH.
-    const proc = spawn('git', ['init', opts.path], { // NOSONAR(typescript:S4036)
+    const proc = spawn(resolveGitExecutable(), ['init', '--', folderPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -121,7 +191,7 @@ export function createFolder(opts: CreateFolderOptions): Promise<string> {
     proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
 
     proc.on('close', (code) => {
-      if (code === 0) resolve(opts.path);
+      if (code === 0) resolve(folderPath);
       else reject(new Error(stderr.trim() || `git init exited with code ${code}`));
     });
 
@@ -131,15 +201,22 @@ export function createFolder(opts: CreateFolderOptions): Promise<string> {
 
 export function gitRemoteAdd(repoPath: string, remoteName: string, remoteUrl: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (!isGitRepo(repoPath)) {
-      return reject(new Error(`Not a git repository: ${repoPath}`));
+    let safeRepoPath: string;
+    try {
+      safeRepoPath = validateLocalPath(repoPath, 'Repository path');
+    } catch (err) {
+      return reject(err instanceof Error ? err : new Error(String(err)));
+    }
+
+    if (!isGitRepo(safeRepoPath)) {
+      return reject(new Error(`Not a git repository: ${safeRepoPath}`));
     }
     const safeRemoteUrl = validateGitRemoteUrl(remoteUrl);
     if (!remoteName.trim() || remoteName.startsWith('-') || remoteName.includes('\0') || /[\r\n]/.test(remoteName)) {
       return reject(new Error('Git remote name is invalid'));
     }
-    // Spawning by binary name (PATH lookup) matches the rest of git-service.ts.
-    const proc = spawn('git', ['-C', repoPath, 'remote', 'add', '--', remoteName, safeRemoteUrl], { // NOSONAR(typescript:S4036)
+    const proc = spawn(resolveGitExecutable(), ['remote', 'add', '--', remoteName, safeRemoteUrl], {
+      cwd: safeRepoPath,
       env: gitProtocolEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -158,7 +235,7 @@ export function gitRemoteAdd(repoPath: string, remoteName: string, remoteUrl: st
 
 export function isGitRepo(directory: string): boolean {
   try {
-    const gitPath = `${directory}/.git`;
+    const gitPath = path.join(directory, '.git');
     return fs.existsSync(gitPath);
   } catch {
     return false;
@@ -193,7 +270,14 @@ export function parsePorcelainStatus(stdout: string): RepoBranchStatus {
  */
 export function gitBranchStatus(repoPath: string): Promise<RepoBranchStatus | null> {
   return new Promise((resolve) => {
-    const proc = spawn('git', ['-C', repoPath, 'status', '--porcelain=v2', '--branch'], { // NOSONAR(typescript:S4036)
+    let executable: string;
+    try {
+      executable = resolveGitExecutable();
+    } catch {
+      resolve(null);
+      return;
+    }
+    const proc = spawn(executable, ['-C', repoPath, 'status', '--porcelain=v2', '--branch'], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -234,18 +318,28 @@ export interface WorktreeRemoveOptions {
 
 export function gitWorktreeRemove(opts: WorktreeRemoveOptions): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (!isGitRepo(opts.sourceRepo)) {
-      return reject(new Error(`Not a git repository: ${opts.sourceRepo}`));
+    let sourceRepo: string;
+    let worktreePath: string;
+    try {
+      sourceRepo = validateLocalPath(opts.sourceRepo, 'Source repository path');
+      worktreePath = validateLocalPath(opts.worktreePath, 'Worktree path');
+    } catch (err) {
+      return reject(err instanceof Error ? err : new Error(String(err)));
     }
-    if (!fs.existsSync(opts.worktreePath)) {
+
+    if (!isGitRepo(sourceRepo)) {
+      return reject(new Error(`Not a git repository: ${sourceRepo}`));
+    }
+    if (!fs.existsSync(worktreePath)) {
       return resolve();
     }
 
-    const args = ['-C', opts.sourceRepo, 'worktree', 'remove'];
+    const args = ['worktree', 'remove'];
     if (opts.force) args.push('--force');
-    args.push(opts.worktreePath);
+    args.push('--', worktreePath);
 
-    const proc = spawn('git', args, {
+    const proc = spawn(resolveGitExecutable(), args, {
+      cwd: sourceRepo,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -263,17 +357,29 @@ export function gitWorktreeRemove(opts: WorktreeRemoveOptions): Promise<void> {
 
 export function gitWorktreeAdd(opts: WorktreeAddOptions): Promise<string> {
   return new Promise((resolve, reject) => {
-    if (!isGitRepo(opts.sourceRepo)) {
-      return reject(new Error(`Not a git repository: ${opts.sourceRepo}`));
-    }
-    if (fs.existsSync(opts.worktreePath)) {
-      return reject(new Error(`Worktree path already exists: ${opts.worktreePath}`));
-    }
-    if (!opts.branch.trim()) {
-      return reject(new Error('Branch name must not be empty'));
+    let sourceRepo: string;
+    let worktreePath: string;
+    let branch: string;
+    try {
+      sourceRepo = validateLocalPath(opts.sourceRepo, 'Source repository path');
+      worktreePath = validateLocalPath(opts.worktreePath, 'Worktree path');
+      branch = validateBranchName(opts.branch);
+    } catch (err) {
+      return reject(err instanceof Error ? err : new Error(String(err)));
     }
 
-    const proc = spawn('git', ['-C', opts.sourceRepo, 'worktree', 'add', '-b', opts.branch, opts.worktreePath], {
+    if (!isGitRepo(sourceRepo)) {
+      return reject(new Error(`Not a git repository: ${sourceRepo}`));
+    }
+    if (fs.existsSync(worktreePath)) {
+      return reject(new Error(`Worktree path already exists: ${worktreePath}`));
+    }
+
+    // Reviewed S6350: validateBranchName rejects options/control/ref syntax;
+    // branch is one argv value for -b, paths follow --, and no shell is used.
+    // git-service.test.ts covers injection attempts and valid literal refs.
+    const proc = spawn(resolveGitExecutable(), ['worktree', 'add', '-b', branch, '--', worktreePath], { // NOSONAR
+      cwd: sourceRepo,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -281,7 +387,7 @@ export function gitWorktreeAdd(opts: WorktreeAddOptions): Promise<string> {
     proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
 
     proc.on('close', (code) => {
-      if (code === 0) resolve(opts.worktreePath);
+      if (code === 0) resolve(worktreePath);
       else reject(new Error(stderr.trim() || `git worktree add exited with code ${code}`));
     });
 
