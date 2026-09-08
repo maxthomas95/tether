@@ -33,6 +33,18 @@ function makeChild(pid?: number) {
   return child;
 }
 
+function clientOptions(options: Parameters<typeof callCodexAppServer>[1] = {}): Parameters<typeof callCodexAppServer>[1] {
+  return {
+    resolveCodexExecutableImpl: vi.fn(() => ({
+      kind: 'direct' as const,
+      file: 'C:\\Program Files\\Codex\\codex.exe',
+      args: ['app-server'],
+    })),
+    resolveWindowsSystemExecutableImpl: vi.fn(() => 'C:\\Windows\\System32\\taskkill.exe'),
+    ...options,
+  };
+}
+
 describe('codex app-server client', () => {
   beforeEach(() => {
     resetCodexAppServerClientForTests();
@@ -46,7 +58,7 @@ describe('codex app-server client', () => {
 
     const promise = callCodexAppServer([
       { method: 'account/read', params: { refreshToken: false } },
-    ], { spawnImpl: spawnImpl as never });
+    ], clientOptions({ spawnImpl: spawnImpl as never }));
 
     child.stdout.write(jsonl({ id: 1, result: { codexHome: 'x', platformFamily: 'windows', platformOs: 'windows', userAgent: 'codex' } }));
     await vi.waitFor(() => expect(writes.join('')).toContain('"method":"initialized"'));
@@ -60,14 +72,14 @@ describe('codex app-server client', () => {
     await expect(promise).resolves.toEqual([
       { method: 'account/read', ok: true, result: { account: { type: 'apiKey' }, requiresOpenaiAuth: false } },
     ]);
-    expect(spawnImpl).toHaveBeenCalledTimes(1);
+    expect(spawnImpl).toHaveBeenCalledWith('C:\\Program Files\\Codex\\codex.exe', ['app-server'], expect.any(Object));
   });
 
   it('handles fragmented UTF-8 JSONL frames', async () => {
     const child = makeChild();
     const promise = callCodexAppServer([
       { method: 'model/list', params: { limit: 100 } },
-    ], { spawnImpl: vi.fn(() => child) as never });
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
     const modelFrame = jsonl({ id: 2, result: { data: [{ id: 'm', displayName: 'GPT café', description: 'café', model: 'm' }] } });
     const splitAt = modelFrame.indexOf(Buffer.from('é'));
 
@@ -84,14 +96,14 @@ describe('codex app-server client', () => {
     const spawnImpl = vi.fn(() => makeChild());
     await expect(callCodexAppServer([
       { method: 'thread/start' as never },
-    ], { spawnImpl: spawnImpl as never })).rejects.toThrow('allowlisted');
+    ], clientOptions({ spawnImpl: spawnImpl as never }))).rejects.toThrow('allowlisted');
     expect(spawnImpl).not.toHaveBeenCalled();
   });
 
   it('returns an empty result without spawning for empty calls', async () => {
     const spawnImpl = vi.fn(() => makeChild());
 
-    await expect(callCodexAppServer([], { spawnImpl: spawnImpl as never })).resolves.toEqual([]);
+    await expect(callCodexAppServer([], clientOptions({ spawnImpl: spawnImpl as never }))).resolves.toEqual([]);
     expect(spawnImpl).not.toHaveBeenCalled();
   });
 
@@ -101,8 +113,49 @@ describe('codex app-server client', () => {
     await expect(callCodexAppServer([
       { method: 'model/list', params: { limit: 100 } },
       { method: 'model/list', params: { limit: 200 } },
-    ], { spawnImpl: spawnImpl as never })).rejects.toThrow('repeat a method');
+    ], clientOptions({ spawnImpl: spawnImpl as never }))).rejects.toThrow('repeat a method');
     expect(spawnImpl).not.toHaveBeenCalled();
+  });
+
+  it('returns unavailable when Codex cannot be resolved from a trusted executable path', async () => {
+    const spawnImpl = vi.fn(() => makeChild());
+
+    await expect(callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({
+      spawnImpl: spawnImpl as never,
+      resolveCodexExecutableImpl: vi.fn(() => null),
+    }))).resolves.toEqual([
+      { method: 'model/list', ok: false, error: 'Codex app-server unavailable', unavailable: true },
+    ]);
+    expect(spawnImpl).not.toHaveBeenCalled();
+  });
+
+  it('launches a resolved Windows npm shim through an absolute cmd.exe path', async () => {
+    const child = makeChild();
+    const spawnImpl = vi.fn(() => child);
+    const promise = callCodexAppServer([
+      { method: 'model/list', params: { limit: 100 } },
+    ], clientOptions({
+      spawnImpl: spawnImpl as never,
+      resolveCodexExecutableImpl: vi.fn(() => ({
+        kind: 'cmd',
+        file: 'C:\\Windows\\System32\\cmd.exe',
+        args: ['/d', '/s', '/c', '"C:\\Program Files\\nodejs\\codex.cmd" app-server'],
+      })),
+    }));
+
+    child.stdout.write(jsonl({ id: 1, result: {} }));
+    child.stdout.write(jsonl({ id: 2, result: { data: [] } }));
+
+    await expect(promise).resolves.toEqual([
+      { method: 'model/list', ok: true, result: { data: [] } },
+    ]);
+    expect(spawnImpl).toHaveBeenCalledWith(
+      'C:\\Windows\\System32\\cmd.exe',
+      ['/d', '/s', '/c', '"C:\\Program Files\\nodejs\\codex.cmd" app-server'],
+      expect.any(Object),
+    );
   });
 
   it('stops after initialize errors without sending read calls', async () => {
@@ -111,7 +164,7 @@ describe('codex app-server client', () => {
     child.stdin.on('data', chunk => writes.push(String(chunk)));
     const promise = callCodexAppServer([
       { method: 'config/read', params: { includeLayers: true, cwd: null } },
-    ], { spawnImpl: vi.fn(() => child) as never });
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
 
     child.stdout.write(jsonl({ id: 1, error: { code: -32000, message: 'SECRET backend detail' } }));
 
@@ -126,7 +179,7 @@ describe('codex app-server client', () => {
     const child = makeChild();
     const promise = callCodexAppServer([
       { method: 'model/list', params: { limit: 100 } },
-    ], { spawnImpl: vi.fn(() => child) as never });
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
 
     child.stdout.write(jsonl({ id: 1 }));
 
@@ -140,7 +193,7 @@ describe('codex app-server client', () => {
     const promise = callCodexAppServer([
       { method: 'account/read' },
       { method: 'config/read' },
-    ], { spawnImpl: vi.fn(() => child) as never });
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
 
     child.stdout.write(jsonl({ id: 1, result: {} }));
     child.stdout.write(jsonl({ id: 2 }));
@@ -156,7 +209,7 @@ describe('codex app-server client', () => {
     const child = makeChild();
     const promise = callCodexAppServer([
       { method: 'account/usage/read' },
-    ], { spawnImpl: vi.fn(() => child) as never });
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
 
     child.stdout.write(jsonl(null));
     child.stdout.write(jsonl(['unexpected']));
@@ -175,7 +228,7 @@ describe('codex app-server client', () => {
     const promise = callCodexAppServer([
       { method: 'account/usage/read' },
       { method: 'model/list', params: { limit: 100 } },
-    ], { spawnImpl: vi.fn(() => child) as never });
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
 
     child.stdout.write(jsonl({ id: 1, result: {} }));
     child.stdout.write(jsonl({ id: 2, error: { code: -32601, message: 'Method not found SECRET detail' } }));
@@ -191,7 +244,7 @@ describe('codex app-server client', () => {
     const child = makeChild();
     const promise = callCodexAppServer([
       { method: 'model/list', params: { limit: 100 } },
-    ], { spawnImpl: vi.fn(() => child) as never, maxFrameBytes: 10 });
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never, maxFrameBytes: 10 }));
 
     child.stdout.write(Buffer.from('{"id":1,"result":{}}\n', 'utf-8'));
     await expect(promise).resolves.toEqual([
@@ -203,7 +256,7 @@ describe('codex app-server client', () => {
     const child = makeChild();
     const promise = callCodexAppServer([
       { method: 'model/list', params: { limit: 100 } },
-    ], { spawnImpl: vi.fn(() => child) as never, maxFrameBytes: 30 });
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never, maxFrameBytes: 30 }));
 
     child.stdout.write(Buffer.from('{"id":1,"result":{}}\n{"id":2,"result":{"data":[]}}\n', 'utf-8'));
 
@@ -216,7 +269,7 @@ describe('codex app-server client', () => {
     const child = makeChild();
     const promise = callCodexAppServer([
       { method: 'model/list', params: { limit: 100 } },
-    ], { spawnImpl: vi.fn(() => child) as never });
+    ], clientOptions({ spawnImpl: vi.fn(() => child) as never }));
 
     child.stdin.emit('error', Object.assign(new Error('write EPIPE SECRET'), { code: 'EPIPE' }));
 
@@ -235,11 +288,11 @@ describe('codex app-server client', () => {
       : vi.spyOn(process, 'kill').mockReturnValue(true);
     const promise = callCodexAppServer([
       { method: 'model/list', params: { limit: 100 } },
-    ], {
+    ], clientOptions({
       signal: controller.signal,
       spawnImpl: vi.fn(() => child) as never,
       cleanupSpawnImpl: cleanupSpawnImpl as never,
-    });
+    }));
 
     controller.abort();
 
@@ -247,7 +300,7 @@ describe('codex app-server client', () => {
       { method: 'model/list', ok: false, error: 'Codex app-server request cancelled' },
     ]);
     if (process.platform === 'win32') {
-      expect(cleanupSpawnImpl).toHaveBeenCalledWith('taskkill.exe', ['/pid', '456', '/t', '/f'], expect.any(Object));
+      expect(cleanupSpawnImpl).toHaveBeenCalledWith('C:\\Windows\\System32\\taskkill.exe', ['/pid', '456', '/t', '/f'], expect.any(Object));
     } else {
       expect(killProcess).toHaveBeenCalledWith(-456, 'SIGTERM');
       expect(child.kill).not.toHaveBeenCalled();
@@ -266,10 +319,10 @@ describe('codex app-server client', () => {
 
     const signalled = callCodexAppServer([
       { method: 'model/list', params: { limit: 100 } },
-    ], { signal: controller.signal, spawnImpl: spawnImpl as never });
+    ], clientOptions({ signal: controller.signal, spawnImpl: spawnImpl as never }));
     const unsignalled = callCodexAppServer([
       { method: 'model/list', params: { limit: 100 } },
-    ], { spawnImpl: spawnImpl as never });
+    ], clientOptions({ spawnImpl: spawnImpl as never }));
 
     controller.abort();
     unsignalledChild.stdout.write(jsonl({ id: 1, result: {} }));
@@ -288,8 +341,8 @@ describe('codex app-server client', () => {
     const spawnImpl = vi.fn()
       .mockReturnValueOnce(firstChild)
       .mockReturnValueOnce(secondChild);
-    const first = callCodexAppServer([{ method: 'model/list', params: { limit: 100 } }], { spawnImpl: spawnImpl as never });
-    const coalesced = callCodexAppServer([{ method: 'model/list', params: { limit: 100 } }], { spawnImpl: spawnImpl as never });
+    const first = callCodexAppServer([{ method: 'model/list', params: { limit: 100 } }], clientOptions({ spawnImpl: spawnImpl as never }));
+    const coalesced = callCodexAppServer([{ method: 'model/list', params: { limit: 100 } }], clientOptions({ spawnImpl: spawnImpl as never }));
 
     firstChild.stdout.write(jsonl({ id: 1, result: {} }));
     firstChild.stdout.write(jsonl({ id: 2, result: { data: [] } }));
@@ -299,7 +352,7 @@ describe('codex app-server client', () => {
       [{ method: 'model/list', ok: true, result: { data: [] } }],
     ]);
 
-    const afterCompletion = callCodexAppServer([{ method: 'model/list', params: { limit: 100 } }], { spawnImpl: spawnImpl as never });
+    const afterCompletion = callCodexAppServer([{ method: 'model/list', params: { limit: 100 } }], clientOptions({ spawnImpl: spawnImpl as never }));
     secondChild.stdout.write(jsonl({ id: 1, result: {} }));
     secondChild.stdout.write(jsonl({ id: 2, result: { data: [{ id: 'new' }] } }));
 

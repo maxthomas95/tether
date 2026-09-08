@@ -1,6 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import packageJson from '../../../package.json';
+import {
+  resolveCodexExecutable,
+  resolveWindowsSystemExecutable,
+  type CodexExecutableLaunch,
+} from './executable-resolver';
 
 type RequestId = number;
 
@@ -31,6 +36,8 @@ export interface CodexAppServerClientOptions {
   signal?: AbortSignal;
   spawnImpl?: typeof spawn;
   cleanupSpawnImpl?: typeof spawn;
+  resolveCodexExecutableImpl?: typeof resolveCodexExecutable;
+  resolveWindowsSystemExecutableImpl?: typeof resolveWindowsSystemExecutable;
 }
 
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -88,16 +95,18 @@ export async function callCodexAppServer(
   return request;
 }
 
-function spawnCodexAppServer(spawnImpl: typeof spawn): ChildProcessWithoutNullStreams {
-  if (process.platform === 'win32') {
-    return spawnImpl('cmd.exe', ['/d', '/s', '/c', 'codex', 'app-server'], spawnOptions());
-  }
-  return spawnImpl('codex', ['app-server'], spawnOptions());
+function spawnCodexAppServer(
+  spawnImpl: typeof spawn,
+  resolveCodexExecutableImpl: typeof resolveCodexExecutable,
+): ChildProcessWithoutNullStreams | null {
+  const launch = resolveCodexExecutableImpl();
+  if (!launch) return null;
+  return spawnImpl(launch.file, launch.args, spawnOptions(launch));
 }
 
-function spawnOptions(): SpawnOptionsWithoutStdio {
+function spawnOptions(launch: CodexExecutableLaunch): SpawnOptionsWithoutStdio {
   return {
-    detached: process.platform !== 'win32',
+    detached: launch.kind === 'direct' && process.platform !== 'win32',
     windowsHide: true,
     shell: false,
     stdio: 'pipe',
@@ -113,6 +122,8 @@ function runCodexAppServer(
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
   const spawnImpl = options.spawnImpl ?? spawn;
   const cleanupSpawnImpl = options.cleanupSpawnImpl ?? spawn;
+  const resolveCodexExecutableImpl = options.resolveCodexExecutableImpl ?? resolveCodexExecutable;
+  const resolveWindowsSystemExecutableImpl = options.resolveWindowsSystemExecutableImpl ?? resolveWindowsSystemExecutable;
 
   return new Promise(resolve => {
     if (options.signal?.aborted) {
@@ -122,7 +133,12 @@ function runCodexAppServer(
 
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawnCodexAppServer(spawnImpl);
+      const spawned = spawnCodexAppServer(spawnImpl, resolveCodexExecutableImpl);
+      if (!spawned) {
+        resolve(calls.map(call => unavailable(call.method)));
+        return;
+      }
+      child = spawned;
     } catch {
       resolve(calls.map(call => unavailable(call.method)));
       return;
@@ -152,7 +168,7 @@ function runCodexAppServer(
       settled = true;
       clearTimeout(timer);
       options.signal?.removeEventListener('abort', abort);
-      disposeChild(child, cleanupSpawnImpl);
+      disposeChild(child, cleanupSpawnImpl, resolveWindowsSystemExecutableImpl);
       resolve(value);
     };
 
@@ -273,11 +289,16 @@ function errorResult(method: CodexAppServerMethod, error: string): CodexAppServe
   return { method, ok: false, error };
 }
 
-function disposeChild(child: ChildProcessWithoutNullStreams, cleanupSpawnImpl: typeof spawn): void {
+function disposeChild(
+  child: ChildProcessWithoutNullStreams,
+  cleanupSpawnImpl: typeof spawn,
+  resolveWindowsSystemExecutableImpl: typeof resolveWindowsSystemExecutable,
+): void {
   if (!child.pid || child.killed || child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === 'win32') {
     try {
-      const killer = cleanupSpawnImpl('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
+      const taskkill = resolveWindowsSystemExecutableImpl('taskkill.exe');
+      const killer = cleanupSpawnImpl(taskkill, ['/pid', String(child.pid), '/t', '/f'], {
         windowsHide: true,
         shell: false,
         stdio: 'ignore',
