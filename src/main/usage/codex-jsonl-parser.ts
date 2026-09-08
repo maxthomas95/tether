@@ -38,6 +38,7 @@ export interface CodexTokenUsageCounters {
 
 interface TurnContextEntry {
   type?: string;
+  timestamp?: string;
   payload?: {
     model?: unknown;
     effort?: unknown;
@@ -77,6 +78,7 @@ interface TokenCountEntry {
 
 interface TaskStartedEntry {
   type?: string;
+  timestamp?: string;
   payload?: {
     model_context_window?: unknown;
   };
@@ -165,22 +167,26 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
 
       if (type === 'turn_context') {
         const payload = (parsed as TurnContextEntry).payload;
+        const timestamp = validTimestamp((parsed as TurnContextEntry).timestamp);
         const model = payload?.model;
         if (typeof model === 'string' && model) currentModel = model;
         const effort = payload?.effort ?? payload?.collaboration_mode?.settings?.reasoning_effort;
         if (typeof effort === 'string' && effort) currentReasoningEffort = effort;
         const windowTokens = payload?.model_context_window;
-        if (typeof windowTokens === 'number' && Number.isFinite(windowTokens)) {
+        if (isNonNegativeSafeInteger(windowTokens)) {
           contextWindowTokens = windowTokens;
         }
+        if (timestamp) observedAt = timestamp;
         continue;
       }
 
       if (type === 'event_msg' && (parsed as { payload?: { type?: string } }).payload?.type === 'task_started') {
+        const timestamp = validTimestamp((parsed as TaskStartedEntry).timestamp);
         const windowTokens = (parsed as TaskStartedEntry).payload?.model_context_window;
-        if (typeof windowTokens === 'number' && Number.isFinite(windowTokens)) {
+        if (isNonNegativeSafeInteger(windowTokens)) {
           contextWindowTokens = windowTokens;
         }
+        if (timestamp) observedAt = timestamp;
         continue;
       }
 
@@ -188,11 +194,11 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
 
       const entry = parsed as TokenCountEntry;
       if (entry.payload?.type !== 'token_count') continue;
-      const usage = entry.payload.info?.last_token_usage;
-      if (!usage) continue;
+      const timestamp = validTimestamp(entry.timestamp);
+      if (!timestamp) continue;
 
       const cumulativeUsage = toTokenUsage(entry.payload.info?.total_token_usage);
-      const lastUsage = toTokenUsage(usage);
+      const lastUsage = toTokenUsage(entry.payload.info?.last_token_usage);
       const usageDelta = cumulativeUsage
         ? diffCumulativeUsage(cumulativeUsage, tokenUsage)
         : lastUsage;
@@ -208,10 +214,10 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
       const outputTokens = usageDelta.outputTokens;
       const reasoningTokens = usageDelta.reasoningOutputTokens;
       const requestTotal = lastUsage?.totalTokens ?? 0;
-      contextUsedTokens = requestTotal > 0 ? requestTotal : (rawInput + outputTokens);
-      observedAt = entry.timestamp || new Date().toISOString();
+      if (requestTotal > 0) contextUsedTokens = requestTotal;
+      observedAt = timestamp;
       const windowTokens = entry.payload.info?.model_context_window;
-      if (typeof windowTokens === 'number' && Number.isFinite(windowTokens)) {
+      if (isNonNegativeSafeInteger(windowTokens)) {
         contextWindowTokens = windowTokens;
       }
 
@@ -230,7 +236,7 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
         cacheCreation5m: 0,
         cacheCreation1h: 0,
         cacheReadTokens: cacheRead,
-        timestamp: entry.timestamp || new Date().toISOString(),
+        timestamp,
         cost,
       });
     }
@@ -264,19 +270,43 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
   }
 }
 
-function nonNegativeNumber(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+function validTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : value;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === 'number'
+    && Number.isSafeInteger(value)
+    && value >= 0;
+}
+
+function optionalCounter(value: unknown): number | null {
+  return isNonNegativeSafeInteger(value) ? value : null;
 }
 
 function toTokenUsage(value: unknown): CodexTokenUsageCounters | null {
-  if (!value || typeof value !== 'object') return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const inputTokens = nonNegativeNumber(record.input_tokens);
-  const cachedInputTokens = nonNegativeNumber(record.cached_input_tokens);
-  const outputTokens = nonNegativeNumber(record.output_tokens);
-  const reasoningOutputTokens = nonNegativeNumber(record.reasoning_output_tokens);
-  const explicitTotal = nonNegativeNumber(record.total_tokens);
-  if (inputTokens === 0 && cachedInputTokens === 0 && outputTokens === 0 && reasoningOutputTokens === 0 && explicitTotal === 0) {
+  const inputTokens = optionalCounter(record.input_tokens) ?? 0;
+  const cachedInputTokens = optionalCounter(record.cached_input_tokens) ?? 0;
+  const outputTokens = optionalCounter(record.output_tokens) ?? 0;
+  const reasoningOutputTokens = optionalCounter(record.reasoning_output_tokens) ?? 0;
+  const explicitTotal = optionalCounter(record.total_tokens);
+  if (inputTokens === 0 && cachedInputTokens === 0 && outputTokens === 0 && reasoningOutputTokens === 0 && (explicitTotal ?? 0) === 0) {
+    return null;
+  }
+  if (
+    optionalCounter(record.input_tokens) === null && record.input_tokens !== undefined
+    || optionalCounter(record.cached_input_tokens) === null && record.cached_input_tokens !== undefined
+    || optionalCounter(record.output_tokens) === null && record.output_tokens !== undefined
+    || optionalCounter(record.reasoning_output_tokens) === null && record.reasoning_output_tokens !== undefined
+    || explicitTotal === null && record.total_tokens !== undefined
+    || cachedInputTokens > inputTokens
+    || reasoningOutputTokens > outputTokens
+    || (explicitTotal !== null && explicitTotal !== inputTokens + outputTokens)
+  ) {
     return null;
   }
   return {
@@ -284,7 +314,7 @@ function toTokenUsage(value: unknown): CodexTokenUsageCounters | null {
     cachedInputTokens,
     outputTokens,
     reasoningOutputTokens,
-    totalTokens: explicitTotal || inputTokens + outputTokens,
+    totalTokens: explicitTotal ?? inputTokens + outputTokens,
   };
 }
 

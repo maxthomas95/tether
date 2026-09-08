@@ -111,6 +111,13 @@ function needsUsageReparse(summary: PersistedSessionUsage, filePath: string): bo
     && fs.existsSync(filePath);
 }
 
+function needsTrackedUsageReparse(usage: SessionUsage, filePath: string): boolean {
+  return usage.dayTiming === 'legacy'
+    && usage.cliTool !== 'opencode'
+    && !!filePath
+    && fs.existsSync(filePath);
+}
+
 function markLegacyIfTranscriptUnavailable(usage: SessionUsage, filePath: string): SessionUsage {
   if (usage.dayTiming || usage.daily?.length) return usage;
   if (filePath && fs.existsSync(filePath)) return usage;
@@ -273,14 +280,12 @@ export class UsageService {
           watching: false,
           debounceTimer: null,
           usage,
-          lastSeenModel: usage.currentModel ?? null,
+          lastSeenModel: usage.dayTiming === 'legacy' ? null : usage.currentModel ?? null,
           codexTokenUsage: summary.codexTokenUsage ?? null,
         });
         const tracked = this.tracked.get(summary.sessionId);
         if (tracked && needsUsageReparse(summary, filePath)) {
-          tracked.usage = resetUsageForReparse(tracked.usage);
-          tracked.codexTokenUsage = null;
-          this.parseSession(tracked);
+          this.reparseSessionPreservingLegacy(tracked);
         } else if (usage.dayTiming === 'legacy' && usage.dayTiming !== summary.dayTiming) {
           this.persistSession(this.tracked.get(summary.sessionId)!);
         }
@@ -334,21 +339,17 @@ export class UsageService {
         newSessions++;
         continue;
       }
-      existing.workingDir = d.projectDirName;
       existing.filePath = d.filePath;
-      existing.usage.workingDir = d.projectDirName;
       if (!existing.watching) this.startWatching(existing);
-      if (existing.usage.dayTiming === 'legacy') {
-        existing.usage = resetUsageForReparse(existing.usage);
-        this.parseSession(existing);
+      if (needsTrackedUsageReparse(existing.usage, existing.filePath)) {
+        this.reparseSessionPreservingLegacy(existing);
         updatedSessions++;
         continue;
       }
       // Already known. Re-parse if the file grew; if it shrank, reset the full
       // accumulator first so a replacement/truncation cannot double-count.
       if (d.size < existing.usage.parsedByteOffset) {
-        existing.usage = resetUsageForReparse(existing.usage);
-        this.parseSession(existing);
+        this.reparseSessionPreservingLegacy(existing);
         updatedSessions++;
       } else if (d.size > existing.usage.parsedByteOffset) {
         this.parseSession(existing);
@@ -386,19 +387,13 @@ export class UsageService {
       existing.filePath = d.filePath;
       existing.usage.workingDir = d.cwd;
       if (!existing.watching) this.startWatching(existing);
-      if (existing.usage.dayTiming === 'legacy') {
-        existing.usage = resetUsageForReparse(existing.usage);
-        existing.lastSeenModel = null;
-        existing.codexTokenUsage = null;
-        this.parseSession(existing);
+      if (needsTrackedUsageReparse(existing.usage, existing.filePath)) {
+        this.reparseSessionPreservingLegacy(existing);
         updatedSessions++;
         continue;
       }
       if (d.size < existing.usage.parsedByteOffset) {
-        existing.usage = resetUsageForReparse(existing.usage);
-        existing.lastSeenModel = null;
-        existing.codexTokenUsage = null;
-        this.parseSession(existing);
+        this.reparseSessionPreservingLegacy(existing);
         updatedSessions++;
       } else if (d.size > existing.usage.parsedByteOffset) {
         this.parseSession(existing);
@@ -490,6 +485,12 @@ export class UsageService {
   trackSession(sessionId: string, workingDir: string, cliTool: CliToolId = 'claude', environmentId?: string): void {
     const existing = this.tracked.get(sessionId);
     if (existing) {
+      let changed = false;
+      if (workingDir && existing.workingDir !== workingDir) {
+        existing.workingDir = workingDir;
+        existing.usage.workingDir = workingDir;
+        changed = true;
+      }
       // start() pre-loads DB summaries into `tracked` without a watcher,
       // so a subsequent trackSession from session:create used to silently
       // skip the watcher. Attach one for any transcript-backed CLI whose
@@ -503,6 +504,12 @@ export class UsageService {
       // per-environment rollup attributes the cost on the next refresh.
       if (environmentId && !existing.usage.environmentId) {
         existing.usage.environmentId = environmentId;
+        changed = true;
+      }
+      if (needsTrackedUsageReparse(existing.usage, existing.filePath)) {
+        this.reparseSessionPreservingLegacy(existing);
+        this.notifyUpdate();
+      } else if (changed) {
         this.persistSession(existing);
         this.notifyUpdate();
       }
@@ -522,6 +529,10 @@ export class UsageService {
     // so the path can't be derived from sessionId + cwd alone. We fall back
     // to the periodic backfill which discovers the file via session_meta.
     const filePath = persisted?.filePath ?? (cliTool === 'claude' ? transcriptPath(workingDir, sessionId) : '');
+    const sessionUsage = persisted ? {
+      ...markLegacyIfTranscriptUnavailable(hydrateUsage(persisted, (persisted.cliTool as CliToolId) || cliTool, environmentId), filePath),
+      workingDir,
+    } : { ...emptySessionUsage(sessionId, cliTool, environmentId), workingDir };
     log.info('Tracking session', { sessionId, cliTool, filePath, environmentId: environmentId ?? null });
 
     const session: TrackedSession = {
@@ -531,17 +542,17 @@ export class UsageService {
       filePath,
       watching: false,
       debounceTimer: null,
-      usage: persisted ? {
-        ...markLegacyIfTranscriptUnavailable(hydrateUsage(persisted, (persisted.cliTool as CliToolId) || cliTool, environmentId), filePath),
-        workingDir,
-      } : { ...emptySessionUsage(sessionId, cliTool, environmentId), workingDir },
-      lastSeenModel: cliTool === 'codex' && persisted && persisted.models.length > 0
-        ? persisted.currentModel ?? persisted.models[persisted.models.length - 1].model
+      usage: sessionUsage,
+      lastSeenModel: cliTool === 'codex' && persisted && sessionUsage.dayTiming !== 'legacy'
+        ? persisted.currentModel ?? null
         : null,
     };
 
     this.tracked.set(sessionId, session);
     session.codexTokenUsage = persisted?.codexTokenUsage ?? null;
+    if (persisted && needsUsageReparse(persisted, filePath)) {
+      this.reparseSessionPreservingLegacy(session);
+    }
 
     // Initial parse (Claude/Codex parse from JSONL; Crush is from SQLite)
     if (cliTool === 'claude') {
@@ -637,7 +648,7 @@ export class UsageService {
     return this.getAll();
   }
 
-  private parseSession(session: TrackedSession): void {
+  private parseSession(session: TrackedSession): boolean {
     try {
       if (session.cliTool === 'codex') {
         const result = parseCodexJsonl(session.filePath, {
@@ -661,7 +672,15 @@ export class UsageService {
           session.usage.observedAt = result.observedAt ?? session.usage.observedAt ?? null;
           this.persistSession(session);
           this.notifyUpdate();
-        } else if (result.currentModel && result.currentModel !== session.lastSeenModel) {
+          return true;
+        } else if (
+          (result.currentModel && result.currentModel !== session.lastSeenModel)
+          || result.currentReasoningEffort !== session.usage.currentReasoningEffort
+          || result.contextWindowTokens !== session.usage.contextWindowTokens
+          || result.contextUsedTokens !== session.usage.contextUsedTokens
+          || (result.observedAt !== null && result.observedAt !== session.usage.observedAt)
+          || result.tokenUsage !== session.codexTokenUsage
+        ) {
           session.lastSeenModel = result.currentModel;
           session.codexTokenUsage = result.tokenUsage;
           session.usage.currentModel = result.currentModel;
@@ -670,8 +689,9 @@ export class UsageService {
           session.usage.contextUsedTokens = result.contextUsedTokens;
           session.usage.observedAt = result.observedAt ?? session.usage.observedAt ?? null;
           this.persistSession(session);
+          return true;
         }
-        return;
+        return false;
       }
 
       const result = parseJsonlFile(session.filePath, session.usage.parsedByteOffset);
@@ -682,13 +702,16 @@ export class UsageService {
         session.usage.observedAt = result.messages[result.messages.length - 1]?.timestamp ?? session.usage.observedAt ?? null;
         this.persistSession(session);
         this.notifyUpdate();
+        return true;
       }
+      return false;
     } catch (err) {
       log.warn('Failed to parse session JSONL', {
         sessionId: session.sessionId,
         cliTool: session.cliTool,
         error: err instanceof Error ? err.message : String(err),
       });
+      return false;
     }
   }
 
@@ -758,7 +781,7 @@ export class UsageService {
     this.notifyUpdate();
   }
 
-  private persistSession(session: TrackedSession): void {
+  private persistSession(session: TrackedSession, markSchemaComplete = true): void {
     const db = getDb();
     const entry: PersistedSessionUsage = {
       sessionId: session.sessionId,
@@ -774,7 +797,6 @@ export class UsageService {
       totalCost: session.usage.totalCost,
       models: session.usage.models,
       daily: session.usage.daily,
-      usageSchemaVersion: USAGE_SCHEMA_VERSION,
       dayTiming: session.usage.dayTiming,
       contextUsedTokens: session.usage.contextUsedTokens ?? null,
       observedAt: session.usage.observedAt ?? null,
@@ -787,6 +809,9 @@ export class UsageService {
       lastMessageAt: session.usage.lastMessageAt,
       parsedByteOffset: session.usage.parsedByteOffset,
     };
+    if (markSchemaComplete) {
+      entry.usageSchemaVersion = USAGE_SCHEMA_VERSION;
+    }
 
     const idx = db.usageSummaries.findIndex(s => s.sessionId === session.sessionId);
     if (idx >= 0) {
@@ -812,11 +837,7 @@ export class UsageService {
       // replace) means the file is effectively new; reset the offset so we
       // re-parse from the top without keeping old token totals.
       if ((prev.ino !== 0 && curr.ino !== prev.ino) || curr.size < session.usage.parsedByteOffset) {
-        session.usage = resetUsageForReparse(session.usage);
-        if (session.cliTool === 'codex') {
-          session.lastSeenModel = null;
-          session.codexTokenUsage = null;
-        }
+        this.resetTrackedSessionForReparse(session);
       }
       if (curr.size === prev.size && curr.mtimeMs === prev.mtimeMs) return;
       this.debouncedParse(session);
@@ -840,6 +861,28 @@ export class UsageService {
       clearTimeout(session.debounceTimer);
       session.debounceTimer = null;
     }
+  }
+
+  private resetTrackedSessionForReparse(session: TrackedSession): void {
+    session.usage = resetUsageForReparse(session.usage);
+    session.lastSeenModel = null;
+    session.codexTokenUsage = null;
+  }
+
+  private reparseSessionPreservingLegacy(session: TrackedSession): boolean {
+    const previousUsage = session.usage;
+    const previousLastSeenModel = session.lastSeenModel ?? null;
+    const previousCodexTokenUsage = session.codexTokenUsage ?? null;
+    this.resetTrackedSessionForReparse(session);
+    const parsed = this.parseSession(session);
+    if (!parsed) {
+      session.usage = { ...previousUsage, dayTiming: 'legacy' };
+      session.lastSeenModel = previousUsage.dayTiming === 'legacy' ? null : previousLastSeenModel;
+      session.codexTokenUsage = previousCodexTokenUsage;
+      this.persistSession(session, false);
+      return false;
+    }
+    return true;
   }
 
   private buildDailyRollups(): DailyUsage[] {

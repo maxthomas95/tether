@@ -340,4 +340,154 @@ describe('usage-service helpers', () => {
     expect(all.daily.map(d => d.date)).toEqual(['2026-05-09', '2026-05-08']);
     expect(mocks.db.usageSummaries[0].filePath).toBe(filePath);
   });
+
+  it('trackSession reparses old-schema persisted Codex usage before appending to lifetime totals', () => {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const os = require('node:os') as typeof import('node:os');
+    const path = require('node:path') as typeof import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-usage-track-reparse-'));
+    const filePath = path.join(dir, 'rollout.jsonl');
+    fs.writeFileSync(filePath, [
+      JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5-codex' } }),
+      JSON.stringify({
+        timestamp: '2026-05-08T23:30:00.000Z',
+        type: 'event_msg',
+        payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 20, output_tokens: 2 } } },
+      }),
+      JSON.stringify({
+        timestamp: '2026-05-09T00:30:00.000Z',
+        type: 'event_msg',
+        payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 30, output_tokens: 3 } } },
+      }),
+    ].join('\n') + '\n');
+    mocks.db.usageSummaries = [{
+      sessionId: 'track-old-schema',
+      cliTool: 'codex',
+      workingDir: dir,
+      filePath,
+      inputTokens: 50,
+      outputTokens: 5,
+      reasoningTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalCost: 0.01,
+      models: [{ model: 'gpt-5-codex', inputTokens: 50, outputTokens: 5, reasoningTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, cost: 0.01 }],
+      currentModel: 'stale-model',
+      messageCount: 2,
+      firstMessageAt: '2026-05-08T23:30:00.000Z',
+      lastMessageAt: '2026-05-09T00:30:00.000Z',
+      parsedByteOffset: fs.statSync(filePath).size,
+    }];
+
+    const service = new UsageService();
+    service.trackSession('track-old-schema', dir, 'codex');
+    service.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    const all = service.getAll();
+    expect(all.sessions['track-old-schema'].inputTokens).toBe(50);
+    expect(all.daily.map(d => d.date)).toEqual(['2026-05-09', '2026-05-08']);
+    expect(mocks.db.usageSummaries[0].usageSchemaVersion).toBe(2);
+  });
+
+  it('does not seed reparsed Codex pre-context events with stale persisted currentModel', () => {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const os = require('node:os') as typeof import('node:os');
+    const path = require('node:path') as typeof import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-usage-stale-model-'));
+    const filePath = path.join(dir, 'rollout.jsonl');
+    fs.writeFileSync(filePath, JSON.stringify({
+      timestamp: '2026-05-09T00:30:00.000Z',
+      type: 'event_msg',
+      payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 30, output_tokens: 3 } } },
+    }) + '\n');
+    mocks.db.usageSummaries = [{
+      sessionId: 'stale-model',
+      cliTool: 'codex',
+      workingDir: dir,
+      filePath,
+      inputTokens: 30,
+      outputTokens: 3,
+      reasoningTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalCost: 0.01,
+      models: [{ model: 'old-latest', inputTokens: 30, outputTokens: 3, reasoningTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, cost: 0.01 }],
+      currentModel: 'old-latest',
+      messageCount: 1,
+      firstMessageAt: '2026-05-09T00:30:00.000Z',
+      lastMessageAt: '2026-05-09T00:30:00.000Z',
+      parsedByteOffset: fs.statSync(filePath).size,
+    }];
+
+    const service = new UsageService();
+    service.start();
+    service.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    expect(service.getAll().sessions['stale-model'].models[0].model).toBe('unknown');
+  });
+
+  it('preserves legacy totals and schema marker when migration reparse cannot read a transient source', () => {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const os = require('node:os') as typeof import('node:os');
+    const path = require('node:path') as typeof import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-usage-unreadable-'));
+    mocks.db.usageSummaries = [{
+      sessionId: 'unreadable',
+      cliTool: 'claude',
+      workingDir: dir,
+      filePath: dir,
+      inputTokens: 100,
+      outputTokens: 20,
+      reasoningTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalCost: 0.5,
+      models: [{ model: 'claude-sonnet-4', inputTokens: 100, outputTokens: 20, reasoningTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, cost: 0.5 }],
+      messageCount: 1,
+      firstMessageAt: '2026-05-09T00:00:00.000Z',
+      lastMessageAt: '2026-05-09T00:00:00.000Z',
+      parsedByteOffset: 50,
+    }];
+
+    const service = new UsageService();
+    service.start();
+    service.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    expect(service.getAll().sessions.unreadable.totalCost).toBe(0.5);
+    expect(service.getAll().sessions.unreadable.dayTiming).toBe('legacy');
+    expect(mocks.db.usageSummaries[0].usageSchemaVersion).toBeUndefined();
+  });
+
+  it('preserves real Claude cwd after a tracked session is matched to an encoded backfill row', () => {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const os = require('node:os') as typeof import('node:os');
+    const path = require('node:path') as typeof import('node:path');
+    const realDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-usage-real-cwd-'));
+    const filePath = path.join(realDir, 'session.jsonl');
+    fs.writeFileSync(filePath, JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-05-09T00:00:00.000Z',
+      message: { model: 'claude-sonnet-4', usage: { input_tokens: 10, output_tokens: 5 } },
+    }) + '\n');
+    mocks.scanAllTranscripts.mockReturnValue([{
+      sessionId: 'claude-cwd',
+      projectDirName: '-encoded-real-cwd',
+      filePath,
+      size: fs.statSync(filePath).size,
+      mtimeMs: Date.now(),
+    }]);
+
+    const service = new UsageService();
+    (service as unknown as { backfillFromDisk: () => void }).backfillFromDisk();
+    service.trackSession('claude-cwd', realDir, 'claude');
+    (service as unknown as { backfillFromDisk: () => void }).backfillFromDisk();
+    service.stop();
+    fs.rmSync(realDir, { recursive: true, force: true });
+
+    expect(service.getAll().sessions['claude-cwd'].workingDir).toBe(realDir);
+    expect(mocks.db.usageSummaries[0].workingDir).toBe(realDir);
+  });
 });
