@@ -14,6 +14,7 @@ import { registerSshHandlers } from './ssh-handlers';
 import { registerKeybindingsHandlers } from './keybindings-handlers';
 import { registerNotificationsHandlers } from './notifications-handlers';
 import { registerJobsHandlers } from './jobs-handlers';
+import { registerGifPanelHandlers } from './gif-panel-handlers';
 
 /**
  * Wire up every IPC handler against the renderer window. The actual handler
@@ -43,4 +44,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerKeybindingsHandlers(ctx);
   registerNotificationsHandlers(ctx);
   registerJobsHandlers(ctx);
+  registerGifPanelHandlers(ctx);
 }

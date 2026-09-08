@@ -716,6 +716,7 @@ export interface TetherAPI {
     set(overrides: KeybindingOverrides): Promise<void>;
     resetAll(): Promise<void>;
   };
+  gifPanel: import('./gif-panel').GifPanelAPI;
   jobs: {
     getStatus(): Promise<JobsStatus>;
     /** Re-read jobs* config keys and probe immediately. Returns the fresh status. */
