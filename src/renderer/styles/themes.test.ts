@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { JSDOM } from 'jsdom';
 import { describe, expect, it } from 'vitest';
 import { themes } from './themes';
 import { LOADER_THEMES } from '../../shared/loader-themes';
@@ -32,9 +33,18 @@ describe('readable and consistent theme chrome', () => {
   for (const file of ['index.html', 'docs-window.html']) {
     it(`authorizes the ${file} boot script with its exact CSP hash`, () => {
       const html = readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
-      const script = html.match(/<script>([\s\S]*?)<\/script>/)![1];
-      const hash = createHash('sha256').update(script).digest('base64');
-      expect(html).toContain(`script-src 'self' 'sha256-${hash}'`);
+      // Parse HTML without executing it, including case-insensitive tag names.
+      const dom = new JSDOM(html);
+      try {
+        const scripts = dom.window.document.querySelectorAll('script:not([src])');
+        expect(scripts.length).toBeGreaterThan(0);
+        for (const script of scripts) {
+          const hash = createHash('sha256').update(script.textContent).digest('base64');
+          expect(html).toContain(`script-src 'self' 'sha256-${hash}'`);
+        }
+      } finally {
+        dom.window.close();
+      }
     });
   }
 });
