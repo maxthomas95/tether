@@ -4,6 +4,8 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 const spawnMock = vi.hoisted(() => vi.fn());
 const existsSyncMock = vi.hoisted(() => vi.fn());
 const mkdirSyncMock = vi.hoisted(() => vi.fn());
+const gitExecutable = '/test-tools/git';
+vi.mock('./git-executable', () => ({ resolveGitExecutable: vi.fn(() => '/test-tools/git') }));
 
 vi.mock('node:child_process', () => ({ spawn: spawnMock }));
 vi.mock('node:fs', () => ({
@@ -22,6 +24,7 @@ import {
   gitWorktreeRemove,
   parsePorcelainStatus,
 } from './git-service';
+import { resolveGitExecutable } from './git-executable';
 
 function fakeProc() {
   const proc = new EventEmitter() as EventEmitter & {
@@ -81,7 +84,7 @@ describe('git-service hardening', () => {
     proc.emit('close', 0);
     await expect(promise).resolves.toBe('C:\\repo\\out');
 
-    expect(spawnMock).toHaveBeenCalledWith('git', [
+    expect(spawnMock).toHaveBeenCalledWith(gitExecutable, [
       'clone',
       '--progress',
       '--',
@@ -113,7 +116,7 @@ describe('git-service hardening', () => {
     await expect(promise).resolves.toBe('C:\\repo\\new project');
 
     expect(mkdirSyncMock).toHaveBeenCalledWith('C:\\repo\\new project', { recursive: true });
-    expect(spawnMock).toHaveBeenCalledWith('git', [
+    expect(spawnMock).toHaveBeenCalledWith(gitExecutable, [
       'init',
       '--',
       'C:\\repo\\new project',
@@ -152,7 +155,7 @@ describe('git-service hardening', () => {
     proc.emit('close', 0);
     await expect(promise).resolves.toBeUndefined();
 
-    expect(spawnMock).toHaveBeenCalledWith('git', [
+    expect(spawnMock).toHaveBeenCalledWith(gitExecutable, [
       'remote',
       'add',
       '--',
@@ -186,7 +189,7 @@ describe('git-service hardening', () => {
     proc.emit('close', 0);
 
     await expect(promise).resolves.toBe('C:\\repo\\worktree target');
-    expect(spawnMock).toHaveBeenCalledWith('git', [
+    expect(spawnMock).toHaveBeenCalledWith(gitExecutable, [
       'worktree',
       'add',
       '-b',
@@ -227,7 +230,7 @@ describe('git-service hardening', () => {
     proc.emit('close', 0);
 
     await expect(promise).resolves.toBeUndefined();
-    expect(spawnMock).toHaveBeenCalledWith('git', [
+    expect(spawnMock).toHaveBeenCalledWith(gitExecutable, [
       'worktree',
       'remove',
       '--force',
@@ -275,6 +278,26 @@ describe('parsePorcelainStatus', () => {
 });
 
 describe('gitBranchStatus', () => {
+  it('returns null when the Git executable cannot be resolved', async () => {
+    vi.mocked(resolveGitExecutable).mockImplementationOnce(() => { throw new Error('Git not found'); });
+    const calls = spawnMock.mock.calls.length;
+    await expect(gitBranchStatus('C:/repo/project')).resolves.toBeNull();
+    expect(spawnMock.mock.calls).toHaveLength(calls);
+  });
+
+  it.each(['feature/日本語', 'feature/$(whoami)', 'feature/topic+1'])(
+    'passes valid branch %j as one literal argument without a shell', async (branch) => {
+      existsSyncMock.mockReturnValueOnce(true).mockReturnValueOnce(false);
+      const proc = fakeProc();
+      spawnMock.mockReturnValue(proc);
+      const result = gitWorktreeAdd({ sourceRepo: 'C:/source', worktreePath: 'C:/target', branch });
+      proc.emit('close', 0);
+      await result;
+      expect(spawnMock).toHaveBeenCalledWith(gitExecutable,
+        ['worktree', 'add', '-b', branch, '--', 'C:\\target'],
+        { cwd: 'C:\\source', stdio: ['ignore', 'pipe', 'pipe'] });
+    },
+  );
   it('resolves branch + dirty count on success', async () => {
     const proc = fakeProc();
     spawnMock.mockReturnValue(proc);
@@ -282,7 +305,7 @@ describe('gitBranchStatus', () => {
     proc.stdout.emit('data', Buffer.from('# branch.head main\n1 .M N... 100644 100644 100644 aaaa bbbb src/a.ts\n'));
     proc.emit('close', 0);
     await expect(promise).resolves.toEqual({ branch: 'main', dirtyCount: 1 });
-    expect(spawnMock).toHaveBeenCalledWith('git', [
+    expect(spawnMock).toHaveBeenCalledWith(gitExecutable, [
       '-C', 'C:/repo/project', 'status', '--porcelain=v2', '--branch',
     ], expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] }));
   });

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { CloneProgressInfo, RepoBranchStatus } from '../../shared/types';
 import { gitProtocolEnv, validateGitRemoteUrl } from './git-url';
+import { resolveGitExecutable } from './git-executable';
 
 export interface CloneOptions {
   url: string;
@@ -12,7 +13,7 @@ export interface CloneOptions {
 
 const PROGRESS_RE = /(Counting|Compressing|Receiving|Resolving)\s+\w+:\s+(\d+)%/;
 
-const INVALID_GIT_BRANCH_CHARS_RE = /[\s\0-\x1f\x7f~^:?*[\]\\]/;
+const INVALID_GIT_BRANCH_CHARS_RE = /[\x00-\x20\x7f~^:?*[\]\\]/;
 
 function validateLocalPath(input: string, label: string): string {
   if (typeof input !== 'string' || input.length === 0) {
@@ -54,7 +55,7 @@ function validateBranchName(input: string): string {
     input.split('/').some(part => !part || part.startsWith('.') || part.endsWith('.lock')) ||
     input.includes('..') ||
     input.includes('@{') ||
-    INVALID_GIT_BRANCH_CHARS_RE.test(input)
+    INVALID_GIT_BRANCH_CHARS_RE.test(input) || /\s/u.test(input)
   ) {
     throw new Error('Branch name is invalid');
   }
@@ -84,7 +85,7 @@ export function gitClone(opts: CloneOptions): Promise<string> {
     }
 
     const remoteUrl = validateGitRemoteUrl(opts.url);
-    const proc = spawn('git', ['clone', '--progress', '--', remoteUrl, destination], { // NOSONAR(typescript:S4036)
+    const proc = spawn(resolveGitExecutable(), ['clone', '--progress', '--', remoteUrl, destination], {
       env: gitProtocolEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -138,7 +139,7 @@ export function gitInit(directory: string): Promise<string> {
       fs.mkdirSync(targetDirectory, { recursive: true });
     }
 
-    const proc = spawn('git', ['init', '--', targetDirectory], {
+    const proc = spawn(resolveGitExecutable(), ['init', '--', targetDirectory], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -182,9 +183,7 @@ export function createFolder(opts: CreateFolderOptions): Promise<string> {
       return resolve(folderPath);
     }
 
-    // Spawning by binary name (PATH lookup) matches the rest of git-service.ts;
-    // Tether shells out to whichever `git` is on the user's PATH.
-    const proc = spawn('git', ['init', '--', folderPath], { // NOSONAR(typescript:S4036)
+    const proc = spawn(resolveGitExecutable(), ['init', '--', folderPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -216,8 +215,7 @@ export function gitRemoteAdd(repoPath: string, remoteName: string, remoteUrl: st
     if (!remoteName.trim() || remoteName.startsWith('-') || remoteName.includes('\0') || /[\r\n]/.test(remoteName)) {
       return reject(new Error('Git remote name is invalid'));
     }
-    // Spawning by binary name (PATH lookup) matches the rest of git-service.ts.
-    const proc = spawn('git', ['remote', 'add', '--', remoteName, safeRemoteUrl], { // NOSONAR(typescript:S4036)
+    const proc = spawn(resolveGitExecutable(), ['remote', 'add', '--', remoteName, safeRemoteUrl], {
       cwd: safeRepoPath,
       env: gitProtocolEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -272,7 +270,14 @@ export function parsePorcelainStatus(stdout: string): RepoBranchStatus {
  */
 export function gitBranchStatus(repoPath: string): Promise<RepoBranchStatus | null> {
   return new Promise((resolve) => {
-    const proc = spawn('git', ['-C', repoPath, 'status', '--porcelain=v2', '--branch'], { // NOSONAR(typescript:S4036)
+    let executable: string;
+    try {
+      executable = resolveGitExecutable();
+    } catch {
+      resolve(null);
+      return;
+    }
+    const proc = spawn(executable, ['-C', repoPath, 'status', '--porcelain=v2', '--branch'], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -333,7 +338,7 @@ export function gitWorktreeRemove(opts: WorktreeRemoveOptions): Promise<void> {
     if (opts.force) args.push('--force');
     args.push('--', worktreePath);
 
-    const proc = spawn('git', args, {
+    const proc = spawn(resolveGitExecutable(), args, {
       cwd: sourceRepo,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -370,7 +375,10 @@ export function gitWorktreeAdd(opts: WorktreeAddOptions): Promise<string> {
       return reject(new Error(`Worktree path already exists: ${worktreePath}`));
     }
 
-    const proc = spawn('git', ['worktree', 'add', '-b', branch, '--', worktreePath], {
+    // Reviewed S6350: validateBranchName rejects options/control/ref syntax;
+    // branch is one argv value for -b, paths follow --, and no shell is used.
+    // git-service.test.ts covers injection attempts and valid literal refs.
+    const proc = spawn(resolveGitExecutable(), ['worktree', 'add', '-b', branch, '--', worktreePath], { // NOSONAR
       cwd: sourceRepo,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

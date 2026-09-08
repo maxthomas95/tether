@@ -53,7 +53,9 @@ export function registerSystemHandlers(ctx: HandlerContext): void {
       log.warn('Refusing to open malformed release URL');
       return;
     }
-    await shell.openExternal(releaseUrl.href);
+    // Reviewed S5144: exact HTTPS GitHub host/releases route allowlist above;
+    // opens the browser, without an app HTTP request or response-data access.
+    await shell.openExternal(releaseUrl.href); // NOSONAR
   });
 
   ipcMain.handle(IPC.SHELL_OPEN_EXTERNAL, async (_event, url: string) => {
@@ -74,7 +76,9 @@ export function registerSystemHandlers(ctx: HandlerContext): void {
     }
     // HTTP(S) destinations, including local development servers, are deliberate
     // browser links. Open the parsed URL so validation and use agree.
-    await shell.openExternal(parsed.href);
+    // Reviewed S5144: this browser capability permits any HTTP(S) host. Other
+    // protocols/credentials are rejected above and covered by handler tests.
+    await shell.openExternal(parsed.href); // NOSONAR
   });
 
   ipcMain.handle(IPC.SHELL_COMMAND_EXISTS, async (_event, command: string) => {
