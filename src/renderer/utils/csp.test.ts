@@ -21,7 +21,7 @@ function readProjectFile(file: string): string {
 }
 
 function readSonarProperties(): string {
-  return readProjectFile('.sonarcloud.properties');
+  return readProjectFile('sonar-project.properties');
 }
 
 function directive(csp: string, name: string): string[] {

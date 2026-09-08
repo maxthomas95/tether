@@ -5,6 +5,8 @@ dist/
 releases/
 tmpbuild/
 *.tsbuildinfo
+coverage/
+.scannerwork/
 *.log
 npm-debug.log*
 .env
