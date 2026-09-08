@@ -118,6 +118,10 @@ export const IPC = {
 
   // J.O.B.S. office integration
   JOBS_GET_STATUS: 'jobs:get-status',
+  JOBS_GET_SETTINGS: 'jobs:get-settings',
+  JOBS_SAVE_SETTINGS: 'jobs:save-settings',
+  JOBS_DISABLE: 'jobs:disable',
+  JOBS_REMOVE: 'jobs:remove',
   JOBS_REFRESH: 'jobs:refresh',
 
   // Local GIF panel

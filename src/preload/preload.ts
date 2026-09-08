@@ -27,6 +27,7 @@ import type {
   WaitingReason,
   NotificationPrefs,
   JobsStatus,
+  JobsSettings,
 } from '../shared/types';
 
 const api: TetherAPI = {
@@ -282,6 +283,10 @@ const api: TetherAPI = {
   },
 
   jobs: {
+    getSettings: (): Promise<JobsSettings> => ipcRenderer.invoke(IPC.JOBS_GET_SETTINGS),
+    saveSettings: (settings: JobsSettings): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_SAVE_SETTINGS, settings),
+    disable: (): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_DISABLE),
+    remove: (): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_REMOVE),
     getStatus: (): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_GET_STATUS),
     refresh: (): Promise<JobsStatus> => ipcRenderer.invoke(IPC.JOBS_REFRESH),
     onStatusChange(cb: (status: JobsStatus) => void): () => void {

@@ -3,6 +3,7 @@ interface OfficePaneProps {
   url: string;
   version: string | null;
   onClose: () => void;
+  onConfigure: () => void;
 }
 
 /**
@@ -11,7 +12,7 @@ interface OfficePaneProps {
  * it talks to the JOBS server over its own WebSocket, so closing the pane
  * costs nothing and reopening just replays the office snapshot.
  */
-export function OfficePane({ url, version, onClose }: Readonly<OfficePaneProps>) {
+export function OfficePane({ url, version, onClose, onConfigure }: Readonly<OfficePaneProps>) {
   return (
     <div
       style={{
@@ -37,6 +38,9 @@ export function OfficePane({ url, version, onClose }: Readonly<OfficePaneProps>)
           J.O.B.S. Office{version ? ` · v${version}` : ''}
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button className="form-btn" style={{ fontSize: 11, padding: '2px 8px' }} onClick={onConfigure}>
+            JOBS settings
+          </button>
           <button
             className="form-btn"
             style={{ fontSize: 11, padding: '2px 8px' }}
@@ -48,7 +52,7 @@ export function OfficePane({ url, version, onClose }: Readonly<OfficePaneProps>)
           <button
             className="form-btn"
             style={{ fontSize: 11, padding: '2px 8px' }}
-            title="Back to terminals"
+            title="Back to terminals. Manage connection and sharing in JOBS settings."
             onClick={onClose}
           >
             Close
