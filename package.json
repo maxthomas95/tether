@@ -14,6 +14,7 @@
     "verify:package": "node scripts/verify-package.mjs",
     "build:helm": "npm --prefix mcp-servers/tether-helm run build",
     "test": "vitest run",
+    "test:packaging": "node --test scripts/extract-zip.test.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,tsx}\""
@@ -66,6 +67,9 @@
     "vitest": "^4.1.4"
   },
   "overrides": {
+    "@electron/packager": {
+      "extract-zip": "npm:@electron-internal/extract-zip@1.0.5"
+    },
     "make-fetch-happen": "12.0.0",
     "tar": "7.5.22",
     "tmp": "0.2.7"

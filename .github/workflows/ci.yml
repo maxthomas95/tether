@@ -41,6 +41,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - run: npm run test:packaging
 
   audit:
     name: npm audit
@@ -50,10 +51,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      # The full developer tree currently includes GHSA-jmr9-qjv8-65gv via
-      # Electron Forge's unpatched extract-zip dependency. Keep the complete
-      # tree critical-clean and enforce high severity for shipped dependencies.
-      - run: npm audit --audit-level=critical
+      - run: npm audit --audit-level=high
       - run: npm audit --omit=dev --audit-level=high
 
   helm:
@@ -85,6 +83,7 @@ jobs:
           cache: 'npm'
       - run: npm i -g npm@10.9.4 --ignore-scripts
       - run: npm ci
+      - run: npm run test:packaging
       # Produce a real package and assert its ASAR/resources are complete.
       # A bare `npm run package` success does not prove the packaged app is
       # functional; verify:package opens the asar and checks that every
