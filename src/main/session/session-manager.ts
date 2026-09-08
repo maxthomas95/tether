@@ -184,9 +184,18 @@ function sanitizeCodexLifecycleMetadata(payload: Record<string, unknown> | undef
   return metadata;
 }
 
-function isStaleCodexLifecycleEvent(current: CodexSessionActivity | null, metadata: CodexLifecycleMetadata): boolean {
-  if (!current?.lastHookAt || !metadata.at) return false;
-  return Date.parse(metadata.at) <= Date.parse(current.lastHookAt);
+function isStaleCodexLifecycleEvent(
+  current: CodexSessionActivity | null,
+  type: CodexLifecycleEventType,
+  metadata: CodexLifecycleMetadata,
+): boolean {
+  if (!current) return false;
+  if (metadata.turnId && type !== 'turn_start' && type !== 'session_start') {
+    if (current.completedTurnIds?.includes(metadata.turnId)) return true;
+    if (current.currentTurnId && metadata.turnId !== current.currentTurnId) return true;
+  }
+  if (!current.lastHookAt || !metadata.at) return false;
+  return Date.parse(metadata.at) < Date.parse(current.lastHookAt);
 }
 
 /**
@@ -530,6 +539,21 @@ export class SessionManager {
     if (!session || session.state === 'stopped' || session.state === 'dead') return;
     if (event.source === 'codex') {
       if (!this.handleCodexLifecycleEvent(session, event)) return;
+      if (
+        type === 'session_start' ||
+        type === 'turn_start' ||
+        type === 'tool_complete' ||
+        type === 'compact_start' ||
+        type === 'compact_complete'
+      ) {
+        statusDetector.markTurnStarted(tetherSessionId);
+        return;
+      }
+      if (type === 'turn_interrupted' || type === 'session_end') {
+        statusDetector.markTurnComplete(tetherSessionId);
+        return;
+      }
+      if (type === 'subagent_start' || type === 'subagent_stop') return;
     }
     if (type === 'session_start' || type === 'turn_start') {
       statusDetector.markTurnStarted(tetherSessionId);
@@ -564,7 +588,7 @@ export class SessionManager {
     ) {
       return false;
     }
-    if (isStaleCodexLifecycleEvent(session.activity, metadata)) return false;
+    if (isStaleCodexLifecycleEvent(session.activity, event.type as CodexLifecycleEventType, metadata)) return false;
     const next = reduceCodexSessionActivity(
       session.activity ?? undefined,
       event.type as CodexLifecycleEventType,
@@ -647,9 +671,9 @@ export class SessionManager {
       const { exitCode } = exitInfo;
       if (!session.transport) return;
       log.info('Session exited', { id, exitCode });
+      session.activity = null;
       statusDetector.markExited(id, exitCode);
       session.transport = null;
-      session.activity = null;
       session.helmIntegration?.cleanup();
       session.helmIntegration = null;
       callbacks.onExit(id, { exitCode, signal: exitInfo.signal });

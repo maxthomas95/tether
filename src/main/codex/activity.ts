@@ -5,6 +5,7 @@ import type {
 } from '../../shared/codex-activity';
 
 export const MAX_CODEX_ACTIVE_SUBAGENTS = 64;
+export const MAX_CODEX_COMPLETED_TURNS = 32;
 
 export function initialCodexSessionActivity(): CodexSessionActivity {
   return {
@@ -20,12 +21,13 @@ export function reduceCodexSessionActivity(
   type: CodexLifecycleEventType,
   metadata: CodexLifecycleMetadata,
 ): CodexSessionActivity {
-  if (current?.lastHookAt && metadata.at && Date.parse(metadata.at) <= Date.parse(current.lastHookAt)) {
+  if (current?.lastHookAt && metadata.at && Date.parse(metadata.at) < Date.parse(current.lastHookAt)) {
     return current;
   }
   const next: CodexSessionActivity = {
     ...(current ?? initialCodexSessionActivity()),
     activeSubagentIds: [...(current?.activeSubagentIds ?? [])],
+    completedTurnIds: current?.completedTurnIds ? [...current.completedTurnIds] : undefined,
   };
   next.lastHookAt = metadata.at ?? new Date().toISOString();
   if (metadata.model) next.observedModel = metadata.model;
@@ -36,10 +38,11 @@ export function reduceCodexSessionActivity(
   switch (type) {
     case 'session_start':
     case 'turn_start':
+      if (metadata.turnId) next.currentTurnId = metadata.turnId;
       next.phase = 'running';
       break;
     case 'tool_complete':
-      if (mayReturnToRunning) next.phase = 'running';
+      next.phase = 'running';
       break;
     case 'permission_prompt':
       next.phase = 'permission';
@@ -68,10 +71,17 @@ export function reduceCodexSessionActivity(
     case 'session_end':
       next.phase = 'complete';
       next.activeSubagentIds = [];
+      if (metadata.turnId) {
+        const completed = next.completedTurnIds ?? [];
+        next.completedTurnIds = [...completed.filter((id) => id !== metadata.turnId), metadata.turnId]
+          .slice(-MAX_CODEX_COMPLETED_TURNS);
+        if (next.currentTurnId === metadata.turnId) delete next.currentTurnId;
+      }
       break;
     case 'turn_interrupted':
       next.phase = 'interrupted';
       next.activeSubagentIds = [];
+      if (metadata.turnId && next.currentTurnId === metadata.turnId) delete next.currentTurnId;
       break;
   }
 

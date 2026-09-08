@@ -11,6 +11,8 @@ export interface CodexSessionActivity {
   activeSubagentIds: string[];
   compactionCount: number;
   observedModel?: string;
+  currentTurnId?: string;
+  completedTurnIds?: string[];
 }
 
 export type CodexLifecycleEventType =
@@ -33,4 +35,3 @@ export interface CodexLifecycleMetadata {
   model?: string;
   at?: string;
 }
-

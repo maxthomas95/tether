@@ -77,4 +77,29 @@ describe('Codex activity reducer', () => {
     });
     expect(stale).toBe(state);
   });
+
+  it('tracks current and completed turn ids without dropping equal-timestamp subagent events', () => {
+    let state = reduceCodexSessionActivity(undefined, 'turn_start', {
+      turnId: 'turn-1',
+      at: '2026-09-07T00:00:01.000Z',
+    });
+    expect(state.currentTurnId).toBe('turn-1');
+
+    state = reduceCodexSessionActivity(state, 'subagent_start', {
+      agentId: 'a1',
+      at: '2026-09-07T00:00:01.000Z',
+    });
+    state = reduceCodexSessionActivity(state, 'subagent_start', {
+      agentId: 'a2',
+      at: '2026-09-07T00:00:01.000Z',
+    });
+    expect(state.activeSubagentIds).toEqual(['a1', 'a2']);
+
+    state = reduceCodexSessionActivity(state, 'turn_complete', {
+      turnId: 'turn-1',
+      at: '2026-09-07T00:00:02.000Z',
+    });
+    expect(state.currentTurnId).toBeUndefined();
+    expect(state.completedTurnIds).toEqual(['turn-1']);
+  });
 });
