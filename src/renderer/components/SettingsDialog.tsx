@@ -1794,6 +1794,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                         {vaultLoggingIn ? 'Opening browser…' : 'Log In'}
                       </button>
                     )}
+                    {vaultLoggingIn && (
+                      <button className="form-btn" onClick={() => window.electronAPI.vault.cancelLogin().catch(err => setVaultLoginError(String(err)))}>
+                        Cancel login
+                      </button>
+                    )}
                     <button className="form-btn" onClick={() => setShowMigrateDialog(true)} disabled={!vaultStatus.loggedIn}>
                       Migrate Existing Secrets…
                     </button>

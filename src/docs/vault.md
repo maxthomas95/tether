@@ -21,6 +21,8 @@ Paste a token, or point Tether at a file path that contains one. Tether stores t
 
 Click **Login with OIDC**. Tether opens your browser to your Vault OIDC role's auth endpoint; once you've authenticated there, Vault redirects back with a token that Tether captures and uses going forward. The token is held in memory and refreshed transparently as needed.
 
+If you close the browser before finishing login, click **Cancel Vault login** in the sidebar or **Cancel login** in Settings or setup, then log in again. In the session login prompt, use **Cancel** or close the prompt. Tether cannot detect when an external browser tab closes; an abandoned login otherwise times out after five minutes.
+
 A status pill in the sidebar shows current Vault state at a glance:
 
 | Pill | Meaning |
