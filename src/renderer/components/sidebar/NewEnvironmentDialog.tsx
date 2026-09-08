@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useId } from 'react';
 import { EnvVarEditor } from '../EnvVarEditor';
 import { HelpAnchor } from '../HelpAnchor';
 import { VaultPickerDialog } from '../VaultPickerDialog';
@@ -21,6 +21,7 @@ interface NewEnvironmentDialogProps {
 }
 
 export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpdate, initialType }: NewEnvironmentDialogProps) {
+  const formId = useId();
   const [name, setName] = useState('');
   const [type, setType] = useState<EnvironmentType>('ssh');
   const [host, setHost] = useState('');
@@ -203,8 +204,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
         </div>
         <div className="dialog-body">
           <div className="form-group">
-            <label className="form-label">Name</label>
-            <input
+            <label className="form-label" htmlFor={`${formId}-name`}>Name</label>
+            <input id={`${formId}-name`}
               className="form-input"
               value={name}
               onChange={e => setName(e.target.value)}
@@ -214,8 +215,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
           </div>
 
           <div className="form-group">
-            <label className="form-label">Type</label>
-            <select
+            <label className="form-label" htmlFor={`${formId}-type`}>Type</label>
+            <select id={`${formId}-type`}
               className="form-input"
               value={type}
               onChange={e => setType(e.target.value as EnvironmentType)}
@@ -230,9 +231,9 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
           {type === 'ssh' && (
             <>
               <div className="form-group">
-                <label className="form-label">Host</label>
+                <label className="form-label" htmlFor={`${formId}-host`}>Host</label>
                 <div className="form-row">
-                  <input
+                  <input id={`${formId}-host`}
                     className="form-input"
                     value={host}
                     onChange={e => setHost(e.target.value)}
@@ -241,6 +242,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
                   <input
                     className="form-input"
                     value={port}
+                    aria-label="SSH port"
                     onChange={e => setPort(e.target.value)}
                     placeholder="22"
                     style={{ maxWidth: 70 }}
@@ -249,8 +251,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
               </div>
 
               <div className="form-group">
-                <label className="form-label">Username</label>
-                <input
+                <label className="form-label" htmlFor={`${formId}-username`}>Username</label>
+                <input id={`${formId}-username`}
                   className="form-input"
                   value={username}
                   onChange={e => setUsername(e.target.value)}
@@ -259,11 +261,12 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
               </div>
 
               <div className="form-group">
-                <label className="form-label">Authentication</label>
-                <div className="form-radio-group">
+                <div className="form-label" id={`${formId}-authentication`}>Authentication</div>
+                <div className="form-radio-group" role="radiogroup" aria-labelledby={`${formId}-authentication`}>
                   <label className="form-radio-label">
                     <input
                       type="radio"
+                      name={`${formId}-auth-method`}
                       checked={authMethod === 'agent'}
                       onChange={() => setAuthMethod('agent')}
                     />
@@ -272,6 +275,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
                   <label className="form-radio-label">
                     <input
                       type="radio"
+                      name={`${formId}-auth-method`}
                       checked={authMethod === 'key'}
                       onChange={() => setAuthMethod('key')}
                     />
@@ -280,6 +284,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
                   <label className="form-radio-label">
                     <input
                       type="radio"
+                      name={`${formId}-auth-method`}
                       checked={authMethod === 'password'}
                       onChange={() => setAuthMethod('password')}
                     />
@@ -290,6 +295,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
                   <input
                     className="form-input"
                     value={keyPath}
+                    aria-label="Private key path"
                     onChange={e => setKeyPath(e.target.value)}
                     placeholder="~/.ssh/id_ed25519"
                     style={{ marginTop: 6 }}
@@ -302,6 +308,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
                         className="form-input"
                         type={isVaultRef(password) ? 'text' : 'password'}
                         value={password}
+                        aria-label="SSH password"
                         onChange={e => setPassword(e.target.value)}
                         placeholder={editing ? 'Leave empty to keep current' : 'Enter password'}
                         spellCheck={false}
@@ -347,6 +354,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
                             <input
                               className="form-input"
                               value={vaultPath || suggestedVaultPath}
+                              aria-label="Password Vault path"
                               onChange={e => setVaultPath(e.target.value)}
                               placeholder={suggestedVaultPath}
                               spellCheck={false}
@@ -369,8 +377,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
               </div>
 
               <div className="form-group">
-                <label className="form-label">Default Directory</label>
-                <input
+                <label className="form-label" htmlFor={`${formId}-directory`}>Default Directory</label>
+                <input id={`${formId}-directory`}
                   className="form-input"
                   value={defaultDir}
                   onChange={e => setDefaultDir(e.target.value)}
@@ -421,8 +429,8 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
           {type === 'coder' && (
             <>
               <div className="form-group">
-                <label className="form-label">Coder CLI Path</label>
-                <input
+                <label className="form-label" htmlFor={`${formId}-coder-path`}>Coder CLI Path</label>
+                <input id={`${formId}-coder-path`}
                   className="form-input"
                   value={coderBinary}
                   onChange={e => setCoderBinary(e.target.value)}
