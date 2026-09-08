@@ -55,13 +55,13 @@ export function resolveWindowsLaunch(binary: string, opts: ResolveWindowsLaunchO
         : { kind: 'shell', file: binary };
     }
 
-    // No extension: an extensionless file that exists as-is launches directly;
-    // otherwise try each PATHEXT candidate.
-    if (existsSync(explicitFile)) return planForResolvedFile(explicitFile);
+    // npm installs Unix shell scripts beside Windows .cmd shims. Prefer the
+    // Windows candidates before considering an extensionless file.
     for (const extension of extensions) {
       const candidate = `${explicitFile}${extension}`;
       if (existsSync(candidate)) return planForResolvedFile(candidate);
     }
+    if (existsSync(explicitFile)) return planForResolvedFile(explicitFile);
     return { kind: 'shell', file: binary };
   }
 
@@ -71,7 +71,7 @@ export function resolveWindowsLaunch(binary: string, opts: ResolveWindowsLaunchO
     .filter(Boolean);
 
   for (const directory of pathEntries) {
-    for (const extension of ['', ...extensions]) {
+    for (const extension of win.extname(binary) ? [''] : [...extensions, '']) {
       const candidate = win.resolve(directory, `${binary}${extension}`);
       if (existsSync(candidate)) return planForResolvedFile(candidate);
     }
