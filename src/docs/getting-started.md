@@ -22,6 +22,8 @@ The wizard only marks setup complete when you click **Skip Setup**, **Start Usin
 
 ## Creating Your First Session
 
+In Setup, Settings, and the session and environment dialogs, field labels are linked to their controls for screen readers. Click a field label to focus its input or select, and use **Tab** to move between controls.
+
 1. Click **New session** in the sidebar, or press **Ctrl+N**
 2. Choose how to start:
    - **Existing directory** — browse to or paste a working directory. If it's a git repo, you can optionally create a **git worktree** for the session (see [Sessions](sessions.md#git-worktrees-local-only)).
@@ -43,6 +45,8 @@ Recent locations are stored locally as directory paths and environment IDs; they
 ## The Interface
 
 ### Sidebar
+
+For an optional local GIF viewer, choose **View → GIF Panel**, then **Add GIF folder**. It supports GIF, APNG, and WebP collections with shuffle and rotation controls. See [GIF panel settings](settings.md#gif-panel).
 
 The left sidebar groups sessions by environment and then by working directory. Use **New session** at the top, the **+** beside **Environments** to add a connection, and **Settings** at the bottom. The title bar's **Find session** button opens the same switcher as **Ctrl+P** and displays your remapped shortcut if you change it.
 

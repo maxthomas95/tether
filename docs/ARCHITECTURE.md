@@ -109,9 +109,9 @@ Pane splitting is opt-in, with maximum counts of 1, 2, or 4. Layout and session 
 
 ## Usage and Quota
 
-`src/main/usage/` reads local Claude and Codex transcripts, aggregates session/global totals, and prices tokens with a bundled LiteLLM table. A cached table at `{userData}/litellm-prices.json` is refreshed at most daily.
+`src/main/usage/` reads local Claude and Codex transcripts and sanitized usage records from Tether-launched SSH/Coder conversations, aggregates session/global totals, and prices tokens with a bundled LiteLLM table. Remote collection uses separate authenticated command channels, independently of status hooks. Source-scoped cursors and Codex model state are persisted with usage summaries. A cached table at `{userData}/litellm-prices.json` is refreshed at most daily.
 
-The OpenCode usage path reads Crush's `crush.db` through built-in `node:sqlite`; it does not cover every OpenCode storage format. Copilot has resume/history support but no cost reader. SSH/Coder transcripts are not downloaded.
+The OpenCode usage path reads local Crush `crush.db` through built-in `node:sqlite`; it does not cover every OpenCode storage format. Copilot has resume/history support but no cost reader. Full SSH/Coder transcripts stay remote; only usage fields and source/cursor metadata return to Tether. Remote Node.js and Linux `/proc` access for automatic Codex discovery are required; see [remote usage requirements](../src/docs/usage-quota.md#ssh-and-coder-sessions).
 
 Usage UI includes session strips, a global footer, history rollups, CSV/JSON export, and optional daily/weekly budget warnings. Display toggles do not disable usage collection. Budget thresholds only warn.
 

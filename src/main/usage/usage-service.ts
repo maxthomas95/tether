@@ -2,12 +2,13 @@ import * as fs from 'node:fs';
 import { createLogger } from '../logger';
 import { transcriptPath, scanAllTranscripts } from '../claude/transcripts';
 import { scanAllCodexTranscripts } from '../codex/transcripts';
-import { parseJsonlFile, type ParsedMessage } from './jsonl-parser';
-import { parseCodexJsonl } from './codex-jsonl-parser';
+import { parseJsonlFile, parseClaudeUsageText, type ParsedMessage } from './jsonl-parser';
+import { parseCodexJsonl, parseCodexUsageText } from './codex-jsonl-parser';
 import { readCrushSessions } from '../opencode/usage-reader';
 import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
 import { aggregateByEnvironment } from './env-aggregator';
 import { aggregateByCliTool } from './cli-tool-aggregator';
+import type { RemoteUsageCli, RemoteUsageReply, RemoteUsageSource } from './remote-protocol';
 import type { SessionUsage, UsageModelBreakdown, UsageInfo, DailyUsage, DailyCliToolUsage, CliToolId } from '../../shared/types';
 
 const log = createLogger('usage');
@@ -17,6 +18,7 @@ const WATCH_POLL_INTERVAL_MS = 2_000;
 const RESCAN_INTERVAL_MS = 5 * 60 * 1_000;
 
 interface TrackedSession {
+  remote?: RemoteUsageSource;
   sessionId: string;
   cliTool: CliToolId;
   workingDir: string;
@@ -122,7 +124,7 @@ function claudeUsagePath(workingDir: string, sessionId: string): string {
   }
 }
 
-class UsageService {
+export class UsageService {
   private tracked = new Map<string, TrackedSession>();
   private callback: ((info: UsageInfo) => void) | null = null;
   private rescanTimer: ReturnType<typeof setInterval> | null = null;
@@ -142,7 +144,8 @@ class UsageService {
           sessionId: summary.sessionId,
           cliTool,
           workingDir: summary.workingDir,
-          filePath: summary.filePath ?? (cliTool === 'claude' ? claudeUsagePath(summary.workingDir, summary.sessionId) : ''),
+          filePath: summary.remote ? '' : summary.filePath ?? (cliTool === 'claude' ? claudeUsagePath(summary.workingDir, summary.sessionId) : ''),
+          remote: summary.remote,
           watching: false,
           debounceTimer: null,
           usage: {
@@ -160,10 +163,9 @@ class UsageService {
             lastMessageAt: summary.lastMessageAt,
             parsedByteOffset: summary.parsedByteOffset,
           },
-          // lastSeenModel isn't persisted; the next turn_context line resets it.
-          // A handful of token_count events appended pre-turn_context after a
-          // restart will attribute to 'unknown' until the next turn_context.
-          lastSeenModel: null,
+          // Restore the model alongside the cursor; the next chunk can begin
+          // with token_count before another turn_context is written.
+          lastSeenModel: summary.lastSeenModel ?? null,
         });
       }
     }
@@ -408,6 +410,46 @@ class UsageService {
     }
   }
 
+  /** Restore a remote cursor without ever opening/watching its path locally. */
+  trackRemote(sessionId: string, workingDir: string, cliTool: RemoteUsageCli, environmentId: string, remote: RemoteUsageSource): { offset: number; identity: string } {
+    let session = this.tracked.get(sessionId);
+    if (!session) {
+      const saved = getDb().usageSummaries.find(s => s.sessionId === sessionId && s.remote);
+      const usage = saved ? {
+        ...emptySessionUsage(sessionId, cliTool, environmentId),
+        inputTokens: saved.inputTokens, outputTokens: saved.outputTokens,
+        cacheCreationTokens: saved.cacheCreationTokens, cacheReadTokens: saved.cacheReadTokens,
+        totalCost: saved.totalCost, models: saved.models, messageCount: saved.messageCount,
+        firstMessageAt: saved.firstMessageAt, lastMessageAt: saved.lastMessageAt,
+        parsedByteOffset: saved.parsedByteOffset,
+      } : emptySessionUsage(sessionId, cliTool, environmentId);
+      session = { sessionId, cliTool, workingDir, filePath: '', watching: false, debounceTimer: null,
+        remote: saved?.remote ?? remote, usage, lastSeenModel: saved?.lastSeenModel ?? null };
+      this.tracked.set(sessionId, session);
+    }
+    return { offset: session.usage.parsedByteOffset, identity: session.remote?.identity ?? '' };
+  }
+
+  applyRemote(sessionId: string, reply: RemoteUsageReply): void {
+    const session = this.tracked.get(sessionId);
+    if (!session?.remote || !reply.source || reply.offset === undefined || reply.text === undefined) return;
+    if (!reply.reset && reply.offset <= session.usage.parsedByteOffset) return;
+    if (reply.reset) {
+      session.usage = resetUsageForReparse(session.usage);
+      session.lastSeenModel = null;
+    }
+    const parsed = session.cliTool === 'codex'
+      ? parseCodexUsageText(reply.text, { startOffset: 0, priorModel: session.lastSeenModel ?? null })
+      : parseClaudeUsageText(reply.text);
+    // Sanitized text has a different byte length. The cursor always refers to
+    // the remote original and advances across non-usage records as well.
+    session.usage = mergeMessages(session.usage, parsed.messages, reply.offset);
+    if ('currentModel' in parsed) session.lastSeenModel = typeof parsed.currentModel === 'string' ? parsed.currentModel : null;
+    session.remote = reply.source;
+    this.persistSession(session);
+    this.notifyUpdate();
+  }
+
   untrackSession(sessionId: string): void {
     const session = this.tracked.get(sessionId);
     if (!session) return;
@@ -484,7 +526,7 @@ class UsageService {
   }
 
   private parseSession(session: TrackedSession): void {
-    if (!session.filePath) return;
+    if (session.remote || !session.filePath) return;
     try {
       if (session.cliTool === 'codex') {
         const result = parseCodexJsonl(session.filePath, {
@@ -569,6 +611,8 @@ class UsageService {
       cliTool: session.cliTool,
       workingDir: session.workingDir,
       filePath: session.filePath,
+      remote: session.remote,
+      lastSeenModel: session.lastSeenModel,
       environmentId: session.usage.environmentId,
       inputTokens: session.usage.inputTokens,
       outputTokens: session.usage.outputTokens,
@@ -597,7 +641,7 @@ class UsageService {
     // change. This replaces the old fs.watch + ENOENT-retry loop which gave
     // up after 60s and missed sessions where the user took longer than that
     // to send their first prompt (claude doesn't create the JSONL until then).
-    if (session.watching || !session.filePath) return;
+    if (session.remote || session.watching || !session.filePath) return;
     session.watching = true;
     fs.watchFile(session.filePath, { interval: WATCH_POLL_INTERVAL_MS, persistent: false }, (curr, prev) => {
       // File vanished or never existed yet — nothing to parse.

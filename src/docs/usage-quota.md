@@ -1,6 +1,6 @@
 # Usage & Quota
 
-Tether tracks per-session and global token usage and cost from local CLI data. Claude Code and Codex CLI estimates use a bundled [LiteLLM](https://github.com/BerriAI/litellm) pricing table. The OpenCode usage reader supports the Crush database described below. These are API-equivalent estimates, not subscription bills.
+Tether tracks per-session and global token usage and cost from local CLI data and from Claude Code and Codex sessions launched through SSH or Coder. Claude Code and Codex CLI estimates use a bundled [LiteLLM](https://github.com/BerriAI/litellm) pricing table. The OpenCode usage reader supports the local Crush database described below. These are API-equivalent estimates, not subscription bills.
 
 ## How It Works
 
@@ -11,9 +11,45 @@ Tether tracks per-session and global token usage and cost from local CLI data. C
 | OpenCode usage reader | Crush's `crush.db` (local SQLite) | Reads stored cost and token totals. This reader does not cover every OpenCode storage format. |
 | Copilot CLI | *(not supported)* | Tether currently has no Copilot cost reader. Resume and transcript browsing work independently. |
 
-The Crush reader looks in `%LOCALAPPDATA%/crush/crush.db` on Windows, or `~/.local/share/crush/crush.db` on other platforms. `CRUSH_GLOBAL_DATA` can override the directory. If the database is missing or incompatible, it returns no usage. SSH and Coder transcripts are not downloaded for usage tracking.
+The Crush reader looks in `%LOCALAPPDATA%/crush/crush.db` on Windows, or `~/.local/share/crush/crush.db` on other platforms. `CRUSH_GLOBAL_DATA` can override the directory. If the database is missing or incompatible, it returns no usage. For SSH and Coder, only sanitized Claude/Codex usage records are transferred; full transcripts stay on the remote host.
 
-Backfill runs at startup; live updates piggyback on filesystem watchers. Pricing data lives at `{userData}/litellm-prices.json` and refreshes at most once a day from `raw.githubusercontent.com`.
+Local backfill runs at startup; live local updates piggyback on filesystem watchers. Remote collection is described below. Pricing data lives at `{userData}/litellm-prices.json` and refreshes at most once a day from `raw.githubusercontent.com`.
+
+### SSH and Coder sessions
+
+Claude Code and Codex sessions launched through Tether also collect usage on remote
+hosts. Totals appear in the same pane strip, environment breakdown, history,
+budget warnings, and CSV/JSON exports as local sessions.
+
+Tether reads new transcript records over a separate authenticated connection,
+normally every 10 seconds. It saves usage totals and the read position locally so
+a dropped connection can catch up without counting the same records twice. This
+works independently of the **CLI status hooks** settings and does not install a
+helper or modify the remote CLI's configuration. Coder collection uses its CLI's
+command mode and does not start stopped workspaces.
+
+Requirements and limits:
+
+- The remote host needs `node` or `nodejs` on its login-shell PATH. Claude
+  collection supports POSIX hosts. Automatic Codex session matching currently
+  requires Linux and permission to read that user's process information in
+  `/proc`. Tether matches the CLI's open transcript instead of guessing from the
+  directory, so concurrent sessions cannot take each other's usage.
+- `HOME`, `CLAUDE_CONFIG_DIR`, and `CODEX_HOME` overrides set in the session's
+  environment are honored. For SSH sessions using **sudo**, collection runs as
+  the elevated user too. It uses noninteractive sudo or the configured SSH
+  password through encrypted stdin; policies requiring a TTY or a different
+  sudo password leave usage unavailable without interrupting the terminal.
+- Collection begins when a transcript is available, often after the first
+  prompt. The pane shows **Waiting for remote usage** until it is found. A Codex
+  process that exits before discovery may have no collected usage. Ambiguous
+  matches stay pending.
+- Connection or reader failures retry automatically. **Last collected** means
+  the displayed totals may be stale; hover for details. History retains the last
+  successfully collected totals after disconnection or exit.
+- This collects conversations launched in Tether, not all historical sessions
+  on the remote host or separate subagent transcripts. Remote transcript browsing
+  and resume behavior are unchanged. Remote OpenCode usage is not yet supported.
 
 ## Per-Session Cost Strip
 
@@ -74,4 +110,12 @@ When enabled, polling starts about 5 seconds after launch and refreshes every 5 
 
 ## Privacy
 
-Usage collection reads local files without uploading transcripts. Pricing refresh downloads JSON from `raw.githubusercontent.com` at most once a day. Subscription quota is a separate network feature: it contacts `api.anthropic.com` and `chatgpt.com` with the corresponding local login credentials, and may refresh Claude credentials via `platform.claude.com`.
+Local transcript files are read locally. For SSH and Coder sessions, prompts and
+responses stay on the remote host: the reader sends only model names, token
+counts, timestamps, and source/cursor metadata over the authenticated connection.
+Tether persists summaries and read positions, never conversation text or resolved
+passwords. No usage data is uploaded to a third-party analytics service. Pricing
+refresh downloads JSON from `raw.githubusercontent.com` at most once a day.
+Subscription quota is a separate network feature: it contacts `api.anthropic.com`
+and `chatgpt.com` with the corresponding local login credentials, and may refresh
+Claude credentials via `platform.claude.com`.

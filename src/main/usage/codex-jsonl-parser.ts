@@ -71,72 +71,7 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
     const bytesRead = fs.readSync(fd, buf, 0, readLength, input.startOffset);
     const text = buf.slice(0, bytesRead).toString('utf-8');
 
-    let usableText = text;
-    let consumedBytes = bytesRead;
-
-    if (text.length > 0 && !text.endsWith('\n')) {
-      const lastNewline = text.lastIndexOf('\n');
-      if (lastNewline === -1) {
-        return { messages: [], newByteOffset: input.startOffset, currentModel: input.priorModel };
-      }
-      usableText = text.slice(0, lastNewline + 1);
-      consumedBytes = Buffer.byteLength(usableText, 'utf-8');
-    }
-
-    const messages: ParsedMessage[] = [];
-    let currentModel = input.priorModel;
-
-    for (const line of usableText.split('\n')) {
-      if (!line.startsWith('{')) continue;
-
-      let parsed: unknown;
-      try { parsed = JSON.parse(line); } catch { continue; }
-      if (!parsed || typeof parsed !== 'object') continue;
-
-      const type = (parsed as { type?: string }).type;
-
-      if (type === 'turn_context') {
-        const model = (parsed as TurnContextEntry).payload?.model;
-        if (typeof model === 'string' && model) currentModel = model;
-        continue;
-      }
-
-      if (type !== 'event_msg') continue;
-
-      const entry = parsed as TokenCountEntry;
-      if (entry.payload?.type !== 'token_count') continue;
-      const usage = entry.payload.info?.last_token_usage;
-      if (!usage) continue;
-
-      const rawInput = usage.input_tokens || 0;
-      const cacheRead = usage.cached_input_tokens || 0;
-      const inputTokens = Math.max(0, rawInput - cacheRead);
-      const outputTokens = (usage.output_tokens || 0) + (usage.reasoning_output_tokens || 0);
-
-      // Skip empty deltas — the first token_count after session_meta sometimes
-      // has zeros while the rate-limit info is the only payload of interest.
-      if (inputTokens === 0 && cacheRead === 0 && outputTokens === 0) continue;
-
-      const model = currentModel || 'unknown';
-      const cost = calculateMessageCost(model, inputTokens, outputTokens, 0, 0, cacheRead);
-
-      messages.push({
-        model,
-        inputTokens,
-        outputTokens,
-        cacheCreation5m: 0,
-        cacheCreation1h: 0,
-        cacheReadTokens: cacheRead,
-        timestamp: entry.timestamp || new Date().toISOString(),
-        cost,
-      });
-    }
-
-    return {
-      messages,
-      newByteOffset: input.startOffset + consumedBytes,
-      currentModel,
-    };
+    return parseCodexUsageText(text, input);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       return { messages: [], newByteOffset: 0, currentModel: input.priorModel };
@@ -145,4 +80,74 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
   } finally {
     if (fd !== null) try { fs.closeSync(fd); } catch { /* ignore */ }
   }
+}
+
+/** Parse complete transcript records without requiring a local file. */
+export function parseCodexUsageText(text: string, input: CodexParseInput): CodexParseResult {
+  let usableText = text;
+  let consumedBytes = Buffer.byteLength(text, 'utf8');
+
+  if (text.length > 0 && !text.endsWith('\n')) {
+    const lastNewline = text.lastIndexOf('\n');
+    if (lastNewline === -1) {
+      return { messages: [], newByteOffset: input.startOffset, currentModel: input.priorModel };
+    }
+    usableText = text.slice(0, lastNewline + 1);
+    consumedBytes = Buffer.byteLength(usableText, 'utf-8');
+  }
+
+  const messages: ParsedMessage[] = [];
+  let currentModel = input.priorModel;
+
+  for (const line of usableText.split('\n')) {
+    if (!line.startsWith('{')) continue;
+
+    let parsed: unknown;
+    try { parsed = JSON.parse(line); } catch { continue; }
+    if (!parsed || typeof parsed !== 'object') continue;
+
+    const type = (parsed as { type?: string }).type;
+
+    if (type === 'turn_context') {
+      const model = (parsed as TurnContextEntry).payload?.model;
+      if (typeof model === 'string' && model) currentModel = model;
+      continue;
+    }
+
+    if (type !== 'event_msg') continue;
+
+    const entry = parsed as TokenCountEntry;
+    if (entry.payload?.type !== 'token_count') continue;
+    const usage = entry.payload.info?.last_token_usage;
+    if (!usage) continue;
+
+    const rawInput = usage.input_tokens || 0;
+    const cacheRead = usage.cached_input_tokens || 0;
+    const inputTokens = Math.max(0, rawInput - cacheRead);
+    const outputTokens = (usage.output_tokens || 0) + (usage.reasoning_output_tokens || 0);
+
+    // Skip empty deltas — the first token_count after session_meta sometimes
+    // has zeros while the rate-limit info is the only payload of interest.
+    if (inputTokens === 0 && cacheRead === 0 && outputTokens === 0) continue;
+
+    const model = currentModel || 'unknown';
+    const cost = calculateMessageCost(model, inputTokens, outputTokens, 0, 0, cacheRead);
+
+    messages.push({
+      model,
+      inputTokens,
+      outputTokens,
+      cacheCreation5m: 0,
+      cacheCreation1h: 0,
+      cacheReadTokens: cacheRead,
+      timestamp: entry.timestamp || new Date().toISOString(),
+      cost,
+    });
+  }
+
+  return {
+    messages,
+    newByteOffset: input.startOffset + consumedBytes,
+    currentModel,
+  };
 }

@@ -32,14 +32,20 @@ export function useSessionUsage(sessionId: string | undefined): {
       return;
     }
 
-    window.electronAPI.usage.getSession(sessionId).then(setUsage);
+    let disposed = false;
+    let updated = false;
+    setUsage(null);
+    window.electronAPI.usage.getSession(sessionId).then(value => {
+      if (!disposed && !updated) setUsage(value);
+    }).catch(() => { /* wait for the next usage update */ });
 
     const remove = window.electronAPI.usage.onUpdate((info) => {
+      updated = true;
       const sessionUsage = info.sessions[sessionId] ?? null;
       setUsage(sessionUsage);
     });
 
-    return () => remove();
+    return () => { disposed = true; remove(); };
   }, [sessionId, enabled]);
 
   return { usage, enabled };

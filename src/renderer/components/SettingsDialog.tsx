@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useId, useRef } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { EnvVarEditor } from './EnvVarEditor';
@@ -154,6 +154,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, onResetSessionFontSizes, keybindings, onKeybindingChange, onKeybindingsResetAll }: Readonly<SettingsDialogProps>) {
+  const settingsId = useId();
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [cliFlagsPerTool, setCliFlagsPerTool] = useState<Partial<Record<CliToolId, string[]>>>({});
   const [flagTool, setFlagTool] = useState<CliToolId>('claude');
@@ -764,9 +765,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
           {/* Updates */}
           <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+            <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Updates
-            </label>
+            </div>
             <label className="form-radio-label">
               <input
                 type="checkbox"
@@ -800,9 +801,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
           {/* Folders */}
           <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+            <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Folders
-            </label>
+            </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
                 className="form-btn"
@@ -974,13 +975,14 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             <>
           <SectionHeader section="sessions" />
           <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+            <label className="form-label" htmlFor={`${settingsId}-default-cli-tool`} style={{ fontSize: 14, marginBottom: 8 }}>
               Default CLI Tool
             </label>
             <p className="form-hint" style={{ marginBottom: 8 }}>
               Preselected when you open the New Session dialog. You can still change it per session.
             </p>
             <select
+              id={`${settingsId}-default-cli-tool`}
               className="form-input"
               value={defaultCliTool}
               onChange={e => setDefaultCliTool(e.target.value as CliToolId)}
@@ -992,6 +994,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             {defaultCliTool === 'custom' && (
               <input
                 className="form-input"
+                aria-label="Custom CLI binary"
                 value={defaultCustomCliBinary}
                 onChange={e => setDefaultCustomCliBinary(e.target.value)}
                 placeholder="my-agent-cli"
@@ -1002,9 +1005,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
           </div>
 
           <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+            <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Default CLI Flags
-            </label>
+            </div>
             <p className="form-hint" style={{ marginBottom: 8 }}>
               Applied to sessions using the selected CLI tool.
             </p>
@@ -1052,6 +1055,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                 <div className="form-row" style={{ marginTop: 8 }}>
                   <input
                     className="form-input"
+                    aria-label={`Custom ${toolDef?.displayName || flagTool} flag`}
                     value={customFlag}
                     onChange={e => setCustomFlag(e.target.value)}
                     placeholder="--custom-flag"
@@ -1066,9 +1070,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
           {/* === Launch Profiles === */}
           {loaded && (
             <div className="form-group" style={{ marginTop: 20 }}>
-              <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
                 Launch Profiles
-              </label>
+              </div>
               <p className="form-hint" style={{ marginBottom: 12 }}>
                 Named presets of env vars and CLI flags. Pick a profile when creating a session to quickly switch between configurations (e.g. subscription vs API mode).
               </p>
@@ -1116,8 +1120,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               {showNewProfile && (
                 <div style={{ marginTop: 8, padding: 10, border: '1px solid var(--border-color)', borderRadius: 4 }}>
                   <div className="form-group" style={{ marginBottom: 8 }}>
-                    <label className="form-label">Profile Name</label>
+                    <label className="form-label" htmlFor={`${settingsId}-profile-name`}>Profile Name</label>
                     <input
+                      id={`${settingsId}-profile-name`}
                       className="form-input"
                       value={newProfileName}
                       onChange={e => setNewProfileName(e.target.value)}
@@ -1125,11 +1130,11 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                     />
                   </div>
                   <div className="form-group" style={{ marginBottom: 8 }}>
-                    <label className="form-label">Environment Variables</label>
+                    <div className="form-label">Environment Variables</div>
                     <EnvVarEditor vars={newProfileEnvVars} onChange={setNewProfileEnvVars} cliTool={profileFlagTool} compact vaultEnabled={vaultStatus.enabled} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 8 }}>
-                    <label className="form-label">CLI Flags</label>
+                    <div className="form-label">CLI Flags</div>
                     <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
                       {FLAG_TOOLS.map(id => (
                         <button
@@ -1157,6 +1162,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                     <div className="form-row">
                       <input
                         className="form-input"
+                        aria-label={`Custom profile ${CLI_TOOL_REGISTRY[profileFlagTool].displayName} flag`}
                         placeholder="--flag-name"
                         onKeyDown={e => {
                           if (e.key === 'Enter') {
@@ -1226,9 +1232,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
           )}
 
           <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+            <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Default Environment Variables
-            </label>
+            </div>
             <p className="form-hint" style={{ marginBottom: 12 }}>
               Applied to all sessions. Environments and sessions can override individual values.
             </p>
@@ -1389,17 +1395,18 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             </div>
 
             <div className="form-group" style={{ marginTop: 20 }}>
-              <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
                 Generic outbound webhook
-              </label>
+              </div>
               <p className="form-hint" style={{ marginBottom: 12 }}>
                 POST a small JSON payload to your own HTTP endpoint when selected session events occur.
                 Leave the URL blank to disable webhook delivery.
               </p>
 
               <div className="form-group">
-                <label className="form-label">Webhook URL</label>
+                <label className="form-label" htmlFor={`${settingsId}-webhook-url`}>Webhook URL</label>
                 <input
+                  id={`${settingsId}-webhook-url`}
                   className="form-input"
                   value={notificationPrefs.webhook.url}
                   onChange={e => setNotificationPrefs(p => ({
@@ -1416,8 +1423,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
               </div>
 
               <div className="form-group">
-                <label className="form-label">Webhook token (optional)</label>
+                <label className="form-label" htmlFor={`${settingsId}-webhook-token`}>Webhook token (optional)</label>
                 <input
+                  id={`${settingsId}-webhook-token`}
                   className="form-input"
                   type="password"
                   value={notificationPrefs.webhook.token ?? ''}
@@ -1513,9 +1521,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
           <SectionHeader section="integrations" />
           {/* Git Providers */}
           <div className="form-group">
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+            <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Git Providers
-            </label>
+            </div>
             <p className="form-hint" style={{ marginBottom: 12 }}>
               Connect to GitHub, Azure DevOps, or Gitea to browse and clone repos from the New Session dialog.
             </p>
@@ -1565,8 +1573,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             {showAddProvider && (
               <div style={{ border: '1px solid var(--border-color)', borderRadius: 4, padding: 12, marginTop: 8 }}>
                 <div className="form-group">
-                  <label className="form-label">Type</label>
+                  <label className="form-label" htmlFor={`${settingsId}-provider-type`}>Type</label>
                   <select
+                    id={`${settingsId}-provider-type`}
                     className="form-input"
                     value={newProviderType}
                     onChange={e => setNewProviderType(e.target.value as GitProviderType)}
@@ -1577,8 +1586,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Name</label>
+                  <label className="form-label" htmlFor={`${settingsId}-provider-name`}>Name</label>
                   <input
+                    id={`${settingsId}-provider-name`}
                     className="form-input"
                     value={newProviderName}
                     onChange={e => setNewProviderName(e.target.value)}
@@ -1586,8 +1596,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Base URL</label>
+                  <label className="form-label" htmlFor={`${settingsId}-provider-base-url`}>Base URL</label>
                   <input
+                    id={`${settingsId}-provider-base-url`}
                     className="form-input"
                     value={newProviderUrl}
                     onChange={e => setNewProviderUrl(e.target.value)}
@@ -1605,8 +1616,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                 {newProviderType === 'ado' && (
                   <>
                     <div className="form-group">
-                      <label className="form-label">Organization</label>
+                      <label className="form-label" htmlFor={`${settingsId}-provider-organization`}>Organization</label>
                       <input
+                        id={`${settingsId}-provider-organization`}
                         className="form-input"
                         value={newProviderOrg}
                         onChange={e => setNewProviderOrg(e.target.value)}
@@ -1629,9 +1641,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                   </>
                 )}
                 <div className="form-group">
-                  <label className="form-label">Personal Access Token</label>
+                  <label className="form-label" htmlFor={`${settingsId}-provider-token`}>Personal Access Token</label>
                   <div className="form-row">
                     <input
+                      id={`${settingsId}-provider-token`}
                       type={isVaultRef(newProviderToken) ? 'text' : 'password'}
                       className="form-input"
                       value={newProviderToken}
@@ -1694,6 +1707,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                         <>
                           <input
                             className="form-input"
+                            aria-label="Vault path for provider token"
                             value={newProviderVaultPath || suggestedProviderVaultPath}
                             onChange={e => setNewProviderVaultPath(e.target.value)}
                             placeholder={suggestedProviderVaultPath}
@@ -1734,9 +1748,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
           {/* SSH Known Hosts */}
           <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+            <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               SSH Known Hosts
-            </label>
+            </div>
             <p className="form-hint" style={{ marginBottom: 12 }}>
               Trusted SSH host fingerprints. Revoke an entry to force a fresh trust prompt
               on the next connection (or to recover after a "host key changed" error).
@@ -1779,9 +1793,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
           {/* Vault */}
           <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+            <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               Vault Integration
-            </label>
+            </div>
             <p className="form-hint" style={{ marginBottom: 12 }}>
               Source SSH passwords, API keys, and Git tokens from HashiCorp Vault.
               Secrets are resolved just-in-time and never written to disk.
@@ -1801,8 +1815,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             {vaultConfig.enabled && (
               <>
                 <div className="form-group">
-                  <label className="form-label">Vault Address</label>
+                  <label className="form-label" htmlFor={`${settingsId}-vault-address`}>Vault Address</label>
                   <input
+                    id={`${settingsId}-vault-address`}
                     className="form-input"
                     value={vaultConfig.addr}
                     onChange={e => setVaultConfig(c => ({ ...c, addr: e.target.value }))}
@@ -1811,8 +1826,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">OIDC Role</label>
+                  <label className="form-label" htmlFor={`${settingsId}-vault-role`}>OIDC Role</label>
                   <input
+                    id={`${settingsId}-vault-role`}
                     className="form-input"
                     value={vaultConfig.role}
                     onChange={e => setVaultConfig(c => ({ ...c, role: e.target.value }))}
@@ -1822,8 +1838,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                   <p className="form-hint">The Vault OIDC role to log in with.</p>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">KV Mount Path</label>
+                  <label className="form-label" htmlFor={`${settingsId}-vault-mount`}>KV Mount Path</label>
                   <input
+                    id={`${settingsId}-vault-mount`}
                     className="form-input"
                     value={vaultConfig.mount}
                     onChange={e => setVaultConfig(c => ({ ...c, mount: e.target.value }))}
@@ -1832,8 +1849,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Namespace (optional)</label>
+                  <label className="form-label" htmlFor={`${settingsId}-vault-namespace`}>Namespace (optional)</label>
                   <input
+                    id={`${settingsId}-vault-namespace`}
                     className="form-input"
                     value={vaultConfig.namespace || ''}
                     onChange={e => setVaultConfig(c => ({ ...c, namespace: e.target.value }))}
@@ -1844,7 +1862,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Status</label>
+                  <div className="form-label">Status</div>
                   <div style={{ marginTop: 4 }}>
                     {vaultStatus.loggedIn ? (
                       <span className="form-hint" style={{ color: 'var(--status-running)' }}>
@@ -1891,9 +1909,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
 
           {/* J.O.B.S. office */}
           <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+            <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
               J.O.B.S. Office
-            </label>
+            </div>
             <p className="form-hint" style={{ marginBottom: 12 }}>
               Pixel-art office that visualizes Claude Code agent activity (a separate
               self-hosted server). Tether auto-detects a running instance, adds an
@@ -1915,8 +1933,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
             {jobsEnabled && (
               <>
                 <div className="form-group">
-                  <label className="form-label">Server URL</label>
+                  <label className="form-label" htmlFor={`${settingsId}-jobs-url`}>Server URL</label>
                   <input
+                    id={`${settingsId}-jobs-url`}
                     className="form-input"
                     value={jobsUrl}
                     onChange={e => setJobsUrl(e.target.value)}
@@ -1925,8 +1944,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Token (optional)</label>
+                  <label className="form-label" htmlFor={`${settingsId}-jobs-token`}>Token (optional)</label>
                   <input
+                    id={`${settingsId}-jobs-token`}
                     className="form-input"
                     type="password"
                     value={jobsToken}
@@ -1940,9 +1960,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                   </p>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Local JOBS folder (optional)</label>
+                  <label className="form-label" htmlFor={`${settingsId}-jobs-path`}>Local JOBS folder (optional)</label>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input
+                      id={`${settingsId}-jobs-path`}
                       className="form-input"
                       value={jobsPath}
                       onChange={e => setJobsPath(e.target.value)}
@@ -1967,7 +1988,7 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
                   </p>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Status</label>
+                  <div className="form-label">Status</div>
                   <div style={{ marginTop: 4 }}>
                     {jobsStatus?.detected ? (
                       <span className="form-hint" style={{ color: 'var(--status-running)' }}>
@@ -2003,10 +2024,10 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
           <SectionHeader section="usage" />
           {/* Quota display */}
           <div className="form-group">
-            <label className="form-label settings-section-label" style={{ fontSize: 14, marginBottom: 8 }}>
+            <div className="form-label settings-section-label" style={{ fontSize: 14, marginBottom: 8 }}>
               <span>Usage Quota</span>
               <span className="settings-tag settings-tag--experimental">Experimental</span>
-            </label>
+            </div>
             <label className="form-radio-label">
               <input
                 type="checkbox"
@@ -2086,9 +2107,9 @@ export function SettingsDialog({ isOpen, onClose, currentTheme, onThemeChange, o
           </div>
 
           <div className="form-group">
-            <label className="form-label settings-section-label" style={{ fontSize: 14, marginBottom: 8 }}>
+            <div className="form-label settings-section-label" style={{ fontSize: 14, marginBottom: 8 }}>
               <span>Export usage history</span>
-            </label>
+            </div>
             <p className="form-hint" style={{ marginTop: 0 }}>
               Save every tracked session's tokens and API-equivalent cost to a file. CSV is one row per session for spreadsheets; JSON includes the full per-model breakdown and daily rollups.
             </p>

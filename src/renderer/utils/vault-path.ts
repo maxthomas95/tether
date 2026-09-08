@@ -1,4 +1,5 @@
 import type { VaultStatus, VaultConfig } from '../../shared/types';
+import { trimBoundaryCharacter } from '../../shared/string-trim';
 
 export const VAULT_REF_PREFIX = 'vault://';
 
@@ -10,7 +11,7 @@ export function cleanIdentity(identity: string | undefined): string {
 
 /** Convert a human label into a filesystem/vault-safe slug. */
 export function slugify(s: string, fallback = 'item'): string {
-  return s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || fallback;
+  return trimBoundaryCharacter(s.toLowerCase().replace(/[^a-z0-9-]+/g, '-'), '-') || fallback;
 }
 
 /**

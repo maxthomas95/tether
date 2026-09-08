@@ -85,6 +85,9 @@ export interface DbData {
 }
 
 export interface PersistedSessionUsage {
+  /** Remote summaries never refer to a file on the Electron host. */
+  remote?: import('../usage/remote-protocol').RemoteUsageSource;
+  lastSeenModel?: string | null;
   /** Session identifier — Claude UUID or Crush id. */
   sessionId: string;
   /** Which CLI tool produced this usage data. */

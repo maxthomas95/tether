@@ -178,6 +178,9 @@ export interface SessionInfo {
   createdAt: string;
   /** Tool-native session id used for resume on the next launch. */
   toolSessionId?: string;
+  /** Usage identity can include remote host/workspace/user context. */
+  usageSessionId?: string;
+  remoteUsageStatus?: 'pending' | 'collecting' | 'unavailable';
   /** Legacy Claude Code session id alias. */
   claudeSessionId?: string;
   /** True if this session was started by resuming a prior tool transcript. */
@@ -716,6 +719,7 @@ export interface TetherAPI {
     set(overrides: KeybindingOverrides): Promise<void>;
     resetAll(): Promise<void>;
   };
+  gifPanel: import('./gif-panel').GifPanelAPI;
   jobs: {
     getStatus(): Promise<JobsStatus>;
     /** Re-read jobs* config keys and probe immediately. Returns the fresh status. */

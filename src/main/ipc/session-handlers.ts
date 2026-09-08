@@ -40,10 +40,10 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     onExit(sessionId: string, exitInfo: SessionExitInfo) {
       send(IPC.SESSION_EXITED, sessionId, exitInfo);
       const s = sessionManager.getSession(sessionId);
-      if (s?.claudeSessionId) {
+      if (s?.claudeSessionId && !s.usageSessionId) {
         usageService.untrackSession(s.claudeSessionId);
       }
-      if (s?.cliTool && s.cliTool !== 'claude' && s.toolSessionId) {
+      if (s?.cliTool && s.cliTool !== 'claude' && s.toolSessionId && !s.usageSessionId) {
         usageService.untrackSession(s.toolSessionId);
       }
     },
@@ -67,7 +67,7 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     });
 
     // Start tracking usage for Claude sessions
-    if (session.claudeSessionId) {
+    if (session.claudeSessionId && !session.usageSessionId) {
       usageService.trackSession(session.claudeSessionId, session.workingDir, 'claude', session.environmentId ?? undefined);
     }
 
