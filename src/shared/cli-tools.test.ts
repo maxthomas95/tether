@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { getCodexLaunchSettings, readCodexLaunchFlags, updateCodexLaunchFlags } from './cli-tools';
 
 describe('Codex launch flag helpers', () => {
+  it.each(['--model', '-m', '--profile', '-p'])('handles long whitespace runs in %s without changing parsed values', flag => {
+    const key = flag === '--model' || flag === '-m' ? 'model' : 'profile';
+    expect(readCodexLaunchFlags([`${flag}${' '.repeat(100_000)}"fixture-value"`])).toEqual({ [key]: 'fixture-value' });
+    expect(readCodexLaunchFlags([`${flag}${' '.repeat(100_000)}`])).toEqual({});
+    expect(readCodexLaunchFlags([`${flag} value\nextra`])).toEqual({});
+  });
+
   it('preserves a following option when a model value is missing', () => {
     const flags = ['--model', '--search'];
     expect(getCodexLaunchSettings(flags)).toEqual({});
