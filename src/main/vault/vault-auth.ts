@@ -219,11 +219,10 @@ function startCallbackServer(): Promise<{
       rejectOuter(new VaultError(`Failed to start OIDC callback server: ${err.message}`, undefined, err));
     });
 
-    const timeout = setTimeout(() => {
-      rejectInner(new VaultError('OIDC login timed out after 5 minutes'));
-    }, 5 * 60 * 1000);
-
     server.listen(DEFAULT_CALLBACK_PORT, '127.0.0.1', () => {
+      const timeout = setTimeout(() => {
+        rejectInner(new VaultError('OIDC login timed out after 5 minutes'));
+      }, 5 * 60 * 1000);
       const addr = server.address() as AddressInfo;
       const port = addr.port;
       resolveOuter({

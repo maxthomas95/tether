@@ -276,6 +276,7 @@ export async function getCoderTemplateParams(
 
     const req = mod.get(endpoint.href, requestOptions, handleResponse);
     req.on('error', (err: Error) => reject(new Error('Coder API request failed: ' + err.message)));
+    req.on('timeout', () => req.destroy(new Error('Coder API request timed out')));
   });
 }
 

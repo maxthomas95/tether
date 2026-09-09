@@ -194,11 +194,11 @@ function readKnownCodexEntry(entry: string): { key: keyof CodexLaunchSelection; 
   const trimmed = entry.trim();
   if (!trimmed || hasMultipleCodexFlags(trimmed)) return { key: null, value: null, ambiguous: true };
   const modelEquals = /^--model=(.+)$/.exec(trimmed);
-  const modelLong = /^--model\s+(.+)$/.exec(trimmed);
-  const modelShort = /^-m\s+(.+)$/.exec(trimmed);
+  const modelLong = /^--model\s+(\S.*)$/.exec(trimmed);
+  const modelShort = /^-m\s+(\S.*)$/.exec(trimmed);
   const profileEquals = /^--profile=(.+)$/.exec(trimmed);
-  const profileLong = /^--profile\s+(.+)$/.exec(trimmed);
-  const profileShort = /^-p\s+(.+)$/.exec(trimmed);
+  const profileLong = /^--profile\s+(\S.*)$/.exec(trimmed);
+  const profileShort = /^-p\s+(\S.*)$/.exec(trimmed);
   const config = /^(?:-c|--config)(?:\s+|=)([^=\s]+)=(.+)$/.exec(trimmed);
 
   if (modelEquals || modelLong || modelShort) {

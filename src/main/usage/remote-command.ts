@@ -82,7 +82,11 @@ export function coderUsageConnection(binary: string, workspace: string): RemoteU
       child.stdin.on('error', () => { /* exit/error handles a closed pipe */ });
       child.stdin.end();
     }),
-    close: () => { closed = true; for (const child of children) child.kill(); children.clear(); },
+    close: () => {
+      closed = true;
+      for (const child of children) child.kill();
+      children.clear();
+    },
   };
 }
 

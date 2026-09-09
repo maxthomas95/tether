@@ -23,6 +23,8 @@ Tether warns 30 minutes before a known token expiry. Click the sidebar Vault pil
 
 If you close the browser before finishing login, click **Cancel Vault login** in the sidebar or **Cancel login** in Settings or setup, then log in again. In the session login prompt, use **Cancel** or close the prompt. Tether cannot detect when an external browser tab closes; an abandoned login otherwise times out after five minutes.
 
+If another application is using callback port 8250, login fails immediately without leaving a pending login timer. Free the port and try logging in again.
+
 A status pill in the sidebar shows current Vault state at a glance:
 
 | Pill | Meaning |

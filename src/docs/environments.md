@@ -59,6 +59,8 @@ Coder environments have these settings:
 
 When you create a session in a Coder environment, the New Session dialog calls `coder list --output json` and shows your workspaces in a dropdown. You can also click **Create new workspace** to pick a template, fill in its parameters, and provision a workspace — progress streams into the dialog as the build runs. Once the workspace is running, Tether spawns `coder ssh <workspace>` and launches the selected CLI inside it.
 
+If the template-parameter API connection stops responding for ten seconds, Tether closes the request and reports a timeout. Check the Coder deployment's connectivity and retry loading the template.
+
 Caveats:
 
 - Sessions launch in the workspace's default directory; there is no per-session subdirectory field
