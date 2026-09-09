@@ -319,12 +319,13 @@ export function useTerminalManager(
       terminal.open(container);
     }
 
-    panes.current.set(paneId, { sessionId, terminal, fitAddon, linksAddon, container });
+    const paneEntry = { sessionId, terminal, fitAddon, linksAddon, container };
+    panes.current.set(paneId, paneEntry);
 
     // Fit after the layout has settled — a single rAF can be too early for
     // flex containers that haven't received their final dimensions yet.
     const doFit = () => {
-      if (panes.current.get(paneId)?.container !== container) return;
+      if (panes.current.get(paneId) !== paneEntry) return;
       try {
         fitAddon.fit();
         window.electronAPI.session.resize(sessionId, terminal.cols, terminal.rows);
@@ -333,7 +334,7 @@ export function useTerminalManager(
       }
     };
     requestAnimationFrame(() => {
-      if (panes.current.get(paneId)?.container !== container) return;
+      if (panes.current.get(paneId) !== paneEntry) return;
       doFit();
       if (wasBackground) {
         // After DOM reattachment, xterm.js's renderer and viewport may be
