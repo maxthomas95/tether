@@ -12,22 +12,51 @@ Helm server are outside this coverage suite but remain statically analyzed.
 There is no local coverage threshold. Keep the coverage provider version aligned
 with Vitest when upgrading them.
 
+## Release baseline and gate policy
+
+CI supplies `sonar.projectVersion` from the checked-out `package.json` version.
+Keep Sonar's new-code definition on **Previous version**: the first main-branch
+analysis for a release version starts that version's new-code period. Beta
+builds sharing the package version stay in the same period. PR analysis still
+compares the PR with its target branch.
+
+The initial versioned scan replaces the old `not provided` period, which began
+on April 14, 2026. Existing findings remain visible under overall code; changing
+the version is not an issue disposition. Advance it through the normal release
+process, not on every CI build or to bypass findings.
+
+As verified on September 8, 2026, the project's plan only permits the built-in
+**Sonar way** gate. Retain its 80% new-code coverage condition and all security,
+reliability, maintainability, duplication, and hotspot-review conditions.
+`SonarCloud Code Analysis` remains optional in branch protection while building
+the coverage baseline; an imported report can therefore produce a failed gate
+even when the scan job and required tests pass. A custom informational-coverage
+gate is only an option if the account plan later supports it.
+
+Review retained security findings individually against the analyzed revision.
+Record the input validation, regression evidence, and threat-model limits in
+the issue's disposition comment. Keep filesystem and security rules enabled;
+avoid broad exclusions for findings whose existing safeguards the analyzer
+does not recognize.
+
+Prioritize tests that catch authentication, workspace-request, and terminal
+lifecycle failures. Renderer coverage still includes untested components.
+The standalone `cli-tools/tether-cli-hook/index.js` is analyzed by Sonar but
+is outside Vitest's TS/TSX coverage suite; its uncovered lines remain visible
+until it has coverage from an appropriate subprocess test suite.
+
 ## One-time cutover
 
-Complete these account settings before merging the migration:
+The CI migration is complete. These steps document account setup for a new or
+recreated project:
 
 1. Create a SonarQube Cloud token with Execute Analysis permission for Tether.
    Add it directly as the repository Actions secret `SONAR_TOKEN` at
    <https://github.com/maxthomas95/tether/settings/secrets/actions>.
    Do not put the token in source files, chat, command arguments, or logs.
-2. The project currently uses the built-in `Sonar way` quality gate, which
-   includes an 80% new-code coverage condition. To begin with informational
-   coverage, copy that gate to a Tether-specific gate, remove only its coverage
-   condition, and assign the copy to Tether. Preserve the reliability, security,
-   maintainability, duplication, and hotspot-review conditions. Do not change
-   the organization default. If the plan does not allow a custom gate, retain
-   the existing gate and expect coverage to affect its reported status; keep
-   Sonar checks optional while establishing the baseline.
+2. Assign the built-in `Sonar way` quality gate and use **Previous version**
+   for new code, following the policy above. Keep Sonar optional in branch
+   protection while establishing the baseline.
 3. In Tether's SonarQube Cloud Administration > Analysis Method, turn Automatic
    Analysis off. CI-based and automatic analysis must not run together. The
    scanner reads `sonar-project.properties`, replacing `.sonarcloud.properties`.
@@ -50,7 +79,7 @@ code is scanned on main. Keep `pull_request` events; do not switch to
 `pull_request_target` to expose secrets to PR code. If requiring Sonar checks in
 the future, first decide how those PRs will be handled.
 
-Once the baseline is understood, revisit a coverage condition on new code.
+Once the baseline is understood, revisit making the Sonar gate required.
 Coverage shows execution, not assertion quality or end-to-end Electron behavior.
 
 ## Temporary analyzer workaround
