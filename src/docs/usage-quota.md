@@ -13,7 +13,7 @@ Tether reads local CLI metadata and sanitized Claude Code/Codex usage records co
 
 The Crush reader checks `%LOCALAPPDATA%/crush/crush.db` on Windows and `~/.local/share/crush/crush.db` elsewhere. `CRUSH_GLOBAL_DATA` can override the directory. Claude transcript discovery respects `CLAUDE_CONFIG_DIR`.
 
-Backfill runs at startup and filesystem watchers update local usage. Codex uses `CODEX_HOME` when set, otherwise `~/.codex`. Remote usage collection uses the existing authenticated connection; full transcripts stay on the host.
+Backfill runs at startup and filesystem watchers update local usage. Codex uses `CODEX_HOME` when set, otherwise `~/.codex`. Remote usage collection uses the existing authenticated connection; full transcripts stay on the host. The reader starts once per connection and stays resident, answering every session's polls over that one process, so an elevated host authenticates once rather than once per poll.
 
 Codex cumulative counters prevent repeated token reports from being counted twice. Reasoning tokens are part of output tokens; the reasoning breakdown is not added to output or billed again. Cached input is separated from uncached input for cost calculations.
 
@@ -42,8 +42,9 @@ Requirements and limits:
 - `HOME`, `CLAUDE_CONFIG_DIR`, and `CODEX_HOME` overrides set in the session's
   environment are honored. For SSH sessions using **sudo**, collection runs as
   the elevated user too. It uses noninteractive sudo or the configured SSH
-  password through encrypted stdin; policies requiring a TTY or a different
-  sudo password leave usage unavailable without interrupting the terminal.
+  password through encrypted stdin, once when the reader starts; policies
+  requiring a TTY or a different sudo password leave usage unavailable without
+  interrupting the terminal. If the reader exits, the next poll reconnects it.
 - Collection begins when a transcript is available, often after the first
   prompt. The pane shows **Waiting for remote usage** until it is found. A Codex
   process that exits before discovery may have no collected usage. Ambiguous

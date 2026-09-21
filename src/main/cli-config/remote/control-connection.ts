@@ -29,9 +29,26 @@ export interface RemoteFileOps {
   chmod(p: string, mode: number): Promise<void>;
 }
 
+/**
+ * A command left running on the host, written to over its lifetime. `exec`
+ * collects until close and cannot be reused; this is the seam for a long-lived
+ * helper that answers many requests over one authentication.
+ */
+export interface RemoteProcess {
+  /** Feed the process's stdin. */
+  write(data: string): void;
+  /** Complete stdout lines, newline stripped. */
+  onLine(cb: (line: string) => void): void;
+  /** Fired once when the process or its channel goes away. */
+  onExit(cb: () => void): void;
+  kill(): void;
+}
+
 export interface ControlConnection {
   /** Run a command on the host, collecting exit code and output. */
   exec(cmd: string, options?: { input?: string; timeoutMs?: number; maxBytes?: number }): Promise<RemoteExecResult>;
+  /** Start a command and keep its stdin open. */
+  spawn(cmd: string, options?: { maxLineBytes?: number }): Promise<RemoteProcess>;
   /** File operations (SFTP subsystem). Cached per connection. */
   files(): Promise<RemoteFileOps>;
   /**
