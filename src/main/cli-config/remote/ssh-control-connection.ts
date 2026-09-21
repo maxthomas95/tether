@@ -1,10 +1,11 @@
 import type { Duplex } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
 import type { SFTPWrapper } from 'ssh2';
 import { loadSsh2 } from '../../transport/ssh2-loader';
 import { buildSshConnectConfig } from '../../transport/ssh-connect-config';
 import type { SSHConfig } from '../../transport/ssh-transport';
 import { createLogger } from '../../logger';
-import type { ControlConnection, RemoteExecResult, RemoteFileOps } from './control-connection';
+import type { ControlConnection, RemoteExecResult, RemoteFileOps, RemoteProcess } from './control-connection';
 
 const log = createLogger('ssh-control');
 
@@ -200,6 +201,46 @@ export async function connectSshControl(sshConfig: SSHConfig, signal?: AbortSign
           }));
           stream.on('error', (streamErr: Error) => finish(streamErr));
           stream.end(options?.input);
+        });
+      }),
+
+    spawn: (cmd, options) =>
+      new Promise<RemoteProcess>((resolve, reject) => {
+        client.exec(cmd, (err, stream) => {
+          if (err) { reject(err); return; }
+          const lineCbs: Array<(line: string) => void> = [];
+          const exitCbs: Array<() => void> = [];
+          // Holds a multi-byte character back until the chunk carrying its rest arrives.
+          const decoder = new StringDecoder('utf8');
+          let buffered = '';
+          let done = false;
+          const exit = () => {
+            if (done) return;
+            done = true;
+            for (const cb of exitCbs) { try { cb(); } catch { /* observers never throw upward */ } }
+          };
+          stream.on('data', (d: Buffer) => {
+            buffered += decoder.write(d);
+            let cut: number;
+            while ((cut = buffered.indexOf('\n')) >= 0) {
+              const line = buffered.slice(0, cut);
+              buffered = buffered.slice(cut + 1);
+              for (const cb of lineCbs) { try { cb(line); } catch { /* one bad reply never kills the stream */ } }
+            }
+            // A remote that never emits a newline must not grow the buffer forever.
+            if (buffered.length > (options?.maxLineBytes ?? 4 * 1024 * 1024)) { buffered = ''; stream.destroy(); exit(); }
+          });
+          // Never retain or log remote stderr; drain it so the channel cannot stall.
+          stream.stderr.on('data', () => { /* discarded by design */ });
+          stream.on('close', exit);
+          stream.on('error', exit);
+          closeCallbacks.push(exit);
+          resolve({
+            write: data => { try { stream.write(data); } catch { exit(); } },
+            onLine: cb => { lineCbs.push(cb); },
+            onExit: cb => { if (done) cb(); else exitCbs.push(cb); },
+            kill: () => { try { stream.destroy(); } finally { exit(); } },
+          });
         });
       }),
 

@@ -51,6 +51,30 @@ function probe(request: RemoteUsageRequest, processes: Record<string, { marker: 
   return JSON.parse(output.slice('__TETHER_USAGE__'.length)) as RemoteUsageReply;
 }
 
+/** Drives the probe in resident mode: no argv request, requests arrive on stdin. */
+function resident() {
+  const lines: string[] = [];
+  const handlers: Record<string, (chunk?: string) => void> = {};
+  let exited = false;
+  vm.runInNewContext(REMOTE_USAGE_PROBE, {
+    require: (name: string) => ({ fs, path, os, crypto })[name as 'fs'], Buffer,
+    process: {
+      argv: ['node'], platform: 'linux', env: {}, cwd: () => process.cwd(), getuid: () => 1000,
+      stdout: { write: (s: string) => { lines.push(...s.split('\n').filter(Boolean)); } },
+      stdin: { setEncoding: () => {}, on: (event: string, cb: (chunk?: string) => void) => { handlers[event] = cb; } },
+      exit: () => { exited = true; },
+    },
+  });
+  return {
+    send: (raw: string) => handlers.data(raw),
+    request: (request: RemoteUsageRequest & { id: number }) =>
+      handlers.data(Buffer.from(JSON.stringify(request)).toString('base64') + '\n'),
+    end: () => handlers.end(),
+    replies: () => lines.map(l => JSON.parse(l.slice('__TETHER_USAGE__'.length)) as RemoteUsageReply & { id?: number; error?: string }),
+    get exited() { return exited; },
+  };
+}
+
 const claude = (tokens: number) => JSON.stringify({ type: 'assistant', timestamp: '2026-09-07T10:00:00Z',
   message: { model: 'claude-sonnet-4', content: [{ text: 'private response' }], usage: { input_tokens: tokens, output_tokens: 7 } } });
 const codexHeader = (id: string, source: unknown = 'cli') => JSON.stringify({ type: 'session_meta', payload: { id, cwd: '/same', source } }) + '\n';
@@ -146,5 +170,45 @@ describe('remote usage probe', () => {
     const result = probe({ ...f.request, source, cursor: { offset: 0, identity: '' } });
     expect(JSON.parse(result.text!).message.usage.input_tokens).toBe(42);
     expect(result.offset).toBe(fs.statSync(f.file).size);
+  });
+
+  it('serves many requests from one resident process and tags each reply with its id', () => {
+    const a = fixture('claude', claude(10) + '\n');
+    const b = fixture('claude', claude(40) + '\n');
+    const probe = resident();
+
+    probe.request({ ...a.request, id: 1 });
+    probe.request({ ...b.request, id: 2 });
+    const [first, second] = probe.replies();
+    expect([first.id, second.id]).toEqual([1, 2]);
+
+    // Each request re-derives its own home/scope, so two sessions cannot cross over.
+    expect(first.source!.path).toBe(a.file);
+    expect(second.source!.path).toBe(b.file);
+    expect(first.source!.scope).not.toBe(second.source!.scope);
+
+    probe.request({ ...a.request, id: 3, source: first.source, cursor: { offset: 0, identity: '' } });
+    const read = probe.replies()[2];
+    expect(read.id).toBe(3);
+    expect(JSON.parse(read.text!).message.usage.input_tokens).toBe(10);
+  });
+
+  it('answers a bad request without dying, and only stdin closing ends it', () => {
+    const f = fixture('claude', claude(10) + '\n');
+    const probe = resident();
+
+    probe.send('not-base64-json\n');
+    expect(probe.replies()[0].error).toBe('remote-read-failed');
+    expect(probe.exited).toBe(false);
+
+    // A request split across chunks is buffered until its newline arrives.
+    const encoded = Buffer.from(JSON.stringify({ ...f.request, id: 9 })).toString('base64');
+    probe.send(encoded.slice(0, 10));
+    expect(probe.replies()).toHaveLength(1);
+    probe.send(encoded.slice(10) + '\n');
+    expect(probe.replies()[1].id).toBe(9);
+
+    probe.end();
+    expect(probe.exited).toBe(true);
   });
 });
