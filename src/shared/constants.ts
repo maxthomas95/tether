@@ -102,6 +102,9 @@ export const IPC = {
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
   SHELL_COMMAND_EXISTS: 'shell:command-exists',
 
+  // Clipboard
+  CLIPBOARD_WRITE_TEXT: 'clipboard:write-text',
+
   // SSH known hosts
   SSH_HOST_VERIFY_REQUEST: 'ssh:host-verify-request',
   SSH_HOST_VERIFY_RESPONSE: 'ssh:host-verify-response',

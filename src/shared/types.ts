@@ -667,8 +667,7 @@ export interface TetherAPI {
   };
   scanReposDir(dir: string): Promise<string[]>;
   clipboard: {
-    readText(): string;
-    writeText(text: string): void;
+    writeText(text: string): Promise<void>;
   };
   workspace: {
     save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>, activeIndex: number, canvas?: import('./canvas-types').SavedCanvas): Promise<void>;

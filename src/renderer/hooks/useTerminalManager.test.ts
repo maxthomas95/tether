@@ -13,6 +13,10 @@ const mocks = vi.hoisted(() => {
     parser = { registerOscHandler: vi.fn() };
     loadAddon = vi.fn();
     attachCustomKeyEventHandler = vi.fn();
+    selection = '';
+    hasSelection = vi.fn(() => this.selection !== '');
+    getSelection = vi.fn(() => this.selection);
+    paste = vi.fn();
     write = vi.fn();
     focus = vi.fn();
     refresh = vi.fn();
@@ -30,6 +34,10 @@ const mocks = vi.hoisted(() => {
     resize: vi.fn(),
     sendInput: vi.fn(),
     setOutputMode: vi.fn().mockResolvedValue(undefined),
+    clipboard: {
+      writeText: vi.fn().mockResolvedValue(undefined),
+      readText: vi.fn(() => 'from clipboard'),
+    },
   };
 });
 
@@ -75,7 +83,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   frames = [];
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback));
-  vi.stubGlobal('electronAPI', { session: mocks });
+  mocks.clipboard.writeText.mockResolvedValue(undefined);
+  vi.stubGlobal('electronAPI', { session: mocks, clipboard: mocks.clipboard });
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -186,5 +195,96 @@ describe('terminal session lifecycle', () => {
     api.setBroadcastTargets([]);
     terminal('a').input?.('one');
     expect(mocks.sendInput).toHaveBeenCalledExactlyOnceWith('a', 'one');
+  });
+});
+
+describe('terminal clipboard', () => {
+  type KeyHandler = (e: KeyboardEvent) => boolean;
+
+  function keyHandler(sessionId: string): KeyHandler {
+    const [[handler]] = terminal(sessionId).attachCustomKeyEventHandler.mock.calls as [[KeyHandler]];
+    return handler;
+  }
+
+  function press(handler: KeyHandler, type: 'keydown' | 'keyup', init: KeyboardEventInit) {
+    const event = new KeyboardEvent(type, { cancelable: true, ctrlKey: true, ...init });
+    return { result: handler(event), prevented: event.defaultPrevented };
+  }
+
+  it('copies the trimmed selection once per Ctrl+C press and cancels only the keydown', () => {
+    api.getOrCreate('a');
+    const handler = keyHandler('a');
+    terminal('a').selection = 'first line   \nsecond  ';
+
+    expect(press(handler, 'keydown', { key: 'c' })).toEqual({ result: false, prevented: true });
+    expect(press(handler, 'keyup', { key: 'c' })).toEqual({ result: false, prevented: false });
+    expect(mocks.clipboard.writeText).toHaveBeenCalledExactlyOnceWith('first line\nsecond');
+  });
+
+  it('passes Ctrl+C through as SIGINT when nothing is selected', () => {
+    api.getOrCreate('a');
+    const handler = keyHandler('a');
+
+    expect(press(handler, 'keydown', { key: 'c' })).toEqual({ result: true, prevented: false });
+    expect(mocks.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  it('copies on Ctrl+Shift+C keydown only, and never writes an empty selection', () => {
+    api.getOrCreate('a');
+    const handler = keyHandler('a');
+
+    expect(press(handler, 'keydown', { key: 'C', shiftKey: true })).toEqual({ result: false, prevented: true });
+    expect(mocks.clipboard.writeText).not.toHaveBeenCalled();
+
+    terminal('a').selection = 'picked  ';
+    expect(press(handler, 'keydown', { key: 'C', shiftKey: true }).result).toBe(false);
+    expect(press(handler, 'keyup', { key: 'C', shiftKey: true }).result).toBe(false);
+    expect(mocks.clipboard.writeText).toHaveBeenCalledExactlyOnceWith('picked');
+  });
+
+  it('leaves Ctrl+V to the native paste event without reading the clipboard', () => {
+    api.getOrCreate('a');
+    const handler = keyHandler('a');
+
+    expect(press(handler, 'keydown', { key: 'v' })).toEqual({ result: false, prevented: false });
+    expect(terminal('a').paste).not.toHaveBeenCalled();
+    expect(mocks.clipboard.readText).not.toHaveBeenCalled();
+  });
+
+  it('forwards an OSC 52 write to the clipboard and consumes the sequence', () => {
+    api.getOrCreate('a');
+    const [[code, handler]] = terminal('a').parser.registerOscHandler.mock.calls as [[number, (data: string) => boolean]];
+    expect(code).toBe(52);
+
+    expect(handler(`c;${Buffer.from('café\nline two', 'utf8').toString('base64')}`)).toBe(true);
+    expect(mocks.clipboard.writeText).toHaveBeenCalledExactlyOnceWith('café\nline two');
+    expect(handler('c;?')).toBe(true);
+    expect(mocks.clipboard.writeText).toHaveBeenCalledOnce();
+  });
+
+  it('swallows a failed clipboard write from every copy path', async () => {
+    // A plain function, not vi.fn(): vitest's mock tracks returned promises
+    // itself, which marks a rejection as handled and would hide the bug.
+    const writes: string[] = [];
+    vi.stubGlobal('electronAPI', {
+      session: mocks,
+      clipboard: { writeText: (text: string) => { writes.push(text); return Promise.reject(new Error('ipc gone')); } },
+    });
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      api.getOrCreate('a');
+      const handler = keyHandler('a');
+      terminal('a').selection = 'x';
+      press(handler, 'keydown', { key: 'c' });
+      press(handler, 'keydown', { key: 'C', shiftKey: true });
+      const [[, osc]] = terminal('a').parser.registerOscHandler.mock.calls as [[number, (data: string) => boolean]];
+      expect(osc(`c;${Buffer.from('y').toString('base64')}`)).toBe(true);
+      expect(writes).toEqual(['x', 'x', 'y']);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, clipboard, webFrame } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 import { IPC } from '../shared/constants';
 import type { KeybindingOverrides } from '../shared/keybindings';
 import type {
@@ -111,8 +111,7 @@ const api: TetherAPI = {
   scanReposDir: (dir: string): Promise<string[]> => ipcRenderer.invoke(IPC.SCAN_REPOS_DIR, dir),
 
   clipboard: {
-    readText: (): string => clipboard.readText(),
-    writeText: (text: string): void => clipboard.writeText(text),
+    writeText: (text: string): Promise<void> => ipcRenderer.invoke(IPC.CLIPBOARD_WRITE_TEXT, text),
   },
 
   workspace: {

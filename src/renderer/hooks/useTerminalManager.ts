@@ -55,6 +55,10 @@ function trimSelectionTrailingSpaces(text: string): string {
   return lines.join('\n');
 }
 
+function writeClipboard(text: string): void {
+  void window.electronAPI.clipboard.writeText(text).catch(() => {});
+}
+
 /**
  * Scrollback buffer size constants. xterm.js's built-in default is 1000 lines,
  * which agent sessions blow past almost instantly. Tether's default is 10k.
@@ -198,7 +202,7 @@ export function useTerminalManager(
     terminal.parser.registerOscHandler(52, (data: string) => {
       const text = decodeOsc52Write(data);
       if (text !== null) {
-        window.electronAPI.clipboard.writeText(text);
+        writeClipboard(text);
       }
       return true;
     });
@@ -221,25 +225,26 @@ export function useTerminalManager(
 
       // Ctrl+C with selection → copy to clipboard
       if (ctrl && e.key === 'c' && terminal.hasSelection()) {
-        window.electronAPI.clipboard.writeText(trimSelectionTrailingSpaces(terminal.getSelection()));
+        if (e.type === 'keydown') {
+          e.preventDefault();
+          writeClipboard(trimSelectionTrailingSpaces(terminal.getSelection()));
+        }
         return false;
       }
 
-      // Ctrl+V → paste from clipboard. Route through terminal.paste() rather
-      // than sending the raw string: paste() honors the app's bracketed-paste
-      // mode (DECSET 2004) and normalizes newlines, so multi-line pastes into
-      // Claude Code's fullscreen input land as one block instead of a burst of
-      // submits. It still fires onData → sendInput, so broadcast input keeps
-      // working.
+      // Ctrl+V → no preventDefault: the native paste event reaches xterm, which
+      // applies bracketed paste, so the renderer never reads the clipboard.
+      // Still return false, or xterm sends ^V and cancels that paste event.
       if (ctrl && e.key === 'v' && e.type === 'keydown') {
-        const text = window.electronAPI.clipboard.readText();
-        if (text) terminal.paste(text);
         return false;
       }
 
-      // Ctrl+Shift+C → always copy
+      // Ctrl+Shift+C → copy the selection, never passed through
       if (ctrl && e.shiftKey && e.key === 'C') {
-        window.electronAPI.clipboard.writeText(trimSelectionTrailingSpaces(terminal.getSelection()));
+        if (e.type === 'keydown') {
+          e.preventDefault();
+          if (terminal.hasSelection()) writeClipboard(trimSelectionTrailingSpaces(terminal.getSelection()));
+        }
         return false;
       }
 
