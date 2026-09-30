@@ -59,6 +59,14 @@ function writeClipboard(text: string): void {
   void window.electronAPI.clipboard.writeText(text).catch(() => {});
 }
 
+function copySelection(terminal: Terminal, e: KeyboardEvent): false {
+  if (e.type === 'keydown') {
+    e.preventDefault();
+    if (terminal.hasSelection()) writeClipboard(trimSelectionTrailingSpaces(terminal.getSelection()));
+  }
+  return false;
+}
+
 /**
  * Scrollback buffer size constants. xterm.js's built-in default is 1000 lines,
  * which agent sessions blow past almost instantly. Tether's default is 10k.
@@ -189,7 +197,7 @@ export function useTerminalManager(
 
     const linksAddon = new WebLinksAddon((event, uri) => {
       if (!event.ctrlKey && !event.metaKey) return;
-      window.electronAPI.shell.openExternal(uri);
+      void window.electronAPI.shell.openExternal(uri);
     });
     terminal.loadAddon(linksAddon);
 
@@ -224,13 +232,7 @@ export function useTerminalManager(
       }
 
       // Ctrl+C with selection → copy to clipboard
-      if (ctrl && e.key === 'c' && terminal.hasSelection()) {
-        if (e.type === 'keydown') {
-          e.preventDefault();
-          writeClipboard(trimSelectionTrailingSpaces(terminal.getSelection()));
-        }
-        return false;
-      }
+      if (ctrl && e.key === 'c' && terminal.hasSelection()) return copySelection(terminal, e);
 
       // Ctrl+V → no preventDefault: the native paste event reaches xterm, which
       // applies bracketed paste, so the renderer never reads the clipboard.
@@ -240,13 +242,7 @@ export function useTerminalManager(
       }
 
       // Ctrl+Shift+C → copy the selection, never passed through
-      if (ctrl && e.shiftKey && e.key === 'C') {
-        if (e.type === 'keydown') {
-          e.preventDefault();
-          if (terminal.hasSelection()) writeClipboard(trimSelectionTrailingSpaces(terminal.getSelection()));
-        }
-        return false;
-      }
+      if (ctrl && e.shiftKey && e.key === 'C') return copySelection(terminal, e);
 
       return true;
     });
