@@ -15,7 +15,7 @@ it('keeps home actions accessible alongside the pausable, decorative logo', asyn
     environments: [{ id: 'local', type: 'local', name: 'Local' }] as EnvironmentInfo[],
     enableResumePicker: true,
     recentProjects: [project],
-    onOpenProject: vi.fn(), onNewLocalSession: vi.fn(), onConnectSsh: vi.fn(),
+    onOpenProject: vi.fn(), onDismissProject: vi.fn(), onNewLocalSession: vi.fn(), onConnectSsh: vi.fn(),
     onOpenCoder: vi.fn(), onResume: vi.fn(),
   };
   try {
@@ -37,6 +37,15 @@ it('keeps home actions accessible alongside the pausable, decorative logo', asyn
     expect(props.onOpenProject).toHaveBeenCalledWith(project);
     [props.onNewLocalSession, props.onConnectSsh, props.onOpenCoder, props.onResume]
       .forEach(callback => expect(callback).toHaveBeenCalledOnce());
+
+    const remove = container.querySelector<HTMLButtonElement>('.recent-project-remove')!;
+    expect(remove.getAttribute('aria-label')).toBe('Remove tether from recent projects in Local');
+    expect(remove.closest('.recent-project')).toBeNull();
+    remove.focus();
+    await act(async () => remove.click());
+    expect(props.onDismissProject).toHaveBeenCalledWith(project);
+    expect(props.onOpenProject).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(container.querySelector('.welcome-card'));
 
     await act(async () => root.render(createElement(WelcomePane, { ...props, recentProjects: [] })));
     expect(container.querySelector('h1')?.textContent).toBe('Welcome to Tether');
