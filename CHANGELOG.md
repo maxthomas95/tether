@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Bug Fixes
+- **Remote usage collection** - start the usage reader once per connection and keep it resident, instead of running a fresh `sudo` login shell for every poll of every session. On an elevated SSH host the old behaviour authenticated through PAM thousands of times an hour, which filled the host's auth log, logged a failed `pam_unix` attempt per poll, and re-sent the sudo password every few seconds.
+
 ---
 
 ## [0.6.6-beta.5] ? 2026-09-07

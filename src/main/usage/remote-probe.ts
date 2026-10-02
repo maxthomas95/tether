@@ -2,25 +2,34 @@
  * Executed by a remote Node.js process over a separate command channel. No
  * helper installation, CLI config edits, or transcript text written locally.
  * Keep this self-contained: the remote host has only Node's standard library.
+ *
+ * Two drive modes, same reader. With a base64 request in argv the probe answers
+ * once and exits. With no argv request it stays resident and answers one
+ * newline-delimited base64 request per line, so a `useSudo` host authenticates
+ * once per connection instead of once per poll.
  */
 export const REMOTE_USAGE_PROBE = String.raw`
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const request = JSON.parse(Buffer.from(process.argv[1], 'base64').toString('utf8'));
 const maxChunk = 1024 * 1024;
 const maxLine = 16 * maxChunk;
-const userHome = request.home || os.homedir();
+// Derived per request so one resident probe can serve several sessions.
+let request, userHome, cwd, home, root, scope;
 const homePath = (value, fallback, base = process.cwd()) => {
   const p = value || fallback;
   return path.resolve(base, p === '~' ? userHome : p.startsWith('~/') ? path.join(userHome, p.slice(2)) : p);
 };
-const cwd = homePath(request.workingDir, userHome);
-const home = homePath(request.cli === 'claude' ? request.claudeHome || process.env.CLAUDE_CONFIG_DIR : request.codexHome || process.env.CODEX_HOME,
-  path.join(userHome, request.cli === 'claude' ? '.claude' : '.codex'), cwd);
-const root = path.join(home, request.cli === 'claude' ? 'projects' : 'sessions');
-const scope = JSON.stringify([typeof process.getuid === 'function' ? process.getuid() : os.userInfo().username, home]);
+function setRequest(next) {
+  request = next;
+  userHome = request.home || os.homedir();
+  cwd = homePath(request.workingDir, userHome);
+  home = homePath(request.cli === 'claude' ? request.claudeHome || process.env.CLAUDE_CONFIG_DIR : request.codexHome || process.env.CODEX_HOME,
+    path.join(userHome, request.cli === 'claude' ? '.claude' : '.codex'), cwd);
+  root = path.join(home, request.cli === 'claude' ? 'projects' : 'sessions');
+  scope = JSON.stringify([typeof process.getuid === 'function' ? process.getuid() : os.userInfo().username, home]);
+}
 function firstLine(file) {
   const fd = typeof file === 'number' ? file : fs.openSync(file, 'r');
   try {
@@ -169,13 +178,43 @@ function read(source) {
       more: end > 0 && start + end < stat.size, text: records.length ? records.join('\n') + '\n' : '' };
   } finally { fs.closeSync(fd); }
 }
-try {
-  const source = request.source || resolveSource();
-  const reply = !source ? { status: 'pending' } : request.cursor ? read(source) : { status: 'ready', source };
-  process.stdout.write('__TETHER_USAGE__' + JSON.stringify(reply) + '\n');
-} catch {
-  // Never forward filesystem errors, paths, environment values, or transcript text.
-  process.stdout.write('__TETHER_USAGE__' + JSON.stringify({ error: 'remote-read-failed' }) + '\n');
-  process.exitCode = 1;
+function handle(next) {
+  try {
+    setRequest(next);
+    const source = request.source || resolveSource();
+    return !source ? { status: 'pending' } : request.cursor ? read(source) : { status: 'ready', source };
+  } catch {
+    // Never forward filesystem errors, paths, environment values, or transcript text.
+    return { error: 'remote-read-failed' };
+  }
+}
+function emit(reply, id) {
+  process.stdout.write('__TETHER_USAGE__' + JSON.stringify(id === undefined ? reply : { ...reply, id }) + '\n');
+}
+if (process.argv[1]) {
+  const reply = handle(JSON.parse(Buffer.from(process.argv[1], 'base64').toString('utf8')));
+  emit(reply);
+  if (reply.error) process.exitCode = 1;
+} else {
+  // Resident mode. A bad line answers and keeps serving; only stdin closing ends us.
+  let buffered = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', chunk => {
+    buffered += chunk;
+    let cut;
+    while ((cut = buffered.indexOf('\n')) >= 0) {
+      const line = buffered.slice(0, cut);
+      buffered = buffered.slice(cut + 1);
+      if (!line) continue;
+      let id;
+      try {
+        const next = JSON.parse(Buffer.from(line, 'base64').toString('utf8'));
+        id = next.id;
+        emit(handle(next), id);
+      } catch { emit({ error: 'remote-read-failed' }, id); }
+    }
+    if (buffered.length > maxChunk) { buffered = ''; emit({ error: 'remote-read-failed' }); }
+  });
+  process.stdin.on('end', () => process.exit(0));
 }
 `;

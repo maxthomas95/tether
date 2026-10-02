@@ -14,6 +14,8 @@ export interface RemoteUsageCursor {
 }
 
 export interface RemoteUsageRequest {
+  /** Correlates a reply with its request on the resident probe's shared stream. */
+  id?: number;
   cli: RemoteUsageCli;
   marker: string;
   nativeSessionId?: string;
@@ -26,6 +28,7 @@ export interface RemoteUsageRequest {
 }
 
 export interface RemoteUsageReply {
+  id?: number;
   status: 'ready' | 'pending';
   source?: RemoteUsageSource;
   /** Sanitized JSONL: only model, timestamp, and numeric usage fields. */

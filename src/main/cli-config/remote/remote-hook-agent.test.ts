@@ -94,6 +94,8 @@ class FakeHost {
         // mkdir/chmod and the age-based find sweep both succeed silently.
         return { code: 0, stdout: '', stderr: '' };
       },
+      // The hook agent only ever uses exec; usage collection owns the resident channel.
+      spawn: async () => { throw new Error('spawn unused by the hook agent'); },
       files: async () => this.fileOps(),
       forwardUnix: async (socketPath) => {
         if (this.failUnixForward) throw new Error('streamlocal forwarding disabled (test knob)');
