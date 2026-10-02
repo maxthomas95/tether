@@ -46,6 +46,8 @@ Click the **×** beside a recent project to remove its shortcut. Removal is save
 
 The returning-project screen includes a slowly spinning ASCII Tether logo. Use the pause button beneath it to stop the animation. If your system prefers reduced motion, the logo stays still automatically.
 
+For repeatable multi-session setups, choose **File ? Workspaces?** after arranging your sessions. Save the current workspace as a recipe, then open it later to start fresh sessions with the same directories, environments, CLI tools, and layout. You can edit paths and remap environments before opening, and opening a recipe does not stop any sessions already running.
+
 ## The Interface
 
 ### Sidebar
