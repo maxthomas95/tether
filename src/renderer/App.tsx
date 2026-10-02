@@ -15,6 +15,7 @@ import { VaultStatusPill } from './components/sidebar/VaultStatusPill';
 import { VaultLoginPromptDialog } from './components/VaultLoginPromptDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { CliMaintenanceDialog } from './components/CliMaintenanceDialog';
+import { WorkspaceRecipesDialog } from './components/WorkspaceRecipesDialog';
 import { MenuBar } from './components/MenuBar';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { SessionSearchDialog } from './components/SessionSearchDialog';
@@ -30,6 +31,7 @@ import { useTerminalManager } from './hooks/useTerminalManager';
 import type { TerminalCursorStyle } from './hooks/useTerminalManager';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 import { useWorkspacePersistence, type WorkspaceRestoreFailure } from './hooks/useWorkspacePersistence';
+import { useWorkspaceRecipeController, type OpenedWorkspaceRecipeLayout } from './hooks/useWorkspaceRecipeController';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTerminalSearch } from './hooks/useTerminalSearch';
 import { useTheme } from './hooks/useTheme';
@@ -830,6 +832,30 @@ export function App() {
     }
   }, [termManager, notifyError, openCreatedSession, recordSession]);
 
+  const registerRecipeSession = useCallback((session: SessionInfo) => {
+    recordSession(session.id);
+    termManager.getOrCreate(session.id);
+    setSessions(previous => previous.some(existing => existing.id === session.id) ? previous : [...previous, session]);
+  }, [recordSession, termManager]);
+  const requestRecipeVaultLogin = useCallback(async (reason?: string) => {
+    const loggedIn = await new Promise<boolean>(resolve => setVaultPrompt({ reason, onDone: resolve }));
+    setVaultPrompt(null);
+    return loggedIn;
+  }, []);
+  const applyRecipeLayout = useCallback((opened: OpenedWorkspaceRecipeLayout) => {
+    splitDispatch({ type: 'SET_ROOT', root: opened.split.root });
+    splitDispatch({ type: 'SET_FOCUS', paneId: opened.split.focusedPaneId });
+    canvasDispatch({ type: 'RESTORE', saved: opened.canvas, sessionIds: opened.sessionIds });
+    setCanvasEnabled(opened.mode === 'canvas');
+    setBroadcastPaneIds(new Set());
+  }, [splitDispatch, canvasDispatch, setCanvasEnabled]);
+  const workspaceRecipes = useWorkspaceRecipeController({
+    activeSessionId, splitState: splitLayoutState, canvasState, canvasEnabled,
+    maxPanes: enablePaneSplitting ? maxPanes : 1,
+    registerSession: registerRecipeSession, requestVaultLogin: requestRecipeVaultLogin,
+    applyLayout: applyRecipeLayout, focusPane: termManager.focusPane, notifyError,
+  });
+
   const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
     try {
       const env = await window.electronAPI.environment.create({ name, type, config, envVars });
@@ -1483,7 +1509,7 @@ export function App() {
     setSessionDialogOpen(true);
   }, []);
 
-  const modalOpen = sessionDialogOpen || envDialogOpen || settingsOpen || shortcutsOpen || searchOpen || aboutOpen
+  const modalOpen = sessionDialogOpen || envDialogOpen || settingsOpen || shortcutsOpen || searchOpen || aboutOpen || workspaceRecipes.isOpen
     || usageHistoryOpen || setupWizardOpen || hostVerifyRequest !== null || resumePickerFor !== null
     || vaultPrompt !== null || confirmDialogProps.isOpen;
 
@@ -1577,7 +1603,7 @@ export function App() {
     },
   }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom, handleJumpToNextWaiting, canvasEnabled, canvasState, handleOpenTerminalSearch]);
 
-  useKeyboardShortcuts(shortcutActions, resolvedBindings, maintenanceTarget === null);
+  useKeyboardShortcuts(shortcutActions, resolvedBindings, maintenanceTarget === null && !workspaceRecipes.isOpen && !workspaceRecipes.busy);
 
   const handleKeybindingChange = useCallback((action: KeybindingAction, chord: Chord | null) => {
     setKeybindingOverrides(prev => {
@@ -1812,6 +1838,7 @@ export function App() {
       items: [
         { label: 'New Session...', shortcut: formatChord(resolvedBindings['session.new']) || undefined, onClick: () => setSessionDialogOpen(true) },
         { label: 'New Environment...', onClick: () => setEnvDialogOpen(true) },
+        { label: 'Workspaces...', onClick: workspaceRecipes.open, disabled: !workspaceReady || workspaceRecipes.busy || maintenanceTarget !== null },
         { label: 'CLI Tools...', onClick: () => setMaintenanceTarget({}) },
         { separator: true },
         { label: 'Settings...', shortcut: formatChord(resolvedBindings['settings.open']) || undefined, onClick: () => setSettingsOpen(true) },
@@ -1869,7 +1896,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, layoutState.focusedPaneId, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, canvasState.focusedPaneId, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle, pip.settings, pip.busy, pip.toggle, handleOpenTerminalSearch, modalOpen]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, layoutState.focusedPaneId, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, canvasState.focusedPaneId, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle, pip.settings, pip.busy, pip.toggle, handleOpenTerminalSearch, modalOpen, workspaceRecipes.open, workspaceRecipes.busy, maintenanceTarget]);
 
   return (
     <div className="app-layout" data-density={uiDensity}>
@@ -2144,6 +2171,13 @@ export function App() {
       </main>
       </div>
 
+      {workspaceRecipes.isOpen && <WorkspaceRecipesDialog
+        sessions={sessions} environments={environments} launching={workspaceRecipes.busy}
+        blocked={vaultPrompt !== null || hostVerifyRequest !== null}
+        onClose={workspaceRecipes.close} onCapture={workspaceRecipes.capture}
+        onLaunch={workspaceRecipes.launch} onFinish={workspaceRecipes.finish}
+        onCancelLaunch={workspaceRecipes.cancel}
+      />}
       <NewSessionDialog
         isOpen={sessionDialogOpen}
         environments={environments}
