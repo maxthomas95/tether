@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { SessionUsage } from '../../shared/types';
 import type { DbData } from '../db/database';
 
@@ -60,6 +63,45 @@ beforeEach(() => {
 });
 
 describe('usage-service helpers', () => {
+  it('rebuilds schema-2 Codex totals from requests and restores their checkpoint after restart', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-codex-request-migration-'));
+    const filePath = path.join(dir, 'rollout.jsonl');
+    const request = (input: number, cumulative: number, timestamp: string) => JSON.stringify({
+      type: 'token_usage_record', timestamp, payload: { thread_id: 'native',
+        usage: { input_tokens: input, output_tokens: 10, total_tokens: input + 10 },
+        thread_token_usage: { input_tokens: cumulative, output_tokens: cumulative / 10, total_tokens: cumulative + cumulative / 10 },
+      },
+    }) + '\n';
+    fs.writeFileSync(filePath, JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5-codex' } }) + '\n'
+      + request(100, 100, '2026-10-01T23:59:00Z') + request(100, 200, '2026-10-02T00:01:00Z'));
+    mocks.db.usageSummaries = [{
+      sessionId: 'native', cliTool: 'codex', workingDir: dir, filePath, usageSchemaVersion: 2,
+      inputTokens: 100, outputTokens: 10, cacheCreationTokens: 0, cacheReadTokens: 0,
+      totalCost: 1, models: [], messageCount: 1, dayTiming: 'event',
+      firstMessageAt: '2026-10-02T00:01:00Z', lastMessageAt: '2026-10-02T00:01:00Z',
+      parsedByteOffset: fs.statSync(filePath).size,
+    }];
+    const service = new UsageService();
+    const restarted = new UsageService();
+    try {
+      service.trackSession('native', dir, 'codex');
+      expect(service.getSessionUsage('native')).toMatchObject({ inputTokens: 200, outputTokens: 20, messageCount: 2 });
+      expect(service.getAll().daily.map(d => [d.date, d.inputTokens])).toEqual([['2026-10-02', 100], ['2026-10-01', 100]]);
+      expect(mocks.db.usageSummaries[0]).toMatchObject({ usageSchemaVersion: 3,
+        codexRequestUsage: { nativeSessionId: 'native', tokenUsage: { totalTokens: 220 } } });
+      service.stop();
+      restarted.trackSession('native', dir, 'codex');
+      fs.appendFileSync(filePath, request(100, 200, '2026-10-02T00:01:00Z')
+        + request(100, 300, '2026-10-02T00:02:00Z'));
+      await restarted.refresh('native');
+      expect(restarted.getSessionUsage('native')).toMatchObject({ inputTokens: 300, outputTokens: 30, messageCount: 3 });
+    } finally {
+      service.stop();
+      restarted.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('resets accumulated totals while preserving session identity', () => {
     const existing: SessionUsage = {
       sessionId: 's1',
@@ -387,7 +429,7 @@ describe('usage-service helpers', () => {
     const all = service.getAll();
     expect(all.sessions['track-old-schema'].inputTokens).toBe(50);
     expect(all.daily.map(d => d.date)).toEqual(['2026-05-09', '2026-05-08']);
-    expect(mocks.db.usageSummaries[0].usageSchemaVersion).toBe(2);
+    expect(mocks.db.usageSummaries[0].usageSchemaVersion).toBe(3);
   });
 
   it('does not seed reparsed Codex pre-context events with stale persisted currentModel', () => {

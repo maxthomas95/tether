@@ -108,12 +108,12 @@ function numberFields(obj, fields) {
 }
 function codexCounters(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const fields = ['input_tokens', 'cached_input_tokens', 'output_tokens', 'reasoning_output_tokens', 'total_tokens'];
+  const fields = ['input_tokens', 'cached_input_tokens', 'cache_write_input_tokens', 'output_tokens', 'reasoning_output_tokens', 'total_tokens'];
   // Reject malformed counters rather than turning them into measured zeros.
   if (fields.some(name => value[name] !== undefined && (!Number.isSafeInteger(value[name]) || value[name] < 0))) return null;
   return numberFields(value, fields);
 }
-function sanitize(entry) {
+function sanitize(entry, nativeSessionId) {
   const timestamp = typeof entry.timestamp === 'string' && Number.isFinite(Date.parse(entry.timestamp))
     ? new Date(entry.timestamp).toISOString() : undefined;
   const model = value => typeof value === 'string' && value.length <= 200 ? value : undefined;
@@ -139,6 +139,15 @@ function sanitize(entry) {
       total_token_usage: codexCounters(entry.payload.info.total_token_usage),
       ...numberFields(entry.payload.info, ['model_context_window'])
     } } };
+  }
+  if (request.cli === 'codex' && entry.type === 'token_usage_record') {
+    // Parent request records copied into a fork's history are not its spend.
+    if (entry.payload?.thread_id !== nativeSessionId) return null;
+    return { type: 'token_usage_record', timestamp, payload: {
+      thread_id: nativeSessionId,
+      usage: codexCounters(entry.payload.usage),
+      thread_token_usage: codexCounters(entry.payload.thread_token_usage)
+    } };
   }
   return null;
 }
@@ -170,7 +179,7 @@ function read(source) {
       try {
         const entry = JSON.parse(line);
         if (!entry || typeof entry !== 'object') continue;
-        const safe = sanitize(entry);
+        const safe = sanitize(entry, source.nativeSessionId);
         if (safe) records.push(JSON.stringify(safe));
       } catch {}
     }

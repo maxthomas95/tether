@@ -3,7 +3,7 @@ import { createLogger } from '../logger';
 import { transcriptPath, scanAllTranscripts } from '../claude/transcripts';
 import { scanAllCodexTranscripts } from '../codex/transcripts';
 import { parseJsonlFile, parseClaudeUsageText, type ParsedMessage } from './jsonl-parser';
-import { parseCodexJsonl, parseCodexUsageText, type CodexTokenUsageCounters } from './codex-jsonl-parser';
+import { parseCodexJsonl, parseCodexUsageText, type CodexTokenUsageCounters, type CodexRequestUsageCheckpoint } from './codex-jsonl-parser';
 import { readCrushSessions } from '../opencode/usage-reader';
 import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
 import { aggregateByEnvironment } from './env-aggregator';
@@ -26,6 +26,11 @@ const WATCH_DEBOUNCE_MS = 300;
 const WATCH_POLL_INTERVAL_MS = 2_000;
 const RESCAN_INTERVAL_MS = 5 * 60 * 1_000;
 const USAGE_SCHEMA_VERSION = 2;
+const CODEX_USAGE_SCHEMA_VERSION = 3;
+
+function usageSchemaVersion(cliTool: string): number {
+  return cliTool === 'codex' ? CODEX_USAGE_SCHEMA_VERSION : USAGE_SCHEMA_VERSION;
+}
 
 interface TrackedSession {
   remote?: RemoteUsageSource;
@@ -45,6 +50,7 @@ interface TrackedSession {
    */
   lastSeenModel?: string | null;
   codexTokenUsage?: CodexTokenUsageCounters | null;
+  codexRequestUsage?: CodexRequestUsageCheckpoint | null;
 }
 
 function emptySessionUsage(sessionId: string, cliTool: CliToolId, environmentId?: string): SessionUsage {
@@ -109,7 +115,7 @@ function hydrateUsage(summary: PersistedSessionUsage, cliTool: CliToolId, enviro
 }
 
 function needsUsageReparse(summary: PersistedSessionUsage, filePath: string): boolean {
-  return summary.usageSchemaVersion !== USAGE_SCHEMA_VERSION
+  return summary.usageSchemaVersion !== usageSchemaVersion(summary.cliTool)
     && summary.cliTool !== 'opencode'
     && !!filePath
     && fs.existsSync(filePath);
@@ -291,12 +297,13 @@ export class UsageService {
           workingDir: summary.workingDir,
           filePath,
           remote: summary.remote,
-          remoteNeedsReparse: !!summary.remote && summary.usageSchemaVersion !== USAGE_SCHEMA_VERSION,
+          remoteNeedsReparse: !!summary.remote && summary.usageSchemaVersion !== usageSchemaVersion(cliTool),
           watching: false,
           debounceTimer: null,
           usage,
           lastSeenModel: summary.remote ? usage.currentModel ?? summary.lastSeenModel ?? null : usage.dayTiming === 'legacy' ? null : usage.currentModel ?? null,
           codexTokenUsage: summary.codexTokenUsage ?? null,
+          codexRequestUsage: summary.codexRequestUsage ?? null,
         });
         const tracked = this.tracked.get(summary.sessionId);
         if (tracked && needsUsageReparse(summary, filePath)) {
@@ -565,6 +572,7 @@ export class UsageService {
 
     this.tracked.set(sessionId, session);
     session.codexTokenUsage = persisted?.codexTokenUsage ?? null;
+    session.codexRequestUsage = persisted?.codexRequestUsage ?? null;
     if (persisted && needsUsageReparse(persisted, filePath)) {
       this.reparseSessionPreservingLegacy(session);
     }
@@ -598,7 +606,8 @@ export class UsageService {
       session = { sessionId, cliTool, workingDir, filePath: '', watching: false, debounceTimer: null,
         remote: saved?.remote ?? remote, usage, lastSeenModel: saved?.currentModel ?? saved?.lastSeenModel ?? null,
         codexTokenUsage: saved?.codexTokenUsage ?? null,
-        remoteNeedsReparse: !!saved && saved.usageSchemaVersion !== USAGE_SCHEMA_VERSION };
+        codexRequestUsage: saved?.codexRequestUsage ?? null,
+        remoteNeedsReparse: !!saved && saved.usageSchemaVersion !== usageSchemaVersion(cliTool) };
       this.tracked.set(sessionId, session);
     }
     if (session.remoteNeedsReparse) return { offset: 0, identity: '' };
@@ -617,6 +626,8 @@ export class UsageService {
         priorContextWindowTokens: session.usage.contextWindowTokens,
         priorContextUsedTokens: session.usage.contextUsedTokens,
         priorTokenUsage: session.codexTokenUsage,
+        nativeSessionId: session.remote.nativeSessionId,
+        priorRequestUsage: session.codexRequestUsage,
       })
       : null;
     const parsed = codexResult ?? parseClaudeUsageText(reply.text);
@@ -628,6 +639,7 @@ export class UsageService {
     if (codexResult) {
       session.lastSeenModel = codexResult.currentModel;
       session.codexTokenUsage = codexResult.tokenUsage;
+      session.codexRequestUsage = codexResult.requestUsage;
       session.usage.currentModel = codexResult.currentModel;
       session.usage.currentReasoningEffort = codexResult.currentReasoningEffort;
       session.usage.contextWindowTokens = codexResult.contextWindowTokens;
@@ -729,11 +741,14 @@ export class UsageService {
           priorContextWindowTokens: session.usage.contextWindowTokens ?? null,
           priorContextUsedTokens: session.usage.contextUsedTokens ?? null,
           priorTokenUsage: session.codexTokenUsage ?? null,
+          nativeSessionId: session.sessionId,
+          priorRequestUsage: session.codexRequestUsage ?? null,
         });
         if (result.messages.length > 0 || result.newByteOffset !== session.usage.parsedByteOffset) {
           session.usage = mergeMessages(session.usage, result.messages, result.newByteOffset);
           session.lastSeenModel = result.currentModel;
           session.codexTokenUsage = result.tokenUsage;
+          session.codexRequestUsage = result.requestUsage;
           session.usage.dayTiming = 'event';
           session.usage.workingDir = session.workingDir;
           session.usage.currentModel = result.currentModel ?? session.usage.currentModel ?? null;
@@ -751,9 +766,11 @@ export class UsageService {
           || result.contextUsedTokens !== session.usage.contextUsedTokens
           || (result.observedAt !== null && result.observedAt !== session.usage.observedAt)
           || result.tokenUsage !== session.codexTokenUsage
+          || result.requestUsage !== session.codexRequestUsage
         ) {
           session.lastSeenModel = result.currentModel;
           session.codexTokenUsage = result.tokenUsage;
+          session.codexRequestUsage = result.requestUsage;
           session.usage.currentModel = result.currentModel;
           session.usage.currentReasoningEffort = result.currentReasoningEffort;
           session.usage.contextWindowTokens = result.contextWindowTokens;
@@ -877,13 +894,14 @@ export class UsageService {
       currentReasoningEffort: session.usage.currentReasoningEffort ?? null,
       contextWindowTokens: session.usage.contextWindowTokens ?? null,
       codexTokenUsage: session.codexTokenUsage ?? null,
+      codexRequestUsage: session.codexRequestUsage ?? null,
       messageCount: session.usage.messageCount,
       firstMessageAt: session.usage.firstMessageAt,
       lastMessageAt: session.usage.lastMessageAt,
       parsedByteOffset: session.usage.parsedByteOffset,
     };
     if (markSchemaComplete) {
-      entry.usageSchemaVersion = USAGE_SCHEMA_VERSION;
+      entry.usageSchemaVersion = usageSchemaVersion(session.cliTool);
     }
 
     const idx = db.usageSummaries.findIndex(s => s.sessionId === session.sessionId);
@@ -940,18 +958,21 @@ export class UsageService {
     session.usage = resetUsageForReparse(session.usage);
     session.lastSeenModel = null;
     session.codexTokenUsage = null;
+    session.codexRequestUsage = null;
   }
 
   private reparseSessionPreservingLegacy(session: TrackedSession): boolean {
     const previousUsage = session.usage;
     const previousLastSeenModel = session.lastSeenModel ?? null;
     const previousCodexTokenUsage = session.codexTokenUsage ?? null;
+    const previousCodexRequestUsage = session.codexRequestUsage ?? null;
     this.resetTrackedSessionForReparse(session);
     const parsed = this.parseSession(session);
     if (!parsed) {
       session.usage = { ...previousUsage, dayTiming: 'legacy' };
       session.lastSeenModel = previousUsage.dayTiming === 'legacy' ? null : previousLastSeenModel;
       session.codexTokenUsage = previousCodexTokenUsage;
+      session.codexRequestUsage = previousCodexRequestUsage;
       this.persistSession(session, false);
       return false;
     }

@@ -14,6 +14,8 @@ export interface CodexParseInput {
   priorContextWindowTokens?: number | null;
   priorContextUsedTokens?: number | null;
   priorTokenUsage?: CodexTokenUsageCounters | null;
+  nativeSessionId?: string | null;
+  priorRequestUsage?: CodexRequestUsageCheckpoint | null;
 }
 
 export interface CodexParseResult {
@@ -26,6 +28,13 @@ export interface CodexParseResult {
   contextUsedTokens: number | null;
   observedAt: string | null;
   tokenUsage: CodexTokenUsageCounters | null;
+  requestUsage: CodexRequestUsageCheckpoint | null;
+}
+
+/** Request totals survive compaction; token_count totals describe the CLI context. */
+export interface CodexRequestUsageCheckpoint {
+  nativeSessionId: string;
+  tokenUsage: CodexTokenUsageCounters;
 }
 
 export interface CodexTokenUsageCounters {
@@ -34,6 +43,16 @@ export interface CodexTokenUsageCounters {
   outputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
+  cacheWriteInputTokens?: number;
+}
+
+interface RequestUsageEntry {
+  timestamp?: unknown;
+  payload?: {
+    thread_id?: unknown;
+    usage?: unknown;
+    thread_token_usage?: unknown;
+  };
 }
 
 interface TurnContextEntry {
@@ -90,15 +109,18 @@ interface TaskStartedEntry {
  * `payload.type` is `token_count`; the accompanying `last_token_usage`
  * carries token counts. Newer Codex emits cumulative `total_token_usage`,
  * which we diff against the last persisted counters so repeated snapshots do
- * not double-count after incremental parses or app restarts. Older transcripts
- * fall back to `last_token_usage` as a per-event delta. The active
+ * not double-count after incremental parses or app restarts. Newer transcripts
+ * also contain token_usage_record entries: those per-request counts include
+ * compaction requests absent from token_count and take over cost accounting.
+ * Their independent thread totals deduplicate request replays across restarts.
+ * Older transcripts fall back to token_count. The active
  * model is published in `turn_context` lines and applies to every
  * subsequent `token_count` until the next `turn_context`.
  *
  * Cache semantics differ from Claude: Codex exposes cached input reads
- * (`cached_input_tokens`) but not cache creation, so the 5m/1h fields are
- * always 0. `input_tokens` already includes the cached portion, so we
- * subtract `cached_input_tokens` to keep `inputTokens` non-cached for cost
+ * (`cached_input_tokens`) and, in request records, cache writes. Input tokens
+ * already include both cached portions, so we subtract cache reads and writes
+ * to keep `inputTokens` non-cached for cost
  * calculation. `reasoning_output_tokens` is a subset of `output_tokens`, so it
  * is retained as a separate metric but never added to billable output.
  */
@@ -119,6 +141,7 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
         contextUsedTokens: input.priorContextUsedTokens ?? null,
         observedAt: null,
         tokenUsage: input.priorTokenUsage ?? null,
+        requestUsage: input.priorRequestUsage ?? null,
       };
     }
 
@@ -139,6 +162,7 @@ export function parseCodexJsonl(filePath: string, input: CodexParseInput): Codex
         contextUsedTokens: input.priorContextUsedTokens ?? null,
         observedAt: null,
         tokenUsage: input.priorTokenUsage ?? null,
+        requestUsage: input.priorRequestUsage ?? null,
       };
     }
     throw err;
@@ -164,6 +188,7 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
         contextUsedTokens: input.priorContextUsedTokens ?? null,
         observedAt: null,
         tokenUsage: input.priorTokenUsage ?? null,
+        requestUsage: input.priorRequestUsage ?? null,
       };
     }
     usableText = text.slice(0, lastNewline + 1);
@@ -177,6 +202,8 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
   let contextUsedTokens = input.priorContextUsedTokens ?? null;
   let observedAt: string | null = null;
   let tokenUsage = input.priorTokenUsage ?? null;
+  let requestUsage = input.priorRequestUsage ?? null;
+  let nativeSessionId = input.nativeSessionId ?? requestUsage?.nativeSessionId ?? null;
 
   for (const line of usableText.split('\n')) {
     if (!line.startsWith('{')) continue;
@@ -186,6 +213,13 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
     if (!parsed || typeof parsed !== 'object') continue;
 
     const type = (parsed as { type?: string }).type;
+
+    if (type === 'session_meta') {
+      const id = (parsed as { payload?: { id?: unknown } }).payload?.id;
+      // Forked transcripts can contain the parent's header after their own.
+      if (!nativeSessionId && typeof id === 'string' && id) nativeSessionId = id;
+      continue;
+    }
 
     if (type === 'turn_context') {
       const payload = (parsed as TurnContextEntry).payload;
@@ -199,6 +233,28 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
         contextWindowTokens = windowTokens;
       }
       if (timestamp) observedAt = timestamp;
+      continue;
+    }
+
+    if (type === 'token_usage_record') {
+      const entry = parsed as RequestUsageEntry;
+      const timestamp = validTimestamp(entry.timestamp);
+      const threadId = entry.payload?.thread_id;
+      const usage = toTokenUsage(entry.payload?.usage);
+      const cumulative = toTokenUsage(entry.payload?.thread_token_usage);
+      if (!timestamp || typeof threadId !== 'string' || !threadId || !usage || !cumulative) continue;
+      if (nativeSessionId && threadId !== nativeSessionId) continue;
+      if (!countersCover(cumulative, usage)) continue;
+      nativeSessionId = threadId;
+
+      // A separate monotonic checkpoint is essential: compaction resets the
+      // context counters but does not reset the request ledger. Older/repeated
+      // snapshots never become new spend, including after an app restart.
+      if (requestUsage && cumulative.totalTokens <= requestUsage.tokenUsage.totalTokens) continue;
+      const alreadyCounted = !requestUsage && tokenUsage && countersCover(tokenUsage, cumulative);
+      requestUsage = { nativeSessionId: threadId, tokenUsage: cumulative };
+      observedAt = timestamp;
+      if (!alreadyCounted) messages.push(usageMessage(usage, currentModel, timestamp));
       continue;
     }
 
@@ -230,11 +286,6 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
       tokenUsage = cumulativeUsage;
     }
 
-    const rawInput = usageDelta.inputTokens;
-    const cacheRead = usageDelta.cachedInputTokens;
-    const inputTokens = Math.max(0, rawInput - cacheRead);
-    const outputTokens = usageDelta.outputTokens;
-    const reasoningTokens = usageDelta.reasoningOutputTokens;
     const requestTotal = lastUsage?.totalTokens ?? 0;
     if (requestTotal > 0) contextUsedTokens = requestTotal;
     observedAt = timestamp;
@@ -245,22 +296,10 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
 
     // Skip empty deltas — the first token_count after session_meta sometimes
     // has zeros while the rate-limit info is the only payload of interest.
-    if (inputTokens === 0 && cacheRead === 0 && outputTokens === 0 && reasoningTokens === 0) continue;
-
-    const model = currentModel || 'unknown';
-    const cost = calculateMessageCost(model, inputTokens, outputTokens, 0, 0, cacheRead);
-
-    messages.push({
-      model,
-      inputTokens,
-      outputTokens,
-      reasoningTokens,
-      cacheCreation5m: 0,
-      cacheCreation1h: 0,
-      cacheReadTokens: cacheRead,
-      timestamp,
-      cost,
-    });
+    // Retain context metadata from token_count even when requests own billing.
+    if (!requestUsage && usageDelta.totalTokens > 0) {
+      messages.push(usageMessage(usageDelta, currentModel, timestamp));
+    }
   }
 
   return {
@@ -272,7 +311,30 @@ export function parseCodexUsageText(text: string, input: CodexParseInput): Codex
     contextUsedTokens,
     observedAt,
     tokenUsage,
+    requestUsage,
   };
+}
+
+function usageMessage(usage: CodexTokenUsageCounters, currentModel: string | null, timestamp: string): ParsedMessage {
+  const model = currentModel || 'unknown';
+  const cacheReadTokens = usage.cachedInputTokens;
+  const cacheCreation5m = usage.cacheWriteInputTokens ?? 0;
+  const inputTokens = Math.max(0, usage.inputTokens - cacheReadTokens - cacheCreation5m);
+  return {
+    model, inputTokens, outputTokens: usage.outputTokens,
+    reasoningTokens: usage.reasoningOutputTokens,
+    cacheCreation5m, cacheCreation1h: 0, cacheReadTokens, timestamp,
+    cost: calculateMessageCost(model, inputTokens, usage.outputTokens, cacheCreation5m, 0, cacheReadTokens),
+  };
+}
+
+function countersCover(total: CodexTokenUsageCounters, part: CodexTokenUsageCounters): boolean {
+  return total.totalTokens >= part.totalTokens
+    && total.inputTokens >= part.inputTokens
+    && total.cachedInputTokens >= part.cachedInputTokens
+    && total.outputTokens >= part.outputTokens
+    && total.reasoningOutputTokens >= part.reasoningOutputTokens
+    && (total.cacheWriteInputTokens ?? 0) >= (part.cacheWriteInputTokens ?? 0);
 }
 
 function validTimestamp(value: unknown): string | null {
@@ -296,6 +358,7 @@ function toTokenUsage(value: unknown): CodexTokenUsageCounters | null {
   const record = value as Record<string, unknown>;
   const inputTokens = optionalCounter(record.input_tokens) ?? 0;
   const cachedInputTokens = optionalCounter(record.cached_input_tokens) ?? 0;
+  const cacheWriteInputTokens = optionalCounter(record.cache_write_input_tokens) ?? 0;
   const outputTokens = optionalCounter(record.output_tokens) ?? 0;
   const reasoningOutputTokens = optionalCounter(record.reasoning_output_tokens) ?? 0;
   const explicitTotal = optionalCounter(record.total_tokens);
@@ -305,10 +368,11 @@ function toTokenUsage(value: unknown): CodexTokenUsageCounters | null {
   if (
     optionalCounter(record.input_tokens) === null && record.input_tokens !== undefined
     || optionalCounter(record.cached_input_tokens) === null && record.cached_input_tokens !== undefined
+    || optionalCounter(record.cache_write_input_tokens) === null && record.cache_write_input_tokens !== undefined
     || optionalCounter(record.output_tokens) === null && record.output_tokens !== undefined
     || optionalCounter(record.reasoning_output_tokens) === null && record.reasoning_output_tokens !== undefined
     || explicitTotal === null && record.total_tokens !== undefined
-    || cachedInputTokens > inputTokens
+    || cachedInputTokens + cacheWriteInputTokens > inputTokens
     || reasoningOutputTokens > outputTokens
     || (explicitTotal !== null && explicitTotal !== inputTokens + outputTokens)
   ) {
@@ -320,6 +384,7 @@ function toTokenUsage(value: unknown): CodexTokenUsageCounters | null {
     outputTokens,
     reasoningOutputTokens,
     totalTokens: explicitTotal ?? inputTokens + outputTokens,
+    ...(cacheWriteInputTokens > 0 ? { cacheWriteInputTokens } : {}),
   };
 }
 
@@ -333,7 +398,7 @@ function diffCumulativeUsage(current: CodexTokenUsageCounters, previous: CodexTo
       cachedInputTokens: 0,
       outputTokens: 0,
       reasoningOutputTokens: 0,
-      totalTokens: current.totalTokens,
+      totalTokens: 0,
     };
   }
   return {
@@ -341,6 +406,9 @@ function diffCumulativeUsage(current: CodexTokenUsageCounters, previous: CodexTo
     cachedInputTokens: Math.max(0, current.cachedInputTokens - previous.cachedInputTokens),
     outputTokens: Math.max(0, current.outputTokens - previous.outputTokens),
     reasoningOutputTokens: Math.max(0, current.reasoningOutputTokens - previous.reasoningOutputTokens),
-    totalTokens: current.totalTokens,
+    totalTokens: current.totalTokens - previous.totalTokens,
+    ...((current.cacheWriteInputTokens ?? 0) > (previous.cacheWriteInputTokens ?? 0)
+      ? { cacheWriteInputTokens: (current.cacheWriteInputTokens ?? 0) - (previous.cacheWriteInputTokens ?? 0) }
+      : {}),
   };
 }
