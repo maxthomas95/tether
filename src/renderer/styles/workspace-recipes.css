@@ -9,12 +9,12 @@
 .workspace-recipes-alert {
   margin: var(--space-3) var(--space-4) 0;
   color: var(--text-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--text-sm);
 }
 
 .workspace-recipes-alert,
 .workspace-recipes-row-error {
-  color: var(--color-danger, #ef4444);
+  color: var(--status-dead);
 }
 
 .workspace-recipes-grid {
@@ -68,14 +68,14 @@
 .workspace-recipes-empty,
 .workspace-recipes-panel,
 .workspace-recipes-slot {
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-elevated);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--surface-2);
+  border-radius: 8px;
 }
 
 .workspace-recipes-item--selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-muted);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .workspace-recipes-item-main {
@@ -98,7 +98,7 @@
 }
 
 .workspace-recipes-item-name {
-  font-weight: var(--font-weight-semibold);
+  font-weight: 600;
 }
 
 .workspace-recipes-item-main span:not(.workspace-recipes-item-name),
@@ -109,7 +109,7 @@
 .workspace-recipes-empty span,
 .workspace-recipes-placeholder p {
   color: var(--text-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--text-sm);
 }
 
 .workspace-recipes-item-actions,
@@ -130,9 +130,9 @@
 .workspace-recipes-item-actions button,
 .workspace-recipes-inline-edit button,
 .workspace-recipes-selection-header button {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-hover);
   color: var(--text-primary);
   padding: var(--space-1) var(--space-2);
 }
@@ -166,16 +166,16 @@
   gap: var(--space-1);
 }
 
-.workspace-recipes-field input,
+.workspace-recipes-field input:not([type="checkbox"]),
 .workspace-recipes-field select,
-.workspace-recipes-inline-edit input,
-.workspace-recipes-panel input,
+.workspace-recipes-inline-edit input:not([type="checkbox"]),
+.workspace-recipes-panel input:not([type="checkbox"]),
 .workspace-recipes-panel select {
   width: 100%;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-base);
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
   color: var(--text-primary);
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   padding: var(--space-2);
 }
 
@@ -191,8 +191,8 @@
   align-items: start;
   gap: var(--space-2);
   padding: var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
 }
 
 .workspace-recipes-current-list span {
@@ -212,9 +212,9 @@
 .workspace-recipes-started {
   border-radius: 999px;
   padding: var(--space-1) var(--space-2);
-  background: var(--accent-muted);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
-  font-size: var(--font-size-sm);
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 
@@ -225,18 +225,40 @@
 
 .workspace-recipes-slot {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(150px, 1fr) minmax(140px, 0.8fr);
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.85fr);
   gap: var(--space-3);
   padding: var(--space-3);
   align-items: end;
 }
 
 .workspace-recipes-slot-check {
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: var(--space-2);
   align-items: center;
-  font-weight: var(--font-weight-semibold);
+  min-width: 0;
+  font-weight: 600;
+}
+
+
+.workspace-recipes-slot-check input[type="checkbox"],
+.workspace-recipes-current-list input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+}
+
+.workspace-recipes-slot-title,
+.workspace-recipes-slot-check span,
+.workspace-recipes-field input,
+.workspace-recipes-field select {
+  min-width: 0;
+}
+
+.workspace-recipes-slot-title,
+.workspace-recipes-field input {
+  overflow-wrap: anywhere;
 }
 
 .workspace-recipes-slot-meta,
@@ -251,8 +273,8 @@
 }
 
 .workspace-recipes-warning {
-  color: var(--color-warning, #eab308);
-  font-size: var(--font-size-sm);
+  color: var(--status-waiting);
+  font-size: var(--text-sm);
 }
 
 .workspace-recipes-actions {
