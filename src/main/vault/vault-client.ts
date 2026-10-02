@@ -1,5 +1,5 @@
 import { net } from 'electron';
-import { trimBoundaryCharacter, trimTrailingCharacter } from '../../shared/string-trim';
+import { trimBoundaryCharacter } from '../../shared/string-trim';
 import {
   KvReadResult,
   OidcAuthUrlResponse,
@@ -11,6 +11,20 @@ export interface VaultClientOptions {
   addr: string;
   namespace?: string;
   token?: string;
+}
+
+/** Credentials are only sent to an explicit TLS endpoint (or loopback dev Vault). */
+export function normalizeVaultAddr(addr: string): string {
+  let url: URL;
+  try { url = new URL(addr); } catch { throw new VaultError('Invalid Vault address'); }
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+    throw new VaultError('Vault requires HTTPS; HTTP is only allowed on loopback');
+  }
+  if (url.username || url.password || url.search || url.hash || /[^/]/.test(url.pathname)) {
+    throw new VaultError('Vault address must be an origin without credentials, path, query or fragment');
+  }
+  return url.origin;
 }
 
 interface VaultErrorEnvelope {
@@ -35,7 +49,7 @@ export class VaultClient {
   private token: string | undefined;
 
   constructor(opts: VaultClientOptions) {
-    this.addr = trimTrailingCharacter(opts.addr, '/');
+    this.addr = normalizeVaultAddr(opts.addr);
     this.namespace = opts.namespace || undefined;
     this.token = opts.token;
   }
@@ -165,6 +179,8 @@ export class VaultClient {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
+        redirect: 'error',
+        signal: AbortSignal.timeout(30_000),
       });
     } catch (err) {
       throw new VaultError(

@@ -2,6 +2,7 @@ import { app } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { atomicWriteFileSync, cleanupOrphanTmp } from './atomic-write';
+import { migrateStoredCredentials } from './credential-migration';
 import { createLogger } from '../logger';
 import type { CliToolId } from '../../shared/cli-tools';
 import type { RepoGroupPref, SessionOrderPref } from '../../shared/types';
@@ -391,9 +392,10 @@ export function getDb(): DbData {
     data = emptyDbData();
     return data;
   }
+  let loadedData: DbData;
   try {
     const loaded = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Record<string, unknown>;
-    data = migrateLoadedDb(loaded);
+    loadedData = migrateLoadedDb(loaded);
   } catch (err) {
     try {
       moveCorruptDbAside(filePath, err);
@@ -405,8 +407,15 @@ export function getDb(): DbData {
       });
       throw err;
     }
-    data = emptyDbData();
+    loadedData = emptyDbData();
   }
+  // Keychain or write failures are not corruption: preserve the original and
+  // fail visibly without caching a partially migrated database or a plaintext backup.
+  const migrated = migrateStoredCredentials(loadedData);
+  if (JSON.stringify(migrated) !== JSON.stringify(loadedData)) {
+    atomicWriteFileSync(filePath, JSON.stringify(migrated, null, 2));
+  }
+  data = migrated;
   return data;
 }
 

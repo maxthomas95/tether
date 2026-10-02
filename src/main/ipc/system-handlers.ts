@@ -1,5 +1,6 @@
+import { createTrustedIpc } from './trusted-ipc';
 import { execFile } from 'node:child_process';
-import { app, ipcMain, dialog, shell } from 'electron';
+import { app, dialog, shell } from 'electron';
 import { IPC } from '../../shared/constants';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 import { createLogger } from '../logger';
@@ -28,16 +29,17 @@ function commandExists(command: string): Promise<boolean> {
 }
 
 export function registerSystemHandlers(ctx: HandlerContext): void {
+  const ipc = createTrustedIpc(ctx.mainWindow);
   const { mainWindow } = ctx;
 
-  ipcMain.handle(IPC.UPDATE_CHECK, async () => {
+  ipc.handle(IPC.UPDATE_CHECK, async () => {
     const { getDb } = await import('../db/database');
     const { checkForUpdates } = await import('../update/update-checker');
     const channel = getDb().config.updateChannel === 'beta' ? 'beta' as const : 'stable' as const;
     return checkForUpdates(channel);
   });
 
-  ipcMain.handle(IPC.UPDATE_OPEN_RELEASE_PAGE, async (_event, url: string) => {
+  ipc.handle(IPC.UPDATE_OPEN_RELEASE_PAGE, async (_event, url: string) => {
     if (typeof url !== 'string' || url.length > 2048) return;
     let releaseUrl: URL;
     try {
@@ -58,7 +60,7 @@ export function registerSystemHandlers(ctx: HandlerContext): void {
     await shell.openExternal(releaseUrl.href); // NOSONAR
   });
 
-  ipcMain.handle(IPC.SHELL_OPEN_EXTERNAL, async (_event, url: string) => {
+  ipc.handle(IPC.SHELL_OPEN_EXTERNAL, async (_event, url: string) => {
     if (typeof url !== 'string' || url.length > 2048) {
       log.warn('Refusing to open URL: invalid or too long', { length: typeof url === 'string' ? url.length : -1 });
       return;
@@ -81,14 +83,14 @@ export function registerSystemHandlers(ctx: HandlerContext): void {
     await shell.openExternal(parsed.href); // NOSONAR
   });
 
-  ipcMain.handle(IPC.SHELL_COMMAND_EXISTS, async (_event, command: string) => {
+  ipc.handle(IPC.SHELL_COMMAND_EXISTS, async (_event, command: string) => {
     if (typeof command !== 'string' || command.length > 512) return false;
     return commandExists(command);
   });
 
   // === Diagnostics export ===
 
-  ipcMain.handle(IPC.DIAGNOSTICS_EXPORT, async () => {
+  ipc.handle(IPC.DIAGNOSTICS_EXPORT, async () => {
     const { exportDiagnostics, defaultExportFilename } = await import('../diagnostics/diagnostics-service');
     const result = await dialog.showSaveDialog(mainWindow, {
       title: 'Export diagnostics',
@@ -99,7 +101,7 @@ export function registerSystemHandlers(ctx: HandlerContext): void {
     return exportDiagnostics(result.filePath);
   });
 
-  ipcMain.handle(IPC.DIAGNOSTICS_OPEN_USER_DATA_FOLDER, async () => {
+  ipc.handle(IPC.DIAGNOSTICS_OPEN_USER_DATA_FOLDER, async () => {
     const target = app.getPath('userData');
     const err = await shell.openPath(target);
     if (err) {
@@ -109,7 +111,7 @@ export function registerSystemHandlers(ctx: HandlerContext): void {
     return { ok: true, path: target };
   });
 
-  ipcMain.handle(IPC.DIAGNOSTICS_OPEN_LOGS_FOLDER, async () => {
+  ipc.handle(IPC.DIAGNOSTICS_OPEN_LOGS_FOLDER, async () => {
     const target = app.getPath('logs');
     const err = await shell.openPath(target);
     if (err) {

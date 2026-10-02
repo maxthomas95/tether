@@ -1,4 +1,5 @@
-import { ipcMain, app, dialog } from 'electron';
+import { createTrustedIpc } from './trusted-ipc';
+import { app, dialog } from 'electron';
 import { IPC } from '../../shared/constants';
 import type {
   QuotaInfo,
@@ -15,6 +16,7 @@ import type { HandlerContext } from './helpers';
 const log = createLogger('ipc:usage');
 
 export function registerUsageHandlers(ctx: HandlerContext): void {
+  const ipc = createTrustedIpc(ctx.mainWindow);
   const { mainWindow, send } = ctx;
 
   // === Quota ===
@@ -23,15 +25,15 @@ export function registerUsageHandlers(ctx: HandlerContext): void {
     send(IPC.QUOTA_UPDATED, info);
   });
 
-  ipcMain.handle(IPC.QUOTA_GET, async (): Promise<QuotaInfo> => {
+  ipc.handle(IPC.QUOTA_GET, async (): Promise<QuotaInfo> => {
     return quotaService.getQuota();
   });
 
-  ipcMain.handle(IPC.QUOTA_REFRESH, async (): Promise<QuotaInfo> => {
+  ipc.handle(IPC.QUOTA_REFRESH, async (): Promise<QuotaInfo> => {
     return quotaService.fetchQuota();
   });
 
-  ipcMain.handle(IPC.QUOTA_SET_ENABLED, async (_event, enabled: boolean): Promise<void> => {
+  ipc.handle(IPC.QUOTA_SET_ENABLED, async (_event, enabled: boolean): Promise<void> => {
     quotaService.setEnabled(enabled);
   });
 
@@ -41,19 +43,19 @@ export function registerUsageHandlers(ctx: HandlerContext): void {
     send(IPC.USAGE_UPDATED, info);
   });
 
-  ipcMain.handle(IPC.USAGE_GET_SESSION, async (_event, sessionId: string): Promise<SessionUsage | null> => {
+  ipc.handle(IPC.USAGE_GET_SESSION, async (_event, sessionId: string): Promise<SessionUsage | null> => {
     return usageService.getSessionUsage(sessionId);
   });
 
-  ipcMain.handle(IPC.USAGE_GET_ALL, async (): Promise<UsageInfo> => {
+  ipc.handle(IPC.USAGE_GET_ALL, async (): Promise<UsageInfo> => {
     return usageService.getAll();
   });
 
-  ipcMain.handle(IPC.USAGE_REFRESH, async (_event, sessionId?: string): Promise<UsageInfo> => {
+  ipc.handle(IPC.USAGE_REFRESH, async (_event, sessionId?: string): Promise<UsageInfo> => {
     return usageService.refresh(sessionId);
   });
 
-  ipcMain.handle(IPC.USAGE_EXPORT, async (_event, format: UsageExportFormat): Promise<UsageExportResult> => {
+  ipc.handle(IPC.USAGE_EXPORT, async (_event, format: UsageExportFormat): Promise<UsageExportResult> => {
     const fmt: UsageExportFormat = format === 'json' ? 'json' : 'csv';
     const stamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const defaultName = `tether-usage-${stamp}.${fmt}`;

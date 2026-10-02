@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { decodeLaunchPayload } from './remote-bootstrap.test-helper';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { bootstrapReady } from './remote-bootstrap.test-helper';
 import { createTransportOptions, getPtySpawnSpy, setupPtyTransportTest } from './transport-test-utils.test-helper';
 
 // See local-transport.test.ts: mock resolution so win32 branch tests are
@@ -17,12 +19,49 @@ const baseOptions = createTransportOptions('workspace1');
 const ptySpawnSpy = getPtySpawnSpy();
 
 describe('CoderTransport', () => {
+  afterEach(() => vi.useRealTimers());
+  it('sends no launch data until the echo-off marker and preserves every output byte', async () => {
+    platform.set('linux'); ptyHarness.setAutoReady(false);
+    const transport = new CoderTransport(); const output = vi.fn(); transport.onData(output);
+    const starting = transport.start(baseOptions({ env: { CONNECTION_STRING: 'Password=fixture-secret' } }));
+    const process = ptyHarness.current!;
+    expect(process.write).toHaveBeenCalledOnce();
+    const first = process.write.mock.calls[0][0];
+    expect(first).not.toContain('fixture-secret');
+    const marker = bootstrapReady(first)!;
+    process.emitData('login prompt and command echo');
+    process.emitData(marker.slice(0, 13));
+    expect(process.write).toHaveBeenCalledOnce();
+    process.emitData(marker.slice(13)); await starting;
+    expect(decodeLaunchPayload(process.write.mock.calls)).toContain('Password=fixture-secret');
+    expect(output.mock.calls.map(call => call[0]).join('')).toBe('login prompt and command echo' + marker);
+    transport.dispose();
+  });
+
+  it('times out and tears down without sending credentials when echo-off never succeeds', async () => {
+    platform.set('linux'); ptyHarness.setAutoReady(false); vi.useFakeTimers();
+    const transport = new CoderTransport();
+    const rejected = expect(transport.start(baseOptions({ env: { TOKEN: 'fixture-secret' } }))).rejects.toThrow('timed out');
+    const process = ptyHarness.current!;
+    await vi.advanceTimersByTimeAsync(15_000); await rejected;
+    expect(process.write).toHaveBeenCalledOnce(); expect(process.kill).toHaveBeenCalledOnce();
+    expect(transport.connected).toBe(false);
+  });
+
+  it('rejects pending setup when the PTY exits or the session is cancelled', async () => {
+    platform.set('linux'); ptyHarness.setAutoReady(false);
+    const transport = new CoderTransport(); const starting = transport.start(baseOptions());
+    const rejected = expect(starting).rejects.toThrow('exited');
+    ptyHarness.current!.emitExit({ exitCode: 1 }); await rejected;
+    const next = transport.start(baseOptions()); const cancelled = expect(next).rejects.toThrow('cancelled');
+    transport.kill(); await cancelled;
+  });
   it('exits maintenance shells with the command status and preserves exact argv', async () => {
     platform.set('linux');
     await new CoderTransport().start(baseOptions({ cliTool: 'claude', toolSessionId: 'ignored',
       command: { file: 'tool', args: ['--home', '/path with spaces', 'update'] }, exitAfterCommand: true }));
-    const writes = ptyHarness.current!.write.mock.calls.map(c => c[0]).join('');
-    expect(writes).toBe(`'tool' '--home' '/path with spaces' 'update'; exit "$?"\n`);
+    const writes = decodeLaunchPayload(ptyHarness.current!.write.mock.calls);
+    expect(writes).toContain(`'tool' '--home' '/path with spaces' 'update'; tether_status=$?; exit "$tether_status"`);
   });
   const { ptyHarness, platform } = setupPtyTransportTest();
 
@@ -51,7 +90,7 @@ describe('CoderTransport', () => {
     const [, args] = ptySpawnSpy.mock.calls[0];
     expect(args).toEqual(['ssh', 'ws-prod']);
     // Subdir gets cd'd into via the optimistic write to the PTY
-    const writes = ptyHarness.current!.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(ptyHarness.current!.write.mock.calls);
     expect(writes).toContain("cd 'repos/tether'");
   });
 
@@ -60,7 +99,7 @@ describe('CoderTransport', () => {
     await new CoderTransport().start(baseOptions({ workingDir: 'ws-prod' }));
     const [, args] = ptySpawnSpy.mock.calls[0];
     expect(args).toEqual(['ssh', 'ws-prod']);
-    const writes = ptyHarness.current!.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(ptyHarness.current!.write.mock.calls);
     expect(writes).not.toContain('cd ');
   });
 
@@ -68,7 +107,7 @@ describe('CoderTransport', () => {
     platform.set('linux');
     await new CoderTransport().start(baseOptions({ workingDir: 'ws::/work', cliTool, binaryName: cliTool,
       toolSessionId: 'saved-id', resumeToolSessionId: 'saved-id' }));
-    const writes = ptyHarness.current!.write.mock.calls.map(c => c[0]).join('');
+    const writes = decodeLaunchPayload(ptyHarness.current!.write.mock.calls);
     expect(writes).toContain("cd '/work'");
     expect(writes).toContain(cliTool === 'claude'
       ? "'claude' '--resume' 'saved-id'" : "'codex' 'resume' 'saved-id'");
@@ -116,7 +155,7 @@ describe('CoderTransport', () => {
   it('preserves a leading ~ in the subdir path (for remote shell expansion)', async () => {
     platform.set('linux');
     await new CoderTransport().start(baseOptions({ workingDir: 'ws::~/code/foo' }));
-    const writes = ptyHarness.current!.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(ptyHarness.current!.write.mock.calls);
     // ~ stays unquoted, the rest gets shell-quoted
     expect(writes).toContain("cd ~/'code/foo'");
   });
@@ -127,7 +166,7 @@ describe('CoderTransport', () => {
       workingDir: 'ws',
       env: { TRICKY: "it's $weird" },
     }));
-    const writes = ptyHarness.current!.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(ptyHarness.current!.write.mock.calls);
     // The whole NAME=value pair is one argv word to env(1).
     expect(writes).toContain(`'TRICKY=it'\\''s $weird'`);
   });
@@ -147,7 +186,7 @@ describe('CoderTransport', () => {
       workingDir: 'ws::repos/proj',
       cloneUrl: 'https://github.com/example/proj.git',
     }));
-    const writes = ptyHarness.current!.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(ptyHarness.current!.write.mock.calls);
     expect(writes).toContain("[ -d 'repos/proj' ] || GIT_ALLOW_PROTOCOL=https:ssh git clone -- 'https://github.com/example/proj.git' 'repos/proj'");
   });
 
@@ -166,7 +205,7 @@ describe('CoderTransport', () => {
       workingDir: 'ws',
       initialPrompt: 'fix it pls',
     }));
-    const writes = ptyHarness.current!.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(ptyHarness.current!.write.mock.calls);
     expect(writes).toContain("'claude' 'fix it pls'");
   });
 
@@ -179,6 +218,7 @@ describe('CoderTransport', () => {
     t.onExit(exitCb);
     await t.start(baseOptions());
 
+    dataCb.mockClear();
     ptyHarness.current!.emitData('hello');
     expect(dataCb).toHaveBeenCalledWith('hello');
 

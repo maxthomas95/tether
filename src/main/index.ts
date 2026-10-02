@@ -1,5 +1,7 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import path from 'node:path';
+import { createTrustedIpc } from './ipc/trusted-ipc';
+import { isAllowedAppNavigation, hardenOfficeGuest } from './window-security';
 import squirrelStartup from 'electron-squirrel-startup';
 import { installProcessGuards } from './process-guards';
 import { registerIpcHandlers } from './ipc/handlers';
@@ -59,19 +61,6 @@ function buildDocsQuery(themeName: string, target?: DocsOpenTarget): string {
   if (target?.page) parts.push(`page=${encodeURIComponent(target.page)}`);
   if (target?.anchor) parts.push(`anchor=${encodeURIComponent(target.anchor)}`);
   return parts.join('&');
-}
-
-function isAllowedAppNavigation(url: string, htmlFile: string, devServerUrl?: string): boolean {
-  try {
-    const parsed = new URL(url);
-    if (devServerUrl) {
-      const dev = new URL(devServerUrl);
-      return parsed.origin === dev.origin;
-    }
-    return parsed.protocol === 'file:' && decodeURIComponent(parsed.pathname).replace(/\\/g, '/').endsWith(`/${htmlFile}`);
-  } catch {
-    return false;
-  }
 }
 
 function openExternalWebUrl(url: string): void {
@@ -143,10 +132,11 @@ function createDocsWindow(target?: DocsOpenTarget): void {
       preload: path.join(__dirname, 'docs-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
-  hardenNavigation(docsWindow, 'docs-window.html', DOCS_WINDOW_VITE_DEV_SERVER_URL);
+  hardenNavigation(docsWindow, path.join(__dirname, `../renderer/${DOCS_WINDOW_VITE_NAME}/docs-window.html`), DOCS_WINDOW_VITE_DEV_SERVER_URL ? new URL('docs-window.html', DOCS_WINDOW_VITE_DEV_SERVER_URL + '/').href : undefined);
 
   docsWindow.once('ready-to-show', () => {
     docsWindow?.show();
@@ -200,13 +190,15 @@ const createWindow = () => {
       // Note: preload.js is built from src/preload/preload.ts
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       // Required for the J.O.B.S. Office pane (<webview> guest page). The
       // guest has no preload and no node integration — it's a plain web page.
       webviewTag: true,
     },
   });
 
-  hardenNavigation(mainWindow, 'index.html', MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  hardenNavigation(mainWindow, path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`), MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  hardenOfficeGuest(mainWindow);
 
   // Block browser-style refresh shortcuts (Ctrl+R, Ctrl+Shift+R, F5).
   // Tether isn't a website — an accidental refresh disconnects the renderer
@@ -286,7 +278,7 @@ const createWindow = () => {
   sessionManager.setNotifier(notifier);
   outboundWebhookService.start();
 
-  ipcMain.handle(IPC.DOCS_OPEN, (_e, target?: DocsOpenTarget) => createDocsWindow(target));
+  createTrustedIpc(mainWindow).handle(IPC.DOCS_OPEN, (_e, target?: DocsOpenTarget) => createDocsWindow(target));
 
   // Pass the saved theme name to the renderer via the URL so the inline
   // boot loader can apply matching colors before any JS runs.

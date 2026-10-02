@@ -1,4 +1,5 @@
-import { ipcMain, safeStorage } from 'electron';
+import { createTrustedIpc } from './trusted-ipc';
+import { safeStorage } from 'electron';
 import { IPC } from '../../shared/constants';
 import type {
   VaultConfig,
@@ -25,6 +26,7 @@ import { decryptSecretFromStorage } from '../db/secret-storage';
 const log = createLogger('ipc:vault');
 
 export function registerVaultHandlers(ctx: HandlerContext): void {
+  const ipc = createTrustedIpc(ctx.mainWindow);
   const { send } = ctx;
 
   function emitVaultStatus(status: VaultStatus): void {
@@ -35,19 +37,19 @@ export function registerVaultHandlers(ctx: HandlerContext): void {
     send(IPC.VAULT_EXPIRY_WARNING, { expiresAt });
   });
 
-  ipcMain.handle(IPC.VAULT_GET_CONFIG, async (): Promise<VaultConfig> => {
+  ipc.handle(IPC.VAULT_GET_CONFIG, async (): Promise<VaultConfig> => {
     const cfg = getVaultConfig();
     // If nothing has been saved yet, return the defaults so the UI gets a sane starting point
     if (!cfg.addr && !cfg.role) return DEFAULT_VAULT_CONFIG;
     return cfg;
   });
 
-  ipcMain.handle(IPC.VAULT_SET_CONFIG, async (_event, config: VaultConfig) => {
+  ipc.handle(IPC.VAULT_SET_CONFIG, async (_event, config: VaultConfig) => {
     setVaultConfig(config);
     emitVaultStatus(getVaultStatus());
   });
 
-  ipcMain.handle(IPC.VAULT_LOGIN, async (): Promise<VaultStatus> => {
+  ipc.handle(IPC.VAULT_LOGIN, async (): Promise<VaultStatus> => {
     log.info('Vault OIDC login initiated');
     const status = await loginOidc();
     log.info('Vault login result', { loggedIn: status.loggedIn, identity: status.identity });
@@ -55,21 +57,21 @@ export function registerVaultHandlers(ctx: HandlerContext): void {
     return status;
   });
 
-  ipcMain.handle(IPC.VAULT_CANCEL_LOGIN, async (): Promise<void> => {
+  ipc.handle(IPC.VAULT_CANCEL_LOGIN, async (): Promise<void> => {
     log.info('Vault OIDC login cancel requested');
     cancelLoginOidc();
   });
 
-  ipcMain.handle(IPC.VAULT_LOGOUT, async () => {
+  ipc.handle(IPC.VAULT_LOGOUT, async () => {
     logoutVault();
     emitVaultStatus(getVaultStatus());
   });
 
-  ipcMain.handle(IPC.VAULT_STATUS, async (): Promise<VaultStatus> => {
+  ipc.handle(IPC.VAULT_STATUS, async (): Promise<VaultStatus> => {
     return getVaultStatus();
   });
 
-  ipcMain.handle(IPC.VAULT_TEST_REF, async (_event, ref: string): Promise<{ ok: boolean; error?: string }> => {
+  ipc.handle(IPC.VAULT_TEST_REF, async (_event, ref: string): Promise<{ ok: boolean; error?: string }> => {
     try {
       // Resolve, but never return the value to the renderer — only success/failure
       await resolveRef(ref);
@@ -79,7 +81,7 @@ export function registerVaultHandlers(ctx: HandlerContext): void {
     }
   });
 
-  ipcMain.handle(IPC.VAULT_LIST_KEYS, async (_event, mount: string, path: string): Promise<string[]> => {
+  ipc.handle(IPC.VAULT_LIST_KEYS, async (_event, mount: string, path: string): Promise<string[]> => {
     const client = buildVaultClient();
     if (!client) throw new Error('Vault integration is not enabled');
     if (!client.hasToken()) throw new Error('Not logged in to Vault');
@@ -89,7 +91,7 @@ export function registerVaultHandlers(ctx: HandlerContext): void {
   // Reads a secret and returns only its field names — never the values.
   // Used by the Vault picker so the user can choose which #field to reference
   // without the renderer ever seeing the plaintext.
-  ipcMain.handle(IPC.VAULT_LIST_FIELDS, async (_event, mount: string, path: string): Promise<string[]> => {
+  ipc.handle(IPC.VAULT_LIST_FIELDS, async (_event, mount: string, path: string): Promise<string[]> => {
     const client = buildVaultClient();
     if (!client) throw new Error('Vault integration is not enabled');
     if (!client.hasToken()) throw new Error('Not logged in to Vault');
@@ -97,7 +99,7 @@ export function registerVaultHandlers(ctx: HandlerContext): void {
     return Object.keys(result.data || {});
   });
 
-  ipcMain.handle(IPC.VAULT_WRITE_SECRET, async (_event, ref: string, value: string): Promise<void> => {
+  ipc.handle(IPC.VAULT_WRITE_SECRET, async (_event, ref: string, value: string): Promise<void> => {
     const client = buildVaultClient();
     if (!client) throw new Error('Vault integration is not enabled');
     if (!client.hasToken()) throw new Error('Not logged in to Vault');
@@ -106,7 +108,7 @@ export function registerVaultHandlers(ctx: HandlerContext): void {
     await client.kvWrite(parsed.mount, parsed.path, { [parsed.key]: value });
   });
 
-  ipcMain.handle(IPC.VAULT_LIST_PLAINTEXT, async (): Promise<VaultPlaintextSecret[]> => {
+  ipc.handle(IPC.VAULT_LIST_PLAINTEXT, async (): Promise<VaultPlaintextSecret[]> => {
     const { getDb } = await import('../db/database');
     const db = getDb();
     const out: VaultPlaintextSecret[] = [];
@@ -180,7 +182,7 @@ export function registerVaultHandlers(ctx: HandlerContext): void {
     return out;
   });
 
-  ipcMain.handle(IPC.VAULT_MIGRATE_SECRET, async (_event, opts: MigrateSecretOptions): Promise<void> => {
+  ipc.handle(IPC.VAULT_MIGRATE_SECRET, async (_event, opts: MigrateSecretOptions): Promise<void> => {
     log.info('Migrating secret to Vault', { source: opts.source, targetRef: opts.targetRef });
     const { getDb, saveDb } = await import('../db/database');
     const db = getDb();

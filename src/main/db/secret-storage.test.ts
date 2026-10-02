@@ -41,7 +41,7 @@ describe('secret-storage', () => {
     expect(() => encryptSecretForStorage('plain-token', 'token')).toThrow(/OS keychain/);
   });
 
-  it('encrypts only sensitive environment keys', () => {
+  it('encrypts every environment value including benign names', () => {
     expect(looksSensitiveEnvKey('ANTHROPIC_API_KEY')).toBe(true);
     expect(looksSensitiveEnvKey('NODE_ENV')).toBe(false);
 
@@ -50,7 +50,7 @@ describe('secret-storage', () => {
       NODE_ENV: 'development',
     });
     expect(isEncryptedSecret(stored.ANTHROPIC_API_KEY)).toBe(true);
-    expect(stored.NODE_ENV).toBe('development');
+    expect(isEncryptedSecret(stored.NODE_ENV)).toBe(true);
     expect(decryptEnvVarsRecord(stored)).toEqual({
       ANTHROPIC_API_KEY: 'sk-ant-secret',
       NODE_ENV: 'development',

@@ -1,5 +1,8 @@
 import net from 'node:net';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import { StringDecoder } from 'node:string_decoder';
+import { constantTimeEqual } from '../cli-config/hook-frame-server';
 import { createLogger } from '../logger';
 
 const log = createLogger('helm-bridge');
@@ -93,19 +96,23 @@ export async function createHelmBridge(
   }
 
   const server = net.createServer();
-  let claimed = false;
+  let claimed: net.Socket | null = null;
+  const sockets = new Set<net.Socket>();
 
   server.on('connection', (socket) => {
-    if (claimed) {
+    if (claimed || sockets.size >= 16) {
       log.warn('Rejecting second connection to helm bridge', { sessionId });
       socket.destroy();
       return;
     }
-    claimed = true;
+    sockets.add(socket);
     log.info('Helm bridge client connected', { sessionId });
 
     let authed = false;
     let buffer = '';
+    let pending = 0;
+    const decoder = new StringDecoder('utf8');
+    const authTimer = setTimeout(() => socket.destroy(), 2000);
 
     const writeFrame = (frame: HelmRpcResponse) => {
       try {
@@ -124,7 +131,8 @@ export async function createHelmBridge(
         socket.destroy();
         return;
       }
-      if (!req || typeof req.id !== 'string' || typeof req.method !== 'string') {
+      if (!req || typeof req.id !== 'string' || typeof req.method !== 'string' ||
+          (req.params !== undefined && (!req.params || typeof req.params !== 'object' || Array.isArray(req.params)))) {
         log.warn('Helm bridge: missing id/method, closing', { sessionId });
         socket.destroy();
         return;
@@ -140,41 +148,51 @@ export async function createHelmBridge(
           return;
         }
         const supplied = (req.params as { token?: unknown } | undefined)?.token;
-        if (typeof supplied !== 'string' || supplied !== token) {
+        if (typeof supplied !== 'string' || !constantTimeEqual(supplied, token) || claimed) {
           writeFrame({ id: req.id, error: { code: 401, message: 'Invalid token' } });
           socket.destroy();
           return;
         }
         authed = true;
+        claimed = socket;
+        clearTimeout(authTimer);
         writeFrame({ id: req.id, result: { ok: true } });
         return;
       }
 
-      const handler = handlers[req.method];
+      const handler = Object.hasOwn(handlers, req.method) ? handlers[req.method] : undefined;
       if (!handler) {
         writeFrame({ id: req.id, error: { code: -32601, message: `Unknown method: ${req.method}` } });
         return;
       }
       try {
+        if (++pending > 32) { socket.destroy(); return; }
         const result = await handler(req.params || {});
         writeFrame({ id: req.id, result });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         log.warn('Helm bridge handler threw', { sessionId, method: req.method, error: message });
         writeFrame({ id: req.id, error: { code: -32000, message } });
+      } finally {
+        pending--;
       }
     };
 
     socket.on('data', (chunk) => {
-      buffer += chunk.toString('utf8');
+      const limit = authed ? 1024 * 1024 : 16 * 1024;
+      if (chunk.length > limit) { socket.destroy(); return; }
+      buffer += decoder.write(chunk);
       // Dispatch every complete line; keep the trailing partial frame in buffer.
       let nl = buffer.indexOf('\n');
       while (nl !== -1) {
+        if (Buffer.byteLength(buffer.slice(0, nl)) > limit) { socket.destroy(); return; }
         const line = buffer.slice(0, nl).trim();
         buffer = buffer.slice(nl + 1);
         if (line) void handleFrame(line);
+        if (socket.destroyed) return;
         nl = buffer.indexOf('\n');
       }
+      if (Buffer.byteLength(buffer) > (authed ? 1024 * 1024 : 16 * 1024)) socket.destroy();
     });
 
     socket.on('error', (err) => {
@@ -182,6 +200,9 @@ export async function createHelmBridge(
     });
 
     socket.on('close', () => {
+      clearTimeout(authTimer);
+      sockets.delete(socket);
+      if (claimed === socket) claimed = null;
       log.info('Helm bridge client disconnected', { sessionId });
     });
   });
@@ -189,6 +210,7 @@ export async function createHelmBridge(
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(socketPath, () => {
+      if (process.platform !== 'win32') fs.chmodSync(socketPath, 0o600);
       server.off('error', reject);
       log.info('Helm bridge listening', { sessionId, socketPath });
       resolve();
@@ -199,6 +221,7 @@ export async function createHelmBridge(
     socketPath,
     token,
     dispose() {
+      for (const socket of sockets) socket.destroy();
       try { server.close(); } catch { /* already closed */ }
       if (process.platform !== 'win32') {
         try { require('node:fs').unlinkSync(socketPath); } catch { /* already gone */ }

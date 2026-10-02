@@ -3,6 +3,7 @@
 // stdin). The workspace name is passed through `options.workingDir`.
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
 import { createLogger } from '../logger';
+import { buildRemoteBootstrap } from './remote-bootstrap';
 import { loadPty } from './pty-loader';
 import { buildEnvAssignments, buildRemoteCliCommand, quotePosixShellArg, quoteRemotePath } from './posix-shell';
 import { assertSafeCmdExeCommand, escapeCmdExeArgForNodePty } from '../../shared/shell-quote';
@@ -30,6 +31,7 @@ export class CoderTransport implements SessionTransport {
   private exitCallbacks: Array<(info: TransportExitInfo) => void> = [];
   private _connected = false;
   private binaryPath: string;
+  private cancelStartup: (() => void) | null = null;
 
   constructor(opts: CoderTransportOptions = {}) {
     this.binaryPath = opts.binaryPath?.trim() || 'coder';
@@ -64,7 +66,7 @@ export class CoderTransport implements SessionTransport {
       ? `{ [ -d ${quotedSubDir} ] || GIT_ALLOW_PROTOCOL=https:ssh git clone -- ${quotePosixShellArg(cloneUrl)} ${quotedSubDir}; }`
       : '';
     const chain = [cloneStep, cdStep, baseCmd].filter(Boolean).join(' && ');
-    const cmd = options.exitAfterCommand ? `${chain}; exit "$?"\n` : `${chain}\n`;
+    const bootstrap = buildRemoteBootstrap(chain, options.exitAfterCommand);
 
     // Native Windows executables receive argv directly. cmd.exe is retained
     // only for batch shims and unresolved names that require its PATH/PATHEXT
@@ -94,13 +96,39 @@ export class CoderTransport implements SessionTransport {
 
     this._connected = true;
 
+    let readyBuffer = '';
+    let launchSent = false;
+    let finishStartup: () => void;
+    let failStartup: (error: Error) => void;
+    const startup = new Promise<void>((resolve, reject) => { finishStartup = resolve; failStartup = reject; });
+    const startupTimer = setTimeout(() => {
+      failStartup(new Error('Coder secure session setup timed out after 15s'));
+      this.kill();
+    }, 15_000);
+    this.cancelStartup = () => {
+      clearTimeout(startupTimer);
+      failStartup(new Error('Coder session setup cancelled'));
+    };
     this.ptyProcess.onData((data: string) => {
+      if (!launchSent) {
+        readyBuffer = (readyBuffer + data).slice(-64 * 1024);
+        if (readyBuffer.includes(bootstrap.readyMarker)) {
+          launchSent = true;
+          clearTimeout(startupTimer);
+          this.cancelStartup = null;
+          this.ptyProcess?.write(bootstrap.payload);
+          finishStartup();
+        }
+      }
       for (const cb of this.dataCallbacks) {
         cb(data);
       }
     });
 
     this.ptyProcess.onExit(({ exitCode, signal }) => {
+      clearTimeout(startupTimer);
+      this.cancelStartup = null;
+      if (!launchSent) failStartup(new Error('Coder exited before secure session setup completed'));
       this._connected = false;
       this.ptyProcess = null;
       const info: TransportExitInfo = { exitCode, signal: signal?.toString() };
@@ -109,8 +137,9 @@ export class CoderTransport implements SessionTransport {
       }
     });
 
-    // Write optimistically; node-pty buffers until the remote shell is ready.
-    this.ptyProcess.write(cmd);
+    // This first command is secret-free; wait for confirmed echo-off before payload.
+    this.ptyProcess.write(bootstrap.command);
+    await startup;
   }
 
   write(data: string): void {
@@ -126,11 +155,12 @@ export class CoderTransport implements SessionTransport {
   }
 
   async stop(): Promise<void> {
-    if (!this.ptyProcess) return;
-    this.ptyProcess.kill();
+    this.kill();
   }
 
   kill(): void {
+    this.cancelStartup?.();
+    this.cancelStartup = null;
     if (!this.ptyProcess) return;
     this.ptyProcess.kill();
     this._connected = false;

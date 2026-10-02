@@ -1,3 +1,4 @@
+import { decodeLaunchPayload } from './remote-bootstrap.test-helper';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTransportOptions } from './transport-test-utils.test-helper';
 
@@ -8,7 +9,12 @@ const ssh2Harness = vi.hoisted(() => {
   type ShellCb = (err: Error | undefined, stream: FakeStream | null) => void;
 
   class FakeStream extends EventEmitter {
-    write = vi.fn();
+    autoReady = true;
+    write = vi.fn((command: string) => {
+      const nonce = command.match(/TETHER_READY=([a-f0-9]{32})/)?.[1];
+      const ready = nonce ? `\x1b]777;TETHER_READY=${nonce}\x07` : null;
+      if (ready && this.autoReady) queueMicrotask(() => this.emitData(ready));
+    });
     setWindow = vi.fn();
     destroy = vi.fn();
     emitData(buf: Buffer | string) {
@@ -89,11 +95,28 @@ async function startConnected(
 }
 
 describe('SSHTransport', () => {
+  it('does not transmit the payload on a normal prompt or echoed bootstrap text', async () => {
+    const transport = new SSHTransport(baseConfig());
+    const starting = transport.start(baseOptions({ env: { TOKEN: 'fixture-secret' } }));
+    const client = ssh2Harness.current!; client.emit('ready');
+    const stream = new ssh2Harness.FakeStream(); stream.autoReady = false; client.lastShellCb!(undefined, stream);
+    stream.emitData('me@host:~$ ');
+    const bootstrap = stream.write.mock.calls[0][0];
+    expect(bootstrap).not.toContain('fixture-secret');
+    stream.emitData(bootstrap + '\r\nme@host:~$ ');
+    expect(stream.write).toHaveBeenCalledOnce();
+    const nonce = bootstrap.match(/TETHER_READY=([a-f0-9]{32})/)![1];
+    const marker = `\x1b]777;TETHER_READY=${nonce}\x07`;
+    stream.emitData(marker.slice(0, 17)); expect(stream.write).toHaveBeenCalledOnce();
+    stream.emitData(marker.slice(17)); await starting;
+    expect(decodeLaunchPayload(stream.write.mock.calls)).toContain('TOKEN=fixture-secret');
+    transport.dispose();
+  });
   it('propagates maintenance command failure instead of reporting a successful stream close', async () => {
     const t = new SSHTransport(baseConfig());
     const exited = vi.fn(); t.onExit(exited);
     const { stream } = await startConnected(t, baseOptions({ command: { file: 'codex', args: ['update'] }, exitAfterCommand: true }));
-    expect(stream.write.mock.calls.map(c => c[0]).join('')).toContain(`'codex' 'update'; exit "$?"\n`);
+    expect(decodeLaunchPayload(stream.write.mock.calls)).toContain(`'codex' 'update'; tether_status=$?; exit "$tether_status"`);
     stream.emit('exit', 9); stream.emitClose();
     expect(exited).toHaveBeenCalledWith(expect.objectContaining({ exitCode: 9 }));
     t.dispose();
@@ -107,7 +130,7 @@ describe('SSHTransport', () => {
     stream.emitData('me@host:~$ '); stream.emitData('root@host:~# '); stream.emitData('root@host:~# ');
     await start;
     expect(stream.write).toHaveBeenCalledWith('exec sudo -i\n');
-    expect(stream.write.mock.calls.map(c => c[0]).join('')).toContain('exit "$?"');
+    expect(decodeLaunchPayload(stream.write.mock.calls)).toContain('exit "$tether_status"');
     t.dispose();
   });
   beforeEach(() => {
@@ -209,7 +232,7 @@ describe('SSHTransport', () => {
     }));
 
     // Final write is the launch command
-    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(stream.write.mock.calls);
     expect(writes).toContain("cd '/srv/app'");
     expect(writes).toContain("env 'FOO=bar'");
     expect(writes).toContain(`'claude' '--model' 'sonnet'`);
@@ -222,7 +245,7 @@ describe('SSHTransport', () => {
       workingDir: '~/repo with spaces',
     }));
 
-    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(stream.write.mock.calls);
     expect(writes).toContain("cd ~/'repo with spaces'");
   });
 
@@ -230,7 +253,7 @@ describe('SSHTransport', () => {
     const t = new SSHTransport(baseConfig());
     const { stream } = await startConnected(t, baseOptions({ cliTool, binaryName: cliTool,
       toolSessionId: 'saved-id', resumeToolSessionId: 'saved-id' }));
-    const writes = stream.write.mock.calls.map(c => c[0]).join('');
+    const writes = decodeLaunchPayload(stream.write.mock.calls);
     expect(writes).toContain(cliTool === 'claude'
       ? "'claude' '--resume' 'saved-id'" : "'codex' 'resume' 'saved-id'");
     expect(writes).not.toContain('--session-id');
@@ -250,7 +273,7 @@ describe('SSHTransport', () => {
       binaryName: 'custom cli',
     }));
 
-    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(stream.write.mock.calls);
     expect(writes).toContain(`cd '/srv/app dir; rm -rf /'`);
     expect(writes).toContain(`'FOO=bar; $(touch x)'`);
     expect(writes).toContain(`'QUOTE=it'\\''s ok'`);
@@ -263,7 +286,7 @@ describe('SSHTransport', () => {
       cliArgs: ['--dangerously-skip-permissions'],
     }));
 
-    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(stream.write.mock.calls);
     expect(writes).toContain("env 'IS_SANDBOX=1'");
   });
 
@@ -279,7 +302,7 @@ describe('SSHTransport', () => {
     stream.emitData('root@host:~# ');  // echo disabled → writes launch cmd + resolves
     await start;
 
-    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(stream.write.mock.calls);
     expect(writes).toContain("env 'IS_SANDBOX=1'");
   });
 
@@ -289,7 +312,7 @@ describe('SSHTransport', () => {
       cliArgs: ['--dangerously-skip-permissions'],
     }));
 
-    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(stream.write.mock.calls);
     expect(writes).not.toContain('IS_SANDBOX');
   });
 
@@ -299,7 +322,7 @@ describe('SSHTransport', () => {
       cliArgs: ['--model', 'sonnet'],
     }));
 
-    const writes = stream.write.mock.calls.map((c) => c[0]).join('');
+    const writes = decodeLaunchPayload(stream.write.mock.calls);
     expect(writes).not.toContain('IS_SANDBOX');
   });
 

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { Duplex } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
 import { createLogger } from '../logger';
 
 const log = createLogger('hook-frame-server');
@@ -83,6 +84,7 @@ export type TokenValidator = (token: string, tetherSessionId: string) => boolean
 // (or a hostile forwarded channel) flooding the listener before the token
 // check. Matches the original net.Server limit byte-for-byte.
 const PRE_AUTH_LIMIT = 16 * 1024;
+const FRAME_LIMIT = 1024 * 1024;
 
 // Hard timeout for the auth handshake; anyone who connects without
 // authenticating within 2s gets dropped, freeing the connection slot.
@@ -94,10 +96,9 @@ const AUTH_TIMEOUT_MS = 2000;
  * for any length difference so we never throw inside `timingSafeEqual`.
  */
 export function constantTimeEqual(supplied: string, expected: string): boolean {
-  return (
-    supplied.length === expected.length &&
-    crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))
-  );
+  const left = Buffer.from(supplied);
+  const right = Buffer.from(expected);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
 /**
@@ -171,6 +172,8 @@ export function handleConnection(
   let authed = false;
   let buffer = '';
   let preAuthBytes = 0;
+  let authenticatedToken = '';
+  const decoder = new StringDecoder('utf8');
 
   const authTimer = setTimeout(() => {
     if (!authed) {
@@ -188,6 +191,7 @@ export function handleConnection(
     let req: Record<string, unknown>;
     try { req = JSON.parse(raw); }
     catch { log.warn('Hook frame server: malformed JSON'); duplex.destroy(); return; }
+    if (!req || typeof req !== 'object' || Array.isArray(req)) { duplex.destroy(); return; }
 
     const id = typeof req.id === 'string' ? req.id : '';
     const method = typeof req.method === 'string' ? req.method : '';
@@ -208,6 +212,7 @@ export function handleConnection(
         return;
       }
       authed = true;
+      authenticatedToken = supplied;
       clearTimeout(authTimer);
       writeFrame({ id, result: { ok: true } });
       return;
@@ -218,6 +223,11 @@ export function handleConnection(
       return;
     }
     const tetherSessionId = typeof req.tetherSessionId === 'string' ? req.tetherSessionId : '';
+    if (!validate(authenticatedToken, tetherSessionId)) {
+      writeFrame({ id, error: { code: 401, message: 'Token revoked or session not authorized' } });
+      duplex.destroy();
+      return;
+    }
     const type = typeof req.type === 'string' ? req.type : '';
     if (!tetherSessionId || !type) {
       writeFrame({ id, error: { code: -32602, message: 'tetherSessionId and type are required' } });
@@ -251,14 +261,18 @@ export function handleConnection(
         return;
       }
     }
-    buffer += chunk.toString('utf8');
+    if (chunk.length > FRAME_LIMIT) { duplex.destroy(); return; }
+    buffer += decoder.write(chunk);
     let nl = buffer.indexOf('\n');
     while (nl !== -1) {
+      if (Buffer.byteLength(buffer.slice(0, nl)) > FRAME_LIMIT) { duplex.destroy(); return; }
       const line = buffer.slice(0, nl).trim();
       buffer = buffer.slice(nl + 1);
       if (line) handleLine(line);
+      if (duplex.destroyed) return;
       nl = buffer.indexOf('\n');
     }
+    if (Buffer.byteLength(buffer) > FRAME_LIMIT) duplex.destroy();
   });
 
   duplex.on('error', (err: Error) => {

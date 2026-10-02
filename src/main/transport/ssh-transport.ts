@@ -4,6 +4,7 @@ import { createLogger } from '../logger';
 import { buildSshConnectConfig } from './ssh-connect-config';
 import { loadSsh2 } from './ssh2-loader';
 import { buildEnvAssignments, buildRemoteCliCommand, quoteRemotePath } from './posix-shell';
+import { buildRemoteBootstrap } from './remote-bootstrap';
 import { withRootSandboxBypass } from './root-sandbox';
 
 const log = createLogger('ssh');
@@ -26,14 +27,14 @@ const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
 const lastNonEmptyLine = (text: string): string =>
   text.split('\n').filter(l => l.trim()).pop()?.trim() || '';
 
-type SetupState = 'waitShell' | 'waitPassword' | 'waitElevated' | 'waitEchoOff';
+type SetupState = 'waitShell' | 'waitPassword' | 'waitElevated' | 'waitBootstrap';
 type SshClient = InstanceType<typeof import('ssh2').Client>;
 type SshConnectConfig = Parameters<SshClient['connect']>[0];
 
 interface SshSessionSetupOptions {
   replaceShell?: boolean;
   stream: NodeJS.ReadWriteStream;
-  cmd: string;
+  bootstrap: ReturnType<typeof buildRemoteBootstrap>;
   useSudo: boolean;
   password?: string;
   host: string;
@@ -43,9 +44,8 @@ interface SshSessionSetupOptions {
 
 /**
  * Drives the post-connect handshake on an SSH PTY: optional `sudo -i`
- * elevation, then `stty -echo` so the kernel line discipline doesn't echo
- * our bootstrap line (which carries env values and the binary command),
- * then writes the launch command.
+ * elevation, then a noninteractive reader which disables echo before accepting
+ * the launch payload. Secret values never enter an interactive history line.
  */
 class SshSessionSetup {
   private state: SetupState = 'waitShell';
@@ -60,14 +60,15 @@ class SshSessionSetup {
 
   handleData(data: Buffer): void {
     if (this.settled) return;
-    this.buffer += stripAnsi(data.toString('utf-8'));
-    const last = lastNonEmptyLine(this.buffer);
+    this.buffer += data.toString('utf-8');
+    if (this.buffer.length > 64 * 1024) this.buffer = this.buffer.slice(-64 * 1024);
+    const last = lastNonEmptyLine(stripAnsi(this.buffer));
 
     switch (this.state) {
       case 'waitShell': this.onShellPrompt(last); break;
       case 'waitPassword': this.onPasswordPhase(last); break;
       case 'waitElevated': this.onElevatedPhase(last); break;
-      case 'waitEchoOff': this.onEchoOffPhase(last); break;
+      case 'waitBootstrap': this.onBootstrapPhase(); break;
     }
   }
 
@@ -118,22 +119,21 @@ class SshSessionSetup {
     }
   }
 
-  private onEchoOffPhase(last: string): void {
-    if (!PROMPT_RE.test(last)) return;
-    log.info('Echo disabled, sending launch command');
+  private onBootstrapPhase(): void {
+    if (!this.buffer.includes(this.opts.bootstrap.readyMarker)) return;
     this.complete();
   }
 
   private startEchoOff(): void {
-    this.state = 'waitEchoOff';
+    this.state = 'waitBootstrap';
     this.buffer = '';
-    this.opts.stream.write('stty -echo\n');
+    this.opts.stream.write(this.opts.bootstrap.command);
   }
 
   private complete(): void {
     this.settled = true;
     clearTimeout(this.timer);
-    this.opts.stream.write(this.opts.cmd);
+    this.opts.stream.write(this.opts.bootstrap.payload);
     this.opts.resolve();
   }
 
@@ -236,16 +236,16 @@ export class SSHTransport implements SessionTransport {
     this.stream = stream;
     this._connected = true;
 
-    let cmd: string;
+    let bootstrap: ReturnType<typeof buildRemoteBootstrap>;
     try {
-      cmd = this.buildLaunchCommand(options);
+      bootstrap = buildRemoteBootstrap(this.buildLaunchCommand(options), options.exitAfterCommand);
     } catch (buildErr) {
       this.failShellStartup(stream, buildErr, reject);
       return;
     }
 
     this.attachStreamHandlers(stream, options.exitAfterCommand);
-    this.attachSessionSetup(stream, cmd, resolve, reject, options.exitAfterCommand);
+    this.attachSessionSetup(stream, bootstrap, resolve, err => this.failShellStartup(stream, err, reject), options.exitAfterCommand);
   }
 
   /**
@@ -260,8 +260,7 @@ export class SSHTransport implements SessionTransport {
 
   private buildLaunchCommand(options: TransportStartOptions): string {
     // Build the command as argv/env tokens rather than shell text.
-    // The PTY still receives one shell line, but user-controlled values
-    // are quoted before they cross that boundary.
+    // Quoted launch text is delivered through the noninteractive stdin reader.
     const env = withRootSandboxBypass(options.env, options, this.runsAsRoot());
     const envParts = buildEnvAssignments(env);
     const cliCmd = buildRemoteCliCommand(options);
@@ -269,7 +268,7 @@ export class SSHTransport implements SessionTransport {
       ? `env ${envParts.join(' ')} ${cliCmd}`
       : cliCmd;
     const command = `cd ${quoteRemotePath(options.workingDir)} && ${launchCmd}`;
-    return options.exitAfterCommand ? `${command}; exit "$?"\n` : `${command}\n`;
+    return command;
   }
 
   private failShellStartup(
@@ -312,7 +311,7 @@ export class SSHTransport implements SessionTransport {
 
   private attachSessionSetup(
     stream: NodeJS.ReadWriteStream,
-    cmd: string,
+    bootstrap: ReturnType<typeof buildRemoteBootstrap>,
     resolve: () => void,
     reject: (err: Error) => void,
     replaceShell = false,
@@ -320,7 +319,7 @@ export class SSHTransport implements SessionTransport {
     const setup = new SshSessionSetup({
       replaceShell,
       stream,
-      cmd,
+      bootstrap,
       useSudo: this.sshConfig.useSudo === true,
       password: this.sshConfig.password,
       host: this.sshConfig.host,

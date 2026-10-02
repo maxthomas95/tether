@@ -23,6 +23,8 @@ SSH environments need:
 
 If the OS keychain is unavailable, Tether refuses to save or read a stored password rather than falling back to plaintext.
 
+SSH and Coder launches use a noninteractive POSIX shell reader. Tether sends the launch configuration through stdin only after the reader confirms terminal echo is disabled; environment values and resolved Vault secrets do not enter the interactive shell's command history or bootstrap echo. The host needs `sh` and `stty`. Echo is restored before the CLI starts, and terminal output remains unchanged. If the secure reader cannot start, the session fails without sending the configuration. After the CLI exits, a login shell opens; maintenance runs instead close with the command's status.
+
 > **Running Claude as root?** Claude Code refuses to start with `--dangerously-skip-permissions` when it detects it's running as root (via sudo, or a `root` login) unless it thinks it's in a sandbox — otherwise it exits straight back to the shell. When Tether launches Claude as root with that flag, it automatically sets `IS_SANDBOX=1` so the flag you asked for takes effect. Set `IS_SANDBOX` (or `CLAUDE_CODE_BUBBLEWRAP`) yourself in the environment's env vars to override this. This guard is POSIX-only, so local Windows sessions are unaffected. (Coder workspaces are not auto-detected — if a workspace runs as root, add `IS_SANDBOX=1` to its env vars manually.)
 
 #### Host key verification

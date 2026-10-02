@@ -115,16 +115,26 @@ describe('config-handlers', () => {
   });
 
   describe('default env vars', () => {
+    it('blocks untrusted reads before retrieving a plaintext setting', async () => {
+      dbState.config.jobsToken = 'fixture-token';
+      const handler = registry.handlers.get(IPC.CONFIG_GET)!;
+      expect(() => handler({ sender: {}, senderFrame: {} }, 'jobsToken')).toThrow('Tether window');
+    });
+
+    it('requires Vault configuration changes to use the credential-aware settings handler', async () => {
+      await expect(harness.invoke(IPC.CONFIG_SET, 'vaultAddr', 'https://other.example.test')).rejects.toThrow('Vault settings');
+      await expect(harness.invoke(IPC.CONFIG_GET, 'vaultToken')).rejects.toThrow('private');
+    });
     it('round-trips through GET / SET', async () => {
       await harness.invoke(IPC.CONFIG_SET_DEFAULT_ENV_VARS, { K: 'v', X: 'y' });
-      expect(dbState.defaultEnvVars).toEqual({ K: 'v', X: 'y' });
+      expect(Object.values(dbState.defaultEnvVars).every(v => v.startsWith('tether-safe:v1:'))).toBe(true);
       expect(await harness.invoke(IPC.CONFIG_GET_DEFAULT_ENV_VARS)).toEqual({ K: 'v', X: 'y' });
     });
 
     it('encrypts sensitive values at rest and decrypts them for reads', async () => {
       await harness.invoke(IPC.CONFIG_SET_DEFAULT_ENV_VARS, { OPENAI_API_KEY: 'sk-secret', NORMAL: 'v' });
       expect(dbState.defaultEnvVars.OPENAI_API_KEY).not.toBe('sk-secret');
-      expect(dbState.defaultEnvVars.NORMAL).toBe('v');
+      expect(dbState.defaultEnvVars.NORMAL).toMatch(/^tether-safe:v1:/);
       expect(await harness.invoke(IPC.CONFIG_GET_DEFAULT_ENV_VARS)).toEqual({
         OPENAI_API_KEY: 'sk-secret',
         NORMAL: 'v',

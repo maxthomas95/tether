@@ -77,20 +77,19 @@ function scrubEnvVarsJson(rawJson: string | undefined): string {
   try {
     parsed = JSON.parse(rawJson);
   } catch {
-    return rawJson; // leave malformed JSON alone — caller's problem
+    return REDACTED;
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return REDACTED;
   const scrubbed: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(parsed)) {
     if (typeof v !== 'string') {
-      scrubbed[k] = v;
+      scrubbed[k] = REDACTED;
       continue;
     }
     if (isVaultRef(v)) {
       scrubbed[k] = v;            // refs are not secrets
-    } else if (looksSensitive(k) || looksSensitiveValue(v)) {
-      scrubbed[k] = REDACTED;
     } else {
-      scrubbed[k] = v;
+      scrubbed[k] = REDACTED;
     }
   }
   return JSON.stringify(scrubbed);
@@ -101,8 +100,9 @@ function scrubEnvConfigJson(rawJson: string): string {
   try {
     parsed = JSON.parse(rawJson);
   } catch {
-    return rawJson;
+    return REDACTED;
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return REDACTED;
   const out = { ...parsed };
   if (typeof out.password === 'string' && !isVaultRef(out.password)) {
     out.password = REDACTED;
@@ -157,7 +157,7 @@ export function scrubDbData(input: DbData): DbData {
   // Default env vars.
   for (const k of Object.keys(db.defaultEnvVars)) {
     const v = db.defaultEnvVars[k];
-    if (typeof v === 'string' && !isVaultRef(v) && (looksSensitive(k) || looksSensitiveValue(v))) {
+    if (!isVaultRef(v)) {
       db.defaultEnvVars[k] = REDACTED;
     }
   }

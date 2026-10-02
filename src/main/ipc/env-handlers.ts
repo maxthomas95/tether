@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { createTrustedIpc } from './trusted-ipc';
 import { IPC } from '../../shared/constants';
 import type { CreateEnvironmentOptions, EnvironmentInfo } from '../../shared/types';
 import { sessionManager } from '../session/session-manager';
@@ -9,7 +9,8 @@ import { encryptConfigPassword, decryptConfigPassword, type HandlerContext } fro
 const log = createLogger('ipc:env');
 
 export function registerEnvHandlers(_ctx: HandlerContext): void {
-  ipcMain.handle(IPC.ENV_LIST, async () => {
+  const ipc = createTrustedIpc(_ctx.mainWindow);
+  ipc.handle(IPC.ENV_LIST, async () => {
     const envs = envRepo.listEnvironments();
     const sessions = sessionManager.listSessions();
     return envs.map((env): EnvironmentInfo => ({
@@ -26,7 +27,7 @@ export function registerEnvHandlers(_ctx: HandlerContext): void {
     }));
   });
 
-  ipcMain.handle(IPC.ENV_CREATE, async (_event, opts: CreateEnvironmentOptions) => {
+  ipc.handle(IPC.ENV_CREATE, async (_event, opts: CreateEnvironmentOptions) => {
     log.info('Creating environment', { name: opts.name, type: opts.type });
     const env = envRepo.createEnvironment({
       name: opts.name,
@@ -44,7 +45,7 @@ export function registerEnvHandlers(_ctx: HandlerContext): void {
     } as EnvironmentInfo;
   });
 
-  ipcMain.handle(IPC.ENV_UPDATE, async (_event, id: string, opts: Partial<CreateEnvironmentOptions>) => {
+  ipc.handle(IPC.ENV_UPDATE, async (_event, id: string, opts: Partial<CreateEnvironmentOptions>) => {
     envRepo.updateEnvironment(id, {
       name: opts.name,
       type: opts.type,
@@ -53,7 +54,7 @@ export function registerEnvHandlers(_ctx: HandlerContext): void {
     });
   });
 
-  ipcMain.handle(IPC.ENV_DELETE, async (_event, id: string) => {
+  ipc.handle(IPC.ENV_DELETE, async (_event, id: string) => {
     log.info('Deleting environment', { id });
     envRepo.deleteEnvironment(id);
   });

@@ -62,7 +62,7 @@ export function createHarness(registry: IpcRegistry): IpcHarness {
   const send = vi.fn();
   const fakeWindow = {
     isDestroyed: () => false,
-    webContents: { send: vi.fn() },
+    webContents: { send: vi.fn(), mainFrame: {} },
     setTitleBarOverlay: vi.fn(),
   } as unknown as BrowserWindow;
 
@@ -74,13 +74,13 @@ export function createHarness(registry: IpcRegistry): IpcHarness {
   async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
     const fn = registry.handlers.get(channel);
     if (!fn) throw new Error(`No ipcMain.handle registered for ${channel}`);
-    return await fn({}, ...args) as T;
+    return await fn({ sender: fakeWindow.webContents, senderFrame: fakeWindow.webContents.mainFrame }, ...args) as T;
   }
 
   function emit(channel: string, ...args: unknown[]): void {
     const fn = registry.listeners.get(channel);
     if (!fn) throw new Error(`No ipcMain.on registered for ${channel}`);
-    fn({}, ...args);
+    fn({ sender: fakeWindow.webContents, senderFrame: fakeWindow.webContents.mainFrame }, ...args);
   }
 
   function reset() {

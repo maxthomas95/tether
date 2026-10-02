@@ -3,7 +3,7 @@ import type { LaunchProfileRow } from './database';
 
 const db = vi.hoisted(() => ({ launchProfiles: [] as LaunchProfileRow[] }));
 vi.mock('./database', () => ({ getDb: () => db, saveDb: vi.fn() }));
-vi.mock('electron', () => ({ safeStorage: { isEncryptionAvailable: () => false } }));
+vi.mock('electron', () => ({ safeStorage: { isEncryptionAvailable: () => true, encryptString: (v: string) => Buffer.from(v), decryptString: (v: Buffer) => v.toString() } }));
 vi.mock('../vault/vault-resolver', () => ({ isVaultRef: (value: string) => value.startsWith('vault://') }));
 import { createProfile, updateProfile, listProfiles } from './profile-repo';
 

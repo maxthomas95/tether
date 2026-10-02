@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { createTrustedIpc } from './trusted-ipc';
 import { IPC } from '../../shared/constants';
 import type {
   CreateSessionOptions,
@@ -20,6 +20,7 @@ import type { SavedSession, SavedWorkspace } from '../db/database';
 const log = createLogger('ipc:session');
 
 export function registerSessionHandlers(ctx: HandlerContext): void {
+  const ipc = createTrustedIpc(ctx.mainWindow);
   const { send } = ctx;
 
   // Single callback bundle, shared between direct IPC session creation and
@@ -51,7 +52,7 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
   };
   setHelmChildCallbacks(sessionCallbacks);
 
-  ipcMain.handle(IPC.SESSION_CREATE, async (_event, opts: CreateSessionOptions) => {
+  ipc.handle(IPC.SESSION_CREATE, async (_event, opts: CreateSessionOptions) => {
     log.info('IPC session:create', { workingDir: opts.workingDir, environmentId: opts.environmentId });
     // Callbacks receive sessionId as their first arg — do NOT close over the
     // `session` const below. SSH transports can emit data events between
@@ -82,7 +83,7 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     return session.toInfo();
   });
 
-  ipcMain.handle(IPC.SESSION_VAULT_PREFLIGHT, async (_event, opts: CreateSessionOptions): Promise<VaultPreflightResult> => {
+  ipc.handle(IPC.SESSION_VAULT_PREFLIGHT, async (_event, opts: CreateSessionOptions): Promise<VaultPreflightResult> => {
     const status = getVaultStatus();
     // If Vault isn't enabled or we're already logged in, skip the scan — nothing to prompt about.
     if (!status.enabled || status.loggedIn) return { needsLogin: false };
@@ -91,38 +92,38 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     return { needsLogin: true, reason: refSource };
   });
 
-  ipcMain.handle(IPC.SESSION_LIST, async () => {
+  ipc.handle(IPC.SESSION_LIST, async () => {
     return sessionManager.listSessions().map(s => s.toInfo());
   });
 
-  ipcMain.handle(IPC.SESSION_STOP, async (_event, sessionId: string) => {
+  ipc.handle(IPC.SESSION_STOP, async (_event, sessionId: string) => {
     await sessionManager.stopSession(sessionId);
   });
 
-  ipcMain.handle(IPC.SESSION_RENAME, async (_event, sessionId: string, label: string) => {
+  ipc.handle(IPC.SESSION_RENAME, async (_event, sessionId: string, label: string) => {
     sessionManager.renameSession(sessionId, label);
     sessionRepo.updateSessionLabel(sessionId, label);
   });
 
-  ipcMain.handle(IPC.SESSION_SET_HELM_ENABLED, async (_event, sessionId: string, enabled: boolean) => {
+  ipc.handle(IPC.SESSION_SET_HELM_ENABLED, async (_event, sessionId: string, enabled: boolean) => {
     sessionManager.setHelmEnabled(sessionId, enabled);
   });
 
-  ipcMain.handle(IPC.SESSION_REMOVE, async (_event, sessionId: string) => {
+  ipc.handle(IPC.SESSION_REMOVE, async (_event, sessionId: string) => {
     sessionManager.removeSession(sessionId);
   });
 
-  ipcMain.on(IPC.SESSION_INPUT, (_event, sessionId: string, data: string) => {
+  ipc.on(IPC.SESSION_INPUT, (_event, sessionId: string, data: string) => {
     sessionManager.writeToSession(sessionId, data);
   });
 
-  ipcMain.on(IPC.SESSION_RESIZE, (_event, sessionId: string, cols: number, rows: number) => {
+  ipc.on(IPC.SESSION_RESIZE, (_event, sessionId: string, cols: number, rows: number) => {
     sessionManager.resizeSession(sessionId, cols, rows);
   });
 
   // === Workspace save/restore ===
 
-  ipcMain.handle(IPC.WORKSPACE_SAVE, async (_event, sessions: SavedSession[], activeIndex: number, canvas?: import('../../shared/canvas-types').SavedCanvas) => {
+  ipc.handle(IPC.WORKSPACE_SAVE, async (_event, sessions: SavedSession[], activeIndex: number, canvas?: import('../../shared/canvas-types').SavedCanvas) => {
     const { getDb, saveDb } = await import('../db/database');
     // Codex toolSessionIds are captured at spawn time via the codex session
     // watcher and pushed to the renderer, so whatever the renderer hands us
@@ -137,7 +138,7 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     saveDb();
   });
 
-  ipcMain.handle(IPC.WORKSPACE_LOAD, async () => {
+  ipc.handle(IPC.WORKSPACE_LOAD, async () => {
     const { getDb } = await import('../db/database');
     const saved = getDb().savedWorkspace;
     if (!saved) return null;
@@ -148,7 +149,7 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     } satisfies SavedWorkspace;
   });
 
-  ipcMain.handle(IPC.TRANSCRIPTS_LIST, async (_event, workingDir: string, cliTool: CliToolId = 'claude') => {
+  ipc.handle(IPC.TRANSCRIPTS_LIST, async (_event, workingDir: string, cliTool: CliToolId = 'claude') => {
     if (cliTool === 'codex') {
       const { listCodexTranscripts } = await import('../codex/transcripts');
       return listCodexTranscripts(workingDir);

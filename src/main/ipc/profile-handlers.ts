@@ -1,11 +1,12 @@
-import { ipcMain } from 'electron';
+import { createTrustedIpc } from './trusted-ipc';
 import { IPC } from '../../shared/constants';
 import type { CreateLaunchProfileOptions, LaunchProfileInfo } from '../../shared/types';
 import * as profileRepo from '../db/profile-repo';
 import type { HandlerContext } from './helpers';
 
 export function registerProfileHandlers(_ctx: HandlerContext): void {
-  ipcMain.handle(IPC.PROFILE_LIST, async () => {
+  const ipc = createTrustedIpc(_ctx.mainWindow);
+  ipc.handle(IPC.PROFILE_LIST, async () => {
     return profileRepo.listProfiles().map((p): LaunchProfileInfo => ({
       id: p.id,
       name: p.name,
@@ -16,7 +17,7 @@ export function registerProfileHandlers(_ctx: HandlerContext): void {
     }));
   });
 
-  ipcMain.handle(IPC.PROFILE_CREATE, async (_event, opts: CreateLaunchProfileOptions) => {
+  ipc.handle(IPC.PROFILE_CREATE, async (_event, opts: CreateLaunchProfileOptions) => {
     const p = profileRepo.createProfile({
       name: opts.name,
       envVars: opts.envVars,
@@ -34,7 +35,7 @@ export function registerProfileHandlers(_ctx: HandlerContext): void {
     } as LaunchProfileInfo;
   });
 
-  ipcMain.handle(IPC.PROFILE_UPDATE, async (_event, id: string, opts: Partial<CreateLaunchProfileOptions>) => {
+  ipc.handle(IPC.PROFILE_UPDATE, async (_event, id: string, opts: Partial<CreateLaunchProfileOptions>) => {
     profileRepo.updateProfile(id, {
       name: opts.name,
       envVars: opts.envVars,
@@ -44,7 +45,7 @@ export function registerProfileHandlers(_ctx: HandlerContext): void {
     });
   });
 
-  ipcMain.handle(IPC.PROFILE_DELETE, async (_event, id: string) => {
+  ipc.handle(IPC.PROFILE_DELETE, async (_event, id: string) => {
     profileRepo.deleteProfile(id);
   });
 }

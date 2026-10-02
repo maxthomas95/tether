@@ -1,3 +1,4 @@
+import { bootstrapReady } from './remote-bootstrap.test-helper';
 import { afterEach, beforeEach, vi } from 'vitest';
 import type { TransportStartOptions } from './types';
 
@@ -29,6 +30,7 @@ export interface FakePty {
 
 export function createPtyHarness(spawnSpy: ReturnType<typeof vi.fn>) {
   let current: FakePty | null = null;
+  let autoReady = true;
 
   function makePty(): FakePty {
     let dataCb: ((data: string) => void) | null = null;
@@ -36,7 +38,10 @@ export function createPtyHarness(spawnSpy: ReturnType<typeof vi.fn>) {
 
     return {
       pid: 1234,
-      write: vi.fn(),
+      write: vi.fn((command: string) => {
+        const ready = bootstrapReady(command);
+        if (ready && autoReady) queueMicrotask(() => dataCb?.(ready));
+      }),
       resize: vi.fn(),
       kill: vi.fn(),
       onData(cb: (data: string) => void) {
@@ -62,10 +67,12 @@ export function createPtyHarness(spawnSpy: ReturnType<typeof vi.fn>) {
   });
 
   return {
+    setAutoReady(enabled: boolean) { autoReady = enabled; },
     get current(): FakePty | null {
       return current;
     },
     reset() {
+      autoReady = true;
       current = null;
       spawnSpy.mockClear();
     },

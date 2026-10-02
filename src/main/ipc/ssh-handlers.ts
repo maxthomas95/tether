@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { createTrustedIpc } from './trusted-ipc';
 import { IPC } from '../../shared/constants';
 import type { KnownHostInfo, HostVerifyRequest } from '../../shared/types';
 import { setHostVerifyDispatcher, respondToHostVerify } from '../ssh/host-verifier';
@@ -9,6 +9,7 @@ import type { HandlerContext } from './helpers';
 const log = createLogger('ipc:ssh');
 
 export function registerSshHandlers(ctx: HandlerContext): void {
+  const ipc = createTrustedIpc(ctx.mainWindow);
   const { send } = ctx;
 
   // Wire the SSH host-verify prompt dispatcher to the renderer. The verifier
@@ -18,11 +19,11 @@ export function registerSshHandlers(ctx: HandlerContext): void {
     send(IPC.SSH_HOST_VERIFY_REQUEST, req);
   });
 
-  ipcMain.on(IPC.SSH_HOST_VERIFY_RESPONSE, (_event, token: string, trust: boolean) => {
+  ipc.on(IPC.SSH_HOST_VERIFY_RESPONSE, (_event, token: string, trust: boolean) => {
     respondToHostVerify(token, trust);
   });
 
-  ipcMain.handle(IPC.KNOWN_HOSTS_LIST, async (): Promise<KnownHostInfo[]> => {
+  ipc.handle(IPC.KNOWN_HOSTS_LIST, async (): Promise<KnownHostInfo[]> => {
     return knownHostsRepo.listKnownHosts().map((h) => ({
       id: h.id,
       hostKey: h.hostKey,
@@ -33,7 +34,7 @@ export function registerSshHandlers(ctx: HandlerContext): void {
     }));
   });
 
-  ipcMain.handle(IPC.KNOWN_HOSTS_DELETE, async (_event, id: string): Promise<void> => {
+  ipc.handle(IPC.KNOWN_HOSTS_DELETE, async (_event, id: string): Promise<void> => {
     log.info('Revoking known host', { id });
     knownHostsRepo.deleteKnownHost(id);
   });

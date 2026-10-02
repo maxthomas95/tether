@@ -2,9 +2,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fetchMock = vi.hoisted(() => vi.fn());
 vi.mock('electron', () => ({ net: { fetch: fetchMock } }));
-import { VaultClient } from './vault-client';
+import { VaultClient, normalizeVaultAddr } from './vault-client';
 
 beforeEach(() => { fetchMock.mockReset(); });
+
+describe('Vault credential destination', () => {
+  it.each(['http://vault.example.test', 'https://user:password@vault.example.test', 'https://vault.example.test/path', 'https://vault.example.test?token=x', 'file:///vault'])('refuses unsafe address %s', addr => {
+    expect(() => normalizeVaultAddr(addr)).toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it.each(['http://localhost:8200', 'http://127.0.0.1:8200', 'http://[::1]:8200', 'https://vault.example.test'])('allows explicit TLS or loopback origin %s', addr => {
+    expect(normalizeVaultAddr(addr)).toBe(addr);
+  });
+  it('blocks redirects even when the response mock ignores fetch redirect policy', async () => {
+    fetchMock.mockResolvedValue(new Response('', { status: 307, headers: { Location: 'https://other.example.test' } }));
+    await expect(new VaultClient({ addr: 'https://vault.example.test', token: 'fixture-secret' }).lookupSelf()).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ redirect: 'error', headers: { 'X-Vault-Token': 'fixture-secret' } });
+  });
+});
 
 describe('Vault request path normalization', () => {
   const makeClient = () => new VaultClient({ addr: 'https://vault.example.test///', token: 'test-token' });
