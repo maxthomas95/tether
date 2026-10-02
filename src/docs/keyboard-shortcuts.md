@@ -10,6 +10,7 @@ The app-action shortcuts below are defaults and are **remappable** in [Settings 
 |----------|--------|
 | **Ctrl+N** | Create a new session |
 | **Ctrl+P** | Find a session (quick switcher) |
+| **Ctrl+Shift+F** | Find text in the focused terminal |
 | **Ctrl+W** | Stop the active session |
 
 ## Navigation
@@ -60,6 +61,8 @@ Most keyboard input is passed straight to the active session — Tether does not
 | **Ctrl+Shift+C** | Copy the selection; with no selection, leave the clipboard unchanged |
 | **Ctrl+V** | Paste. Uses bracketed paste when the app requests it, so a multi-line paste into Claude Code's input arrives as one block instead of a burst of submits |
 | **Ctrl+click** a printed URL | Open it in your browser (via `shell.openExternal`) |
+
+Terminal search uses the terminal's scrollback buffer and does not send input to the CLI. Press **Enter** / **Shift+Enter** in the search bar for next / previous match, and **Esc** to close it and return focus to the same terminal.
 
 ### Selecting text in full-screen apps
 

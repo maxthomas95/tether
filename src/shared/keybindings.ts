@@ -2,6 +2,7 @@ export type KeybindingAction =
   | 'session.new'
   | 'session.stop'
   | 'search.open'
+  | 'terminal.find'
   | 'sidebar.toggle'
   | 'settings.open'
   | 'shortcuts.show'
@@ -37,6 +38,7 @@ export const ALL_ACTIONS: KeybindingAction[] = [
   'session.new',
   'session.stop',
   'search.open',
+  'terminal.find',
   'sidebar.toggle',
   'settings.open',
   'shortcuts.show',
@@ -69,6 +71,7 @@ export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, Chord> = {
   'session.new': 'ctrl+n',
   'session.stop': 'ctrl+w',
   'search.open': 'ctrl+p',
+  'terminal.find': 'ctrl+shift+f',
   'sidebar.toggle': 'ctrl+b',
   'settings.open': 'ctrl+,',
   'shortcuts.show': 'ctrl+/',
@@ -101,6 +104,7 @@ export const ACTION_LABELS: Record<KeybindingAction, string> = {
   'session.new': 'New session',
   'session.stop': 'Stop current session',
   'search.open': 'Find session',
+  'terminal.find': 'Find in terminal',
   'sidebar.toggle': 'Toggle sidebar',
   'settings.open': 'Open settings',
   'shortcuts.show': 'Show keyboard shortcuts',
@@ -135,6 +139,7 @@ export const ACTION_GROUPS: Record<KeybindingAction, ActionGroup> = {
   'session.new': 'Session',
   'session.stop': 'Session',
   'search.open': 'Session',
+  'terminal.find': 'Session',
   'session.next': 'Panes',
   'session.prev': 'Panes',
   'session.nextWaiting': 'Session',

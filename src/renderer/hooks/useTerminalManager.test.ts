@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
     selection = '';
     hasSelection = vi.fn(() => this.selection !== '');
     getSelection = vi.fn(() => this.selection);
+    clearSelection = vi.fn(() => { this.selection = ''; });
     paste = vi.fn();
     write = vi.fn();
     focus = vi.fn();
@@ -39,9 +40,23 @@ const mocks = vi.hoisted(() => {
       this.terminal.rows = Math.max(1, Math.floor(container.clientHeight / 20));
     });
   }
+  class FakeSearchAddon {
+    listeners = new Set<(event: { resultIndex: number; resultCount: number }) => void>();
+    findNext = vi.fn(() => true);
+    findPrevious = vi.fn(() => true);
+    clearDecorations = vi.fn();
+    onDidChangeResults = vi.fn((listener: (event: { resultIndex: number; resultCount: number }) => void) => {
+      this.listeners.add(listener);
+      return { dispose: vi.fn(() => this.listeners.delete(listener)) };
+    });
+    emit(event: { resultIndex: number; resultCount: number }) {
+      for (const listener of this.listeners) listener(event);
+    }
+  }
   return {
     FakeTerminal,
     FakeFitAddon,
+    FakeSearchAddon,
     resize: vi.fn(),
     sendInput: vi.fn(),
     setOutputMode: vi.fn().mockResolvedValue(undefined),
@@ -54,6 +69,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('@xterm/xterm', () => ({ Terminal: mocks.FakeTerminal }));
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: mocks.FakeFitAddon }));
+vi.mock('@xterm/addon-search', () => ({ SearchAddon: mocks.FakeSearchAddon }));
 vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }));
 
 import { useTerminalManager, type TerminalManagerAPI, type TerminalCursorStyle } from './useTerminalManager';
@@ -65,10 +81,10 @@ let host: HTMLDivElement;
 let api: TerminalManagerAPI;
 let frames: FrameRequestCallback[];
 
-function Harness({ color = '#000000', cursor = 'block', scrollback = 10000, fontFamily = '' }: {
-  color?: string; cursor?: TerminalCursorStyle; scrollback?: number; fontFamily?: string;
+function Harness({ color = '#000000', theme, cursor = 'block', scrollback = 10000, fontFamily = '' }: {
+  color?: string; theme?: Record<string, string>; cursor?: TerminalCursorStyle; scrollback?: number; fontFamily?: string;
 }) {
-  api = useTerminalManager({ background: color }, fontFamily, cursor, true, scrollback);
+  api = useTerminalManager(theme ?? { background: color }, fontFamily, cursor, true, scrollback);
   return null;
 }
 
@@ -94,6 +110,12 @@ function pane() {
 
 function terminal(sessionId: string) {
   return api.peek(sessionId) as unknown as InstanceType<typeof mocks.FakeTerminal>;
+}
+
+function searchAddon(sessionId: string) {
+  return terminal(sessionId).loadAddon.mock.calls
+    .map(([addon]) => addon)
+    .find(addon => addon instanceof mocks.FakeSearchAddon) as InstanceType<typeof mocks.FakeSearchAddon>;
 }
 
 beforeEach(() => {
@@ -223,6 +245,124 @@ describe('terminal session lifecycle', () => {
     expect(original.focus).not.toHaveBeenCalled();
   });
 
+  it('searches the focused pane without writing process input and keeps the addon through detach', () => {
+    const first = pane();
+    api.attachToPane('left', 'a', first);
+    const addon = searchAddon('a');
+
+    expect(api.findInPane('left', 'needle', { caseSensitive: true, incremental: true })).toBe(true);
+    expect(addon.findNext).toHaveBeenCalledExactlyOnceWith('needle', {
+      caseSensitive: true,
+      wholeWord: false,
+      incremental: true,
+      decorations: {
+        activeMatchBackground: '#cdd6f4',
+        activeMatchBorder: '#cdd6f4',
+        activeMatchColorOverviewRuler: '#cdd6f4',
+        matchBackground: '#45475a',
+        matchBorder: '#cdd6f4',
+        matchOverviewRuler: '#cdd6f4',
+      },
+    });
+    expect(addon.clearDecorations).not.toHaveBeenCalled();
+    api.findInPane('left', 'needle', { caseSensitive: true });
+    expect(addon.clearDecorations).not.toHaveBeenCalled();
+    api.findInPane('left', 'needle');
+    expect(addon.clearDecorations).toHaveBeenCalledOnce();
+    expect(addon.findNext).toHaveBeenLastCalledWith('needle', {
+      caseSensitive: false,
+      wholeWord: false,
+      incremental: false,
+      decorations: {
+        activeMatchBackground: '#cdd6f4',
+        activeMatchBorder: '#cdd6f4',
+        activeMatchColorOverviewRuler: '#cdd6f4',
+        matchBackground: '#45475a',
+        matchBorder: '#cdd6f4',
+        matchOverviewRuler: '#cdd6f4',
+      },
+    });
+
+    const listener = vi.fn();
+    const secondListener = vi.fn();
+    const unsubscribe = api.onFindResultsInPane('left', listener);
+    const unsubscribeSecond = api.onFindResultsInPane('left', secondListener);
+    addon.emit({ resultIndex: 0, resultCount: 2 });
+    expect(listener).toHaveBeenCalledExactlyOnceWith({ resultIndex: 0, resultCount: 2 });
+    expect(secondListener).toHaveBeenCalledExactlyOnceWith({ resultIndex: 0, resultCount: 2 });
+    unsubscribeSecond();
+    addon.emit({ resultIndex: 1, resultCount: 2 });
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(secondListener).toHaveBeenCalledOnce();
+    expect(mocks.sendInput).not.toHaveBeenCalled();
+
+    api.detachPane('left');
+    addon.emit({ resultIndex: 1, resultCount: 2 });
+    expect(listener).toHaveBeenCalledTimes(2);
+    const second = pane();
+    api.attachToPane('right', 'a', second, false);
+    expect(searchAddon('a')).toBe(addon);
+    expect(api.findInPane('right', 'needle', { previous: true, wholeWord: true })).toBe(true);
+    expect(addon.findPrevious).toHaveBeenCalledExactlyOnceWith('needle', {
+      caseSensitive: false,
+      wholeWord: true,
+      incremental: false,
+      decorations: {
+        activeMatchBackground: '#cdd6f4',
+        activeMatchBorder: '#cdd6f4',
+        activeMatchColorOverviewRuler: '#cdd6f4',
+        matchBackground: '#45475a',
+        matchBorder: '#cdd6f4',
+        matchOverviewRuler: '#cdd6f4',
+      },
+    });
+
+    expect(addon.clearDecorations).toHaveBeenCalledOnce();
+    expect(api.findInPane('right', '')).toBe(false);
+    expect(addon.clearDecorations).toHaveBeenCalledTimes(2);
+    api.findInPane('right', 'needle', { previous: true, wholeWord: true });
+    expect(addon.clearDecorations).toHaveBeenCalledTimes(2);
+    api.clearFindInPane('right');
+    expect(addon.clearDecorations).toHaveBeenCalledTimes(3);
+    expect(terminal('a').clearSelection).toHaveBeenCalledTimes(2);
+    unsubscribe();
+    addon.emit({ resultIndex: 1, resultCount: 2 });
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('normalizes themed search decoration colors for the xterm addon', () => {
+    render({ theme: {
+      background: '#000000',
+      foreground: '#abc',
+      selectionBackground: 'rgb(10 20 30 / 50%)',
+      selectionForeground: '#11223344',
+      cursor: 'rgb(1, 2, 3)',
+    } });
+    api.attachToPane('left', 'theme-a', pane());
+    const addon = searchAddon('theme-a');
+
+    api.findInPane('left', 'needle');
+    expect(addon.findNext).toHaveBeenLastCalledWith('needle', expect.objectContaining({
+      decorations: {
+        activeMatchBackground: '#010203',
+        activeMatchBorder: '#112233',
+        activeMatchColorOverviewRuler: '#112233',
+        matchBackground: '#0a141e',
+        matchBorder: '#010203',
+        matchOverviewRuler: '#010203',
+      },
+    }));
+
+    render({ theme: { background: '#000000', foreground: '#123456', cursor: 'rgb(999, 0, 0)' } });
+    api.findInPane('left', 'needle');
+    expect(addon.findNext).toHaveBeenLastCalledWith('needle', expect.objectContaining({
+      decorations: expect.objectContaining({
+        activeMatchBackground: '#123456',
+        matchBorder: '#123456',
+      }),
+    }));
+  });
+
   it('discards delayed layout work after another session reuses the same pane container', () => {
     const container = pane();
     api.attachToPane('left', 'old', container);
@@ -249,6 +389,23 @@ describe('terminal session lifecycle', () => {
     api.detachPane('right');
     expect(terminal('a')).toBe(survivor);
     expect(survivor.dispose).not.toHaveBeenCalled();
+  });
+
+  it('guards missing search panes and disposes search listeners on removal', () => {
+    expect(api.findInPane('missing', 'needle')).toBe(false);
+    api.clearFindInPane('missing');
+    const first = pane();
+    api.attachToPane('left', 'remove-me', first);
+    const addon = searchAddon('remove-me');
+    const listener = vi.fn();
+    api.onFindResultsInPane('left', listener);
+    expect(addon.listeners.size).toBe(1);
+
+    api.remove('remove-me');
+    expect(addon.listeners.size).toBe(0);
+    addon.emit({ resultIndex: 0, resultCount: 1 });
+    expect(listener).not.toHaveBeenCalled();
+    expect(api.peek('remove-me')).toBeUndefined();
   });
 
   it('disposes removed sessions and prevents their queued resize callbacks', () => {

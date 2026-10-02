@@ -27,6 +27,7 @@ import '@fontsource/atkinson-hyperlegible/700.css';
 
 import './styles/tokens.css';
 import './styles/global.css';
+import './styles/terminal-search.css';
 
 const root = document.getElementById('root');
 if (root) {

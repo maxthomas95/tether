@@ -20,14 +20,19 @@ class FakeResizeObserver {
   notify() { this.callback([], this as unknown as ResizeObserver); }
 }
 
-function render(sessionId: string | null) {
+function render(sessionId: string | null, overrides: Partial<ComponentProps<typeof TerminalPane>> = {}) {
+  const session = sessionId ? {
+    id: sessionId, label: 'Test session', state: 'running' as const, workingDir: 'repo', createdAt: 0, updatedAt: 0,
+  } : undefined;
   const props: ComponentProps<typeof TerminalPane> = {
-    paneId: 'pane', sessionId, session: undefined, isMaximized: false,
+    paneId: 'pane', sessionId, session, isMaximized: false,
     onChooseSession: vi.fn(), isFocused: true, canvas: true, isDragging: false,
     draggingPaneId: null, onDragStateChange: vi.fn(), layoutDispatch: vi.fn(),
     termManager: manager, enablePaneSplitting: false, currentLeafCount: 1,
     maxPanes: 4, defaultFontSize: 14, onFontSizeDelta: vi.fn(),
     isBroadcastTarget: false, isBroadcastActive: false, onToggleBroadcastTarget: vi.fn(),
+    isSearchOpen: false, searchFocusRequest: 0, onOpenSearch: vi.fn(), onCloseSearch: vi.fn(),
+    ...overrides,
   };
   act(() => root.render(createElement(TerminalPane, props)));
 }
@@ -50,9 +55,11 @@ beforeEach(() => {
   });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
   vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+  vi.stubGlobal('electronAPI', { homeDir: 'home' });
   manager = {
     getOrCreate: vi.fn(), peek: vi.fn(), writeData: vi.fn(), attachToPane: vi.fn(),
-    detachPane: vi.fn(), fitPane: vi.fn(), focusPane: vi.fn(), setSessionFontSize: vi.fn(),
+    detachPane: vi.fn(), fitPane: vi.fn(), focusPane: vi.fn(), findInPane: vi.fn(),
+    clearFindInPane: vi.fn(), onFindResultsInPane: vi.fn(() => vi.fn()), setSessionFontSize: vi.fn(),
     setBroadcastTargets: vi.fn(), remove: vi.fn(),
   };
   host = document.createElement('div');
@@ -91,6 +98,26 @@ describe('terminal pane resizing', () => {
     act(() => vi.advanceTimersByTime(200));
     flushFrames();
     expect(manager.fitPane).toHaveBeenCalledTimes(2);
+  });
+
+  it('opens search from the header and closes it by clearing and refocusing the pane', () => {
+    const onOpenSearch = vi.fn();
+    const onCloseSearch = vi.fn();
+    const layoutDispatch = vi.fn();
+    render('session-a', { onOpenSearch, layoutDispatch });
+
+    const searchButton = host.querySelector<HTMLButtonElement>('[aria-label="Find in terminal"]')!;
+    act(() => searchButton.click());
+    expect(layoutDispatch).toHaveBeenCalledWith({ type: 'SET_FOCUS', paneId: 'pane' });
+    expect(onOpenSearch).toHaveBeenCalledExactlyOnceWith('pane');
+
+    render('session-a', { isSearchOpen: true, onCloseSearch });
+    const closeSearch = host.querySelector<HTMLButtonElement>('[aria-label="Close terminal search"]')!;
+    act(() => closeSearch.click());
+    expect(manager.clearFindInPane).toHaveBeenCalledWith('pane');
+    expect(onCloseSearch).toHaveBeenCalledExactlyOnceWith('pane');
+    flushFrames();
+    expect(manager.focusPane).toHaveBeenLastCalledWith('pane');
   });
 
   it('cancels pending fits and observes the new container when a slot is reused', () => {

@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon, type ISearchDecorationOptions, type ISearchResultChangeEvent } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { PaneId } from '../../shared/layout-types';
 import { decodeOsc52Write } from '../utils/osc52';
@@ -9,6 +10,7 @@ import { DEFAULT_TERMINAL_FONT, loadTerminalFont } from '../styles/terminal-font
 interface ManagedTerminal {
   terminal: Terminal;
   fitAddon: FitAddon;
+  searchAddon: SearchAddon;
   linksAddon: WebLinksAddon;
 }
 
@@ -16,8 +18,16 @@ interface PaneEntry {
   sessionId: string;
   terminal: Terminal;
   fitAddon: FitAddon;
+  searchAddon: SearchAddon;
+  searchResultsDisposable?: { dispose: () => void };
+  lastFindOptions?: NormalizedFindOptions;
   linksAddon: WebLinksAddon;
   container: HTMLDivElement | null;
+}
+
+interface NormalizedFindOptions {
+  caseSensitive: boolean;
+  wholeWord: boolean;
 }
 
 function fitVisiblePane(entry: PaneEntry): void {
@@ -104,6 +114,9 @@ export interface TerminalManagerAPI {
   detachPane: (paneId: PaneId) => void;
   fitPane: (paneId: PaneId) => void;
   focusPane: (paneId: PaneId) => void;
+  findInPane: (paneId: PaneId, term: string, options?: { caseSensitive?: boolean; wholeWord?: boolean; previous?: boolean; incremental?: boolean }) => boolean;
+  clearFindInPane: (paneId: PaneId) => void;
+  onFindResultsInPane: (paneId: PaneId, listener: (event: ISearchResultChangeEvent) => void) => () => void;
   setSessionFontSize: (sessionId: string, fontSize: number) => void;
   setBroadcastTargets: (sessionIds: readonly string[]) => void;
   remove: (sessionId: string) => void;
@@ -118,6 +131,7 @@ export function useTerminalManager(
 ): TerminalManagerAPI {
   const panes = useRef(new Map<PaneId, PaneEntry>());
   const backgroundTerminals = useRef(new Map<string, ManagedTerminal>());
+  const searchResultListeners = useRef(new Map<PaneId, Set<(event: ISearchResultChangeEvent) => void>>());
   const broadcastTargets = useRef(new Set<string>());
   const themeRef = useRef<ITheme | undefined>(xtermTheme);
   const cursorStyleRef = useRef<TerminalCursorStyle>(cursorStyle);
@@ -220,6 +234,9 @@ export function useTerminalManager(
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
 
+    const searchAddon = new SearchAddon();
+    terminal.loadAddon(searchAddon);
+
     const linksAddon = new WebLinksAddon((event, uri) => {
       if (!event.ctrlKey && !event.metaKey) return;
       void window.electronAPI.shell.openExternal(uri);
@@ -272,7 +289,7 @@ export function useTerminalManager(
       return true;
     });
 
-    return { terminal, fitAddon, linksAddon };
+    return { terminal, fitAddon, searchAddon, linksAddon };
   }, [sendInput]);
 
   // Get or create a background terminal for sessions not in any visible pane
@@ -319,6 +336,7 @@ export function useTerminalManager(
 
     let terminal: Terminal;
     let fitAddon: FitAddon;
+    let searchAddon: SearchAddon;
     let linksAddon: WebLinksAddon;
 
     // Reuse background terminal if it exists — it has the scrollback buffer
@@ -327,6 +345,7 @@ export function useTerminalManager(
     if (bg) {
       terminal = bg.terminal;
       fitAddon = bg.fitAddon;
+      searchAddon = bg.searchAddon;
       linksAddon = bg.linksAddon;
       backgroundTerminals.current.delete(sessionId);
       wasBackground = true;
@@ -341,11 +360,17 @@ export function useTerminalManager(
       const managed = createTerminal(sessionId);
       terminal = managed.terminal;
       fitAddon = managed.fitAddon;
+      searchAddon = managed.searchAddon;
       linksAddon = managed.linksAddon;
       terminal.open(container);
     }
 
-    const paneEntry = { sessionId, terminal, fitAddon, linksAddon, container };
+    const paneEntry: PaneEntry = { sessionId, terminal, fitAddon, searchAddon, linksAddon, container };
+    paneEntry.searchResultsDisposable = searchAddon.onDidChangeResults((event) => {
+      const listeners = searchResultListeners.current.get(paneId);
+      if (!listeners) return;
+      for (const listener of listeners) listener(event);
+    });
     panes.current.set(paneId, paneEntry);
 
     // Fit after the layout has settled — a single rAF can be too early for
@@ -376,7 +401,9 @@ export function useTerminalManager(
     const entry = panes.current.get(paneId);
     if (!entry) return;
 
-    const { sessionId, terminal, fitAddon, linksAddon } = entry;
+    const { sessionId, terminal, fitAddon, searchAddon, linksAddon } = entry;
+    entry.searchResultsDisposable?.dispose();
+    searchResultListeners.current.delete(paneId);
 
     // Check if any OTHER pane shows this session
     let otherPaneExists = false;
@@ -394,7 +421,7 @@ export function useTerminalManager(
       if (terminal.element?.parentElement) {
         terminal.element.parentElement.removeChild(terminal.element);
       }
-      backgroundTerminals.current.set(sessionId, { terminal, fitAddon, linksAddon });
+      backgroundTerminals.current.set(sessionId, { terminal, fitAddon, searchAddon, linksAddon });
     } else {
       terminal.dispose();
     }
@@ -432,11 +459,58 @@ export function useTerminalManager(
     fitVisiblePane(entry);
   }, []);
 
+  const findInPane = useCallback<TerminalManagerAPI['findInPane']>((paneId, term, options = {}) => {
+    const entry = panes.current.get(paneId);
+    if (!entry) return false;
+    if (!term) {
+      clearFindEntry(entry);
+      return false;
+    }
+    const normalizedOptions: NormalizedFindOptions = {
+      caseSensitive: options.caseSensitive ?? false,
+      wholeWord: options.wholeWord ?? false,
+    };
+    if (hasFindOptionChange(entry.lastFindOptions, normalizedOptions)) {
+      entry.searchAddon.clearDecorations();
+    }
+    entry.lastFindOptions = normalizedOptions;
+    const searchOptions = {
+      ...normalizedOptions,
+      incremental: options.incremental ?? false,
+      decorations: getSearchDecorations(themeRef.current),
+    };
+    return options.previous
+      ? entry.searchAddon.findPrevious(term, searchOptions)
+      : entry.searchAddon.findNext(term, searchOptions);
+  }, []);
+
+  const clearFindInPane = useCallback((paneId: PaneId) => {
+    const entry = panes.current.get(paneId);
+    if (entry) clearFindEntry(entry);
+  }, []);
+
+  const onFindResultsInPane = useCallback<TerminalManagerAPI['onFindResultsInPane']>((paneId, listener) => {
+    let listeners = searchResultListeners.current.get(paneId);
+    if (!listeners) {
+      listeners = new Set();
+      searchResultListeners.current.set(paneId, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      const current = searchResultListeners.current.get(paneId);
+      if (!current) return;
+      current.delete(listener);
+      if (current.size === 0) searchResultListeners.current.delete(paneId);
+    };
+  }, []);
+
   // Remove ALL terminals for a session (panes + background)
   const remove = useCallback((sessionId: string) => {
     // Remove from panes
     for (const [paneId, entry] of panes.current.entries()) {
       if (entry.sessionId === sessionId) {
+        entry.searchResultsDisposable?.dispose();
+        searchResultListeners.current.delete(paneId);
         entry.terminal.dispose();
         panes.current.delete(paneId);
       }
@@ -453,6 +527,7 @@ export function useTerminalManager(
   useEffect(() => {
     return () => {
       for (const entry of panes.current.values()) {
+        entry.searchResultsDisposable?.dispose();
         entry.terminal.dispose();
       }
       panes.current.clear();
@@ -471,8 +546,54 @@ export function useTerminalManager(
     detachPane,
     fitPane,
     focusPane,
+    findInPane,
+    clearFindInPane,
+    onFindResultsInPane,
     setSessionFontSize,
     setBroadcastTargets,
     remove,
-  }), [getOrCreate, peek, writeData, attachToPane, detachPane, fitPane, focusPane, setSessionFontSize, setBroadcastTargets, remove]);
+  }), [getOrCreate, peek, writeData, attachToPane, detachPane, fitPane, focusPane, findInPane, clearFindInPane, onFindResultsInPane, setSessionFontSize, setBroadcastTargets, remove]);
+}
+
+function clearFindEntry(entry: PaneEntry): void {
+  entry.searchAddon.clearDecorations();
+  entry.terminal.clearSelection();
+  entry.lastFindOptions = undefined;
+}
+
+function hasFindOptionChange(previous: NormalizedFindOptions | undefined, next: NormalizedFindOptions): boolean {
+  return Boolean(previous && (previous.caseSensitive !== next.caseSensitive || previous.wholeWord !== next.wholeWord));
+}
+
+function getSearchDecorations(theme: ITheme | undefined): ISearchDecorationOptions {
+  const foreground = normalizeHexColor(theme?.foreground) ?? '#cdd6f4';
+  const selectionBackground = normalizeHexColor(theme?.selectionBackground) ?? '#45475a';
+  const selectionForeground = normalizeHexColor(theme?.selectionForeground) ?? foreground;
+  const accent = normalizeHexColor(theme?.cursor) ?? foreground;
+
+  return {
+    matchBackground: selectionBackground,
+    matchBorder: accent,
+    matchOverviewRuler: accent,
+    activeMatchBackground: accent,
+    activeMatchBorder: selectionForeground,
+    activeMatchColorOverviewRuler: selectionForeground,
+  };
+}
+
+function normalizeHexColor(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const short = /^#([0-9a-f]{3})$/i.exec(trimmed);
+  if (short) {
+    return `#${short[1].split('').map(ch => ch + ch).join('').toLowerCase()}`;
+  }
+  const full = /^#([0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec(trimmed);
+  if (full) return `#${full[1].toLowerCase()}`;
+  const rgb = /^rgba?\(\s*(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})(?:\s*[/,]\s*[\d.]+%?)?\s*\)$/i.exec(trimmed)
+    ?? /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*[\d.]+)?\s*\)$/i.exec(trimmed);
+  if (!rgb) return undefined;
+  const channels = rgb.slice(1, 4).map(Number);
+  if (channels.some(channel => !Number.isInteger(channel) || channel < 0 || channel > 255)) return undefined;
+  return `#${channels.map(channel => channel.toString(16).padStart(2, '0')).join('')}`;
 }

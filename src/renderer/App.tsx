@@ -31,6 +31,7 @@ import type { TerminalCursorStyle } from './hooks/useTerminalManager';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 import { useWorkspacePersistence, type WorkspaceRestoreFailure } from './hooks/useWorkspacePersistence';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useTerminalSearch } from './hooks/useTerminalSearch';
 import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
 import {
@@ -1482,10 +1483,41 @@ export function App() {
     setSessionDialogOpen(true);
   }, []);
 
+  const modalOpen = sessionDialogOpen || envDialogOpen || settingsOpen || shortcutsOpen || searchOpen || aboutOpen
+    || usageHistoryOpen || setupWizardOpen || hostVerifyRequest !== null || resumePickerFor !== null
+    || vaultPrompt !== null || confirmDialogProps.isOpen;
+
+  const focusedTerminalPaneId = canvasEnabled ? canvasState.focusedPaneId : layoutState.focusedPaneId;
+  const terminalSearchVisiblePaneIds = useMemo(() => {
+    if (canvasEnabled) return new Set(canvasState.panels.map(panel => panel.id));
+    if (!layoutState.root) return new Set<string>();
+    return new Set(getLeaves(layoutState.root).map(leaf => leaf.id));
+  }, [canvasEnabled, canvasState.panels, layoutState.root]);
+  const focusPaneForTerminalSearch = useCallback((paneId: string) => {
+    if (canvasEnabled) {
+      canvasDispatch({ type: 'FOCUS_VISIBLE', paneId });
+    } else {
+      layoutDispatch({ type: 'SET_FOCUS', paneId });
+    }
+  }, [canvasDispatch, canvasEnabled, layoutDispatch]);
+  const {
+    searchPaneId: terminalSearchPaneId,
+    searchFocusRequest: terminalSearchFocusRequest,
+    openSearch: handleOpenTerminalSearch,
+    closeSearch: handleCloseTerminalSearch,
+  } = useTerminalSearch({
+    focusedPaneId: focusedTerminalPaneId,
+    modalOpen,
+    visiblePaneIds: terminalSearchVisiblePaneIds,
+    clearFindInPane: termManager.clearFindInPane,
+    focusPaneForSearch: focusPaneForTerminalSearch,
+  });
+
   // Keyboard shortcuts
   const shortcutActions = useMemo(() => ({
     onNewSession: () => setSessionDialogOpen(true),
     onOpenSearch: () => setSearchOpen(true),
+    onFindInTerminal: () => handleOpenTerminalSearch(),
     onToggleSidebar: () => setSidebarVisible(v => !v),
     onStopSession: () => { if (activeSessionId) handleStop(activeSessionId); },
     onOpenSettings: () => setSettingsOpen(true),
@@ -1543,7 +1575,7 @@ export function App() {
         targetPaneId: neighborId,
       });
     },
-  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom, handleJumpToNextWaiting, canvasEnabled, canvasState]);
+  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom, handleJumpToNextWaiting, canvasEnabled, canvasState, handleOpenTerminalSearch]);
 
   useKeyboardShortcuts(shortcutActions, resolvedBindings, maintenanceTarget === null);
 
@@ -1791,6 +1823,7 @@ export function App() {
       label: 'Session',
       items: [
         { label: 'Find Session...', shortcut: formatChord(resolvedBindings['search.open']) || undefined, onClick: () => setSearchOpen(true), disabled: sessions.length === 0 },
+        { label: 'Find in Terminal', shortcut: formatChord(resolvedBindings['terminal.find']) || undefined, onClick: () => handleOpenTerminalSearch(), disabled: modalOpen || !(canvasEnabled ? canvasState.focusedPaneId : layoutState.focusedPaneId) },
         { label: 'Jump to Next Waiting', shortcut: formatChord(resolvedBindings['session.nextWaiting']) || undefined, onClick: handleJumpToNextWaiting, disabled: waitingCount === 0 },
         { separator: true },
         { label: 'Stop Session', shortcut: formatChord(resolvedBindings['session.stop']) || undefined, onClick: () => { if (activeSessionId) handleStop(activeSessionId); }, disabled: !isAlive },
@@ -1836,7 +1869,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle, pip.settings, pip.busy, pip.toggle]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, layoutState.focusedPaneId, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, canvasState.focusedPaneId, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle, pip.settings, pip.busy, pip.toggle, handleOpenTerminalSearch, modalOpen]);
 
   return (
     <div className="app-layout" data-density={uiDensity}>
@@ -2044,7 +2077,11 @@ export function App() {
             sessions={sessions} environments={environments} defaultFontSize={defaultTerminalFontSize}
             onFontSizeDelta={handleSessionFontSizeChange} onRestartInPane={handleRestartInPane}
             onChooseSession={() => sessions.length ? setSearchOpen(true) : setSessionDialogOpen(true)}
-            onDropComplete={() => setIsDragging(false)} />
+            onDropComplete={() => setIsDragging(false)}
+            searchPaneId={terminalSearchPaneId}
+            searchFocusRequest={terminalSearchFocusRequest}
+            onOpenTerminalSearch={handleOpenTerminalSearch}
+            onCloseTerminalSearch={handleCloseTerminalSearch} />
         ) : layoutState.root ? (
           <SplitLayout
             node={layoutState.maximizedPaneId
@@ -2071,6 +2108,10 @@ export function App() {
             broadcastPaneIds={broadcastPaneIds}
             broadcastActive={broadcastActive}
             onToggleBroadcastTarget={handleToggleBroadcastTarget}
+            searchPaneId={terminalSearchPaneId}
+            searchFocusRequest={terminalSearchFocusRequest}
+            onOpenTerminalSearch={handleOpenTerminalSearch}
+            onCloseTerminalSearch={handleCloseTerminalSearch}
             onRestartInPane={handleRestartInPane}
           />
         ) : (
