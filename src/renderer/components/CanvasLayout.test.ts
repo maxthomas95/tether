@@ -76,5 +76,24 @@ describe('CanvasLayout terminal search forwarding', () => {
       isFocused: true,
       canvas: true,
     });
+
+    paneProps.length = 0;
+    act(() => root.render(createElement(CanvasLayout, {
+      state,
+      dispatch: vi.fn(),
+      termManager,
+      sessions: [{ id: 'session-a', label: 'Canvas', state: 'running', workingDir: '', createdAt: 0, updatedAt: 0 }],
+      environments: [{ id: 'local', name: 'Local', type: 'local' }],
+      defaultFontSize: 14,
+      onFontSizeDelta: vi.fn(),
+      onRestartInPane: vi.fn(),
+      onChooseSession: vi.fn(),
+      onDropComplete: vi.fn(),
+      searchPaneId: 'other-pane',
+      searchFocusRequest: 4,
+      onOpenTerminalSearch: vi.fn(),
+      onCloseTerminalSearch: vi.fn(),
+    })));
+    expect(paneProps[0]).toMatchObject({ isSearchOpen: false, searchFocusRequest: 0 });
   });
 });

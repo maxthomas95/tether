@@ -81,10 +81,10 @@ let host: HTMLDivElement;
 let api: TerminalManagerAPI;
 let frames: FrameRequestCallback[];
 
-function Harness({ color = '#000000', cursor = 'block', scrollback = 10000, fontFamily = '' }: {
-  color?: string; cursor?: TerminalCursorStyle; scrollback?: number; fontFamily?: string;
+function Harness({ color = '#000000', theme, cursor = 'block', scrollback = 10000, fontFamily = '' }: {
+  color?: string; theme?: Record<string, string>; cursor?: TerminalCursorStyle; scrollback?: number; fontFamily?: string;
 }) {
-  api = useTerminalManager({ background: color }, fontFamily, cursor, true, scrollback);
+  api = useTerminalManager(theme ?? { background: color }, fontFamily, cursor, true, scrollback);
   return null;
 }
 
@@ -284,14 +284,21 @@ describe('terminal session lifecycle', () => {
     });
 
     const listener = vi.fn();
+    const secondListener = vi.fn();
     const unsubscribe = api.onFindResultsInPane('left', listener);
+    const unsubscribeSecond = api.onFindResultsInPane('left', secondListener);
     addon.emit({ resultIndex: 0, resultCount: 2 });
     expect(listener).toHaveBeenCalledExactlyOnceWith({ resultIndex: 0, resultCount: 2 });
+    expect(secondListener).toHaveBeenCalledExactlyOnceWith({ resultIndex: 0, resultCount: 2 });
+    unsubscribeSecond();
+    addon.emit({ resultIndex: 1, resultCount: 2 });
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(secondListener).toHaveBeenCalledOnce();
     expect(mocks.sendInput).not.toHaveBeenCalled();
 
     api.detachPane('left');
     addon.emit({ resultIndex: 1, resultCount: 2 });
-    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledTimes(2);
     const second = pane();
     api.attachToPane('right', 'a', second, false);
     expect(searchAddon('a')).toBe(addon);
@@ -320,7 +327,40 @@ describe('terminal session lifecycle', () => {
     expect(terminal('a').clearSelection).toHaveBeenCalledTimes(2);
     unsubscribe();
     addon.emit({ resultIndex: 1, resultCount: 2 });
-    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('normalizes themed search decoration colors for the xterm addon', () => {
+    render({ theme: {
+      background: '#000000',
+      foreground: '#abc',
+      selectionBackground: 'rgb(10 20 30 / 50%)',
+      selectionForeground: '#11223344',
+      cursor: 'rgb(1, 2, 3)',
+    } });
+    api.attachToPane('left', 'theme-a', pane());
+    const addon = searchAddon('theme-a');
+
+    api.findInPane('left', 'needle');
+    expect(addon.findNext).toHaveBeenLastCalledWith('needle', expect.objectContaining({
+      decorations: {
+        activeMatchBackground: '#010203',
+        activeMatchBorder: '#112233',
+        activeMatchColorOverviewRuler: '#112233',
+        matchBackground: '#0a141e',
+        matchBorder: '#010203',
+        matchOverviewRuler: '#010203',
+      },
+    }));
+
+    render({ theme: { background: '#000000', foreground: '#123456', cursor: 'rgb(999, 0, 0)' } });
+    api.findInPane('left', 'needle');
+    expect(addon.findNext).toHaveBeenLastCalledWith('needle', expect.objectContaining({
+      decorations: expect.objectContaining({
+        activeMatchBackground: '#123456',
+        matchBorder: '#123456',
+      }),
+    }));
   });
 
   it('discards delayed layout work after another session reuses the same pane container', () => {
@@ -349,6 +389,23 @@ describe('terminal session lifecycle', () => {
     api.detachPane('right');
     expect(terminal('a')).toBe(survivor);
     expect(survivor.dispose).not.toHaveBeenCalled();
+  });
+
+  it('guards missing search panes and disposes search listeners on removal', () => {
+    expect(api.findInPane('missing', 'needle')).toBe(false);
+    api.clearFindInPane('missing');
+    const first = pane();
+    api.attachToPane('left', 'remove-me', first);
+    const addon = searchAddon('remove-me');
+    const listener = vi.fn();
+    api.onFindResultsInPane('left', listener);
+    expect(addon.listeners.size).toBe(1);
+
+    api.remove('remove-me');
+    expect(addon.listeners.size).toBe(0);
+    addon.emit({ resultIndex: 0, resultCount: 1 });
+    expect(listener).not.toHaveBeenCalled();
+    expect(api.peek('remove-me')).toBeUndefined();
   });
 
   it('disposes removed sessions and prevents their queued resize callbacks', () => {
