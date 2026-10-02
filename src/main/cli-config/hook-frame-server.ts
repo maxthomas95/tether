@@ -27,6 +27,7 @@ export type HookEventType =
   | 'turn_complete'
   | 'session_start'
   | 'turn_start'
+  | 'tool_start'
   | 'tool_complete'
   | 'compact_start'
   | 'compact_complete'
@@ -56,6 +57,7 @@ const HOOK_EVENT_TYPES: ReadonlySet<string> = new Set([
   'turn_complete',
   'session_start',
   'turn_start',
+  'tool_start',
   'tool_complete',
   'compact_start',
   'compact_complete',

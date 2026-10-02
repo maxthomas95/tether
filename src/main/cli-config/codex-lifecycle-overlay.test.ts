@@ -1,9 +1,31 @@
-import { describe, expect, it } from 'vitest';
-import { mergeCodexLifecycleHooks, scrubCodexLifecycleHooks } from './codex-lifecycle-overlay';
+import { describe, expect, it, vi } from 'vitest';
+import { installCodexLifecycleHooks, mergeCodexLifecycleHooks, scrubCodexLifecycleHooks } from './codex-lifecycle-overlay';
 
 const HELPER = 'C:\\Program Files\\Tether\\resources\\tether-cli-hook\\index.js';
 
 describe('Codex lifecycle hooks overlay', () => {
+  it('reports a malformed lifecycle install as unavailable without writing', async () => {
+    const writeAtomic = vi.fn();
+    const installed = await installCodexLifecycleHooks({
+      helperPath: HELPER, hooksPath: 'test-hooks.json',
+      store: { read: () => '{', exists: () => true, writeAtomic },
+    });
+    expect(installed).toBe(false);
+    expect(writeAtomic).not.toHaveBeenCalled();
+  });
+
+  it('reports successful fresh and already-installed lifecycle wiring', async () => {
+    let content: string | null = null;
+    const writeAtomic = vi.fn((_filePath: string, text: string) => { content = text; });
+    const ctx = {
+      helperPath: HELPER, hooksPath: 'test-hooks.json',
+      store: { read: () => content, exists: () => content !== null, writeAtomic },
+    };
+    expect(await installCodexLifecycleHooks(ctx)).toBe(true);
+    expect(await installCodexLifecycleHooks(ctx)).toBe(true);
+    expect(writeAtomic).toHaveBeenCalledTimes(1);
+  });
+
   it('adds passive command hooks for Codex lifecycle events', () => {
     const result = mergeCodexLifecycleHooks(null, HELPER);
     expect(result.valid).toBe(true);

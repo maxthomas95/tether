@@ -2,8 +2,8 @@ import type { CliToolId } from '../../../shared/types';
 import { quotePosixShellArg } from '../../../shared/shell-quote';
 import { createLogger } from '../../logger';
 import { handleConnection, type HookEventHandler, type TokenValidator } from '../hook-frame-server';
-import { helperCommand, mergeClaudeSettings, scrubClaudeSettings } from '../claude-settings-overlay';
-import { mergeCodexConfig, scrubCodexConfig } from '../codex-config-overlay';
+import { helperCommand, mergeClaudeSettings, scrubClaudeSettings, hasTetherClaudeHooks } from '../claude-settings-overlay';
+import { mergeCodexConfig, scrubCodexConfig, hasTetherCodexNotify } from '../codex-config-overlay';
 import { SENTINEL_TOKEN } from '../overlay-common';
 import type { ControlConnection, ControlConnectionFactory, RemoteFileOps } from './control-connection';
 
@@ -339,13 +339,19 @@ export class RemoteHookAgent {
       this.applyOverlay(
         files,
         p.claudeSettings,
-        (text) => ({ text: mergeClaudeSettings(text, helperCommand(p.helperPath, '--claude', 'posix')), changed: true }),
+        (text) => {
+          const merged = mergeClaudeSettings(text, helperCommand(p.helperPath, '--claude', 'posix'));
+          return { text: merged, changed: true, installed: hasTetherClaudeHooks(merged) };
+        },
         'Claude hook install failed — Claude sessions stay cadence-only on this env',
       ),
       this.applyOverlay(
         files,
         p.codexConfig,
-        (text) => mergeCodexConfig(text, p.helperPath),
+        (text) => {
+          const merged = mergeCodexConfig(text, p.helperPath);
+          return { ...merged, installed: hasTetherCodexNotify(merged.text) };
+        },
         'Codex notify install failed — Codex sessions stay cadence-only on this env',
       ),
     ]);
@@ -372,7 +378,7 @@ export class RemoteHookAgent {
   private async applyOverlay(
     files: RemoteFileOps,
     filePath: string,
-    transform: (text: string | null) => { text: string; changed: boolean },
+    transform: (text: string | null) => { text: string; changed: boolean; installed?: boolean },
     failureLabel: string,
   ): Promise<boolean> {
     try {
@@ -380,7 +386,7 @@ export class RemoteHookAgent {
       if (result.changed) {
         await this.writeAtomic(files, filePath, result.text);
       }
-      return true;
+      return result.installed ?? true;
     } catch (err) {
       log.warn(`Remote ${failureLabel}`, {
         environmentId: this.deps.environmentId,

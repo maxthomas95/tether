@@ -119,6 +119,7 @@ describe('tether-cli-hook helper (end-to-end against the bridge)', () => {
       mode: '--codex',
       payload: {
         type: 'agent-turn-complete',
+        'thread-id': 'parent-codex-thread',
         'turn-id': 'abc',
         cwd: '/x',
         prompt: 'do not forward',
@@ -135,10 +136,40 @@ describe('tether-cli-hook helper (end-to-end against the bridge)', () => {
     });
     expect(result.events[0].payload).toMatchObject({
       type: 'agent-turn-complete',
+      toolSessionId: 'parent-codex-thread',
       turnId: 'abc',
     });
     expect(result.events[0].payload).not.toHaveProperty('cwd');
     expect(result.events[0].payload).not.toHaveProperty('prompt');
+  });
+
+  it.each([
+    ['UserPromptSubmit', 'turn_start'],
+    ['PreToolUse', 'tool_start'],
+    ['PostToolUse', 'tool_complete'],
+    ['PostToolUseFailure', 'tool_complete'],
+    ['SubagentStart', 'subagent_start'],
+    ['SubagentStop', 'subagent_stop'],
+  ])('forwards Claude %s as %s without private content', async (hookEventName, type) => {
+    const events: HookEvent[] = [];
+    const bridge = await createHookBridge((e) => events.push(e));
+    handles.push(bridge);
+    const result = await runHelper({
+      socket: bridge.socketPath, token: bridge.token, sessionId: 'tether-parent', mode: '--claude', events,
+      payload: {
+        session_id: 'claude-parent', hook_event_name: hookEventName, agent_id: 'agent-1',
+        prompt: 'SECRET', tool_input: { value: 'SECRET' }, tool_response: 'SECRET',
+        transcript_path: '/private/path', last_assistant_message: 'SECRET',
+      },
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      source: 'claude', type,
+      payload: { session_id: 'claude-parent', hook_event_name: hookEventName, agent_id: 'agent-1' },
+    });
+    expect(JSON.stringify(result.events)).not.toContain('SECRET');
+    expect(result.events[0].payload).not.toHaveProperty('transcript_path');
   });
 
   it('classifies Codex lifecycle hooks and redacts non-metadata fields', async () => {

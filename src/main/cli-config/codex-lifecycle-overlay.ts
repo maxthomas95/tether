@@ -161,18 +161,18 @@ function readExisting(store: ConfigFileStore, filePath: string): string | null {
   return store.read(filePath);
 }
 
-export async function installCodexLifecycleHooks(ctx: CodexLifecycleOverlayContext): Promise<void> {
-  await withMutex(async () => {
+export async function installCodexLifecycleHooks(ctx: CodexLifecycleOverlayContext): Promise<boolean> {
+  return withMutex(async () => {
     const store = ctx.store ?? localConfigFileStore;
     const filePath = resolveHooksPath(ctx);
     const merged = mergeCodexLifecycleHooks(readExisting(store, filePath), ctx.helperPath);
     if (!merged.valid) {
       log.warn('Codex hooks.json is malformed or non-object; lifecycle hooks not installed', { filePath });
-      return;
+      return false;
     }
-    if (!merged.changed) return;
-    store.writeAtomic(filePath, merged.text);
+    if (merged.changed) store.writeAtomic(filePath, merged.text);
     log.info('Codex lifecycle hooks installed', { filePath });
+    return true;
   });
 }
 

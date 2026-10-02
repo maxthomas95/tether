@@ -12,7 +12,7 @@ import {
 const log = createLogger('claude-overlay');
 
 /**
- * Additively merge Tether-managed `Notification` and `Stop` hook entries
+ * Additively merge Tether-managed turn, tool, subagent and notification hooks
  * into the user's `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR`).
  *
  * Lifetime model (option A′):
@@ -50,6 +50,7 @@ export interface ClaudeOverlayContext {
 }
 
 const withMutex = createOverlayMutex();
+const ACTIVITY_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop'] as const;
 
 interface CommandHook { type?: string; command?: string; [k: string]: unknown }
 interface NotificationGroup { matcher?: string; hooks?: CommandHook[]; [k: string]: unknown }
@@ -102,7 +103,7 @@ function isTetherManaged(hook: CommandHook | undefined): boolean {
 }
 
 /**
- * Strip every Tether-managed entry from the Notification and Stop arrays.
+ * Strip every Tether-managed entry from the observed hook arrays.
  * Returns true if the structure changed (used to decide whether to write).
  */
 function scrubTetherEntries(settings: SettingsShape): boolean {
@@ -135,8 +136,9 @@ function scrubTetherEntries(settings: SettingsShape): boolean {
     }
   }
 
-  const stop = settings.hooks.Stop;
-  if (Array.isArray(stop)) {
+  for (const event of ['Stop', ...ACTIVITY_EVENTS]) {
+    const stop = settings.hooks[event];
+    if (!Array.isArray(stop)) continue;
     const filtered: StopEntry[] = [];
     for (const entry of stop) {
       if (!entry || typeof entry !== 'object') continue;
@@ -160,10 +162,10 @@ function scrubTetherEntries(settings: SettingsShape): boolean {
       }
     }
     if (filtered.length === 0) {
-      delete settings.hooks.Stop;
+      delete settings.hooks[event];
       changed = true;
     } else {
-      settings.hooks.Stop = filtered;
+      settings.hooks[event] = filtered;
     }
   }
 
@@ -213,7 +215,7 @@ const NOTIFICATION_MATCHER = [
  * Pure: additively merge Tether's hook entries into `text` (the current
  * settings.json content, or null/empty for a missing file) and return the
  * rewritten text. Scrubs prior Tether-managed entries first (idempotent /
- * crash-recovery), then appends fresh Notification + Stop entries.
+ * crash-recovery), then appends fresh notification and activity observers.
  *
  * THROWS if `text` is present but unparseable — never returns mangled output.
  * No I/O — drive it through a ConfigFileStore at the call site.
@@ -223,6 +225,7 @@ const NOTIFICATION_MATCHER = [
 export function mergeClaudeSettings(text: string | null, helperCmd: string): string {
   const settings = parseSettings(text, 'settings.json');
   scrubTetherEntries(settings);
+  if (settings.disableAllHooks === true) return serializeSettings(settings);
 
   settings.hooks = settings.hooks || {};
   const notif = Array.isArray(settings.hooks.Notification) ? settings.hooks.Notification : [];
@@ -233,7 +236,24 @@ export function mergeClaudeSettings(text: string | null, helperCmd: string): str
   stop.push({ hooks: [{ type: 'command', command: helperCmd }] });
   settings.hooks.Stop = stop;
 
+  for (const event of ACTIVITY_EVENTS) {
+    const entries = Array.isArray(settings.hooks[event]) ? settings.hooks[event] as StopEntry[] : [];
+    entries.push({ hooks: [{ type: 'command', command: helperCmd }] });
+    settings.hooks[event] = entries;
+  }
+
   return serializeSettings(settings);
+}
+
+export function hasTetherClaudeHooks(text: string): boolean {
+  const settings = parseSettings(text, 'settings.json');
+  if (settings.disableAllHooks === true) return false;
+  return Array.isArray(settings.hooks?.Stop) && settings.hooks.Stop.some((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    if (isTetherManaged(entry as CommandHook)) return true;
+    const hooks = (entry as StopEntryGroup).hooks;
+    return Array.isArray(hooks) && hooks.some(isTetherManaged);
+  });
 }
 
 /**
@@ -256,14 +276,16 @@ export function scrubClaudeSettings(text: string | null): { text: string; change
  * Throws if `settings.json` exists but is unparseable — caller should surface
  * to the user rather than overwrite mystery content.
  */
-export async function installClaudeHooks(ctx: ClaudeOverlayContext): Promise<void> {
-  await withMutex(async () => {
+export async function installClaudeHooks(ctx: ClaudeOverlayContext): Promise<boolean> {
+  return withMutex(async () => {
     const store = ctx.store ?? localConfigFileStore;
     const filePath = resolveSettingsPath(ctx);
     const helperCmd = helperCommand(ctx.helperPath, '--claude', ctx.platform);
     const merged = mergeClaudeSettings(store.read(filePath), helperCmd);
     store.writeAtomic(filePath, merged);
-    log.info('Claude hooks installed', { filePath });
+    const installed = hasTetherClaudeHooks(merged);
+    log.info(installed ? 'Claude hooks installed' : 'Claude hooks disabled; using cadence detection', { filePath });
+    return installed;
   });
 }
 

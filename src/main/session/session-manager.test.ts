@@ -149,6 +149,7 @@ vi.mock('../coder/workspace-service', () => ({
 import { SessionManager, setHelmChildCallbacks } from './session-manager';
 import { remoteUsageService } from '../usage/remote-usage-service';
 import { buildSessionRestartOptions } from '../../renderer/utils/session-restart';
+import { statusDetector } from '../status/status-detector';
 
 function callbacks() {
   return {
@@ -349,6 +350,100 @@ describe('SessionManager', () => {
     expect(cb.onExit).not.toHaveBeenCalled();
   });
 
+  describe('Claude status hook handling', () => {
+    async function createClaudeSession() {
+      const cb = callbacks();
+      const session = await manager.createSession({ workingDir: 'C:/repo/claude-hooks', cliTool: 'claude' }, cb);
+      statusDetector.setHookCapable(session.id, true);
+      return { session, cb };
+    }
+
+    it.each(['tool_start', 'tool_complete', 'elicitation_complete', 'elicitation_response'] as const)(
+      'resumes work after %s rather than declaring the turn complete', async (type) => {
+        const { session, cb } = await createClaudeSession();
+        manager.handleHookEvent({ tetherSessionId: session.id, source: 'claude', type: 'permission_prompt' });
+        expect(session.waitingReason).toBe('permission');
+        manager.handleHookEvent({ tetherSessionId: session.id, source: 'claude', type });
+        expect(cb.onStateChange).toHaveBeenLastCalledWith(session.id, 'running', undefined);
+      },
+    );
+
+    it('tracks parent completion separately from multiple subagent completions', async () => {
+      const { session } = await createClaudeSession();
+      const event = (type: 'subagent_start' | 'subagent_stop', agentId: string) => manager.handleHookEvent({
+        tetherSessionId: session.id, source: 'claude', type, payload: { agent_id: agentId },
+      });
+      event('subagent_start', 'agent-a');
+      event('subagent_start', 'agent-b');
+      manager.handleHookEvent({ tetherSessionId: session.id, source: 'claude', type: 'turn_complete' });
+      expect(session.state).toBe('running');
+      event('subagent_stop', 'agent-a');
+      expect(session.state).toBe('running');
+      event('subagent_stop', 'agent-b');
+      expect(session.state).toBe('waiting');
+      expect(session.waitingReason).toBe('idle');
+    });
+
+    it('keeps hook completion through raw transport output without modifying the stream', async () => {
+      vi.useFakeTimers();
+      try {
+        const { session, cb } = await createClaudeSession();
+        manager.handleHookEvent({ tetherSessionId: session.id, source: 'claude', type: 'turn_complete' });
+        const transport = transportHarness.state.instances.at(-1)!;
+        const raw = '\x1b[2Jfinal flush\x07prompt';
+        (transport.onData.mock.calls[0][0] as (data: string) => void)(raw);
+        vi.advanceTimersByTime(31_000);
+        expect(session.waitingReason).toBe('idle');
+        expect(cb.onData).toHaveBeenCalledWith(session.id, raw);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps parent completion pending through inherited subagent tool hooks', async () => {
+      const { session } = await createClaudeSession();
+      manager.handleHookEvent({
+        tetherSessionId: session.id, source: 'claude', type: 'subagent_start', payload: { agent_id: 'agent-a' },
+      });
+      manager.handleHookEvent({ tetherSessionId: session.id, source: 'claude', type: 'turn_complete' });
+      for (const type of ['tool_start', 'tool_complete', 'idle_prompt'] as const) {
+        manager.handleHookEvent({
+          tetherSessionId: session.id, source: 'claude', type, payload: { agent_id: 'agent-a' },
+        });
+        expect(session.state).toBe('running');
+      }
+      manager.handleHookEvent({
+        tetherSessionId: session.id, source: 'claude', type: 'subagent_stop', payload: { agent_id: 'agent-a' },
+      });
+      expect(session.waitingReason).toBe('idle');
+    });
+
+    it('does not treat a subagent Stop as completion of its still-running parent', async () => {
+      const { session } = await createClaudeSession();
+      manager.handleHookEvent({
+        tetherSessionId: session.id, source: 'claude', type: 'subagent_start', payload: { agent_id: 'agent-a' },
+      });
+      manager.handleHookEvent({
+        tetherSessionId: session.id, source: 'claude', type: 'turn_complete', payload: { agent_id: 'agent-a' },
+      });
+      expect(session.state).toBe('running');
+    });
+
+    it('rejects another Claude native session and Claude events sent to Codex sessions', async () => {
+      const { session, cb } = await createClaudeSession();
+      session.toolSessionId = 'claude-parent';
+      cb.onStateChange.mockClear();
+      manager.handleHookEvent({
+        tetherSessionId: session.id, source: 'claude', type: 'turn_complete', payload: { session_id: 'other-session' },
+      });
+      expect(cb.onStateChange).not.toHaveBeenCalled();
+      const codex = await manager.createSession({ workingDir: 'C:/repo/codex-hooks', cliTool: 'codex' }, cb);
+      cb.onStateChange.mockClear();
+      manager.handleHookEvent({ tetherSessionId: codex.id, source: 'claude', type: 'turn_complete' });
+      expect(cb.onStateChange).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Codex lifecycle hook handling', () => {
     async function createCodexSession() {
       const cb = callbacks();
@@ -361,6 +456,20 @@ describe('SessionManager', () => {
       cb.onUpdate.mockClear();
       return { session, cb };
     }
+
+    it('treats Codex SessionStart as a ready prompt until a turn starts', async () => {
+      const { session } = await createCodexSession();
+      manager.handleHookEvent({
+        tetherSessionId: session.id, source: 'codex', type: 'session_start',
+        payload: { toolSessionId: 'native-codex-1' },
+      });
+      expect(session.waitingReason).toBe('idle');
+      manager.handleHookEvent({
+        tetherSessionId: session.id, source: 'codex', type: 'turn_start',
+        payload: { toolSessionId: 'native-codex-1', turnId: 'turn-1' },
+      });
+      expect(session.state).toBe('running');
+    });
 
     it('rejects a wrong native Codex session id before status mutation', async () => {
       const { session, cb } = await createCodexSession();

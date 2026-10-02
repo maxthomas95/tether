@@ -8,6 +8,7 @@ import { installCodexLifecycleHooks, uninstallCodexLifecycleHooks } from './code
 import { sessionManager } from '../session/session-manager';
 import { getDb } from '../db/database';
 import { createLogger } from '../logger';
+import type { CliToolId } from '../../shared/types';
 
 const log = createLogger('hook-service');
 
@@ -34,6 +35,7 @@ const log = createLogger('hook-service');
 
 let bridge: HookBridgeHandle | null = null;
 let installed = false;
+const installedClis = new Set<CliToolId>();
 
 /**
  * Local filesystem path of the bundled hook helper. Remote hook agents read
@@ -103,16 +105,20 @@ export async function startHookService(): Promise<void> {
 
   let anyInstalled = false;
   try {
-    await installClaudeHooks({ helperPath: helper });
-    anyInstalled = true;
+    if (await installClaudeHooks({ helperPath: helper })) {
+      installedClis.add('claude');
+      anyInstalled = true;
+    }
   } catch (err) {
     log.warn('Claude hook install failed — leaving bridge running for any pre-installed entries', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
   try {
-    await installCodexHooks({ helperPath: helper });
-    anyInstalled = true;
+    if (await installCodexHooks({ helperPath: helper })) {
+      installedClis.add('codex');
+      anyInstalled = true;
+    }
   } catch (err) {
     log.warn('Codex notify install failed — leaving bridge running for any pre-installed entries', {
       error: err instanceof Error ? err.message : String(err),
@@ -120,8 +126,10 @@ export async function startHookService(): Promise<void> {
   }
   if (isCodexLifecycleEnabled()) {
     try {
-      await installCodexLifecycleHooks({ helperPath: helper });
-      anyInstalled = true;
+      if (await installCodexLifecycleHooks({ helperPath: helper })) {
+        installedClis.add('codex');
+        anyInstalled = true;
+      }
     } catch (err) {
       log.warn('Codex lifecycle hook install failed', {
         error: err instanceof Error ? err.message : String(err),
@@ -132,6 +140,7 @@ export async function startHookService(): Promise<void> {
 }
 
 export async function stopHookService(): Promise<void> {
+  installedClis.clear();
   if (installed) {
     const helper = getHelperPath();
     try {
@@ -180,8 +189,8 @@ export async function stopHookService(): Promise<void> {
  * invocation trace to a file. Helps diagnose "the hook never fires" /
  * "the helper silently degrades" without any user-visible change.
  */
-export function envForSession(tetherSessionId: string): Record<string, string> {
-  if (!bridge) return {};
+export function envForSession(tetherSessionId: string, cliTool: CliToolId = 'claude'): Record<string, string> {
+  if (!bridge || !installedClis.has(cliTool)) return {};
   const env: Record<string, string> = {
     TETHER_HOOK_SOCKET: bridge.socketPath,
     TETHER_HOOK_TOKEN: bridge.token,

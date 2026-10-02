@@ -43,9 +43,17 @@ function expectSingleNotifyLine(text: string): void {
 }
 
 describe('Codex config overlay', () => {
+  it('reports user-owned notify as unavailable while preserving its exact content', async () => {
+    const { configPath } = makeCtx();
+    const original = 'notify = ["node", "user-notify.js"]\n';
+    fs.writeFileSync(configPath, original);
+    expect(await installCodexHooks({ helperPath: HELPER, configPath })).toBe(false);
+    expect(read(configPath)).toBe(original);
+  });
+
   it('creates a fresh config.toml with notify when none exists', async () => {
     const { configPath } = makeCtx();
-    await installCodexHooks({ helperPath: HELPER, configPath });
+    expect(await installCodexHooks({ helperPath: HELPER, configPath })).toBe(true);
 
     const text = read(configPath);
     expect(text).toContain('notify = ');

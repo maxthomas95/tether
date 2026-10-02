@@ -142,6 +142,15 @@ Unlocks the per-session "Enable Helm" toggle, which lets a designated Claude ses
 
 When on, Tether installs an additive entry in your `~/.claude/settings.json` and `~/.codex/config.toml` so Claude/Codex tell Tether directly when a turn finishes or input is needed. This produces more accurate waiting/idle status detection than passive output observation alone. Takes effect on the next Tether launch.
 
+Claude hooks also observe prompt submission, tool activity and subagent
+start/stop events so quiet work stays running. The status helper forwards only
+event names and identifiers, without prompts, tool arguments or results.
+Existing user hooks are preserved. If Claude disables all hooks, an overlay
+fails to install, or another integration owns Codex's `notify` command, the
+affected CLI uses output-cadence estimates unless its other Tether hooks are
+available. Terminal redraws cannot override a received completion or permission
+signal.
+
 SSH environments can extend this to their remote hosts, but only with a second, per-environment opt-in — see [CLI status hooks on remote hosts](environments.md#cli-status-hooks-on-remote-hosts). With the global toggle on and the environment checkbox off, remote sessions stay on cadence-only detection and nothing is written to the host.
 
 ### Enable pane splitting
