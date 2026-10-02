@@ -240,7 +240,7 @@ export class StatusDetector {
   }
 
   private emitBell(sessionId: string, data: string): void {
-    if (!this.bellCallback || data.indexOf(BEL) === -1) return;
+    if (!this.bellCallback || !data.includes(BEL)) return;
     const now = Date.now();
     const last = this.lastBellAt.get(sessionId) ?? 0;
     if (now - last < BELL_COALESCE_MS) return;

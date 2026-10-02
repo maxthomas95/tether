@@ -60,6 +60,22 @@ function runHelper(args: {
 }
 
 describe('tether-cli-hook helper (end-to-end against the bridge)', () => {
+  it.each(['idle_prompt', 'auth_success', 'elicitation_dialog', 'elicitation_complete', 'elicitation_response'])(
+    'forwards the Claude %s notification contract', async (notificationType) => {
+      const events: HookEvent[] = [];
+      const bridge = await createHookBridge((e) => events.push(e));
+      handles.push(bridge);
+      const result = await runHelper({
+        socket: bridge.socketPath, token: bridge.token, sessionId: 'claude-notification', mode: '--claude', events,
+        payload: { hook_event_name: 'Notification', notification_type: notificationType, message: 'SECRET' },
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.events).toHaveLength(1);
+      expect(result.events[0]).toMatchObject({ source: 'claude', type: notificationType });
+      expect(JSON.stringify(result.events)).not.toContain('SECRET');
+    },
+  );
+
   it('classifies Claude Notification(permission_prompt) and posts it', async () => {
     const events: HookEvent[] = [];
     const bridge = await createHookBridge((e) => events.push(e));
