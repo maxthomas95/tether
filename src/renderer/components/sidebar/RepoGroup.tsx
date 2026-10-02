@@ -29,6 +29,7 @@ interface RepoGroupProps {
   onRemove: (id: string) => void;
   onDuplicate: (id: string) => void;
   onResumePrevious?: (id: string) => void;
+  onCliMaintenance?: (id: string) => void;
   canResumePrevious?: (session: SessionInfo) => boolean;
   showResumeBadge?: boolean;
   allowHelm?: boolean;
@@ -81,6 +82,7 @@ export function RepoGroup({
   onRemove,
   onDuplicate,
   onResumePrevious,
+  onCliMaintenance,
   canResumePrevious,
   showResumeBadge,
   allowHelm,
@@ -328,6 +330,7 @@ export function RepoGroup({
             onRemove={() => onRemove(session.id)}
             onDuplicate={() => onDuplicate(session.id)}
             onResumePrevious={onResumePrevious && canResumePrevious?.(session) ? () => onResumePrevious(session.id) : undefined}
+            onCliMaintenance={onCliMaintenance ? () => onCliMaintenance(session.id) : undefined}
             showResumeBadge={showResumeBadge}
             allowHelm={allowHelm}
             onToggleHelm={onToggleHelm ? (enabled) => onToggleHelm(session.id, enabled) : undefined}

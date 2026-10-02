@@ -1,5 +1,14 @@
 export type CliToolId = 'claude' | 'codex' | 'copilot' | 'opencode' | 'custom';
 
+export type MaintainableCliTool = 'claude' | 'codex' | 'opencode';
+export type CliUpdateMethod = 'native' | 'npm' | 'brew' | 'brew-latest' | 'winget';
+export interface CliMaintenanceMethod {
+  id: CliUpdateMethod;
+  label: string;
+  file: string;
+  args: string[];
+}
+
 export interface CliToolDef {
   id: CliToolId;
   displayName: string;
@@ -7,6 +16,7 @@ export interface CliToolDef {
   supportsSessionResume: boolean;
   historyProvider?: 'claude' | 'codex' | 'copilot' | 'opencode';
   commonFlags: Array<{ flag: string; label: string }>;
+  maintenance?: { methods: CliMaintenanceMethod[] };
 }
 
 export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
@@ -14,6 +24,13 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     id: 'claude',
     displayName: 'Claude Code',
     binaryName: 'claude',
+    maintenance: { methods: [
+      { id: 'native', label: 'Claude updater (native / npm)', file: 'claude', args: ['update'] },
+      { id: 'npm', label: 'npm global installation (latest)', file: 'npm', args: ['install', '-g', '@anthropic-ai/claude-code'] },
+      { id: 'brew', label: 'Homebrew stable cask', file: 'brew', args: ['upgrade', '--cask', 'claude-code'] },
+      { id: 'brew-latest', label: 'Homebrew latest cask', file: 'brew', args: ['upgrade', '--cask', 'claude-code@latest'] },
+      { id: 'winget', label: 'WinGet installation', file: 'winget', args: ['upgrade', '--id', 'Anthropic.ClaudeCode', '--exact'] },
+    ] },
     supportsSessionResume: true,
     historyProvider: 'claude',
     commonFlags: [
@@ -27,6 +44,11 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     id: 'codex',
     displayName: 'Codex CLI',
     binaryName: 'codex',
+    maintenance: { methods: [
+      { id: 'native', label: 'Codex updater', file: 'codex', args: ['update'] },
+      { id: 'npm', label: 'npm global installation (older releases)', file: 'npm', args: ['install', '-g', '@openai/codex@latest'] },
+      { id: 'brew', label: 'Homebrew cask', file: 'brew', args: ['upgrade', '--cask', 'codex'] },
+    ] },
     supportsSessionResume: true,
     historyProvider: 'codex',
     commonFlags: [
@@ -57,6 +79,9 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     id: 'opencode',
     displayName: 'OpenCode',
     binaryName: 'opencode',
+    maintenance: { methods: [
+      { id: 'native', label: 'OpenCode updater (detects installation method)', file: 'opencode', args: ['upgrade'] },
+    ] },
     supportsSessionResume: true,
     historyProvider: 'opencode',
     commonFlags: [

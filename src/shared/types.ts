@@ -613,6 +613,14 @@ export interface CreateEnvironmentOptions {
 }
 
 export interface TetherAPI {
+  cliMaintenance: {
+    start(request: import('./cli-maintenance').CliMaintenanceRequest): Promise<import('./cli-maintenance').CliMaintenanceRun>;
+    cancel(id: string): Promise<void>;
+    input(id: string, data: string): void;
+    resize(id: string, cols: number, rows: number): void;
+    onData(callback: (id: string, phase: import('./cli-maintenance').CliMaintenanceRun['phase'], data: string) => void): () => void;
+    onChanged(callback: (run: import('./cli-maintenance').CliMaintenanceRun) => void): () => void;
+  };
   platform: string;
   homeDir: string;
   session: {

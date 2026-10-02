@@ -31,6 +31,22 @@ import type {
 } from '../shared/types';
 
 const api: TetherAPI = {
+  cliMaintenance: {
+    start: request => ipcRenderer.invoke(IPC.CLI_MAINTENANCE_START, request),
+    cancel: id => ipcRenderer.invoke(IPC.CLI_MAINTENANCE_CANCEL, id),
+    input: (id, data) => ipcRenderer.send(IPC.CLI_MAINTENANCE_INPUT, id, data),
+    resize: (id, cols, rows) => ipcRenderer.send(IPC.CLI_MAINTENANCE_RESIZE, id, cols, rows),
+    onData: cb => {
+      const handler = (_e: Electron.IpcRendererEvent, id: string, phase: import('../shared/cli-maintenance').CliMaintenanceRun['phase'], data: string) => cb(id, phase, data);
+      ipcRenderer.on(IPC.CLI_MAINTENANCE_DATA, handler);
+      return () => ipcRenderer.removeListener(IPC.CLI_MAINTENANCE_DATA, handler);
+    },
+    onChanged: cb => {
+      const handler = (_e: Electron.IpcRendererEvent, run: import('../shared/cli-maintenance').CliMaintenanceRun) => cb(run);
+      ipcRenderer.on(IPC.CLI_MAINTENANCE_CHANGED, handler);
+      return () => ipcRenderer.removeListener(IPC.CLI_MAINTENANCE_CHANGED, handler);
+    },
+  },
   codex: {
     account: () => ipcRenderer.invoke(IPC.CODEX_ACCOUNT),
     configuration: (sessionId?: string) => ipcRenderer.invoke(IPC.CODEX_CONFIGURATION, sessionId),

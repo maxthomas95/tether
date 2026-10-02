@@ -157,9 +157,10 @@ interface SettingsDialogProps {
   keybindings: Record<KeybindingAction, Chord | null>;
   onKeybindingChange: (action: KeybindingAction, chord: Chord | null) => void;
   onKeybindingsResetAll: () => void;
+  onOpenCliMaintenance?: () => void;
 }
 
-export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, onThemeChange, onResetSessionFontSizes, keybindings, onKeybindingChange, onKeybindingsResetAll }: Readonly<SettingsDialogProps>) {
+export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, onThemeChange, onResetSessionFontSizes, keybindings, onKeybindingChange, onKeybindingsResetAll, onOpenCliMaintenance }: Readonly<SettingsDialogProps>) {
   const settingsId = useId();
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [cliFlagsPerTool, setCliFlagsPerTool] = useState<Partial<Record<CliToolId, string[]>>>({});
@@ -1103,6 +1104,11 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
           </div>
 
           {/* === Launch Profiles === */}
+          {onOpenCliMaintenance && <div className="form-group">
+            <div className="form-label">CLI updates</div>
+            <p className="form-hint">Check versions and update Codex, Claude Code, or OpenCode on your local machine, an SSH host, or a Coder workspace.</p>
+            <button className="form-btn" onClick={onOpenCliMaintenance}>Manage CLI tools…</button>
+          </div>}
           {loaded && (
             <div className="form-group" style={{ marginTop: 20 }}>
               <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>

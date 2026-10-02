@@ -1,6 +1,10 @@
 import type { CliToolId } from '../../shared/cli-tools';
 
 export interface TransportStartOptions {
+  /** Main-owned maintenance argv. Bypasses conversation flags and tokenization. */
+  command?: { file: string; args: string[] };
+  /** Close the remote login shell with the command's exit code after maintenance. */
+  exitAfterCommand?: boolean;
   workingDir: string;
   env: Record<string, string>;
   cols: number;

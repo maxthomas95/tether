@@ -17,6 +17,7 @@ import { registerJobsHandlers } from './jobs-handlers';
 import { registerCodexHandlers } from './codex-handlers';
 import { registerGifPanelHandlers } from './gif-panel-handlers';
 import { registerClipboardHandlers } from './clipboard-handlers';
+import { registerCliMaintenanceHandlers } from './cli-maintenance-handlers';
 
 /**
  * Wire up every IPC handler against the renderer window. The actual handler
@@ -49,4 +50,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerCodexHandlers(ctx);
   registerGifPanelHandlers(ctx);
   registerClipboardHandlers(ctx);
+  registerCliMaintenanceHandlers(ctx);
 }

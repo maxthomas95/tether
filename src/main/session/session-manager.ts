@@ -244,6 +244,8 @@ export function setHelmChildCallbacks(callbacks: SessionCallbacks): void {
 }
 
 export class Session {
+  /** Main-only, resolved launch env without Tether hook overlays; never persisted or sent over IPC. */
+  maintenanceEnv: Record<string, string> = {};
   readonly id: string;
   label: string;
   readonly workingDir: string;
@@ -764,6 +766,7 @@ export class SessionManager {
     let resolvedEnv: Record<string, string>;
     try {
       resolvedEnv = await resolveAll(mergedEnv);
+      session.maintenanceEnv = { ...resolvedEnv };
       // Layer the hook-bridge env (computed above) on top, AFTER vault
       // resolution. The hook env is short-lived and process-local — we never
       // want it to traverse the vault layer (which would log/error on opaque

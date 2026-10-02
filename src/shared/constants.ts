@@ -1,4 +1,10 @@
 export const IPC = {
+  CLI_MAINTENANCE_START: 'cli-maintenance:start',
+  CLI_MAINTENANCE_CANCEL: 'cli-maintenance:cancel',
+  CLI_MAINTENANCE_INPUT: 'cli-maintenance:input',
+  CLI_MAINTENANCE_RESIZE: 'cli-maintenance:resize',
+  CLI_MAINTENANCE_DATA: 'cli-maintenance:data',
+  CLI_MAINTENANCE_CHANGED: 'cli-maintenance:changed',
   // Renderer -> Main
   SESSION_CREATE: 'session:create',
   SESSION_STOP: 'session:stop',

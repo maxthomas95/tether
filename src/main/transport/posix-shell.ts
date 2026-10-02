@@ -21,6 +21,7 @@ export function buildEnvAssignments(env: Record<string, string> = {}): string[] 
 }
 
 export function buildRemoteCliCommand(options: {
+  command?: { file: string; args: string[] };
   binaryName?: string;
   cliTool?: CliToolId;
   cliArgs?: string[];
@@ -30,6 +31,9 @@ export function buildRemoteCliCommand(options: {
   claudeSessionId?: string | null;
   resumeClaudeSessionId?: string | null;
 }): string {
+  if (options.command) {
+    return [options.command.file, ...options.command.args].map(quotePosixShellArg).join(' ');
+  }
   const resumeToolSessionId = options.resumeToolSessionId || options.resumeClaudeSessionId;
   const toolSessionId = options.toolSessionId || options.claudeSessionId;
   const toolArgs = buildCliArgsForTool(options.cliTool || 'claude', options.cliArgs || [], {

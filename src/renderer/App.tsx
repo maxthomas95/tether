@@ -14,6 +14,7 @@ import { GlobalUsageFooter } from './components/sidebar/GlobalUsageFooter';
 import { VaultStatusPill } from './components/sidebar/VaultStatusPill';
 import { VaultLoginPromptDialog } from './components/VaultLoginPromptDialog';
 import { SettingsDialog } from './components/SettingsDialog';
+import { CliMaintenanceDialog } from './components/CliMaintenanceDialog';
 import { MenuBar } from './components/MenuBar';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { SessionSearchDialog } from './components/SessionSearchDialog';
@@ -88,6 +89,7 @@ export function App() {
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [maintenanceTarget, setMaintenanceTarget] = useState<{ environmentId?: string; sessionId?: string } | null>(null);
   const [settingsInitialSection, setSettingsInitialSection] = useState<'integrations' | undefined>();
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   /**
@@ -1595,7 +1597,7 @@ export function App() {
     },
   }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom, handleJumpToNextWaiting, canvasEnabled, canvasState]);
 
-  useKeyboardShortcuts(shortcutActions, resolvedBindings);
+  useKeyboardShortcuts(shortcutActions, resolvedBindings, maintenanceTarget === null);
 
   const handleKeybindingChange = useCallback((action: KeybindingAction, chord: Chord | null) => {
     setKeybindingOverrides(prev => {
@@ -1830,6 +1832,7 @@ export function App() {
       items: [
         { label: 'New Session...', shortcut: formatChord(resolvedBindings['session.new']) || undefined, onClick: () => setSessionDialogOpen(true) },
         { label: 'New Environment...', onClick: () => setEnvDialogOpen(true) },
+        { label: 'CLI Tools...', onClick: () => setMaintenanceTarget({}) },
         { separator: true },
         { label: 'Settings...', shortcut: formatChord(resolvedBindings['settings.open']) || undefined, onClick: () => setSettingsOpen(true) },
         { separator: true },
@@ -1844,6 +1847,7 @@ export function App() {
         { separator: true },
         { label: 'Stop Session', shortcut: formatChord(resolvedBindings['session.stop']) || undefined, onClick: () => { if (activeSessionId) handleStop(activeSessionId); }, disabled: !isAlive },
         { label: 'Duplicate Session', onClick: () => { if (activeSessionId) handleDuplicate(activeSessionId); }, disabled: !activeSession },
+        { label: 'Check / Update CLI...', onClick: () => { if (activeSessionId) setMaintenanceTarget({ sessionId: activeSessionId }); }, disabled: !activeSession || !['claude', 'codex', 'opencode'].includes(activeSession.cliTool ?? 'claude') },
         { separator: true },
         { label: 'Next Pane', shortcut: formatChord(resolvedBindings['session.next']) || undefined, onClick: shortcutActions.onNextSession, disabled: !layoutState.root || getLeaves(layoutState.root).length < 2 },
         { label: 'Previous Pane', shortcut: formatChord(resolvedBindings['session.prev']) || undefined, onClick: shortcutActions.onPrevSession, disabled: !layoutState.root || getLeaves(layoutState.root).length < 2 },
@@ -1982,6 +1986,11 @@ export function App() {
                       >
                         Edit
                       </div>
+                      <div className="context-menu-item" role="menuitem" tabIndex={0}
+                        onClick={() => { setEnvMenuOpenId(null); setMaintenanceTarget({ environmentId: env.id }); }}
+                        onKeyDown={onKeyActivate(() => { setEnvMenuOpenId(null); setMaintenanceTarget({ environmentId: env.id }); })}>
+                        CLI tools…
+                      </div>
                       <div
                         className="context-menu-item context-menu-item--danger"
                         role="menuitem"
@@ -2023,6 +2032,7 @@ export function App() {
                         onRemove={handleRemove}
                         onDuplicate={handleDuplicate}
                         onResumePrevious={handleOpenResumePicker}
+                        onCliMaintenance={sessionId => setMaintenanceTarget({ sessionId })}
                         canResumePrevious={canResumePrevious}
                         showResumeBadge={showResumeBadge}
                         allowHelm={allowHelm}
@@ -2159,6 +2169,7 @@ export function App() {
         initialType={welcomeInitialEnvType}
       />
       <SettingsDialog
+        onOpenCliMaintenance={() => { setSettingsOpen(false); setMaintenanceTarget({}); }}
         initialSection={settingsInitialSection}
         isOpen={settingsOpen}
         onClose={() => {
@@ -2180,6 +2191,12 @@ export function App() {
         onChange={handleKeybindingChange}
         onResetAll={handleResetAllKeybindings}
       />
+      {maintenanceTarget && <CliMaintenanceDialog
+        environments={environments} sessions={sessions} theme={xtermTheme}
+        initialEnvironmentId={maintenanceTarget.environmentId}
+        initialSessionId={maintenanceTarget.sessionId}
+        onClose={() => setMaintenanceTarget(null)}
+      />}
       <SessionSearchDialog
         isOpen={searchOpen}
         sessions={sessions}

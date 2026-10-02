@@ -32,7 +32,7 @@ export class LocalTransport implements SessionTransport {
 
   async start(options: TransportStartOptions): Promise<void> {
     const pty = loadPty();
-    const binary = options.binaryName || 'claude';
+    const binary = options.command?.file || options.binaryName || 'claude';
 
     const resumeToolSessionId = options.resumeToolSessionId || options.resumeClaudeSessionId;
     const toolSessionId = options.toolSessionId || options.claudeSessionId;
@@ -44,11 +44,11 @@ export class LocalTransport implements SessionTransport {
     // Tokenize each entry on whitespace so multi-token flags stored as one string
     // (e.g. "--permission-mode plan") become separate process args. The SSH transport
     // gets this for free via shell-join; we replicate it here for parity.
-    const tokenizedArgs = tokenizeCliArgEntries(cliArgs);
+    const tokenizedArgs = options.command ? [...options.command.args] : tokenizeCliArgEntries(cliArgs);
 
     // Append the initial prompt (if any) as a single un-tokenized positional arg
     // so multi-word briefs reach the CLI as one argv entry rather than N.
-    if (options.initialPrompt) {
+    if (!options.command && options.initialPrompt) {
       tokenizedArgs.push(options.initialPrompt);
     }
 
@@ -56,7 +56,7 @@ export class LocalTransport implements SessionTransport {
     // Windows uses cmd.exe only for batch shims or commands that PATH/PATHEXT
     // resolution cannot identify, where the shell boundary is unavoidable.
     const isWin32 = process.platform === 'win32';
-    const plan = isWin32 ? resolveWindowsLaunch(binary) : null;
+    const plan = isWin32 ? resolveWindowsLaunch(binary, { pathEnv: options.env.PATH ?? options.env.Path ?? process.env.PATH }) : null;
     const spawnFile = plan?.kind === 'direct' ? plan.file : isWin32 ? 'cmd.exe' : binary;
     const spawnArgs = plan?.kind === 'shell'
       ? ['/d', '/c', plan.file, ...tokenizedArgs.map(escapeCmdExeArgForNodePty)]

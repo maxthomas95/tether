@@ -1,0 +1,13 @@
+.dialog.cli-maintenance-dialog { width: min(880px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+.cli-maintenance-dialog h2 { font-size: inherit; margin: 0; }
+.cli-maintenance-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.cli-maintenance-controls .form-select { display: block; width: 100%; margin-top: 6px; padding: 8px; color: var(--text-primary); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; font: inherit; }
+.cli-maintenance-command { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px; border-radius: 6px; background: var(--bg-tertiary); margin: 12px 0; }
+.cli-maintenance-command code { overflow-wrap: anywhere; }
+.cli-maintenance-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cli-maintenance-status { min-height: 20px; margin: 12px 0 8px; }
+.cli-maintenance-output-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.cli-maintenance-output-tabs [aria-selected="true"] { border-color: var(--accent-primary); background: var(--bg-tertiary); }
+.cli-maintenance-terminal { height: clamp(180px, 35dvh, 360px); padding: 8px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; }
+.cli-maintenance-error { color: var(--accent-danger, #ef4444); }
+@media (max-width: 600px) { .cli-maintenance-controls { grid-template-columns: 1fr; } .cli-maintenance-actions .form-btn { flex: 1; } }

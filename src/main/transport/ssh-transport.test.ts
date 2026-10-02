@@ -89,6 +89,27 @@ async function startConnected(
 }
 
 describe('SSHTransport', () => {
+  it('propagates maintenance command failure instead of reporting a successful stream close', async () => {
+    const t = new SSHTransport(baseConfig());
+    const exited = vi.fn(); t.onExit(exited);
+    const { stream } = await startConnected(t, baseOptions({ command: { file: 'codex', args: ['update'] }, exitAfterCommand: true }));
+    expect(stream.write.mock.calls.map(c => c[0]).join('')).toContain(`'codex' 'update'; exit "$?"\n`);
+    stream.emit('exit', 9); stream.emitClose();
+    expect(exited).toHaveBeenCalledWith(expect.objectContaining({ exitCode: 9 }));
+    t.dispose();
+  });
+
+  it('replaces the parent shell for sudo maintenance so command completion closes the SSH channel', async () => {
+    const t = new SSHTransport(baseConfig({ useSudo: true }));
+    const start = t.start(baseOptions({ command: { file: 'claude', args: ['update'] }, exitAfterCommand: true }));
+    const client = ssh2Harness.current!; client.emit('ready');
+    const stream = new ssh2Harness.FakeStream(); client.lastShellCb!(undefined, stream);
+    stream.emitData('me@host:~$ '); stream.emitData('root@host:~# '); stream.emitData('root@host:~# ');
+    await start;
+    expect(stream.write).toHaveBeenCalledWith('exec sudo -i\n');
+    expect(stream.write.mock.calls.map(c => c[0]).join('')).toContain('exit "$?"');
+    t.dispose();
+  });
   beforeEach(() => {
     ssh2Harness.reset();
     verifyHostMock.mockReset();
