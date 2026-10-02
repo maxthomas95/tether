@@ -62,29 +62,35 @@ it('opens and navigates settings help anchors in the rendered docs', async () =>
   }
 });
 
-it('every internal article link uses a Markdown path and opens an existing page and heading', async () => {
+const articlePages = Object.keys(import.meta.glob('../docs/*.md'))
+  .map(file => file.slice('../docs/'.length, -'.md'.length));
+
+it('registers every shipped article and renders internal article links', async () => {
   await import('./index');
   const pages = Array.from(document.querySelectorAll<HTMLElement>('.docs-nav-item'), el => el.dataset.page!);
-  let checked = 0;
+  expect(pages.sort()).toEqual(articlePages.toSorted());
+  expect(document.querySelector('.docs-article a[href*=".md"]')).not.toBeNull();
+});
 
-  for (const page of pages) {
+it.each(articlePages)('%s internal links use Markdown paths and open existing pages and headings', async page => {
+  await import('./index');
+  const pages = Array.from(document.querySelectorAll<HTMLElement>('.docs-nav-item'), el => el.dataset.page!);
+  expect(pages).toContain(page);
+
+  navigate({ page });
+  const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('.docs-article a'), el => el.getAttribute('href')!)
+    .filter(href => !/^https?:/.test(href));
+  for (const href of links) {
     navigate({ page });
-    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('.docs-article a'), el => el.getAttribute('href')!)
-      .filter(href => !/^https?:/.test(href));
-    for (const href of links) {
-      navigate({ page });
-      const link = Array.from(document.querySelectorAll<HTMLAnchorElement>('.docs-article a'))
-        .find(el => el.getAttribute('href') === href)!;
-      link.click();
-      const [targetPage, anchor] = href.split('#');
-      const active = document.querySelector<HTMLElement>('.docs-nav-item--active');
-      if (targetPage) expect(targetPage.endsWith('.md'), `${page} → ${href}`).toBe(true);
-      expect(active?.dataset.page, `${page} → ${href}`).toBe(targetPage ? targetPage.slice(0, -3) : page);
-      if (anchor) {
-        expect(document.getElementById(anchor)?.classList.contains('docs-anchor-flash'), `${page} → ${href}`).toBe(true);
-      }
-      checked++;
+    const link = Array.from(document.querySelectorAll<HTMLAnchorElement>('.docs-article a'))
+      .find(el => el.getAttribute('href') === href)!;
+    link.click();
+    const [targetPage, anchor] = href.split('#');
+    const active = document.querySelector<HTMLElement>('.docs-nav-item--active');
+    if (targetPage) expect(targetPage.endsWith('.md'), `${page} → ${href}`).toBe(true);
+    expect(active?.dataset.page, `${page} → ${href}`).toBe(targetPage ? targetPage.slice(0, -3) : page);
+    if (anchor) {
+      expect(document.getElementById(anchor)?.classList.contains('docs-anchor-flash'), `${page} → ${href}`).toBe(true);
     }
   }
-  expect(checked).toBeGreaterThan(0);
 });
