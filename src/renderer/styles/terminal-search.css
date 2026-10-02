@@ -1,6 +1,6 @@
 .terminal-search-bar {
   position: absolute;
-  top: calc(var(--pane-header-height) + var(--space-2));
+  top: var(--space-2);
   right: var(--space-2);
   z-index: 8;
   display: flex;

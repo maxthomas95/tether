@@ -33,6 +33,7 @@ interface TerminalPaneProps {
   isBroadcastActive: boolean;
   onToggleBroadcastTarget: (paneId: string) => void;
   isSearchOpen: boolean;
+  searchFocusRequest: number;
   onOpenSearch: (paneId: string) => void;
   onCloseSearch: (paneId: string) => void;
   /** Recreate the dead session in this pane with the same params. */
@@ -62,6 +63,7 @@ export function TerminalPane({
   isBroadcastActive,
   onToggleBroadcastTarget,
   isSearchOpen,
+  searchFocusRequest,
   onOpenSearch,
   onCloseSearch,
   onRestartInPane,
@@ -302,7 +304,9 @@ export function TerminalPane({
             {isSearchOpen && (
               <TerminalSearchBar
                 paneId={paneId}
+                focusRequest={searchFocusRequest}
                 onSearch={termManager.findInPane}
+                onResults={termManager.onFindResultsInPane}
                 onClose={handleCloseSearch}
               />
             )}

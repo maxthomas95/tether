@@ -22,6 +22,7 @@ interface CanvasLayoutProps {
   onChooseSession: () => void;
   onDropComplete: () => void;
   searchPaneId: string | null;
+  searchFocusRequest: number;
   onOpenTerminalSearch: (paneId: string) => void;
   onCloseTerminalSearch: (paneId: string) => void;
 }
@@ -64,7 +65,7 @@ const noop = () => {};
 
 export function CanvasLayout({ state, dispatch, termManager, sessions, environments, defaultFontSize,
   onFontSizeDelta, onRestartInPane, onChooseSession, onDropComplete, searchPaneId,
-  onOpenTerminalSearch, onCloseTerminalSearch }: CanvasLayoutProps) {
+  searchFocusRequest, onOpenTerminalSearch, onCloseTerminalSearch }: CanvasLayoutProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const gestureRef = useRef<Gesture | null>(null);
   const [gesture, setGesture] = useState<Gesture | null>(null);
@@ -217,6 +218,7 @@ export function CanvasLayout({ state, dispatch, termManager, sessions, environme
               defaultFontSize={defaultFontSize} onFontSizeDelta={onFontSizeDelta}
               isBroadcastTarget={false} isBroadcastActive={false} onToggleBroadcastTarget={noop}
               isSearchOpen={searchPaneId === panel.id}
+              searchFocusRequest={searchPaneId === panel.id ? searchFocusRequest : 0}
               onOpenSearch={onOpenTerminalSearch}
               onCloseSearch={onCloseTerminalSearch}
               onRestartInPane={onRestartInPane}

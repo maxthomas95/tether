@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
     selection = '';
     hasSelection = vi.fn(() => this.selection !== '');
     getSelection = vi.fn(() => this.selection);
+    clearSelection = vi.fn(() => { this.selection = ''; });
     paste = vi.fn();
     write = vi.fn();
     focus = vi.fn();
@@ -40,9 +41,17 @@ const mocks = vi.hoisted(() => {
     });
   }
   class FakeSearchAddon {
+    listeners = new Set<(event: { resultIndex: number; resultCount: number }) => void>();
     findNext = vi.fn(() => true);
     findPrevious = vi.fn(() => true);
     clearDecorations = vi.fn();
+    onDidChangeResults = vi.fn((listener: (event: { resultIndex: number; resultCount: number }) => void) => {
+      this.listeners.add(listener);
+      return { dispose: vi.fn(() => this.listeners.delete(listener)) };
+    });
+    emit(event: { resultIndex: number; resultCount: number }) {
+      for (const listener of this.listeners) listener(event);
+    }
   }
   return {
     FakeTerminal,
@@ -247,6 +256,10 @@ describe('terminal session lifecycle', () => {
       wholeWord: false,
       incremental: true,
     });
+    const listener = vi.fn();
+    const unsubscribe = api.onFindResultsInPane('left', listener);
+    addon.emit({ resultIndex: 0, resultCount: 2 });
+    expect(listener).toHaveBeenCalledExactlyOnceWith({ resultIndex: 0, resultCount: 2 });
     api.findInPane('left', ' needle ');
     expect(addon.findNext).toHaveBeenLastCalledWith(' needle ', {
       caseSensitive: false,
@@ -256,6 +269,8 @@ describe('terminal session lifecycle', () => {
     expect(mocks.sendInput).not.toHaveBeenCalled();
 
     api.detachPane('left');
+    addon.emit({ resultIndex: 1, resultCount: 2 });
+    expect(listener).toHaveBeenCalledOnce();
     const second = pane();
     api.attachToPane('right', 'a', second, false);
     expect(searchAddon('a')).toBe(addon);
@@ -266,8 +281,13 @@ describe('terminal session lifecycle', () => {
       incremental: false,
     });
 
+    expect(api.findInPane('right', '')).toBe(false);
     api.clearFindInPane('right');
-    expect(addon.clearDecorations).toHaveBeenCalledOnce();
+    expect(addon.clearDecorations).toHaveBeenCalledTimes(2);
+    expect(terminal('a').clearSelection).toHaveBeenCalledTimes(2);
+    unsubscribe();
+    addon.emit({ resultIndex: 1, resultCount: 2 });
+    expect(listener).toHaveBeenCalledOnce();
   });
 
   it('discards delayed layout work after another session reuses the same pane container', () => {

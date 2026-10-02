@@ -1,22 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ISearchResultChangeEvent } from '@xterm/addon-search';
 import { Icon } from './Icon';
 
 interface TerminalSearchBarProps {
   paneId: string;
+  focusRequest: number;
   onSearch: (paneId: string, term: string, options?: { caseSensitive?: boolean; wholeWord?: boolean; previous?: boolean; incremental?: boolean }) => boolean;
+  onResults: (paneId: string, listener: (event: ISearchResultChangeEvent) => void) => () => void;
   onClose: () => void;
 }
 
-export function TerminalSearchBar({ paneId, onSearch, onClose }: TerminalSearchBarProps) {
+export function TerminalSearchBar({ paneId, focusRequest, onSearch, onResults, onClose }: TerminalSearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [term, setTerm] = useState('');
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
   const [hasResult, setHasResult] = useState<boolean | null>(null);
+  const [result, setResult] = useState<ISearchResultChangeEvent | null>(null);
 
   const runSearch = useCallback((nextTerm: string, options?: { previous?: boolean; incremental?: boolean }) => {
     if (!nextTerm) {
       setHasResult(null);
+      setResult(null);
       onSearch(paneId, '', { caseSensitive, wholeWord, incremental: true });
       return false;
     }
@@ -36,14 +41,32 @@ export function TerminalSearchBar({ paneId, onSearch, onClose }: TerminalSearchB
       inputRef.current?.select();
     });
     return () => cancelAnimationFrame(frame);
-  }, [paneId]);
+  }, [focusRequest, paneId]);
 
   useEffect(() => {
     runSearch(term, { incremental: true });
   }, [caseSensitive, runSearch, term, wholeWord]);
 
+  useEffect(() => onResults(paneId, setResult), [onResults, paneId]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      runSearch(term, { previous: e.shiftKey });
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      onClose();
+    }
+  }, [onClose, runSearch, term]);
+
+  const status = result && result.resultCount > 0 && result.resultIndex >= 0
+    ? `${result.resultIndex + 1}/${result.resultCount}`
+    : result && result.resultCount > 0 ? `${result.resultCount} matches`
+    : hasResult === false ? 'No results' : '';
+
   return (
-    <div className="terminal-search-bar" role="search" aria-label="Find in terminal" onMouseDown={e => e.stopPropagation()}>
+    <div className="terminal-search-bar" role="search" aria-label="Find in terminal" onMouseDown={e => e.stopPropagation()} onKeyDown={handleKeyDown}>
       <Icon name="search" size={14} />
       <input
         ref={inputRef}
@@ -52,24 +75,14 @@ export function TerminalSearchBar({ paneId, onSearch, onClose }: TerminalSearchB
         placeholder="Find in terminal"
         aria-label="Find in terminal"
         onChange={e => setTerm(e.target.value)}
-        onKeyDown={e => {
-          e.stopPropagation();
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            runSearch(term, { previous: e.shiftKey });
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            onClose();
-          }
-        }}
       />
       <span className={`terminal-search-status ${hasResult === false ? 'terminal-search-status--empty' : ''}`} aria-live="polite">
-        {hasResult === false ? 'No results' : ''}
+        {status}
       </span>
-      <button type="button" className="terminal-search-toggle" aria-pressed={caseSensitive} title="Match case" onClick={() => setCaseSensitive(v => !v)}>
+      <button type="button" className="terminal-search-toggle" aria-label="Match case" aria-pressed={caseSensitive} title="Match case" onClick={() => setCaseSensitive(v => !v)}>
         Aa
       </button>
-      <button type="button" className="terminal-search-toggle" aria-pressed={wholeWord} title="Whole word" onClick={() => setWholeWord(v => !v)}>
+      <button type="button" className="terminal-search-toggle" aria-label="Match whole word" aria-pressed={wholeWord} title="Whole word" onClick={() => setWholeWord(v => !v)}>
         W
       </button>
       <button type="button" className="terminal-search-button" title="Previous match" aria-label="Previous match" onClick={() => runSearch(term, { previous: true })}>

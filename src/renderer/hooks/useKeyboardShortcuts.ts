@@ -35,6 +35,10 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
+function hasOpenModal(): boolean {
+  return document.querySelector('[aria-modal="true"]') !== null;
+}
+
 function dispatch(action: KeybindingAction, actions: ShortcutActions): void {
   switch (action) {
     case 'session.new': actions.onNewSession(); return;
@@ -92,7 +96,7 @@ export function useKeyboardShortcuts(
       if (!chord) return;
       const action = chordLookup.get(chord);
       if (!action) return;
-      if (action === 'terminal.find' && isEditableTarget(e.target)) return;
+      if (action === 'terminal.find' && (isEditableTarget(e.target) || hasOpenModal())) return;
       // Arrow-key chords must not hijack native arrow behavior in
       // non-xterm editable fields (inline rename, dialog inputs).
       if (chord.includes('arrow') && isEditableTarget(e.target)) return;

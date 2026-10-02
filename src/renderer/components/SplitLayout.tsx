@@ -25,6 +25,7 @@ interface SplitLayoutProps {
   broadcastActive: boolean;
   onToggleBroadcastTarget: (paneId: string) => void;
   searchPaneId: string | null;
+  searchFocusRequest: number;
   onOpenTerminalSearch: (paneId: string) => void;
   onCloseTerminalSearch: (paneId: string) => void;
   onRestartInPane?: (paneId: string, sessionId: string) => void;
@@ -51,6 +52,7 @@ export function SplitLayout({
   broadcastActive,
   onToggleBroadcastTarget,
   searchPaneId,
+  searchFocusRequest,
   onOpenTerminalSearch,
   onCloseTerminalSearch,
   onRestartInPane,
@@ -80,6 +82,7 @@ export function SplitLayout({
         isBroadcastActive={broadcastActive}
         onToggleBroadcastTarget={onToggleBroadcastTarget}
         isSearchOpen={searchPaneId === node.id}
+        searchFocusRequest={searchPaneId === node.id ? searchFocusRequest : 0}
         onOpenSearch={onOpenTerminalSearch}
         onCloseSearch={onCloseTerminalSearch}
         onRestartInPane={onRestartInPane}
@@ -109,6 +112,7 @@ export function SplitLayout({
       broadcastActive={broadcastActive}
       onToggleBroadcastTarget={onToggleBroadcastTarget}
       searchPaneId={searchPaneId}
+      searchFocusRequest={searchFocusRequest}
       onOpenTerminalSearch={onOpenTerminalSearch}
       onCloseTerminalSearch={onCloseTerminalSearch}
       onRestartInPane={onRestartInPane}
@@ -137,6 +141,7 @@ interface SplitContainerProps {
   broadcastActive: boolean;
   onToggleBroadcastTarget: (paneId: string) => void;
   searchPaneId: string | null;
+  searchFocusRequest: number;
   onOpenTerminalSearch: (paneId: string) => void;
   onCloseTerminalSearch: (paneId: string) => void;
   onRestartInPane?: (paneId: string, sessionId: string) => void;
@@ -163,6 +168,7 @@ function SplitContainer({
   broadcastActive,
   onToggleBroadcastTarget,
   searchPaneId,
+  searchFocusRequest,
   onOpenTerminalSearch,
   onCloseTerminalSearch,
   onRestartInPane,
@@ -198,6 +204,7 @@ function SplitContainer({
           broadcastActive={broadcastActive}
           onToggleBroadcastTarget={onToggleBroadcastTarget}
           searchPaneId={searchPaneId}
+          searchFocusRequest={searchFocusRequest}
           onOpenTerminalSearch={onOpenTerminalSearch}
           onCloseTerminalSearch={onCloseTerminalSearch}
           onRestartInPane={onRestartInPane}
@@ -229,6 +236,7 @@ function SplitContainer({
           broadcastActive={broadcastActive}
           onToggleBroadcastTarget={onToggleBroadcastTarget}
           searchPaneId={searchPaneId}
+          searchFocusRequest={searchFocusRequest}
           onOpenTerminalSearch={onOpenTerminalSearch}
           onCloseTerminalSearch={onCloseTerminalSearch}
           onRestartInPane={onRestartInPane}

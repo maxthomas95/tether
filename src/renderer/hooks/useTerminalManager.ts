@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { SearchAddon } from '@xterm/addon-search';
+import { SearchAddon, type ISearchResultChangeEvent } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { PaneId } from '../../shared/layout-types';
 import { decodeOsc52Write } from '../utils/osc52';
@@ -19,6 +19,7 @@ interface PaneEntry {
   terminal: Terminal;
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
+  searchResultsDisposable?: { dispose: () => void };
   linksAddon: WebLinksAddon;
   container: HTMLDivElement | null;
 }
@@ -109,6 +110,7 @@ export interface TerminalManagerAPI {
   focusPane: (paneId: PaneId) => void;
   findInPane: (paneId: PaneId, term: string, options?: { caseSensitive?: boolean; wholeWord?: boolean; previous?: boolean; incremental?: boolean }) => boolean;
   clearFindInPane: (paneId: PaneId) => void;
+  onFindResultsInPane: (paneId: PaneId, listener: (event: ISearchResultChangeEvent) => void) => () => void;
   setSessionFontSize: (sessionId: string, fontSize: number) => void;
   setBroadcastTargets: (sessionIds: readonly string[]) => void;
   remove: (sessionId: string) => void;
@@ -123,6 +125,7 @@ export function useTerminalManager(
 ): TerminalManagerAPI {
   const panes = useRef(new Map<PaneId, PaneEntry>());
   const backgroundTerminals = useRef(new Map<string, ManagedTerminal>());
+  const searchResultListeners = useRef(new Map<PaneId, Set<(event: ISearchResultChangeEvent) => void>>());
   const broadcastTargets = useRef(new Set<string>());
   const themeRef = useRef<ITheme | undefined>(xtermTheme);
   const cursorStyleRef = useRef<TerminalCursorStyle>(cursorStyle);
@@ -356,7 +359,12 @@ export function useTerminalManager(
       terminal.open(container);
     }
 
-    const paneEntry = { sessionId, terminal, fitAddon, searchAddon, linksAddon, container };
+    const paneEntry: PaneEntry = { sessionId, terminal, fitAddon, searchAddon, linksAddon, container };
+    paneEntry.searchResultsDisposable = searchAddon.onDidChangeResults((event) => {
+      const listeners = searchResultListeners.current.get(paneId);
+      if (!listeners) return;
+      for (const listener of listeners) listener(event);
+    });
     panes.current.set(paneId, paneEntry);
 
     // Fit after the layout has settled — a single rAF can be too early for
@@ -388,6 +396,8 @@ export function useTerminalManager(
     if (!entry) return;
 
     const { sessionId, terminal, fitAddon, searchAddon, linksAddon } = entry;
+    entry.searchResultsDisposable?.dispose();
+    searchResultListeners.current.delete(paneId);
 
     // Check if any OTHER pane shows this session
     let otherPaneExists = false;
@@ -447,7 +457,7 @@ export function useTerminalManager(
     const entry = panes.current.get(paneId);
     if (!entry) return false;
     if (!term) {
-      entry.searchAddon.clearDecorations();
+      clearFindEntry(entry);
       return false;
     }
     const searchOptions = {
@@ -461,7 +471,23 @@ export function useTerminalManager(
   }, []);
 
   const clearFindInPane = useCallback((paneId: PaneId) => {
-    panes.current.get(paneId)?.searchAddon.clearDecorations();
+    const entry = panes.current.get(paneId);
+    if (entry) clearFindEntry(entry);
+  }, []);
+
+  const onFindResultsInPane = useCallback<TerminalManagerAPI['onFindResultsInPane']>((paneId, listener) => {
+    let listeners = searchResultListeners.current.get(paneId);
+    if (!listeners) {
+      listeners = new Set();
+      searchResultListeners.current.set(paneId, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      const current = searchResultListeners.current.get(paneId);
+      if (!current) return;
+      current.delete(listener);
+      if (current.size === 0) searchResultListeners.current.delete(paneId);
+    };
   }, []);
 
   // Remove ALL terminals for a session (panes + background)
@@ -469,6 +495,8 @@ export function useTerminalManager(
     // Remove from panes
     for (const [paneId, entry] of panes.current.entries()) {
       if (entry.sessionId === sessionId) {
+        entry.searchResultsDisposable?.dispose();
+        searchResultListeners.current.delete(paneId);
         entry.terminal.dispose();
         panes.current.delete(paneId);
       }
@@ -485,6 +513,7 @@ export function useTerminalManager(
   useEffect(() => {
     return () => {
       for (const entry of panes.current.values()) {
+        entry.searchResultsDisposable?.dispose();
         entry.terminal.dispose();
       }
       panes.current.clear();
@@ -505,8 +534,14 @@ export function useTerminalManager(
     focusPane,
     findInPane,
     clearFindInPane,
+    onFindResultsInPane,
     setSessionFontSize,
     setBroadcastTargets,
     remove,
-  }), [getOrCreate, peek, writeData, attachToPane, detachPane, fitPane, focusPane, findInPane, clearFindInPane, setSessionFontSize, setBroadcastTargets, remove]);
+  }), [getOrCreate, peek, writeData, attachToPane, detachPane, fitPane, focusPane, findInPane, clearFindInPane, onFindResultsInPane, setSessionFontSize, setBroadcastTargets, remove]);
+}
+
+function clearFindEntry(entry: PaneEntry): void {
+  entry.searchAddon.clearDecorations();
+  entry.terminal.clearSelection();
 }
