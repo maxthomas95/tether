@@ -967,6 +967,7 @@ textarea:focus-visible,
  * replace the previous logo+text placeholder. See docs/UX_REFRESH.md §5.
  */
 .welcome-pane {
+  container: welcome / inline-size;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -987,8 +988,82 @@ textarea:focus-visible,
 }
 
 .welcome-pane--returning { justify-content: flex-start; padding-top: clamp(24px, 6vh, 64px); }
-.welcome-pane--returning .welcome-pane__hero { width: min(100%, 680px); align-items: flex-start; text-align: left; }
+.welcome-pane--returning .welcome-pane__hero { width: min(100%, 680px); flex-direction: row; justify-content: space-between; gap: var(--space-6); text-align: left; }
+.welcome-pane__intro { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.welcome-pane--returning .welcome-pane__intro { width: 100%; }
 .welcome-pane--returning .welcome-pane__subtitle { max-width: 70ch; }
+
+.ascii-tether {
+  --ascii-line-height: 6px;
+  --ascii-frame-height: calc(var(--ascii-rows) * var(--ascii-line-height));
+  --ascii-cyan: #22cbd2;
+  --ascii-green: #3bd56b;
+  position: relative;
+  flex-shrink: 0;
+  padding-bottom: var(--space-6);
+}
+
+:root[data-theme='tether-light'] .ascii-tether,
+:root[data-theme='latte'] .ascii-tether {
+  --ascii-cyan: #007e88;
+  --ascii-green: #19833d;
+}
+
+.ascii-tether__viewport {
+  width: calc(var(--ascii-columns) * 1ch);
+  height: var(--ascii-frame-height);
+  overflow: hidden;
+  font-family: var(--font-mono-ui);
+  font-size: 6px;
+  line-height: var(--ascii-line-height);
+}
+
+.ascii-tether__strip {
+  margin: 0;
+  font: inherit;
+  font-weight: 600;
+  font-variant-ligatures: none;
+  letter-spacing: 0;
+  white-space: pre;
+  user-select: none;
+  color: var(--ascii-cyan);
+  background: linear-gradient(90deg, var(--ascii-cyan), var(--ascii-green));
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: ascii-tether-turn 8s steps(var(--ascii-frames)) infinite;
+}
+
+.ascii-tether[data-paused='true'] .ascii-tether__strip { animation-play-state: paused; }
+
+@keyframes ascii-tether-turn {
+  to { transform: translateY(calc(-100% + var(--ascii-frame-height))); }
+}
+
+.ascii-tether__toggle {
+  position: absolute;
+  bottom: 0;
+  left: calc(50% - 12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ascii-tether__toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
+.ascii-tether__toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ascii-tether__strip { animation: none !important; }
+  .ascii-tether__toggle { display: none; }
+  .ascii-tether { padding-bottom: 0; }
+}
+
 .recent-projects { width: min(100%, 680px); }
 .recent-projects h2 { font-size: var(--text-base); color: var(--text-secondary); font-weight: 500; margin-bottom: var(--space-2); }
 .recent-project {
@@ -1184,6 +1259,13 @@ textarea:focus-visible,
   .welcome-card:hover {
     transform: none;
   }
+}
+
+@container welcome (max-width: 560px) {
+  .welcome-pane--returning .welcome-pane__hero { flex-direction: column-reverse; align-items: flex-start; gap: var(--space-3); }
+  .ascii-tether { --ascii-line-height: 5px; }
+  .ascii-tether__viewport { font-size: 5px; }
+  .welcome-pane__cards { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Repo sub-groups (auto-grouped by working directory) */

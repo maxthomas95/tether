@@ -1,6 +1,7 @@
 import type { EnvironmentInfo } from '../../shared/types';
 import logoUrl from '../assets/logo.png';
 import { Icon } from './Icon';
+import { AsciiTether } from './AsciiTether';
 import type { RecentProject } from '../utils/recent-projects';
 
 interface WelcomePaneProps {
@@ -31,10 +32,13 @@ export function WelcomePane({
     <div className={`welcome-pane ${recentProjects.length ? 'welcome-pane--returning' : ''}`}>
       <div className="welcome-pane__hero">
         {recentProjects.length === 0 && <WelcomeDiagram />}
-        <h1 className="welcome-pane__title">{recentProjects.length ? 'Pick up where you left off' : 'Welcome to Tether'}</h1>
-        <p className="welcome-pane__subtitle">
-          {recentProjects.length ? 'Choose a project to start a session or resume a conversation.' : 'Your agents, projects, and environments. One place to work.'}
-        </p>
+        <div className="welcome-pane__intro">
+          <h1 className="welcome-pane__title">{recentProjects.length ? 'Pick up where you left off' : 'Welcome to Tether'}</h1>
+          <p className="welcome-pane__subtitle">
+            {recentProjects.length ? 'Choose a project to start a session or resume a conversation.' : 'Your agents, projects, and environments. One place to work.'}
+          </p>
+        </div>
+        {recentProjects.length > 0 && <AsciiTether />}
       </div>
 
       {recentProjects.length > 0 && (

@@ -42,6 +42,8 @@ When no panes are open, the home screen shows up to six recent local or SSH proj
 
 Recent locations are stored locally as directory paths and environment IDs; they contain no flags, environment variables, or transcript content. Projects belonging to a removed environment are hidden.
 
+The returning-project screen includes a slowly spinning ASCII Tether logo. Use the pause button beneath it to stop the animation. If your system prefers reduced motion, the logo stays still automatically.
+
 ## The Interface
 
 ### Sidebar
