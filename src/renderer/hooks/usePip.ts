@@ -134,12 +134,14 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
   const reaction = expression ? pipReaction(expression.event, settings.personality, expression.variation) : null;
   const mood = napping ? 'sleepy' : reaction?.mood ?? pipSessionMood(session);
   const greeting = settings.personality === 'dry' ? 'I supervise. You do the keyboard stuff.' : 'Your tiny coding buddy. Happy to be here.';
-  const line = settings.quiet ? 'Quiet company. Same tiny supervisor.' : speech
-    ? pipReaction(speech.event, settings.personality, speech.variation).line : greeting;
+  const spokenLine = speech ? pipReaction(speech.event, settings.personality, speech.variation).line : greeting;
+  const line = settings.quiet ? 'Quiet company. Same tiny supervisor.' : spokenLine;
+  const idleEmote = mood === 'permission' ? '?' : '';
+  const emote = napping ? 'z z' : reaction?.emote ?? idleEmote;
 
   return {
     panelRef, active, motionAllowed, mood, line,
-    emote: napping ? 'z z' : reaction?.emote ?? (mood === 'permission' ? '?' : ''),
+    emote,
     following: session ? `Following ${pipSessionLabel(session)}` : 'Keeping you company',
     pet: () => { sleeping.current = false; setNapping(false); showEvent({ kind: 'pet', label: '' }, true); },
   };

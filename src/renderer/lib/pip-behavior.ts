@@ -13,7 +13,7 @@ export const PIP_EXPRESSION_MS = 6000;
 export const PIP_SPEECH_MS = 12000;
 
 export function pipSessionLabel(session?: PipSession): string {
-  return session?.label || session?.workingDir.split(/[\\/]/).filter(Boolean).at(-1) || 'your sessions';
+  return session?.label || session?.workingDir.split(/[\\/]/).findLast(part => part.length > 0) || 'your sessions';
 }
 
 export function pipSessionMood(session?: PipSession): PipMood {
