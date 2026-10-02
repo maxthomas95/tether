@@ -138,6 +138,11 @@ function isTetherManaged(notifyText: string): boolean {
   return notifyText.includes(SENTINEL_TOKEN);
 }
 
+/** A user-owned notify command must never count as Tether hook wiring. */
+export function hasTetherCodexNotify(text: string): boolean {
+  return findTopLevelNotifyRanges(text.split(/\r?\n/)).some((range) => isTetherManaged(range.text));
+}
+
 /**
  * Remove every Tether-managed `notify` assignment from `lines`. Returns
  * `{ lines, changed }` so callers can decide whether to rewrite the file.
@@ -296,14 +301,15 @@ function readOrEmpty(store: ConfigFileStore, filePath: string): string {
  * run), then appends a fresh one. Leaves a user-owned `notify` line alone —
  * we never silently displace their configuration.
  */
-export async function installCodexHooks(ctx: CodexOverlayContext): Promise<void> {
-  await withMutex(async () => {
+export async function installCodexHooks(ctx: CodexOverlayContext): Promise<boolean> {
+  return withMutex(async () => {
     const store = ctx.store ?? localConfigFileStore;
     const filePath = resolveConfigPath(ctx);
     const merged = mergeCodexConfig(readOrEmpty(store, filePath), ctx.helperPath);
-    if (!merged.changed) return;
-    store.writeAtomic(filePath, merged.text);
-    log.info('Codex notify installed', { filePath });
+    if (merged.changed) store.writeAtomic(filePath, merged.text);
+    const installed = hasTetherCodexNotify(merged.text);
+    log.info(installed ? 'Codex notify installed' : 'User-owned Codex notify preserved; using cadence detection', { filePath });
+    return installed;
   });
 }
 

@@ -528,9 +528,9 @@ export class SessionManager {
    *     mode confirmations and similar input boxes fire elicitation_dialog;
    *     they're the same UX category as a permission prompt — both block
    *     Claude until the user clicks something.
-   *   - turn_complete + idle_prompt + elicitation_complete/response → "Claude
-   *     is paused, your turn". The elicitation cycle has ended (user
-   *     responded or it auto-resolved), so we drop back to plain amber.
+   *   - turn_complete + idle_prompt → "Claude is paused, your turn", unless
+   *     subagents still have work outstanding.
+   *   - elicitation_complete/response → resume work after the user's answer.
    *   - auth_success → informational, no state change.
    */
   handleHookEvent(event: HookEvent): void;
@@ -542,10 +542,14 @@ export class SessionManager {
     const { tetherSessionId, type } = event;
     const session = this.sessions.get(tetherSessionId);
     if (!session || session.state === 'stopped' || session.state === 'dead') return;
+    if (event.source === 'claude' && this.handleClaudeAgentEvent(session, event)) return;
     if (event.source === 'codex') {
       if (!this.handleCodexLifecycleEvent(session, event)) return;
+      if (type === 'session_start') {
+        statusDetector.markTurnComplete(tetherSessionId);
+        return;
+      }
       if (
-        type === 'session_start' ||
         type === 'turn_start' ||
         type === 'tool_complete' ||
         type === 'compact_start' ||
@@ -560,24 +564,55 @@ export class SessionManager {
       }
       if (type === 'subagent_start' || type === 'subagent_stop') return;
     }
-    if (type === 'session_start' || type === 'turn_start') {
+    if (type === 'session_start' || type === 'turn_start' || type === 'tool_start' || type === 'tool_complete' ||
+      type === 'elicitation_complete' || type === 'elicitation_response') {
       statusDetector.markTurnStarted(tetherSessionId);
       return;
     }
     if (type === 'permission_prompt' || type === 'elicitation_dialog') {
-      statusDetector.markPermissionWaiting(tetherSessionId);
+      const agentId = event.source === 'claude' ? boundedMetadataString(event.payload?.agent_id, 256) : undefined;
+      statusDetector.markPermissionWaiting(tetherSessionId, agentId);
       return;
     }
-    if (
-      type === 'turn_complete' ||
-      type === 'idle_prompt' ||
-      type === 'elicitation_complete' ||
-      type === 'elicitation_response'
-    ) {
+    if (type === 'turn_complete' || type === 'idle_prompt') {
       statusDetector.markTurnComplete(tetherSessionId);
       return;
     }
     // auth_success and any future event types fall through silently.
+  }
+
+  /** Returns true for rejected or consumed events, false for parent turn hooks. */
+  private handleClaudeAgentEvent(session: Session, event: HookEvent): boolean {
+    if (session.cliTool !== 'claude') return true;
+    const nativeId = event.payload?.session_id;
+    if (typeof nativeId === 'string' && session.toolSessionId && nativeId !== session.toolSessionId) return true;
+    const agentId = boundedMetadataString(event.payload?.agent_id, 256);
+    if (event.type === 'subagent_start' || event.type === 'subagent_stop') {
+      if (agentId) {
+        if (event.type === 'subagent_start') statusDetector.markSubagentStarted(session.id, agentId);
+        else statusDetector.markSubagentStopped(session.id, agentId);
+      }
+      return true;
+    }
+    if (!agentId) return false;
+    // Subagents inherit the same configured hooks and Tether env. Their
+    // activity and Stop events cannot start or complete the parent turn.
+    switch (event.type) {
+      case 'turn_complete':
+        statusDetector.markSubagentStopped(session.id, agentId);
+        return true;
+      case 'idle_prompt':
+        return true;
+      case 'turn_start':
+      case 'tool_start':
+      case 'tool_complete':
+      case 'elicitation_complete':
+      case 'elicitation_response':
+        statusDetector.markSubagentActivity(session.id, agentId);
+        return true;
+      default:
+        return false;
+    }
   }
 
   private handleCodexLifecycleEvent(session: Session, event: HookEvent): boolean {
@@ -637,7 +672,7 @@ export class SessionManager {
     // launches with cadence-only detection.
     const hookEnvRow = opts.environmentId ? getEnvironment(opts.environmentId) : null;
     const hookEnv = !hookEnvRow || hookEnvRow.type === 'local'
-      ? hookEnvForSession(id)
+      ? hookEnvForSession(id, cliTool)
       : await envForRemoteSession(id, hookEnvRow, cliTool);
     // The await above can span seconds for remote envs. If the session was
     // removed while we waited, abort before registering the detector or
@@ -1103,6 +1138,7 @@ export class SessionManager {
   }
 
   writeToSession(id: string, data: string): void {
+    statusDetector.feedInput(id, data);
     this.sessions.get(id)?.transport?.write(data);
   }
 

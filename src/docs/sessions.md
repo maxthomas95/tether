@@ -64,13 +64,23 @@ Each session has a state, shown by the colored dot in the sidebar:
 
 | State | Color | Meaning |
 |-------|-------|---------|
-| **Running** | Green | The CLI is actively generating output |
+| **Running** | Green | The CLI is working, including model calls, tools and tracked subagents |
 | **Waiting** | Amber | The CLI is paused on a prompt (input, permission, tool approval) |
 | **Idle** | Gray | Session is alive but quiet |
 | **Stopped** | Gray (dim) | Session was stopped gracefully |
 | **Dead** | Red | The process exited with an error, or the transport failed |
 
 State detection is passive — Tether watches output cadence; it does not parse or filter the terminal stream. With [CLI hooks](settings.md#cli-hooks) enabled, Claude/Codex sessions get hook-grade detection on top: local sessions automatically, SSH sessions when their environment opts in via [CLI status hooks on remote hosts](environments.md#cli-status-hooks-on-remote-hosts). Coder sessions are cadence-only for now.
+
+Hook-confirmed completion and permission waits survive terminal redraws, typing
+echo and window resizing. Claude stays running while tracked subagents are
+active, including when the parent pauses for their results. Answering an
+elicitation resumes work; it does not mean the turn has finished.
+
+When hooks are unavailable, detection estimates activity from output and silence.
+It cannot reliably distinguish a quiet model or remote subagent from an idle
+prompt. A user-owned Codex `notify` command is preserved; without Tether's notify
+or opted-in lifecycle hooks, that session uses these estimates too.
 
 Claude and Codex panes can show [usage totals from SSH and Coder hosts](usage-quota.md#ssh-and-coder-sessions)
 even when status hooks are off. Collection uses a separate connection and leaves

@@ -88,8 +88,9 @@ describe('Claude settings overlay', () => {
     // Original stop + ours, both wrapped
     expect(s.hooks.Stop.flatMap(g => g.hooks)).toHaveLength(2);
     expect(s.hooks.Stop[0].hooks[0].command).toBe('/usr/bin/their-stop');
-    // Unrelated UserPromptSubmit untouched
+    // Existing UserPromptSubmit preserved alongside our activity observer.
     expect(s.hooks.UserPromptSubmit[0].command).toBe('/usr/bin/audit');
+    expect(s.hooks.UserPromptSubmit).toHaveLength(2);
   });
 
   it('is idempotent: calling install twice does not duplicate', async () => {
@@ -100,6 +101,26 @@ describe('Claude settings overlay', () => {
     const s = readSettings(settingsPath) as { hooks: { Notification: unknown[]; Stop: unknown[] } };
     expect(s.hooks.Notification).toHaveLength(1);
     expect(s.hooks.Stop).toHaveLength(1);
+    const hooks = s.hooks as Record<string, unknown[]>;
+    for (const event of ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop']) {
+      expect(hooks[event]).toHaveLength(1);
+    }
+  });
+
+  it('reports disabled hooks without changing the user setting', async () => {
+    const { settingsPath } = makeCtx();
+    fs.writeFileSync(settingsPath, JSON.stringify({ disableAllHooks: true, model: 'sonnet' }));
+    expect(await installClaudeHooks({ helperPath: HELPER, settingsPath })).toBe(false);
+    expect(readSettings(settingsPath)).toEqual({ disableAllHooks: true, model: 'sonnet' });
+  });
+
+  it('removes activity observers without deleting user-owned hooks', async () => {
+    const { settingsPath } = makeCtx();
+    const original = { hooks: { SubagentStart: [{ matcher: 'Explore', hooks: [{ type: 'command', command: 'user-hook' }] }] } };
+    fs.writeFileSync(settingsPath, JSON.stringify(original));
+    expect(await installClaudeHooks({ helperPath: HELPER, settingsPath })).toBe(true);
+    await uninstallClaudeHooks({ helperPath: HELPER, settingsPath });
+    expect(readSettings(settingsPath)).toEqual(original);
   });
 
   it('uninstall removes our entries but leaves the user\'s (including legacy bare Stop)', async () => {

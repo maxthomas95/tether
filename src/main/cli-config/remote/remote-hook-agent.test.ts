@@ -150,6 +150,23 @@ function fileContent(host: FakeHost, p: string): string {
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe('RemoteHookAgent setup', () => {
+  it('keeps user-owned Codex notify commands and leaves those sessions cadence-only', async () => {
+    const { host, agent } = makeHarness();
+    const original = 'notify = ["node", "/user/notify.js"]\n';
+    host.files.set(CODEX_CONFIG, { content: original });
+    expect(await agent.envForSession('codex-1', 'codex')).toEqual({});
+    expect(fileContent(host, CODEX_CONFIG)).toBe(original);
+    expect(await agent.envForSession('claude-1', 'claude')).toHaveProperty('TETHER_HOOK_ENV_FILE');
+    await agent.dispose();
+  });
+
+  it('keeps disabled Claude hooks cadence-only without costing Codex its hooks', async () => {
+    const { host, agent } = makeHarness();
+    host.files.set(CLAUDE_SETTINGS, { content: '{"disableAllHooks":true}' });
+    expect(await agent.envForSession('claude-1', 'claude')).toEqual({});
+    expect(await agent.envForSession('codex-1', 'codex')).toHaveProperty('TETHER_HOOK_ENV_FILE');
+    await agent.dispose();
+  });
   it('uploads the helper, installs both overlays, and returns an env-file pointer', async () => {
     const { host, agent } = makeHarness();
     const env = await agent.envForSession('s1', 'claude');

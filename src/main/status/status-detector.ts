@@ -33,14 +33,14 @@ const IDLE_TIMEOUT = 30000;     // No data for 30s → idle
 const DEBOUNCE_MS = 500;        // Debounce state transitions
 const BUFFER_MAX = 4096;        // Per-session rolling byte buffer for OSC matching
 const BELL_COALESCE_MS = 2000;  // Suppress bell notifications fired in this window
-const TURN_SAFETY_TIMEOUT = 10 * 60 * 1000; // 10 min fallback if hook never fires
+const TURN_SAFETY_TIMEOUT = 10 * 60 * 1000; // Fallback for a turn inferred without a start hook
 
 // CLIs that *can* drive hook-based turn detection when hooks are actually
 // wired. This is a capability ceiling, not a guarantee: a session only
 // suppresses byte-level cadence inference when it is ALSO `hookCapable` (i.e.
 // the hook env vars were genuinely injected at spawn). A Claude/Codex session
-// with hooks off — global toggle off, overlay install failed, or any
-// SSH/Coder remote session (hooks are local-only today) — is NOT hookCapable
+// with hooks off — global toggle off, overlay install failed, or a remote
+// environment without hooks — is NOT hookCapable
 // and falls back to cadence inference, so it never gets stuck "running" for
 // the full TURN_SAFETY_TIMEOUT.
 const HOOK_ENABLED_CLIS: ReadonlySet<CliToolId> = new Set<CliToolId>(['claude', 'codex']);
@@ -73,13 +73,18 @@ export class StatusDetector {
   private readonly debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly safetyTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /**
-   * True once markTurnComplete has fired and no new PTY data has arrived
-   * since. While false for a hook-enabled CLI, the byte-level idle timeout
+   * True until a turn starts or once markTurnComplete has fired. While false
+   * for a hook-enabled CLI, the byte-level idle timeout
    * is suppressed — the hook is the canonical end-of-turn signal, and CLIs
    * like Codex can go silent for 60–90+ seconds mid-turn while the model
    * processes large contexts.
    */
   private readonly hookSignaledDone = new Map<string, boolean>();
+  /** Once a lifecycle signal arrives, PTY redraws cannot overwrite its state. */
+  private readonly hookStatusObserved = new Set<string>();
+  private readonly activeSubagents = new Map<string, Set<string>>();
+  private readonly completionPending = new Set<string>();
+  private readonly permissionWaits = new Map<string, Set<string>>();
   /**
    * Last time we surfaced a bell for this session. Used to coalesce rapid
    * BEL spam (some CLIs ring on every error) into one notification per
@@ -131,7 +136,7 @@ export class StatusDetector {
   /**
    * Update whether a session currently has hooks wired. Flipping to false
    * mid-session re-engages the byte-level cadence fallback: we clear the
-   * "turn active" suppression and let the next data chunk arm fresh timers,
+   * "turn active" suppression and arm fresh silence timers,
    * so a session that loses its hook wiring never waits out the full
    * TURN_SAFETY_TIMEOUT. Flipping to true mirrors register's hook-enabled
    * default (suppress idle until a turn is actually seen).
@@ -140,10 +145,12 @@ export class StatusDetector {
     if (!this.states.has(sessionId)) return;
     this.hookCapable.set(sessionId, capable);
     if (!capable) {
-      // Drop suppression and the pending safety timer; the next feedData
-      // chunk re-arms the cadence timers immediately.
+      // A disconnected remote bridge may have no subsequent PTY output.
+      // Re-arm now so it can still leave running without another chunk.
       this.hookSignaledDone.set(sessionId, true);
+      this.hookStatusObserved.delete(sessionId);
       this.clearTimer(this.safetyTimers, sessionId);
+      if (this.isLiveSession(sessionId)) this.armSilenceTimers(sessionId);
     }
   }
 
@@ -164,6 +171,10 @@ export class StatusDetector {
     this.buffers.delete(sessionId);
     this.lastBellAt.delete(sessionId);
     this.hookSignaledDone.delete(sessionId);
+    this.hookStatusObserved.delete(sessionId);
+    this.activeSubagents.delete(sessionId);
+    this.completionPending.delete(sessionId);
+    this.permissionWaits.delete(sessionId);
     this.clearTimer(this.waitingTimers, sessionId);
     this.clearTimer(this.idleTimers, sessionId);
     this.clearTimer(this.debounceTimers, sessionId);
@@ -191,6 +202,16 @@ export class StatusDetector {
       }
     }
 
+    // Hooks describe work; PTY bytes also include cursor movement, typing echo,
+    // permission-dialog redraws and final output flushed after the Stop hook.
+    // Preserve the hook's state while still passing every byte to xterm.js.
+    if (this.isHookCapable(sessionId) && this.hookStatusObserved.has(sessionId)) {
+      if (state === 'running' && this.safetyTimers.has(sessionId)) {
+        this.resetSafetyTimer(sessionId);
+      }
+      return;
+    }
+
     // Maintain a rolling buffer so OSC sequences split across chunks still match.
     const prevBuffer = this.buffers.get(sessionId) || '';
     const combined = prevBuffer + data;
@@ -203,13 +224,8 @@ export class StatusDetector {
     this.clearTimer(this.waitingTimers, sessionId);
     this.clearTimer(this.idleTimers, sessionId);
 
-    // For hook-capable sessions, mark the turn as active (output is flowing,
-    // hook hasn't signaled completion yet). The safety timer caps how long
-    // we'll suppress the byte-level idle fallback when the hook is missing.
-    if (this.isHookCapable(sessionId)) {
-      this.hookSignaledDone.set(sessionId, false);
-      this.resetSafetyTimer(sessionId);
-    }
+    // Until a start hook or submitted input confirms a turn, startup output
+    // may just be the CLI's initial prompt. Keep cadence estimates available.
 
     // Layer 1: OSC 9 notification — strongest "turn ended" signal.
     // Search the combined buffer so split-across-chunks sequences still match.
@@ -228,6 +244,12 @@ export class StatusDetector {
     // CLIs that don't emit OSC notifications (Copilot, OpenCode, custom).
     // For hook-enabled CLIs mid-turn, both transitions are suppressed — the hook
     // is the canonical signal, and silence during an API call is normal.
+    this.armSilenceTimers(sessionId);
+  }
+
+  private armSilenceTimers(sessionId: string): void {
+    this.clearTimer(this.waitingTimers, sessionId);
+    this.clearTimer(this.idleTimers, sessionId);
     this.waitingTimers.set(sessionId, setTimeout(() => {
       const hookActive = this.isHookCapable(sessionId) && !this.hookSignaledDone.get(sessionId);
 
@@ -237,14 +259,25 @@ export class StatusDetector {
       }
 
       // After IDLE_TIMEOUT total silence, drop to idle — unless a
-      // hook-enabled CLI is mid-turn (the safety timer handles that case).
+      // hook-enabled CLI is mid-turn.
       this.idleTimers.set(sessionId, setTimeout(() => {
         const cur = this.states.get(sessionId);
-        if ((cur === 'waiting' || cur === 'running') && !hookActive) {
+        const stillHookActive = this.isHookCapable(sessionId) && !this.hookSignaledDone.get(sessionId);
+        if ((cur === 'waiting' || cur === 'running') && !stillHookActive) {
           this.transition(sessionId, 'idle');
         }
       }, IDLE_TIMEOUT - WAITING_TIMEOUT));
     }, WAITING_TIMEOUT));
+  }
+
+  /** Legacy Codex notify only reports completion; submission starts the next turn. */
+  feedInput(sessionId: string, data: string): void {
+    const state = this.states.get(sessionId);
+    if (this.cliTools.get(sessionId) !== 'codex' || !this.isHookCapable(sessionId)) return;
+    if (this.isLiveSession(sessionId) &&
+      (state !== 'running' || this.hookSignaledDone.get(sessionId)) && /[\r\n]/.test(data)) {
+      this.markTurnStarted(sessionId, { inferred: true });
+    }
   }
 
   // Called when PTY exits
@@ -253,6 +286,10 @@ export class StatusDetector {
     this.clearSessionTimers(sessionId);
     this.buffers.delete(sessionId);
     this.hookSignaledDone.delete(sessionId);
+    this.hookStatusObserved.delete(sessionId);
+    this.activeSubagents.delete(sessionId);
+    this.completionPending.delete(sessionId);
+    this.permissionWaits.delete(sessionId);
     const state: SessionState = exitCode === 0 ? 'stopped' : 'dead';
     this.setState(sessionId, state); // No debounce for exit
   }
@@ -263,27 +300,39 @@ export class StatusDetector {
    * and bypass debounce because the user needs to see this fast. Clears any
    * pending idle-fallback timer so we don't drop to plain idle behind it.
    */
-  markPermissionWaiting(sessionId: string): void {
-    if (!this.states.has(sessionId)) return;
-    this.clearTimer(this.waitingTimers, sessionId);
-    this.clearTimer(this.idleTimers, sessionId);
-    this.clearTimer(this.debounceTimers, sessionId);
+  markPermissionWaiting(sessionId: string, agentId?: string): void {
+    if (!this.isLiveSession(sessionId)) return;
+    if (agentId) this.markSubagentStarted(sessionId, agentId);
+    const waits = this.permissionWaits.get(sessionId) ?? new Set<string>();
+    waits.add(agentId ?? '');
+    this.permissionWaits.set(sessionId, waits);
+    this.clearSessionTimers(sessionId);
+    this.hookStatusObserved.add(sessionId);
+    this.buffers.delete(sessionId);
     this.setState(sessionId, 'waiting', 'permission');
   }
 
   /**
    * Hook signal: a new user turn started. Return to running immediately and
    * suppress byte-level idle inference until a completion hook arrives or the
-   * safety timer expires.
+   * safety timer expires for an inferred legacy turn. A confirmed start hook
+   * keeps quiet model/tool work running until a completion signal arrives.
    */
-  markTurnStarted(sessionId: string): void {
-    if (!this.states.has(sessionId)) return;
+  markTurnStarted(sessionId: string, opts?: { inferred?: boolean }): void {
+    if (!this.isLiveSession(sessionId)) return;
     this.clearTimer(this.waitingTimers, sessionId);
     this.clearTimer(this.idleTimers, sessionId);
     this.clearTimer(this.debounceTimers, sessionId);
     this.hookSignaledDone.set(sessionId, false);
-    this.resetSafetyTimer(sessionId);
-    this.setState(sessionId, 'running');
+    this.hookStatusObserved.add(sessionId);
+    this.completionPending.delete(sessionId);
+    this.buffers.delete(sessionId);
+    this.clearTimer(this.safetyTimers, sessionId);
+    // A real start/tool hook confirms work even when it is silent for a long
+    // time. Only legacy notify/input and PTY estimates need a silence cap.
+    if (opts?.inferred) this.resetSafetyTimer(sessionId);
+    this.clearPermissionWait(sessionId, '');
+    if (!this.permissionWaits.has(sessionId)) this.setState(sessionId, 'running');
   }
 
   /**
@@ -293,13 +342,72 @@ export class StatusDetector {
    * just don't have to wait for silence.
    */
   markTurnComplete(sessionId: string): void {
-    if (!this.states.has(sessionId)) return;
-    this.clearTimer(this.waitingTimers, sessionId);
-    this.clearTimer(this.idleTimers, sessionId);
-    this.clearTimer(this.debounceTimers, sessionId);
-    this.clearTimer(this.safetyTimers, sessionId);
+    if (!this.isLiveSession(sessionId)) return;
+    this.clearSessionTimers(sessionId);
+    this.hookStatusObserved.add(sessionId);
+    this.buffers.delete(sessionId);
+    if (this.activeSubagents.get(sessionId)?.size) {
+      this.completionPending.add(sessionId);
+      this.hookSignaledDone.set(sessionId, false);
+      if (this.waitingReasons.get(sessionId) !== 'permission') this.setState(sessionId, 'running');
+      return;
+    }
+    this.completionPending.delete(sessionId);
+    this.permissionWaits.delete(sessionId);
     this.hookSignaledDone.set(sessionId, true);
     this.setState(sessionId, 'waiting', 'idle');
+  }
+
+  markSubagentStarted(sessionId: string, agentId: string): void {
+    if (!this.isLiveSession(sessionId) || !agentId) return;
+    const agents = this.activeSubagents.get(sessionId) ?? new Set<string>();
+    if (agents.has(agentId)) return;
+    agents.add(agentId);
+    this.activeSubagents.set(sessionId, agents);
+    // A background agent may start after its parent pauses. Retain that
+    // pending completion, and don't clear another agent's permission prompt.
+    if (this.waitingReasons.get(sessionId) !== 'permission') {
+      const pending = this.completionPending.has(sessionId);
+      this.markTurnStarted(sessionId);
+      if (pending) this.completionPending.add(sessionId);
+    }
+  }
+
+  markSubagentStopped(sessionId: string, agentId: string): void {
+    const agents = this.activeSubagents.get(sessionId);
+    if (!agents?.delete(agentId)) return;
+    const resolvedPermission = this.permissionWaits.get(sessionId)?.has(agentId);
+    this.clearPermissionWait(sessionId, agentId);
+    if (agents.size === 0) {
+      this.activeSubagents.delete(sessionId);
+      if (this.completionPending.has(sessionId)) {
+        this.markTurnComplete(sessionId);
+        return;
+      }
+    }
+    if (resolvedPermission && !this.permissionWaits.has(sessionId)) this.setState(sessionId, 'running');
+  }
+
+  markSubagentActivity(sessionId: string, agentId: string): void {
+    if (!this.isLiveSession(sessionId) || !agentId) return;
+    this.markSubagentStarted(sessionId, agentId);
+    this.clearSessionTimers(sessionId);
+    this.hookStatusObserved.add(sessionId);
+    this.buffers.delete(sessionId);
+    this.clearPermissionWait(sessionId, agentId);
+    this.hookSignaledDone.set(sessionId, false);
+    if (!this.permissionWaits.has(sessionId)) this.setState(sessionId, 'running');
+  }
+
+  private clearPermissionWait(sessionId: string, agentId: string): void {
+    const waits = this.permissionWaits.get(sessionId);
+    waits?.delete(agentId);
+    if (waits?.size === 0) this.permissionWaits.delete(sessionId);
+  }
+
+  private isLiveSession(sessionId: string): boolean {
+    const state = this.states.get(sessionId);
+    return !!state && state !== 'stopped' && state !== 'dead';
   }
 
   getState(sessionId: string): SessionState {
@@ -354,6 +462,9 @@ export class StatusDetector {
   private resetSafetyTimer(sessionId: string): void {
     this.clearTimer(this.safetyTimers, sessionId);
     this.safetyTimers.set(sessionId, setTimeout(() => {
+      this.safetyTimers.delete(sessionId);
+      if (this.activeSubagents.get(sessionId)?.size) return;
+      this.hookStatusObserved.delete(sessionId);
       this.hookSignaledDone.set(sessionId, true);
       const cur = this.states.get(sessionId);
       if (cur === 'waiting' || cur === 'running') {
@@ -381,6 +492,10 @@ export class StatusDetector {
     this.hookCapable.clear();
     this.lastBellAt.clear();
     this.hookSignaledDone.clear();
+    this.hookStatusObserved.clear();
+    this.activeSubagents.clear();
+    this.completionPending.clear();
+    this.permissionWaits.clear();
   }
 }
 

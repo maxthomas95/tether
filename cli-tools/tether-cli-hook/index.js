@@ -108,6 +108,11 @@ function classifyClaude(payload) {
   // 'idle_prompt' | 'auth_success' | 'elicitation_*'). Map both into our
   // flat event enum so the detector doesn't need to know the Claude schema.
   if (payload.hook_event_name === 'Stop') return 'turn_complete';
+  if (payload.hook_event_name === 'UserPromptSubmit') return 'turn_start';
+  if (payload.hook_event_name === 'PreToolUse') return 'tool_start';
+  if (payload.hook_event_name === 'PostToolUse' || payload.hook_event_name === 'PostToolUseFailure') return 'tool_complete';
+  if (payload.hook_event_name === 'SubagentStart') return 'subagent_start';
+  if (payload.hook_event_name === 'SubagentStop') return 'subagent_stop';
   if (payload.hook_event_name === 'Notification') {
     const t = payload.notification_type;
     if (t === 'permission_prompt') return 'permission_prompt';
@@ -163,10 +168,21 @@ function codexHookMetadata(payload) {
 function codexNotifyMetadata(payload) {
   return {
     type: cappedString(payload.type, 128),
-    toolSessionId: cappedString(payload.session_id, 256),
+    toolSessionId: cappedString(payload['thread-id'] || payload.session_id, 256),
     turnId: cappedString(payload.turn_id || payload['turn-id'], 256),
     model: cappedString(payload.model, 128),
     at: new Date().toISOString(),
+  };
+}
+
+function claudeHookMetadata(payload) {
+  // Activity hooks carry prompts, tool arguments/results and transcript paths.
+  // Only identifiers and event names belong on the status side channel.
+  return {
+    session_id: cappedString(payload.session_id, 256),
+    hook_event_name: cappedString(payload.hook_event_name, 128),
+    notification_type: cappedString(payload.notification_type, 128),
+    agent_id: cappedString(payload.agent_id, 256),
   };
 }
 
@@ -200,7 +216,7 @@ async function main() {
     ? mode === '--codex-hook'
       ? codexHookMetadata(payload)
       : codexNotifyMetadata(payload)
-    : payload;
+    : claudeHookMetadata(payload);
   dbg('classified', { type });
 
   // Connect, auth, send, exit. Hard 1s timeout on the whole round-trip —
