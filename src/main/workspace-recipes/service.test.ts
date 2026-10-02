@@ -1,13 +1,19 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionInfo } from '../../shared/types';
 import type { WorkspaceRecipe } from '../../shared/workspace-recipes';
 
-const electronState = vi.hoisted(() => ({
-  userData: `${process.env.TEMP || process.env.TMP || process.cwd()}\\tether-workspace-recipes-${process.pid}`,
-}));
+const electronState = vi.hoisted(() => {
+  const nodeFs = require('node:fs') as typeof import('node:fs');
+  const nodeOs = require('node:os') as typeof import('node:os');
+  const nodePath = require('node:path') as typeof import('node:path');
+  return {
+    userData: nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'tether-workspace-recipes-')),
+  };
+});
 
 vi.mock('electron', () => ({
   app: {
