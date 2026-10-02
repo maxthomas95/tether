@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { SearchAddon, type ISearchResultChangeEvent } from '@xterm/addon-search';
+import { SearchAddon, type ISearchDecorationOptions, type ISearchResultChangeEvent } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { PaneId } from '../../shared/layout-types';
 import { decodeOsc52Write } from '../utils/osc52';
@@ -464,6 +464,7 @@ export function useTerminalManager(
       caseSensitive: options.caseSensitive ?? false,
       wholeWord: options.wholeWord ?? false,
       incremental: options.incremental ?? false,
+      decorations: getSearchDecorations(themeRef.current),
     };
     return options.previous
       ? entry.searchAddon.findPrevious(term, searchOptions)
@@ -544,4 +545,37 @@ export function useTerminalManager(
 function clearFindEntry(entry: PaneEntry): void {
   entry.searchAddon.clearDecorations();
   entry.terminal.clearSelection();
+}
+
+function getSearchDecorations(theme: ITheme | undefined): ISearchDecorationOptions {
+  const foreground = normalizeHexColor(theme?.foreground) ?? '#cdd6f4';
+  const selectionBackground = normalizeHexColor(theme?.selectionBackground) ?? '#45475a';
+  const selectionForeground = normalizeHexColor(theme?.selectionForeground) ?? foreground;
+  const accent = normalizeHexColor(theme?.cursor) ?? foreground;
+
+  return {
+    matchBackground: selectionBackground,
+    matchBorder: accent,
+    matchOverviewRuler: accent,
+    activeMatchBackground: accent,
+    activeMatchBorder: selectionForeground,
+    activeMatchColorOverviewRuler: selectionForeground,
+  };
+}
+
+function normalizeHexColor(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const short = /^#([0-9a-f]{3})$/i.exec(trimmed);
+  if (short) {
+    return `#${short[1].split('').map(ch => ch + ch).join('').toLowerCase()}`;
+  }
+  const full = /^#([0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec(trimmed);
+  if (full) return `#${full[1].toLowerCase()}`;
+  const rgb = /^rgba?\(\s*(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})(?:\s*[/,]\s*[\d.]+%?)?\s*\)$/i.exec(trimmed)
+    ?? /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*[\d.]+)?\s*\)$/i.exec(trimmed);
+  if (!rgb) return undefined;
+  const channels = rgb.slice(1, 4).map(Number);
+  if (channels.some(channel => !Number.isInteger(channel) || channel < 0 || channel > 255)) return undefined;
+  return `#${channels.map(channel => channel.toString(16).padStart(2, '0')).join('')}`;
 }

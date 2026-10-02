@@ -255,6 +255,14 @@ describe('terminal session lifecycle', () => {
       caseSensitive: true,
       wholeWord: false,
       incremental: true,
+      decorations: {
+        activeMatchBackground: '#cdd6f4',
+        activeMatchBorder: '#cdd6f4',
+        activeMatchColorOverviewRuler: '#cdd6f4',
+        matchBackground: '#45475a',
+        matchBorder: '#cdd6f4',
+        matchOverviewRuler: '#cdd6f4',
+      },
     });
     const listener = vi.fn();
     const unsubscribe = api.onFindResultsInPane('left', listener);
@@ -265,6 +273,14 @@ describe('terminal session lifecycle', () => {
       caseSensitive: false,
       wholeWord: false,
       incremental: false,
+      decorations: {
+        activeMatchBackground: '#cdd6f4',
+        activeMatchBorder: '#cdd6f4',
+        activeMatchColorOverviewRuler: '#cdd6f4',
+        matchBackground: '#45475a',
+        matchBorder: '#cdd6f4',
+        matchOverviewRuler: '#cdd6f4',
+      },
     });
     expect(mocks.sendInput).not.toHaveBeenCalled();
 
@@ -279,6 +295,14 @@ describe('terminal session lifecycle', () => {
       caseSensitive: false,
       wholeWord: true,
       incremental: false,
+      decorations: {
+        activeMatchBackground: '#cdd6f4',
+        activeMatchBorder: '#cdd6f4',
+        activeMatchColorOverviewRuler: '#cdd6f4',
+        matchBackground: '#45475a',
+        matchBorder: '#cdd6f4',
+        matchOverviewRuler: '#cdd6f4',
+      },
     });
 
     expect(api.findInPane('right', '')).toBe(false);
