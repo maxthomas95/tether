@@ -54,12 +54,27 @@ it('prevents overlapping saves from overwriting a newer preference', async () =>
   let saving!: Promise<void>;
   await act(async () => { saving = preferences.update({ enabled: true }); });
   expect(preferences.busy).toBe(true);
+  expect(preferences.settings?.enabled).toBe(true);
   await act(async () => preferences.update({ quiet: true }));
   expect(set).toHaveBeenCalledTimes(1);
   await act(async () => { pending.resolve(); await saving; });
   expect(preferences.settings?.enabled).toBe(true);
   await act(async () => preferences.update({ quiet: true }));
   expect(preferences.settings?.quiet).toBe(true);
+});
+
+it('updates controls immediately and rolls back a delayed save failure', async () => {
+  await mount();
+  const pending = deferred<void>();
+  set.mockReturnValueOnce(pending.promise);
+  let saving!: Promise<void>;
+  await act(async () => { saving = preferences.update({ quiet: true }); });
+  expect(preferences.settings?.quiet).toBe(true);
+  expect(preferences.busy).toBe(true);
+  await act(async () => { pending.reject(new Error('disk full')); await saving; });
+  expect(preferences.settings?.quiet).toBe(false);
+  expect(preferences.busy).toBe(false);
+  expect(error).toHaveBeenCalledWith('Could not save Pip preferences', expect.any(Error));
 });
 
 it('reports load failures without enabling the panel or saving defaults', async () => {

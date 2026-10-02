@@ -23,12 +23,15 @@ export function usePipSettings(onError: (title: string, error: unknown) => void)
     if (!current.current || saving.current) return;
     saving.current = true;
     setBusy(true);
-    const next = readPipSettings(JSON.stringify({ ...current.current, ...patch }));
+    const previous = current.current;
+    const next = readPipSettings(JSON.stringify({ ...previous, ...patch }));
+    setSettings(next);
     try {
       await window.electronAPI.config.set(PIP_SETTINGS_KEY, JSON.stringify(next));
       current.current = next;
       setSettings(next);
     } catch (error) {
+      setSettings(previous);
       onError('Could not save Pip preferences', error);
     } finally {
       saving.current = false;
