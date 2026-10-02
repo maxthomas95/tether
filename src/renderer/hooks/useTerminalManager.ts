@@ -20,8 +20,14 @@ interface PaneEntry {
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
   searchResultsDisposable?: { dispose: () => void };
+  lastFindOptions?: NormalizedFindOptions;
   linksAddon: WebLinksAddon;
   container: HTMLDivElement | null;
+}
+
+interface NormalizedFindOptions {
+  caseSensitive: boolean;
+  wholeWord: boolean;
 }
 
 function fitVisiblePane(entry: PaneEntry): void {
@@ -460,9 +466,16 @@ export function useTerminalManager(
       clearFindEntry(entry);
       return false;
     }
-    const searchOptions = {
+    const normalizedOptions: NormalizedFindOptions = {
       caseSensitive: options.caseSensitive ?? false,
       wholeWord: options.wholeWord ?? false,
+    };
+    if (hasFindOptionChange(entry.lastFindOptions, normalizedOptions)) {
+      entry.searchAddon.clearDecorations();
+    }
+    entry.lastFindOptions = normalizedOptions;
+    const searchOptions = {
+      ...normalizedOptions,
       incremental: options.incremental ?? false,
       decorations: getSearchDecorations(themeRef.current),
     };
@@ -545,6 +558,11 @@ export function useTerminalManager(
 function clearFindEntry(entry: PaneEntry): void {
   entry.searchAddon.clearDecorations();
   entry.terminal.clearSelection();
+  entry.lastFindOptions = undefined;
+}
+
+function hasFindOptionChange(previous: NormalizedFindOptions | undefined, next: NormalizedFindOptions): boolean {
+  return Boolean(previous && (previous.caseSensitive !== next.caseSensitive || previous.wholeWord !== next.wholeWord));
 }
 
 function getSearchDecorations(theme: ITheme | undefined): ISearchDecorationOptions {

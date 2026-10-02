@@ -264,12 +264,12 @@ describe('terminal session lifecycle', () => {
         matchOverviewRuler: '#cdd6f4',
       },
     });
-    const listener = vi.fn();
-    const unsubscribe = api.onFindResultsInPane('left', listener);
-    addon.emit({ resultIndex: 0, resultCount: 2 });
-    expect(listener).toHaveBeenCalledExactlyOnceWith({ resultIndex: 0, resultCount: 2 });
-    api.findInPane('left', ' needle ');
-    expect(addon.findNext).toHaveBeenLastCalledWith(' needle ', {
+    expect(addon.clearDecorations).not.toHaveBeenCalled();
+    api.findInPane('left', 'needle', { caseSensitive: true });
+    expect(addon.clearDecorations).not.toHaveBeenCalled();
+    api.findInPane('left', 'needle');
+    expect(addon.clearDecorations).toHaveBeenCalledOnce();
+    expect(addon.findNext).toHaveBeenLastCalledWith('needle', {
       caseSensitive: false,
       wholeWord: false,
       incremental: false,
@@ -282,6 +282,11 @@ describe('terminal session lifecycle', () => {
         matchOverviewRuler: '#cdd6f4',
       },
     });
+
+    const listener = vi.fn();
+    const unsubscribe = api.onFindResultsInPane('left', listener);
+    addon.emit({ resultIndex: 0, resultCount: 2 });
+    expect(listener).toHaveBeenCalledExactlyOnceWith({ resultIndex: 0, resultCount: 2 });
     expect(mocks.sendInput).not.toHaveBeenCalled();
 
     api.detachPane('left');
@@ -305,9 +310,13 @@ describe('terminal session lifecycle', () => {
       },
     });
 
+    expect(addon.clearDecorations).toHaveBeenCalledOnce();
     expect(api.findInPane('right', '')).toBe(false);
-    api.clearFindInPane('right');
     expect(addon.clearDecorations).toHaveBeenCalledTimes(2);
+    api.findInPane('right', 'needle', { previous: true, wholeWord: true });
+    expect(addon.clearDecorations).toHaveBeenCalledTimes(2);
+    api.clearFindInPane('right');
+    expect(addon.clearDecorations).toHaveBeenCalledTimes(3);
     expect(terminal('a').clearSelection).toHaveBeenCalledTimes(2);
     unsubscribe();
     addon.emit({ resultIndex: 1, resultCount: 2 });

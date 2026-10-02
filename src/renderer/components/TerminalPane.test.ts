@@ -28,6 +28,7 @@ function render(sessionId: string | null) {
     termManager: manager, enablePaneSplitting: false, currentLeafCount: 1,
     maxPanes: 4, defaultFontSize: 14, onFontSizeDelta: vi.fn(),
     isBroadcastTarget: false, isBroadcastActive: false, onToggleBroadcastTarget: vi.fn(),
+    isSearchOpen: false, searchFocusRequest: 0, onOpenSearch: vi.fn(), onCloseSearch: vi.fn(),
   };
   act(() => root.render(createElement(TerminalPane, props)));
 }
@@ -52,7 +53,8 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', FakeResizeObserver);
   manager = {
     getOrCreate: vi.fn(), peek: vi.fn(), writeData: vi.fn(), attachToPane: vi.fn(),
-    detachPane: vi.fn(), fitPane: vi.fn(), focusPane: vi.fn(), setSessionFontSize: vi.fn(),
+    detachPane: vi.fn(), fitPane: vi.fn(), focusPane: vi.fn(), findInPane: vi.fn(),
+    clearFindInPane: vi.fn(), onFindResultsInPane: vi.fn(), setSessionFontSize: vi.fn(),
     setBroadcastTargets: vi.fn(), remove: vi.fn(),
   };
   host = document.createElement('div');
