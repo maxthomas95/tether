@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # Node 24 matches Electron 41's runtime and provides the built-in
+          # Node 24 matches Electron 44's runtime and provides the built-in
           # node:sqlite the Crush usage reader uses.
           node-version: '24'
           cache: 'npm'

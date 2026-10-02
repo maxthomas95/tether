@@ -1,19 +1,10 @@
-import { ipcMain } from 'electron';
+import { createTrustedIpc } from './trusted-ipc';
 import { IPC } from '../../shared/constants';
 import type { HandlerContext } from './helpers';
 import { decryptSecretFromStorage, encryptSecretForStorage } from '../db/secret-storage';
 
-export const SECRET_CONFIG_KEYS: ReadonlySet<string> = new Set([
-  'jobsToken',
-  'notifications.webhook.token',
-]);
-
-const SENSITIVE_CONFIG_KEY_PATTERN = /token|secret|password|credential|apikey|api_key/i;
-
-export function isSecretConfigValue(key: string, value: string): boolean {
-  return value !== 'true' && value !== 'false' &&
-    (SECRET_CONFIG_KEYS.has(key) || SENSITIVE_CONFIG_KEY_PATTERN.test(key));
-}
+export { SECRET_CONFIG_KEYS, isSecretConfigValue } from '../db/secret-storage';
+import { isSecretConfigValue } from '../db/secret-storage';
 
 export function encryptConfigValue(key: string, value: string): string {
   return isSecretConfigValue(key, value)
@@ -28,17 +19,20 @@ export function decryptConfigValue(key: string, value: string): string {
 }
 
 export function registerConfigHandlers(ctx: HandlerContext): void {
+  const ipc = createTrustedIpc(ctx.mainWindow);
   const { mainWindow } = ctx;
 
   // === Generic config get/set ===
 
-  ipcMain.handle(IPC.CONFIG_GET, async (_event, key: string) => {
+  ipc.handle(IPC.CONFIG_GET, async (_event, key: string) => {
+    if (key === 'vaultToken') throw new Error('Vault tokens are private to the main process');
     const { getDb } = await import('../db/database');
     const value = getDb().config[key];
     return value === undefined ? null : decryptConfigValue(key, value);
   });
 
-  ipcMain.handle(IPC.CONFIG_SET, async (_event, key: string, value: string) => {
+  ipc.handle(IPC.CONFIG_SET, async (_event, key: string, value: string) => {
+    if (/^vault(?:Enabled|Addr|Role|Mount|Namespace|Token|Identity)/.test(key)) throw new Error('Use Vault settings to change Vault configuration');
     const { getDb, saveDb } = await import('../db/database');
     getDb().config[key] = encryptConfigValue(key, value);
     saveDb();
@@ -54,23 +48,23 @@ export function registerConfigHandlers(ctx: HandlerContext): void {
 
   // === Default CLI flags (legacy flat + per-tool) ===
 
-  ipcMain.handle(IPC.CONFIG_GET_DEFAULT_CLI_FLAGS, async () => {
+  ipc.handle(IPC.CONFIG_GET_DEFAULT_CLI_FLAGS, async () => {
     const { getDb } = await import('../db/database');
     return getDb().defaultCliFlags;
   });
 
-  ipcMain.handle(IPC.CONFIG_SET_DEFAULT_CLI_FLAGS, async (_event, flags: string[]) => {
+  ipc.handle(IPC.CONFIG_SET_DEFAULT_CLI_FLAGS, async (_event, flags: string[]) => {
     const { getDb, saveDb } = await import('../db/database');
     getDb().defaultCliFlags = flags;
     saveDb();
   });
 
-  ipcMain.handle(IPC.CONFIG_GET_DEFAULT_CLI_FLAGS_PER_TOOL, async () => {
+  ipc.handle(IPC.CONFIG_GET_DEFAULT_CLI_FLAGS_PER_TOOL, async () => {
     const { getDb } = await import('../db/database');
     return getDb().defaultCliFlagsPerTool;
   });
 
-  ipcMain.handle(IPC.CONFIG_SET_DEFAULT_CLI_FLAGS_FOR_TOOL, async (_event, toolId: string, flags: string[]) => {
+  ipc.handle(IPC.CONFIG_SET_DEFAULT_CLI_FLAGS_FOR_TOOL, async (_event, toolId: string, flags: string[]) => {
     const { getDb, saveDb } = await import('../db/database');
     const db = getDb();
     if (!db.defaultCliFlagsPerTool) db.defaultCliFlagsPerTool = {};
@@ -84,13 +78,13 @@ export function registerConfigHandlers(ctx: HandlerContext): void {
 
   // === Default env vars ===
 
-  ipcMain.handle(IPC.CONFIG_GET_DEFAULT_ENV_VARS, async () => {
+  ipc.handle(IPC.CONFIG_GET_DEFAULT_ENV_VARS, async () => {
     const { getDb } = await import('../db/database');
     const { decryptEnvVarsRecord } = await import('../db/secret-storage');
     return decryptEnvVarsRecord(getDb().defaultEnvVars);
   });
 
-  ipcMain.handle(IPC.CONFIG_SET_DEFAULT_ENV_VARS, async (_event, vars: Record<string, string>) => {
+  ipc.handle(IPC.CONFIG_SET_DEFAULT_ENV_VARS, async (_event, vars: Record<string, string>) => {
     const { getDb, saveDb } = await import('../db/database');
     const { encryptEnvVarsRecord } = await import('../db/secret-storage');
     getDb().defaultEnvVars = encryptEnvVarsRecord(vars);
@@ -99,12 +93,12 @@ export function registerConfigHandlers(ctx: HandlerContext): void {
 
   // === Repo group preferences ===
 
-  ipcMain.handle(IPC.REPOGROUP_GET_PREFS, async () => {
+  ipc.handle(IPC.REPOGROUP_GET_PREFS, async () => {
     const { getDb } = await import('../db/database');
     return getDb().repoGroupPrefs;
   });
 
-  ipcMain.handle(IPC.REPOGROUP_SET_PREFS, async (_event, environmentId: string, prefs: Array<{ environmentId: string; workingDir: string; pinned: boolean; sortOrder: number }>) => {
+  ipc.handle(IPC.REPOGROUP_SET_PREFS, async (_event, environmentId: string, prefs: Array<{ environmentId: string; workingDir: string; pinned: boolean; sortOrder: number }>) => {
     const { getDb, saveDb } = await import('../db/database');
     const db = getDb();
     db.repoGroupPrefs = [
@@ -116,12 +110,12 @@ export function registerConfigHandlers(ctx: HandlerContext): void {
 
   // === Session order preferences (within a repo group) ===
 
-  ipcMain.handle(IPC.SESSIONORDER_GET_PREFS, async () => {
+  ipc.handle(IPC.SESSIONORDER_GET_PREFS, async () => {
     const { getDb } = await import('../db/database');
     return getDb().sessionOrderPrefs;
   });
 
-  ipcMain.handle(IPC.SESSIONORDER_SET_PREF, async (_event, environmentId: string, workingDir: string, orderedIds: string[]) => {
+  ipc.handle(IPC.SESSIONORDER_SET_PREF, async (_event, environmentId: string, workingDir: string, orderedIds: string[]) => {
     const { getDb, saveDb } = await import('../db/database');
     const db = getDb();
     db.sessionOrderPrefs = [
@@ -133,7 +127,7 @@ export function registerConfigHandlers(ctx: HandlerContext): void {
 
   // === Titlebar overlay ===
 
-  ipcMain.handle(IPC.TITLEBAR_UPDATE, async (_event, color: string, symbolColor: string) => {
+  ipc.handle(IPC.TITLEBAR_UPDATE, async (_event, color: string, symbolColor: string) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.setTitleBarOverlay({ color, symbolColor, height: 36 });
     }

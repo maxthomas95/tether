@@ -15,6 +15,8 @@ You need:
 
 Enable the integration, fill in those fields, and click **Log In**. The login action saves the Vault configuration before opening your browser. There is no token-paste or token-file login control.
 
+The address must be an HTTPS origin without a path, query, fragment, or embedded credentials. HTTP is allowed only for a development Vault on `localhost`, `127.0.0.1`, or `::1`. Tether refuses redirects instead of forwarding a Vault token to another endpoint. Changing the address, namespace, OIDC role, or enabled state clears the cached token and cancels a pending login; log in again for the new configuration. Changing only the KV mount preserves the login.
+
 ### Browser login
 
 Tether opens your browser for OIDC authentication and completes login through a local callback at `http://localhost:8250/oidc/callback`. Your Vault OIDC role must allow that redirect URI. The resulting token is cached encrypted in `data.json` using the OS keychain; Tether refuses to cache it if encryption is unavailable. Your Vault policy must permit reading the paths you reference, listing paths for the picker, and writing paths for migration.

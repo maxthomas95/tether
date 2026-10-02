@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { createTrustedIpc } from './trusted-ipc';
 import { IPC } from '../../shared/constants';
 import type { GitProviderInfo, CreateGitProviderOptions, CreateRepoOptions } from '../../shared/types';
 import * as gitProviderRepo from '../db/git-provider-repo';
@@ -28,15 +28,16 @@ function toProviderInfo(row: gitProviderRepo.GitProviderRow): GitProviderInfo {
 }
 
 export function registerGitHandlers(ctx: HandlerContext): void {
+  const ipc = createTrustedIpc(ctx.mainWindow);
   const { send } = ctx;
 
   // === Git Provider handlers ===
 
-  ipcMain.handle(IPC.GIT_PROVIDER_LIST, async () => {
+  ipc.handle(IPC.GIT_PROVIDER_LIST, async () => {
     return gitProviderRepo.listGitProviders().map(toProviderInfo);
   });
 
-  ipcMain.handle(IPC.GIT_PROVIDER_CREATE, async (_event, opts: CreateGitProviderOptions) => {
+  ipc.handle(IPC.GIT_PROVIDER_CREATE, async (_event, opts: CreateGitProviderOptions) => {
     const row = gitProviderRepo.createGitProvider({
       name: opts.name,
       type: opts.type,
@@ -48,15 +49,15 @@ export function registerGitHandlers(ctx: HandlerContext): void {
     return toProviderInfo(row);
   });
 
-  ipcMain.handle(IPC.GIT_PROVIDER_UPDATE, async (_event, id: string, opts: Partial<CreateGitProviderOptions>) => {
+  ipc.handle(IPC.GIT_PROVIDER_UPDATE, async (_event, id: string, opts: Partial<CreateGitProviderOptions>) => {
     gitProviderRepo.updateGitProvider(id, opts);
   });
 
-  ipcMain.handle(IPC.GIT_PROVIDER_DELETE, async (_event, id: string) => {
+  ipc.handle(IPC.GIT_PROVIDER_DELETE, async (_event, id: string) => {
     gitProviderRepo.deleteGitProvider(id);
   });
 
-  ipcMain.handle(IPC.GIT_PROVIDER_TEST, async (_event, id: string) => {
+  ipc.handle(IPC.GIT_PROVIDER_TEST, async (_event, id: string) => {
     const provider = gitProviderRepo.getGitProvider(id);
     if (!provider) return { ok: false, error: 'Provider not found' };
     log.info('Testing git provider', { id, type: provider.type, baseUrl: provider.baseUrl });
@@ -79,7 +80,7 @@ export function registerGitHandlers(ctx: HandlerContext): void {
     }
   });
 
-  ipcMain.handle(IPC.GIT_PROVIDER_REPOS, async (_event, providerId: string, query?: string) => {
+  ipc.handle(IPC.GIT_PROVIDER_REPOS, async (_event, providerId: string, query?: string) => {
     const provider = gitProviderRepo.getGitProvider(providerId);
     if (!provider) throw new Error('Provider not found');
     const token = await resolveProviderToken(provider.token);
@@ -95,7 +96,7 @@ export function registerGitHandlers(ctx: HandlerContext): void {
     }
   });
 
-  ipcMain.handle(IPC.GIT_PROVIDER_LIST_PROJECTS, async (_event, providerId: string) => {
+  ipc.handle(IPC.GIT_PROVIDER_LIST_PROJECTS, async (_event, providerId: string) => {
     const provider = gitProviderRepo.getGitProvider(providerId);
     if (!provider) throw new Error('Provider not found');
     if (provider.type !== 'ado') return [];
@@ -104,7 +105,7 @@ export function registerGitHandlers(ctx: HandlerContext): void {
     return client.listProjects();
   });
 
-  ipcMain.handle(IPC.GIT_PROVIDER_CREATE_REPO, async (_event, providerId: string, opts: CreateRepoOptions) => {
+  ipc.handle(IPC.GIT_PROVIDER_CREATE_REPO, async (_event, providerId: string, opts: CreateRepoOptions) => {
     const provider = gitProviderRepo.getGitProvider(providerId);
     if (!provider) throw new Error('Provider not found');
     log.info('Git provider create repo', { providerId, type: provider.type, name: opts.name });
@@ -123,7 +124,7 @@ export function registerGitHandlers(ctx: HandlerContext): void {
 
   // === Git clone / init / folder / remote / worktree ===
 
-  ipcMain.handle(IPC.GIT_CLONE, async (_event, url: string, destination: string) => {
+  ipc.handle(IPC.GIT_CLONE, async (_event, url: string, destination: string) => {
     log.info('Git clone', { url, destination });
     return gitClone({
       url,
@@ -134,30 +135,30 @@ export function registerGitHandlers(ctx: HandlerContext): void {
     });
   });
 
-  ipcMain.handle(IPC.GIT_INIT, async (_event, directory: string) => {
+  ipc.handle(IPC.GIT_INIT, async (_event, directory: string) => {
     return gitInit(directory);
   });
 
-  ipcMain.handle(IPC.GIT_CREATE_FOLDER, async (_event, path: string, initGit: boolean) => {
+  ipc.handle(IPC.GIT_CREATE_FOLDER, async (_event, path: string, initGit: boolean) => {
     log.info('Git create folder', { path, initGit });
     return createFolder({ path, initGit });
   });
 
-  ipcMain.handle(IPC.GIT_REMOTE_ADD, async (_event, repoPath: string, remoteName: string, remoteUrl: string) => {
+  ipc.handle(IPC.GIT_REMOTE_ADD, async (_event, repoPath: string, remoteName: string, remoteUrl: string) => {
     log.info('Git remote add', { repoPath, remoteName });
     return gitRemoteAdd(repoPath, remoteName, remoteUrl);
   });
 
-  ipcMain.handle(IPC.GIT_IS_REPO, async (_event, directory: string) => isGitRepo(directory));
+  ipc.handle(IPC.GIT_IS_REPO, async (_event, directory: string) => isGitRepo(directory));
 
-  ipcMain.handle(IPC.GIT_BRANCH_STATUS, async (_event, directory: string) => gitBranchStatus(directory));
+  ipc.handle(IPC.GIT_BRANCH_STATUS, async (_event, directory: string) => gitBranchStatus(directory));
 
-  ipcMain.handle(IPC.GIT_WORKTREE_ADD, async (_event, opts: { sourceRepo: string; worktreePath: string; branch: string }) => {
+  ipc.handle(IPC.GIT_WORKTREE_ADD, async (_event, opts: { sourceRepo: string; worktreePath: string; branch: string }) => {
     log.info('Git worktree add', opts);
     return gitWorktreeAdd(opts);
   });
 
-  ipcMain.handle(IPC.GIT_WORKTREE_REMOVE, async (_event, opts: { sourceRepo: string; worktreePath: string; force?: boolean }) => {
+  ipc.handle(IPC.GIT_WORKTREE_REMOVE, async (_event, opts: { sourceRepo: string; worktreePath: string; force?: boolean }) => {
     log.info('Git worktree remove', opts);
     return gitWorktreeRemove(opts);
   });

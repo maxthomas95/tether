@@ -3,7 +3,7 @@ import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { getDb, saveDb } from '../db/database';
 import type { VaultConfig, VaultStatus } from '../../shared/types';
-import { VaultClient } from './vault-client';
+import { VaultClient, normalizeVaultAddr } from './vault-client';
 import { VaultError } from './vault-types';
 
 // Vault CLI uses 8250 by default — match it so the same OIDC role's redirect_uris work
@@ -41,9 +41,18 @@ export function getVaultConfig(): VaultConfig {
 }
 
 export function setVaultConfig(config: VaultConfig): void {
+  const addr = config.addr.trim() ? normalizeVaultAddr(config.addr.trim()) : '';
+  const previous = getVaultConfig();
+  const contextChanged = previous.addr !== addr || previous.namespace !== (config.namespace || '')
+    || previous.role !== config.role || previous.enabled !== config.enabled;
+  if (contextChanged) {
+    loginGeneration++;
+    cancelLoginOidc();
+    clearCachedToken();
+  }
   const cfg = getDb().config;
   cfg[CONFIG_KEYS.enabled] = config.enabled ? 'true' : 'false';
-  cfg[CONFIG_KEYS.addr] = config.addr;
+  cfg[CONFIG_KEYS.addr] = addr;
   cfg[CONFIG_KEYS.role] = config.role;
   cfg[CONFIG_KEYS.mount] = config.mount;
   cfg[CONFIG_KEYS.namespace] = config.namespace || '';
@@ -139,7 +148,7 @@ export function buildClient(): VaultClient | null {
     namespace: config.namespace || undefined,
   });
   const cached = getCachedToken();
-  if (cached) client.setToken(cached.token);
+  if (cached && (!cached.expiresAt || Date.parse(cached.expiresAt) > Date.now())) client.setToken(cached.token);
   return client;
 }
 
@@ -246,8 +255,10 @@ function startCallbackServer(): Promise<{
 }
 
 let activeLoginCancel: (() => void) | null = null;
+let loginGeneration = 0;
 
 export function cancelLoginOidc(): void {
+  loginGeneration++;
   const cancel = activeLoginCancel;
   activeLoginCancel = null;
   if (cancel) cancel();
@@ -259,6 +270,8 @@ export function cancelLoginOidc(): void {
  * is returned.
  */
 export async function loginOidc(): Promise<VaultStatus> {
+  cancelLoginOidc();
+  const generation = loginGeneration;
   const config = getVaultConfig();
   if (!config.enabled) throw new VaultError('Vault integration is disabled');
   if (!config.addr) throw new VaultError('Vault address is not configured');
@@ -266,6 +279,10 @@ export async function loginOidc(): Promise<VaultStatus> {
 
   const client = new VaultClient({ addr: config.addr, namespace: config.namespace || undefined });
   const { redirectUri, waitForCallback, shutdown, cancel } = await startCallbackServer();
+  // A config change can happen while the listener is being bound.
+  if (generation !== loginGeneration) { shutdown(); throw new VaultError('Vault login cancelled'); }
+  // Observe cancellation even while an HTTP request or browser launch is pending.
+  void waitForCallback.catch(() => {});
   activeLoginCancel = cancel;
 
   try {
@@ -291,16 +308,18 @@ export async function loginOidc(): Promise<VaultStatus> {
     } catch {
       // Non-fatal — we still got a token, just won't have the friendly name
     }
+    if (generation !== loginGeneration) throw new VaultError('Vault configuration changed during login');
     setCachedToken(callback.client_token, expiresAt, identity);
     return getStatus();
   } catch (err) {
     shutdown();
     throw err;
   } finally {
-    activeLoginCancel = null;
+    if (activeLoginCancel === cancel) activeLoginCancel = null;
   }
 }
 
 export function logoutVault(): void {
+  cancelLoginOidc();
   clearCachedToken();
 }

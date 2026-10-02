@@ -222,7 +222,7 @@ Key-value pairs applied as the **global defaults** for every new session. Common
 - `OPENAI_API_KEY` — for Codex CLI
 - Project-specific tokens, proxy settings, etc.
 
-Sensitive env-var names (API_KEY, TOKEN, SECRET, PASSWORD, etc.) are encrypted at rest via OS keychain storage; other values are stored plaintext in `data.json`. For best practice, store sensitive values in [Vault](vault.md) and reference them instead.
+Every nonempty literal env-var value is encrypted at rest via OS keychain storage, including values with ordinary names such as `CONNECTION_STRING`. Vault references remain references. On upgrade, Tether automatically encrypts legacy plaintext env values, provider tokens, SSH passwords, and secret settings before opening the database. If encryption fails, the original file is preserved and loading fails; Tether does not create a plaintext backup. For best practice, store sensitive values in [Vault](vault.md) and reference them instead.
 
 ### Default CLI flags (per tool)
 
@@ -292,6 +292,8 @@ To add an office:
 
 When connected, an **Office** pill appears in the sidebar footer and **J.O.B.S. Office** appears in the View menu. Both open the office over the terminal area, where **JOBS settings** takes you back to the integration controls. If an enabled office becomes unavailable, its sidebar pill opens settings to help you reconnect or remove it. **Open office** in settings opens the saved connection in your browser. Tether checks availability once a minute; settings show connection, launch, and session-sharing errors separately. A successful connection check identifies JOBS; the webhook token is checked when a remote session is sent.
 
+The embedded office is sandboxed and limited to the saved JOBS origin. It receives no Tether preload or Node access; browser permission requests and cross-origin guest navigation are blocked. Browser links within the configured origin open externally instead of creating guest windows.
+
 **Sharing:** Tether sends active SSH and Coder session labels, project folder names (not full paths), environment names, CLI names, and activity status. It never sends prompts or terminal contents. Stopped, failed, and removed sessions are removed from the office. Tether does not bridge local sessions: JOBS may watch local transcripts independently. Disable that watcher in JOBS if you also want to stop its local monitoring.
 
 **Automatic launch:** Enable **Let Tether start JOBS automatically**, then select a local JOBS checkout. Build it first with `npm install` and `npm run build`; Node.js must be on PATH. Automatic launch requires a local HTTP URL without a path. Tether launches the built server only if no office answers, and stops only the server it started when disabled or on quit. Changes to the launch folder, URL, or token restart a Tether-managed server. Turning off automatic launch stops a Tether-managed server and leaves the connection enabled for an independently run server.
@@ -307,7 +309,7 @@ To opt out:
 When sharing ends or the server changes, Tether makes a best-effort request to remove its agents from the previous office. If that server cannot be reached, its stale-agent timeout clears them later. Closing the office view only closes the view; use the settings above to opt out of sharing.
 ### Diagnostics export
 
-Open **About → Export diagnostics for support** to create a zip containing a scrubbed copy of `data.json`, rotated logs, and a version/OS manifest. Credentials, encrypted secret values, and saved launch-setting snapshots are redacted; Vault references are preserved. Log scrubbing removes recognized credential patterns. The export is in About, not a control in this settings section.
+Open **About → Export diagnostics for support** to create a zip containing a scrubbed copy of `data.json`, rotated logs, and a version/OS manifest. Credentials, encrypted secrets, saved launch-setting snapshots, and all literal environment values are redacted; Vault references and variable names are preserved. Malformed environment JSON is redacted too. Log scrubbing removes recognized credential patterns. The export is in About, not a control in this settings section.
 
 ## Usage
 
@@ -379,6 +381,6 @@ Tether stores its configuration and session data in a JSON file:
 {userData}/data.json
 ```
 
-Where `{userData}` is your OS user data directory (`%APPDATA%/Tether` on Windows). The file contains configuration, session metadata, saved workspace/layout, launch profiles, usage summaries, recent project locations, provider configs, and SSH known-hosts entries. Provider tokens, SSH passwords, secret-bearing settings, and sensitive env-var values are encrypted at rest; Vault references remain references. Writes are atomic (tmp file → fsync → rename) and retry on transient file locks. CLI transcripts remain in the CLI's own storage.
+Where `{userData}` is your OS user data directory (`%APPDATA%/Tether` on Windows). The file contains configuration, session metadata, saved workspace/layout, launch profiles, usage summaries, recent project locations, provider configs, and SSH known-hosts entries. Provider tokens, SSH passwords, secret-bearing settings, and all literal env-var values are encrypted at rest; Vault references remain references. Writes are atomic (tmp file → fsync → rename) and retry on transient file locks. CLI transcripts remain in the CLI's own storage.
 
 Pricing data is cached at `{userData}/litellm-prices.json`, refreshed at most once a day from `raw.githubusercontent.com`. If you're on a locked-down network, see the project README for the full list of outbound destinations.

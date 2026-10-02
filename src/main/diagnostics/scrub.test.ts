@@ -118,7 +118,7 @@ describe('scrubDbData', () => {
     expect(cfg.password).toBe('vault://secret/ssh/box#password');
   });
 
-  it('redacts sensitive env-var values, keeps non-sensitive ones, keeps vault refs', () => {
+  it('redacts sensitive env-var values, redacts every literal, keeps vault refs', () => {
     const db = emptyDb({
       environments: [makeEnv({
         env_vars: JSON.stringify({
@@ -132,7 +132,7 @@ describe('scrubDbData', () => {
     const env = JSON.parse(scrubDbData(db).environments[0].env_vars);
     expect(env.ANTHROPIC_API_KEY).toBe('[REDACTED]');
     expect(env.CUSTOM_TOKEN).toBe('[REDACTED]');
-    expect(env.NODE_ENV).toBe('development');
+    expect(env.NODE_ENV).toBe('[REDACTED]');
     expect(env.OTHER_SECRET).toBe('vault://secret/foo#k');
   });
 
@@ -149,7 +149,7 @@ describe('scrubDbData', () => {
     const env = JSON.parse(scrubDbData(db).environments[0].env_vars);
     expect(env.DATABASE_URL).toBe('[REDACTED]');
     expect(env.SERVICE_VALUE).toBe('[REDACTED]');
-    expect(env.NORMAL).toBe('value');
+    expect(env.NORMAL).toBe('[REDACTED]');
   });
 
   it('applies the same env-var rules to launchProfiles', () => {
@@ -160,7 +160,7 @@ describe('scrubDbData', () => {
     });
     const env = JSON.parse(scrubDbData(db).launchProfiles[0].env_vars);
     expect(env.MY_SECRET).toBe('[REDACTED]');
-    expect(env.LOG_LEVEL).toBe('debug');
+    expect(env.LOG_LEVEL).toBe('[REDACTED]');
   });
 
   it('redacts plaintext git provider tokens, keeps vault refs', () => {
@@ -184,7 +184,7 @@ describe('scrubDbData', () => {
     expect(out.config.vaultIdentity).toBe('alice@example.com'); // identity stays
   });
 
-  it('redacts sensitive defaultEnvVars values only', () => {
+  it('redacts all defaultEnvVars values', () => {
     const db = emptyDb({
       defaultEnvVars: {
         OPENAI_API_KEY: 'sk-real',
@@ -194,7 +194,7 @@ describe('scrubDbData', () => {
     });
     const out = scrubDbData(db).defaultEnvVars;
     expect(out.OPENAI_API_KEY).toBe('[REDACTED]');
-    expect(out.NORMAL_VAR).toBe('value');
+    expect(out.NORMAL_VAR).toBe('[REDACTED]');
     expect(out.VAULTED_KEY).toBe('vault://secret/keys#anth');
   });
 
@@ -227,12 +227,12 @@ describe('scrubDbData', () => {
     expect(out.launchSnapshots).toEqual({});
   });
 
-  it('leaves malformed env_vars JSON alone rather than crashing', () => {
+  it('redacts malformed env_vars JSON', () => {
     const db = emptyDb({
       environments: [makeEnv({ env_vars: '{not valid' })],
     });
     expect(() => scrubDbData(db)).not.toThrow();
-    expect(scrubDbData(db).environments[0].env_vars).toBe('{not valid');
+    expect(scrubDbData(db).environments[0].env_vars).toBe('[REDACTED]');
   });
 });
 

@@ -78,6 +78,42 @@ describe('constantTimeEqual', () => {
 });
 
 describe('handleConnection auth', () => {
+  it('enforces session scope for every event on an authenticated connection', () => {
+    const registry = new HookTokenRegistry(BOOT_TOKEN);
+    const onEvent = vi.fn();
+    const d = serve(registry.validate, onEvent);
+    d.clientSend({ method: 'authenticate', token: registry.issueSessionToken('remote-a'), tetherSessionId: 'remote-a' });
+    d.clientSend({ method: 'event', tetherSessionId: 'remote-b', type: 'turn_complete' });
+    expect(d.destroyed).toBe(true);
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
+  it('revokes authority on an already authenticated stream', () => {
+    const registry = new HookTokenRegistry(BOOT_TOKEN);
+    const onEvent = vi.fn();
+    const d = serve(registry.validate, onEvent);
+    d.clientSend({ method: 'authenticate', token: registry.issueSessionToken('a'), tetherSessionId: 'a' });
+    d.clientSend({ method: 'event', tetherSessionId: 'a', type: 'turn_complete' });
+    registry.revokeSessionToken('a');
+    d.clientSend({ method: 'event', tetherSessionId: 'a', type: 'turn_complete' });
+    expect(onEvent).toHaveBeenCalledOnce();
+    expect(d.destroyed).toBe(true);
+  });
+
+  it('rejects malformed non-object frames and unequal UTF-8 byte lengths without throwing', () => {
+    expect(constantTimeEqual('é'.repeat(64), 'a'.repeat(64))).toBe(false);
+    const d = serve(defaultTokenValidator(BOOT_TOKEN), vi.fn());
+    expect(() => d.emit('data', Buffer.from('null\n'))).not.toThrow();
+    expect(d.destroyed).toBe(true);
+  });
+
+  it('bounds unterminated authenticated frames', () => {
+    const d = serve(defaultTokenValidator(BOOT_TOKEN), vi.fn());
+    d.clientSend({ method: 'authenticate', token: BOOT_TOKEN });
+    d.emit('data', Buffer.alloc(600_000, 'x'));
+    d.emit('data', Buffer.alloc(600_000, 'x'));
+    expect(d.destroyed).toBe(true);
+  });
   it('rejects an event sent before authenticating', () => {
     const onEvent = vi.fn();
     const d = serve(defaultTokenValidator(BOOT_TOKEN), onEvent);

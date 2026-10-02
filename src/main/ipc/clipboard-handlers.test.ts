@@ -32,6 +32,11 @@ describe('clipboard-handlers', () => {
     expect(clipboardMock.writeText).toHaveBeenCalledExactlyOnceWith('line one\nline two');
   });
 
+  it('propagates asynchronous clipboard failures to the caller', async () => {
+    clipboardMock.writeText.mockRejectedValueOnce(new Error('clipboard unavailable'));
+    await expect(write(trusted, 'text')).rejects.toThrow('clipboard unavailable');
+  });
+
   it.each([undefined, null, 42, ['text'], { toString: () => 'text' }])(
     'ignores non-string input %j', async (value) => {
       await write(trusted, value);

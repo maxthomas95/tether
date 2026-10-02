@@ -22,7 +22,8 @@ vi.mock('electron', () => ({
   shell: { openExternal: mocks.open },
 }));
 vi.mock('../db/database', () => ({ getDb: () => ({ config: mocks.config }), saveDb: mocks.save }));
-vi.mock('./vault-client', () => ({
+vi.mock('./vault-client', async importOriginal => ({
+  normalizeVaultAddr: (await importOriginal<typeof import('./vault-client')>()).normalizeVaultAddr,
   VaultClient: class {
     oidcAuthUrl = mocks.authUrl;
     oidcCallback = mocks.exchange;
@@ -47,7 +48,7 @@ vi.mock('node:http', () => ({ default: {
   },
 } }));
 
-import { cancelLoginOidc, clearCachedToken, getCachedToken, getStatus, loginOidc, setCachedToken, setExpiryWarningCallback } from './vault-auth';
+import { buildClient, cancelLoginOidc, clearCachedToken, getCachedToken, getStatus, loginOidc, setCachedToken, setExpiryWarningCallback, setVaultConfig, getVaultConfig } from './vault-auth';
 
 function callback(url: string) {
   const response = { writeHead: vi.fn().mockReturnThis(), end: vi.fn().mockReturnThis() };
@@ -76,6 +77,39 @@ afterEach(() => {
 });
 
 describe('Vault OIDC lifecycle', () => {
+  it.each(['addr', 'namespace', 'role', 'enabled'] as const)('invalidates a cached token when %s changes', field => {
+    setCachedToken('fixture-token');
+    const changes = { addr: 'https://other.example.test', namespace: 'other', role: 'other', enabled: false };
+    setVaultConfig({ ...getVaultConfig(), [field]: changes[field] });
+    expect(getCachedToken()).toBeNull();
+    expect(mocks.config.vaultIdentity).toBeUndefined();
+  });
+
+  it('preserves a token for equivalent origin and KV mount changes', () => {
+    setCachedToken('fixture-token');
+    setVaultConfig({ ...getVaultConfig(), addr: 'https://vault.example.test/', mount: 'different-kv' });
+    expect(getCachedToken()?.token).toBe('fixture-token');
+  });
+
+  it('does not attach an expired token to a Vault client', () => {
+    setCachedToken('fixture-token', '2026-09-08T11:00:00Z');
+    buildClient();
+    expect(mocks.setToken).not.toHaveBeenCalled();
+  });
+
+  it('cannot cache an old login after configuration changes during token lookup', async () => {
+    let finishLookup: (value: object) => void = () => {};
+    mocks.lookup.mockImplementationOnce(() => new Promise(resolve => { finishLookup = resolve; }));
+    const login = loginOidc();
+    const rejected = expect(login).rejects.toThrow('configuration changed');
+    await vi.waitFor(() => expect(mocks.open).toHaveBeenCalled());
+    callback('/oidc/callback?state=s&code=c');
+    await vi.waitFor(() => expect(mocks.lookup).toHaveBeenCalled());
+    setVaultConfig({ ...getVaultConfig(), addr: 'https://other.example.test' });
+    finishLookup({});
+    await rejected;
+    expect(mocks.encrypt).not.toHaveBeenCalled();
+  });
   it('binds only to loopback and persists the successful login through safeStorage', async () => {
     const login = loginOidc();
     await vi.waitFor(() => expect(mocks.open).toHaveBeenCalled());
