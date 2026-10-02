@@ -45,11 +45,19 @@ const transportHarness = vi.hoisted(() => {
   return { state, FakeLocalTransport, FakeSshTransport, FakeCoderTransport };
 });
 
+const safeStorageState = vi.hoisted(() => ({
+  available: true,
+  decryptFails: false,
+}));
+
 vi.mock('electron', () => ({
   safeStorage: {
-    isEncryptionAvailable: () => true,
+    isEncryptionAvailable: () => safeStorageState.available,
     encryptString: (value: string) => Buffer.from(`encrypted:${value}`, 'utf8'),
-    decryptString: (value: Buffer) => value.toString('utf8').replace(/^encrypted:/, ''),
+    decryptString: (value: Buffer) => {
+      if (safeStorageState.decryptFails) throw new Error('decrypt failed');
+      return value.toString('utf8').replace(/^encrypted:/, '');
+    },
   },
 }));
 
@@ -84,13 +92,17 @@ vi.mock('../db/environment-repo', () => ({
   listEnvironments: () => [],
 }));
 
+const profileState = vi.hoisted(() => ({
+  profiles: [] as Array<{ id: string; name: string; env_vars: string; cli_flags: string; cli_flags_per_tool: string; is_default?: boolean }>,
+}));
+
 vi.mock('../db/profile-repo', () => ({
-  getProfile: () => undefined,
-  listProfiles: () => [],
+  getProfile: (id: string) => profileState.profiles.find(p => p.id === id),
+  listProfiles: () => profileState.profiles,
 }));
 
 vi.mock('../vault/vault-resolver', () => ({
-  isVaultRef: () => false,
+  isVaultRef: (value: string) => typeof value === 'string' && value.startsWith('vault://'),
   resolveRef: vi.fn(),
   resolveAll: async (env: Record<string, string>) => env,
 }));
@@ -150,7 +162,7 @@ vi.mock('../coder/workspace-service', () => ({
   getCoderTemplateParams: vi.fn(),
 }));
 
-import { SessionManager, setHelmChildCallbacks } from './session-manager';
+import { SessionManager, findVaultRefInSession, setHelmChildCallbacks } from './session-manager';
 import { remoteUsageService } from '../usage/remote-usage-service';
 import { buildSessionRestartOptions } from '../../renderer/utils/session-restart';
 import { statusDetector } from '../status/status-detector';
@@ -179,6 +191,9 @@ describe('SessionManager', () => {
     dbState.defaultCliFlagsPerTool = {};
     dbState.launchSnapshots = {};
     dbState.saveCount = 0;
+    safeStorageState.available = true;
+    safeStorageState.decryptFails = false;
+    profileState.profiles = [];
     helmHarness.capturedHandlers = null;
     helmHarness.setup.mockReset();
     helmHarness.setup.mockImplementation(async (_id: string, handlers: Record<string, (params: Record<string, unknown>) => Promise<unknown>>) => {
@@ -267,6 +282,124 @@ describe('SessionManager', () => {
     expect(start.env.TOKEN).toBe('new');
     expect(start.cliArgs).toEqual(['--model', 'new']);
     expect(Object.keys(dbState.launchSnapshots)).toHaveLength(2);
+  });
+
+  it('creates a new empty snapshot when callers explicitly clear saved launch overrides', async () => {
+    const original = await manager.createSession({
+      workingDir: 'C:/projects/original',
+      env: { TOKEN: 'old' },
+      cliArgs: ['--model', 'old'],
+      disabledInheritedFlags: ['--profile=old'],
+    }, callbacks());
+    const cleared = await manager.createSession({
+      workingDir: 'C:/projects/cleared',
+      launchSnapshotId: original.toInfo().launchSnapshotId,
+      env: {},
+      cliArgs: [],
+      disabledInheritedFlags: [],
+    }, callbacks());
+    const start = transportHarness.state.instances[1].start.mock.calls[0][0];
+    expect(cleared.toInfo().launchSnapshotId).toBeTruthy();
+    expect(cleared.toInfo().launchSnapshotId).not.toBe(original.toInfo().launchSnapshotId);
+    expect(start.env.TOKEN).toBeUndefined();
+    expect(start.cliArgs).toBeUndefined();
+    expect(Object.keys(dbState.launchSnapshots)).toHaveLength(2);
+  });
+
+  it('fails before transport start when saved launch settings cannot be read', async () => {
+    const original = await manager.createSession({
+      workingDir: 'C:/projects/original',
+      env: { TOKEN: 'secret' },
+    }, callbacks());
+    safeStorageState.available = false;
+    await expect(manager.createSession({
+      workingDir: 'C:/projects/restored',
+      launchSnapshotId: original.toInfo().launchSnapshotId,
+    }, callbacks())).rejects.toThrow(/could not be decrypted/);
+    expect(transportHarness.state.instances).toHaveLength(1);
+  });
+
+  it('fails before transport start when a saved launch profile was deleted', async () => {
+    profileState.profiles = [{ id: 'profile-1', name: 'Work', env_vars: '{}', cli_flags: '[]', cli_flags_per_tool: '{}' }];
+    const original = await manager.createSession({
+      workingDir: 'C:/projects/original',
+      profileId: 'profile-1',
+    }, callbacks());
+    profileState.profiles = [];
+    await expect(manager.createSession({
+      workingDir: 'C:/projects/restored',
+      launchSnapshotId: original.toInfo().launchSnapshotId,
+    }, callbacks())).rejects.toThrow(/profile no longer exists/);
+    expect(transportHarness.state.instances).toHaveLength(1);
+  });
+
+  it('does not require keychain or persist a snapshot for empty ordinary launches', async () => {
+    safeStorageState.available = false;
+    const session = await manager.createSession({ workingDir: 'C:/projects/plain' }, callbacks());
+    expect(session.toInfo().launchSnapshotId).toBeUndefined();
+    expect(dbState.launchSnapshots).toEqual({});
+    expect(transportHarness.state.instances[0].start).toHaveBeenCalledOnce();
+  });
+
+  it('does not persist a prepared launch snapshot when transport start fails', async () => {
+    transportHarness.state.startImpl.mockRejectedValueOnce(new Error('launch failed'));
+    await expect(manager.createSession({
+      workingDir: 'C:/projects/fail',
+      env: { TOKEN: 'secret' },
+    }, callbacks())).rejects.toThrow('launch failed');
+    expect(dbState.launchSnapshots).toEqual({});
+    expect(dbState.saveCount).toBe(0);
+  });
+
+  it('does not replay cloneUrl or initialPrompt from a saved launch snapshot', async () => {
+    const original = await manager.createSession({
+      workingDir: 'C:/projects/original',
+      env: { TOKEN: 'secret' },
+      cloneUrl: 'https://example.test/repo.git',
+      initialPrompt: 'one shot',
+    }, callbacks());
+    const restored = await manager.createSession({
+      workingDir: 'C:/projects/restored',
+      launchSnapshotId: original.toInfo().launchSnapshotId,
+    }, callbacks());
+    const start = transportHarness.state.instances[1].start.mock.calls[0][0];
+    expect(restored.toInfo().launchSnapshotId).toBe(original.toInfo().launchSnapshotId);
+    expect(start.env.TOKEN).toBe('secret');
+    expect(start.cloneUrl).toBeUndefined();
+    expect(start.initialPrompt).toBeUndefined();
+  });
+
+  it('Vault preflight sees refs inside rehydrated launch snapshots', async () => {
+    const original = await manager.createSession({
+      workingDir: 'C:/projects/original',
+      env: { API_TOKEN: 'vault://secret/tether#token' },
+    }, callbacks());
+    await expect(findVaultRefInSession({
+      workingDir: 'C:/projects/restored',
+      launchSnapshotId: original.toInfo().launchSnapshotId,
+    })).resolves.toBe('env var API_TOKEN');
+  });
+
+  it('combines restored launch settings with SSH native resume ids', async () => {
+    envState.type = 'ssh';
+    const original = await manager.createSession({
+      environmentId: 'env',
+      cliTool: 'codex',
+      workingDir: '/work',
+      env: { CODEX_HOME: '/custom/codex' },
+    }, callbacks());
+    const restored = await manager.createSession({
+      environmentId: 'env',
+      cliTool: 'codex',
+      workingDir: '/work',
+      launchSnapshotId: original.toInfo().launchSnapshotId,
+      resumeToolSessionId: 'remote-native-id',
+    }, callbacks());
+    const start = transportHarness.state.instances[1].start.mock.calls[0][0];
+    expect(start.env.CODEX_HOME).toBe('/custom/codex');
+    expect(start.resumeToolSessionId).toBe('remote-native-id');
+    expect(start.toolSessionId).toBe('remote-native-id');
+    expect(restored.toInfo()).toMatchObject({ toolSessionId: 'remote-native-id', resumed: true });
   });
 
   it.each([

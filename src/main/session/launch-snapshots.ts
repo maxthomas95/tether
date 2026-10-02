@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { CreateSessionOptions } from '../../shared/types';
 import type { LaunchSnapshotRow } from '../db/database';
 import { getDb, saveDb } from '../db/database';
-import { decryptSecretFromStorage, encryptSecretForStorage } from '../db/secret-storage';
+import { decryptSecretFromStorage, encryptSecretForStorage, isEncryptedSecret } from '../db/secret-storage';
 import { getProfile } from '../db/profile-repo';
 
 export interface LaunchIntent {
@@ -13,27 +13,37 @@ export interface LaunchIntent {
   disabledInheritedFlags?: string[];
 }
 
-function cloneRecord(value: Record<string, string> | undefined): Record<string, string> | undefined {
-  if (!value || Object.keys(value).length === 0) return undefined;
-  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] =>
-    typeof entry[0] === 'string' && typeof entry[1] === 'string',
-  ));
+function hasOwn(object: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(object, key);
 }
 
-function cloneStringArray(value: string[] | undefined): string[] | undefined {
-  if (!value?.length) return undefined;
-  const out = value.filter((item): item is string => typeof item === 'string');
-  return out.length ? [...out] : undefined;
+function cloneRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Saved launch settings are invalid');
+  }
+  const out: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof item !== 'string') throw new Error('Saved launch settings are invalid');
+    out[key] = item;
+  }
+  return out;
+}
+
+function cloneStringArray(value: unknown): string[] {
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
+    throw new Error('Saved launch settings are invalid');
+  }
+  return [...value];
 }
 
 export function captureLaunchIntent(opts: CreateSessionOptions): LaunchIntent | null {
   const intent: LaunchIntent = {
     version: 1,
     profileId: typeof opts.profileId === 'string' && opts.profileId ? opts.profileId : undefined,
-    env: cloneRecord(opts.env),
-    cliArgs: cloneStringArray(opts.cliArgs),
-    disabledInheritedFlags: cloneStringArray(opts.disabledInheritedFlags),
   };
+  if (hasOwn(opts, 'env') && opts.env !== undefined) intent.env = cloneRecord(opts.env);
+  if (hasOwn(opts, 'cliArgs') && opts.cliArgs !== undefined) intent.cliArgs = cloneStringArray(opts.cliArgs);
+  if (hasOwn(opts, 'disabledInheritedFlags') && opts.disabledInheritedFlags !== undefined) intent.disabledInheritedFlags = cloneStringArray(opts.disabledInheritedFlags);
   return intent.profileId || intent.env || intent.cliArgs || intent.disabledInheritedFlags ? intent : null;
 }
 
@@ -51,16 +61,13 @@ function validateLaunchIntent(value: unknown): LaunchIntent {
     intent.profileId = record.profileId;
   }
   if (record.env !== undefined) {
-    if (!record.env || typeof record.env !== 'object' || Array.isArray(record.env)) throw new Error('Saved launch settings are invalid');
-    intent.env = cloneRecord(record.env as Record<string, string>) ?? {};
+    intent.env = cloneRecord(record.env);
   }
   if (record.cliArgs !== undefined) {
-    if (!Array.isArray(record.cliArgs) || record.cliArgs.some(item => typeof item !== 'string')) throw new Error('Saved launch settings are invalid');
-    intent.cliArgs = [...record.cliArgs];
+    intent.cliArgs = cloneStringArray(record.cliArgs);
   }
   if (record.disabledInheritedFlags !== undefined) {
-    if (!Array.isArray(record.disabledInheritedFlags) || record.disabledInheritedFlags.some(item => typeof item !== 'string')) throw new Error('Saved launch settings are invalid');
-    intent.disabledInheritedFlags = [...record.disabledInheritedFlags];
+    intent.disabledInheritedFlags = cloneStringArray(record.disabledInheritedFlags);
   }
   return intent;
 }
@@ -68,7 +75,7 @@ function validateLaunchIntent(value: unknown): LaunchIntent {
 export function readLaunchIntent(snapshotId: string): LaunchIntent {
   const row = getDb().launchSnapshots[snapshotId];
   if (!row) throw new Error('Saved launch settings were not found');
-  if (row.version !== 1 || typeof row.encryptedIntent !== 'string') {
+  if (row.version !== 1 || typeof row.encryptedIntent !== 'string' || !isEncryptedSecret(row.encryptedIntent)) {
     throw new Error('Saved launch settings are invalid');
   }
   let parsed: unknown;

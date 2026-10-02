@@ -195,8 +195,22 @@ describe('session-handlers', () => {
     });
 
     it('WORKSPACE_LOAD returns the stored workspace', async () => {
-      dbState.savedWorkspace = { sessions: [], activeIndex: -1 };
-      expect(await harness.invoke(IPC.WORKSPACE_LOAD)).toEqual({ sessions: [], activeIndex: -1 });
+      dbState.savedWorkspace = {
+        sessions: [
+          { workingDir: '/r', label: 'old', env: { SECRET: 'nope' }, cliArgs: ['--secret'], launchSnapshotId: 'snap-1' },
+          { workingDir: '/old', label: 'metadata-only' },
+        ],
+        activeIndex: -1,
+      };
+      expect(await harness.invoke(IPC.WORKSPACE_LOAD)).toEqual({
+        sessions: [
+          { workingDir: '/r', label: 'old', launchSnapshotId: 'snap-1' },
+          { workingDir: '/old', label: 'metadata-only' },
+        ],
+        activeIndex: -1,
+      });
+      expect(JSON.stringify(await harness.invoke(IPC.WORKSPACE_LOAD))).not.toContain('SECRET');
+      expect(JSON.stringify(await harness.invoke(IPC.WORKSPACE_LOAD))).not.toContain('--secret');
     });
 
     it('saves canvas geometry atomically with the session ordering it references', async () => {

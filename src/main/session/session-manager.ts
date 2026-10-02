@@ -345,9 +345,9 @@ export class Session {
 function hasInlineLaunchIntent(opts: CreateSessionOptions): boolean {
   return !!(
     opts.profileId ||
-    opts.env && Object.keys(opts.env).length > 0 ||
-    opts.cliArgs?.length ||
-    opts.disabledInheritedFlags?.length
+    Object.prototype.hasOwnProperty.call(opts, 'env') && opts.env !== undefined ||
+    Object.prototype.hasOwnProperty.call(opts, 'cliArgs') && opts.cliArgs !== undefined ||
+    Object.prototype.hasOwnProperty.call(opts, 'disabledInheritedFlags') && opts.disabledInheritedFlags !== undefined
   );
 }
 
