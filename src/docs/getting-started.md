@@ -42,6 +42,8 @@ When no panes are open, the home screen shows up to six recent local or SSH proj
 
 Recent locations are stored locally as directory paths and environment IDs; they contain no flags, environment variables, or transcript content. Projects belonging to a removed environment are hidden.
 
+Click the **×** beside a recent project to remove its shortcut. Removal is saved across app restarts and workspace restores; it does not delete files, conversations, or sessions. Starting a new session there through the launch form adds the project back to the list. The same directory on another environment keeps its own shortcut.
+
 The returning-project screen includes a slowly spinning ASCII Tether logo. Use the pause button beneath it to stop the animation. If your system prefers reduced motion, the logo stays still automatically.
 
 ## The Interface

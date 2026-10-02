@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import type { EnvironmentInfo } from '../../shared/types';
 import logoUrl from '../assets/logo.png';
 import { Icon } from './Icon';
@@ -9,6 +10,7 @@ interface WelcomePaneProps {
   enableResumePicker: boolean;
   recentProjects: RecentProject[];
   onOpenProject: (project: RecentProject) => void;
+  onDismissProject: (project: RecentProject) => void;
   onNewLocalSession: () => void;
   onConnectSsh: () => void;
   onOpenCoder: () => void;
@@ -20,11 +22,14 @@ export function WelcomePane({
   enableResumePicker,
   recentProjects,
   onOpenProject,
+  onDismissProject,
   onNewLocalSession,
   onConnectSsh,
   onOpenCoder,
   onResume,
 }: WelcomePaneProps) {
+  const recentListRef = useRef<HTMLElement>(null);
+  const newLocalButtonRef = useRef<HTMLButtonElement>(null);
   const hasSsh = environments.some(e => e.type === 'ssh');
   const hasCoder = environments.some(e => e.type === 'coder');
 
@@ -42,23 +47,39 @@ export function WelcomePane({
       </div>
 
       {recentProjects.length > 0 && (
-        <section className="recent-projects" aria-labelledby="recent-projects-title">
+        <section ref={recentListRef} className="recent-projects" aria-labelledby="recent-projects-title">
           <h2 id="recent-projects-title">Recent projects</h2>
-          {recentProjects.map(project => {
+          {recentProjects.map((project, index) => {
             const env = environments.find(e => e.id === project.environmentId)!;
             const name = project.workingDir.split(/[\\/]/).filter(Boolean).pop() || project.workingDir;
-            return <button key={JSON.stringify([project.environmentId, project.workingDir])} className="recent-project" onClick={() => onOpenProject(project)} title={`${project.workingDir}\n${env.name}`}>
-              <Icon name="folder" size={18} />
-              <span className="recent-project-info"><span>{name}</span><span>{project.workingDir}</span></span>
-              <span className="recent-project-env">{env.type === 'local' ? env.name : `${env.type === 'ssh' ? 'SSH' : 'Coder'}: ${env.name}`}</span>
-              <Icon name="chevron" size={14} />
-            </button>;
+            return <div key={JSON.stringify([project.environmentId, project.workingDir])} className="recent-project-row">
+              <button type="button" className="recent-project" onClick={() => onOpenProject(project)} title={`${project.workingDir}\n${env.name}`}>
+                <Icon name="folder" size={18} />
+                <span className="recent-project-info"><span>{name}</span><span>{project.workingDir}</span></span>
+                <span className="recent-project-env">{env.type === 'local' ? env.name : `${env.type === 'ssh' ? 'SSH' : 'Coder'}: ${env.name}`}</span>
+                <Icon name="chevron" size={14} />
+              </button>
+              <button
+                type="button"
+                className="recent-project-remove"
+                aria-label={`Remove ${name} from recent projects in ${env.name}`}
+                title="Remove from recent projects"
+                onClick={() => {
+                  const buttons = recentListRef.current?.querySelectorAll<HTMLButtonElement>('.recent-project');
+                  const nextButton = buttons?.[index + 1] ?? buttons?.[index - 1] ?? newLocalButtonRef.current;
+                  onDismissProject(project);
+                  nextButton?.focus();
+                }}
+              >
+                <Icon name="close" size={14} />
+              </button>
+            </div>;
           })}
         </section>
       )}
 
       <div className="welcome-pane__cards">
-        <button type="button" className="welcome-card" onClick={onNewLocalSession}>
+        <button ref={newLocalButtonRef} type="button" className="welcome-card" onClick={onNewLocalSession}>
           <span className="welcome-card__kind">Local</span>
           <span className="welcome-card__title">New local session</span>
           <span className="welcome-card__desc">Run a CLI tool on this machine.</span>

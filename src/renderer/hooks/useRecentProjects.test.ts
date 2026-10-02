@@ -18,6 +18,7 @@ const session: SessionInfo = {
 };
 const get = vi.fn();
 const set = vi.fn();
+let saved: Map<string, string>;
 let root: Root;
 let container: HTMLDivElement;
 let recent: ReturnType<typeof useRecentProjects>;
@@ -32,8 +33,9 @@ async function render(sessions: SessionInfo[] = [], envs = environments) {
 }
 
 beforeEach(() => {
-  get.mockResolvedValue(null);
-  set.mockResolvedValue(undefined);
+  saved = new Map();
+  get.mockImplementation(async (key: string) => saved.get(key) ?? null);
+  set.mockImplementation(async (key: string, value: string) => { saved.set(key, value); });
   vi.stubGlobal('electronAPI', { config: { get, set } });
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -49,12 +51,12 @@ afterEach(() => {
 
 it('records new locations once, not on every session status change', async () => {
   await render([session]);
-  expect(recent).toEqual([{ environmentId: 'local', workingDir: '/project' }]);
+  expect(recent.recentProjects).toEqual([{ environmentId: 'local', workingDir: '/project' }]);
   expect(set).toHaveBeenCalledTimes(1);
   await render([{ ...session, state: 'waiting' }]);
   expect(set).toHaveBeenCalledTimes(1);
   await render([session, { ...session, id: 'two', environmentId: 'ssh' }]);
-  expect(recent).toEqual([
+  expect(recent.recentProjects).toEqual([
     { environmentId: 'ssh', workingDir: '/project' },
     { environmentId: 'local', workingDir: '/project' },
   ]);
@@ -64,17 +66,17 @@ it('waits for environments and resolves legacy local sessions', async () => {
   await render([{ ...session, environmentId: null }], []);
   expect(set).not.toHaveBeenCalled();
   await render([{ ...session, environmentId: null }]);
-  expect(recent).toEqual([{ environmentId: 'local', workingDir: '/project' }]);
+  expect(recent.recentProjects).toEqual([{ environmentId: 'local', workingDir: '/project' }]);
 });
 
 it('hides deleted environments and Coder locations that cannot reopen by directory', async () => {
-  get.mockResolvedValue(JSON.stringify([
+  saved.set('uiRecentProjects', JSON.stringify([
     { environmentId: 'deleted', workingDir: '/old' },
     { environmentId: 'coder', workingDir: '/workspace' },
     { environmentId: 'local', workingDir: '/safe' },
   ]));
   await render([{ ...session, environmentId: 'coder' }]);
-  expect(recent).toEqual([{ environmentId: 'local', workingDir: '/safe' }]);
+  expect(recent.recentProjects).toEqual([{ environmentId: 'local', workingDir: '/safe' }]);
   expect(set).not.toHaveBeenCalled();
 });
 
@@ -82,5 +84,55 @@ it('keeps the home usable if preference storage is unavailable', async () => {
   get.mockRejectedValue(new Error('Unavailable'));
   set.mockRejectedValue(new Error('Unavailable'));
   await render([session]);
-  expect(recent).toEqual([{ environmentId: 'local', workingDir: '/project' }]);
+  expect(recent.recentProjects).toEqual([{ environmentId: 'local', workingDir: '/project' }]);
+});
+
+it('removes only the chosen environment and keeps it dismissed across updates and restores', async () => {
+  const local = { environmentId: 'local', workingDir: '/project' };
+  const remote = { ...local, environmentId: 'ssh' };
+  const sessions = [session, { ...session, id: 'two', environmentId: 'ssh' }];
+  await render(sessions);
+  await act(async () => recent.dismissProject(local));
+  expect(recent.recentProjects).toEqual([remote]);
+  expect(JSON.parse(saved.get('uiRecentProjects')!)).toEqual([remote]);
+  expect(JSON.parse(saved.get('uiDismissedRecentProjects')!)).toEqual([local]);
+
+  await render(sessions.map(row => ({ ...row, state: 'waiting' })));
+  expect(recent.recentProjects).toEqual([remote]);
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  // Workspace restore starts fresh processes with new IDs; these are not explicit launches.
+  await render(sessions.map(row => ({ ...row, id: `restored-${row.id}` })));
+  expect(recent.recentProjects).toEqual([remote]);
+
+  const reopened = { ...session, id: 'reopened' };
+  recent.recordSession(reopened.id);
+  await render([reopened]);
+  expect(recent.recentProjects).toEqual([local, remote]);
+  expect(JSON.parse(saved.get('uiDismissedRecentProjects')!)).toEqual([]);
+  expect(JSON.parse(saved.get('uiRecentProjects')!)).toEqual([local, remote]);
+});
+
+it('retains more than six dismissals and handles quick consecutive removals', async () => {
+  const dismissed = Array.from({ length: 8 }, (_, i) => ({ environmentId: 'local', workingDir: `/hidden/${i}` }));
+  saved.set('uiDismissedRecentProjects', JSON.stringify(dismissed));
+  await render([
+    ...dismissed.map((row, i) => ({ ...session, ...row, id: `hidden-${i}` })),
+    session, { ...session, id: 'two', workingDir: '/other' },
+  ]);
+  expect(recent.recentProjects).toHaveLength(2);
+  const visible = recent.recentProjects;
+  await act(async () => { visible.forEach(recent.dismissProject); });
+  expect(recent.recentProjects).toEqual([]);
+  expect(JSON.parse(saved.get('uiRecentProjects')!)).toEqual([]);
+  expect(JSON.parse(saved.get('uiDismissedRecentProjects')!)).toHaveLength(10);
+});
+
+it('honors dismissals even if an old recent list still contains the location', async () => {
+  const project = { environmentId: 'local', workingDir: '/project' };
+  saved.set('uiRecentProjects', JSON.stringify([project]));
+  saved.set('uiDismissedRecentProjects', JSON.stringify([project]));
+  await render([session]);
+  expect(recent.recentProjects).toEqual([]);
+  expect(set).not.toHaveBeenCalled();
 });

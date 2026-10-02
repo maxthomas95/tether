@@ -332,7 +332,7 @@ export function App() {
   // already acknowledged its current waiting cycle.
   const bangSuppressedIds = acknowledgedWaitingIds;
   const environmentById = useMemo(() => new Map(environments.map(env => [env.id, env])), [environments]);
-  const recentProjects = useRecentProjects(sessions, environments);
+  const { recentProjects, dismissProject, recordSession } = useRecentProjects(sessions, environments);
 
   // Load profiles on mount
   useEffect(() => {
@@ -843,6 +843,7 @@ export function App() {
         console.warn('Vault preflight failed:', preflightErr);
       }
       const session = await window.electronAPI.session.create(createOpts);
+      recordSession(session.id);
       termManager.getOrCreate(session.id);
       setSessions(prev => [...prev, session]);
 
@@ -851,7 +852,7 @@ export function App() {
       console.error('Failed to create session:', err);
       notifyError('Failed to create session', err);
     }
-  }, [termManager, notifyError, openCreatedSession]);
+  }, [termManager, notifyError, openCreatedSession, recordSession]);
 
   const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
     try {
@@ -2099,6 +2100,7 @@ export function App() {
               environments={environments}
               enableResumePicker={enableResumePicker}
               recentProjects={recentProjects}
+              onDismissProject={dismissProject}
               onOpenProject={project => {
                 setWelcomeInitialEnvId(project.environmentId);
                 setWelcomeInitialDirectory(project.workingDir);
