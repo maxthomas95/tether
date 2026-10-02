@@ -17,6 +17,7 @@ Beta release carrying the changes since `0.6.6-beta.5`, with terminal search, ex
 - **Home screen** - spinning ASCII Tether logo and dismissible recent-project shortcuts (#242, #250).
 
 ### Bug Fixes
+- **Packaged Windows session shutdown** - use the bundled ConPTY backend for local and Coder PTYs so stopping sessions works with Electron's RunAsNode fuse disabled.
 - **Session restore** - preserve launch profiles, session environment overrides and CLI flags in encrypted snapshots; report unavailable keys or deleted profiles instead of silently changing launch settings (#249).
 - **Remote conversation resume** - resume saved SSH and Coder conversations after a disconnect (#239).
 - **Terminal resizing and duplicate sessions** - refit panes after canvas/window changes and open delayed duplicates in the current layout (#238, #248).

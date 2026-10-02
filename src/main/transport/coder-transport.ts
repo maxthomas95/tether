@@ -83,6 +83,8 @@ export class CoderTransport implements SessionTransport {
     log.info('Spawning coder ssh', { shell, binaryPath: this.binaryPath, workspaceName, hasSubDir: Boolean(subDir) });
 
     this.ptyProcess = pty.spawn(shell, spawnArgs, {
+      // Match local PTYs: stopping must work with the RunAsNode fuse off.
+      ...(isWin32 ? { useConptyDll: true } : {}),
       name: 'xterm-256color',
       cols: options.cols,
       rows: options.rows,
