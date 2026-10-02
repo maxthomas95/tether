@@ -19,6 +19,20 @@ interface PaneEntry {
   container: HTMLDivElement | null;
 }
 
+function fitVisiblePane(entry: PaneEntry): void {
+  const { container, terminal, fitAddon, sessionId } = entry;
+  // FitAddon clamps a zero-size container to 2x1. Preserve the remote PTY's
+  // last usable size during hidden/detached layout transitions instead.
+  if (!container?.isConnected || container.clientWidth <= 0 || container.clientHeight <= 0) return;
+  if (terminal.element?.parentElement !== container) return;
+  try {
+    fitAddon.fit();
+    window.electronAPI.session.resize(sessionId, terminal.cols, terminal.rows);
+  } catch {
+    // The terminal may have been disposed during a layout change.
+  }
+}
+
 const FALLBACK_TERMINAL_FONT =
   "'JetBrains Mono Variable', 'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace";
 
@@ -327,12 +341,7 @@ export function useTerminalManager(
     // flex containers that haven't received their final dimensions yet.
     const doFit = () => {
       if (panes.current.get(paneId) !== paneEntry) return;
-      try {
-        fitAddon.fit();
-        window.electronAPI.session.resize(sessionId, terminal.cols, terminal.rows);
-      } catch {
-        // ignore
-      }
+      fitVisiblePane(paneEntry);
     };
     requestAnimationFrame(() => {
       if (panes.current.get(paneId) !== paneEntry) return;
@@ -386,12 +395,7 @@ export function useTerminalManager(
   const fitPane = useCallback((paneId: PaneId) => {
     const entry = panes.current.get(paneId);
     if (!entry) return;
-    try {
-      entry.fitAddon.fit();
-      window.electronAPI.session.resize(entry.sessionId, entry.terminal.cols, entry.terminal.rows);
-    } catch {
-      // ignore
-    }
+    fitVisiblePane(entry);
   }, []);
 
   // Apply a font size to all terminals (panes + background) for a session,
@@ -405,12 +409,7 @@ export function useTerminalManager(
       if (entry.sessionId !== sessionId) continue;
       if (entry.terminal.options.fontSize === fontSize) continue;
       entry.terminal.options.fontSize = fontSize;
-      try {
-        entry.fitAddon.fit();
-        window.electronAPI.session.resize(sessionId, entry.terminal.cols, entry.terminal.rows);
-      } catch {
-        // ignore
-      }
+      fitVisiblePane(entry);
     }
   }, []);
 
@@ -419,12 +418,7 @@ export function useTerminalManager(
     const entry = panes.current.get(paneId);
     if (!entry) return;
     entry.terminal.focus();
-    try {
-      entry.fitAddon.fit();
-      window.electronAPI.session.resize(entry.sessionId, entry.terminal.cols, entry.terminal.rows);
-    } catch {
-      // ignore
-    }
+    fitVisiblePane(entry);
   }, []);
 
   // Remove ALL terminals for a session (panes + background)

@@ -145,6 +145,8 @@ Opening a session from the switcher behaves exactly like clicking it in the side
 
 Switching sessions preserves the background session's terminal buffer. Pending layout work from the previous session is discarded so only the current session receives focus and terminal-size updates.
 
+Terminals refit when you resize a pane or the Tether window, including after maximizing or restoring. The new row and column counts are sent to Local, SSH, and Coder sessions. Hidden panes retain their last usable terminal size until visible again. Coder's Windows CLI may take about a second to forward a size change to the workspace.
+
 ## Attention queue
 
 With several sessions running at once, "which one needs me?" is the recurring question. The attention queue answers it: press **Ctrl+Shift+A** (or click **Session → Jump to Next Waiting**, or the amber **N waiting** pill in the sidebar header) to jump straight to the next session that's amber — **Waiting** — sorted permission prompts first, then oldest-waiting first. Repeated presses cycle through the whole queue, wrapping back to the start once you've seen them all, so it doubles as a "drain the queue" loop across a busy sidebar.

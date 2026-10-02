@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => {
     input?: (data: string) => void;
     options: Record<string, unknown>;
     parser = { registerOscHandler: vi.fn() };
-    loadAddon = vi.fn();
+    loadAddon = vi.fn((addon: { activate?: (terminal: FakeTerminal) => void }) => addon.activate?.(this));
     attachCustomKeyEventHandler = vi.fn();
     selection = '';
     hasSelection = vi.fn(() => this.selection !== '');
@@ -29,8 +29,19 @@ const mocks = vi.hoisted(() => {
       container.appendChild(this.element);
     }
   }
+  class FakeFitAddon {
+    terminal?: FakeTerminal;
+    activate(terminal: FakeTerminal) { this.terminal = terminal; }
+    fit = vi.fn(() => {
+      const container = this.terminal?.element?.parentElement;
+      if (!container || !this.terminal) return;
+      this.terminal.cols = Math.max(2, Math.floor(container.clientWidth / 10));
+      this.terminal.rows = Math.max(1, Math.floor(container.clientHeight / 20));
+    });
+  }
   return {
     FakeTerminal,
+    FakeFitAddon,
     resize: vi.fn(),
     sendInput: vi.fn(),
     setOutputMode: vi.fn().mockResolvedValue(undefined),
@@ -42,7 +53,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('@xterm/xterm', () => ({ Terminal: mocks.FakeTerminal }));
-vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit = vi.fn(); } }));
+vi.mock('@xterm/addon-fit', () => ({ FitAddon: mocks.FakeFitAddon }));
 vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }));
 
 import { useTerminalManager, type TerminalManagerAPI, type TerminalCursorStyle } from './useTerminalManager';
@@ -71,6 +82,12 @@ function flushFrames() {
 
 function pane() {
   const container = document.createElement('div');
+  container.style.width = '1000px';
+  container.style.height = '600px';
+  Object.defineProperties(container, {
+    clientWidth: { get: () => parseInt(container.style.width) },
+    clientHeight: { get: () => parseInt(container.style.height) },
+  });
   host.appendChild(container);
   return container;
 }
@@ -98,6 +115,44 @@ afterEach(() => {
 });
 
 describe('terminal session lifecycle', () => {
+  it('restores the terminal and transport dimensions after shrinking and expanding a pane', () => {
+    const container = pane();
+    api.attachToPane('left', 'coder-session', container);
+    flushFrames();
+    container.style.width = '400px';
+    container.style.height = '200px';
+    api.fitPane('left');
+    expect(mocks.resize).toHaveBeenLastCalledWith('coder-session', 40, 10);
+    container.style.width = '1200px';
+    container.style.height = '800px';
+    api.fitPane('left');
+    expect(terminal('coder-session')).toMatchObject({ cols: 120, rows: 40 });
+    expect(mocks.resize).toHaveBeenLastCalledWith('coder-session', 120, 40);
+  });
+
+  it('keeps the last usable size while a container is hidden or detached', () => {
+    const container = pane();
+    api.attachToPane('left', 'a', container);
+    flushFrames();
+    flushFrames();
+    mocks.resize.mockClear();
+    container.style.width = '0px';
+    container.style.height = '0px';
+    api.fitPane('left');
+    api.focusPane('left');
+    api.setSessionFontSize('a', 20);
+    expect(mocks.resize).not.toHaveBeenCalled();
+    expect(terminal('a')).toMatchObject({ cols: 100, rows: 30 });
+    container.style.width = '1200px';
+    container.style.height = '800px';
+    container.remove();
+    api.fitPane('left');
+    expect(mocks.resize).not.toHaveBeenCalled();
+    host.appendChild(container);
+    api.fitPane('left');
+    expect(mocks.resize).toHaveBeenCalledExactlyOnceWith('a', 120, 40);
+  });
+
   it('preserves raw output and scrollback when a session is backgrounded and reattached', () => {
     const raw = '\x1b[31mred\x1b[0m\r\n\x00日本語';
     api.getOrCreate('a');

@@ -60,7 +60,6 @@ export function TerminalPane({
   onRestartInPane,
 }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const observerRef = useRef<ResizeObserver | null>(null);
   const isPlaceholder = sessionId === null;
   const isDead = !isPlaceholder && (session?.state === 'dead' || session?.state === 'stopped');
 
@@ -86,36 +85,41 @@ export function TerminalPane({
     return () => cancelAnimationFrame(frame);
   }, [canvas, isFocused, paneId, sessionId, termManager]);
 
-  // ResizeObserver for auto-fitting
+  // An empty slot has no terminal container. Rebind when its session changes,
+  // and send a final fit after resize bursts/flex layout changes settle.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || sessionId === null) return;
 
-    const handleResize = () => {
-      requestAnimationFrame(() => {
+    let frame: number | null = null;
+    let settled: ReturnType<typeof setTimeout> | null = null;
+    const scheduleFit = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
         termManager.fitPane(paneId);
       });
     };
+    const handleResize = () => {
+      scheduleFit();
+      if (settled !== null) clearTimeout(settled);
+      settled = setTimeout(() => {
+        settled = null;
+        scheduleFit();
+      }, 150);
+    };
 
-    observerRef.current = new ResizeObserver(handleResize);
-    observerRef.current.observe(container);
+    const observer = new ResizeObserver(handleResize);
+    observer.observe(container);
+    window.addEventListener('resize', handleResize);
 
     return () => {
-      observerRef.current?.disconnect();
-      observerRef.current = null;
+      observer.disconnect();
+      window.removeEventListener('resize', handleResize);
+      if (frame !== null) cancelAnimationFrame(frame);
+      if (settled !== null) clearTimeout(settled);
     };
-  }, [paneId, termManager]);
-
-  // Window resize fallback
-  useEffect(() => {
-    const handleResize = () => {
-      requestAnimationFrame(() => {
-        termManager.fitPane(paneId);
-      });
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [paneId, termManager]);
+  }, [paneId, sessionId, termManager]);
 
   // Apply effective font size to the terminal whenever the session override
   // or the global default changes.
