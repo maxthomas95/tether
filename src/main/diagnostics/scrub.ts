@@ -9,6 +9,7 @@
 import type { DbData } from '../db/database';
 import { isVaultRef } from '../vault/vault-resolver';
 import { isEncryptedSecret } from '../db/secret-storage';
+import { normalizeWorkspaceRecipes } from '../workspace-recipes/normalize';
 
 const REDACTED = '[REDACTED]';
 const SENSITIVE_KEY_PATTERN = /key|secret|token|password|credential|auth/i;
@@ -163,6 +164,7 @@ export function scrubDbData(input: DbData): DbData {
   }
 
   db.launchSnapshots = {};
+  db.workspaceRecipes = normalizeWorkspaceRecipes(db.workspaceRecipes);
 
   return db;
 }

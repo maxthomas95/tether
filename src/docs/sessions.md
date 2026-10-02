@@ -210,6 +210,16 @@ Workspace restore keeps an opaque reference to the encrypted launch settings for
 
 Entries that fail to restore remain saved for the next launch, even while other sessions open or close. The error notification offers **Forget failed sessions**; confirming removes those entries from the saved workspace. Dismissing the notification keeps them saved.
 
+### Workspace recipes
+
+Choose **File ? Workspaces?** to save the current set of sessions as a workspace recipe. A recipe stores the session labels, working directories or Coder workspace names, environment targets, CLI tools, Helm setting, and layout shape. It does not store terminal output, native conversation ids, or running process state.
+
+Opening a recipe starts fresh normal CLI sessions and keeps your current sessions running. Before opening, you can select which recipe slots to start, edit each working directory, and remap each slot to Local PC, a known SSH environment, or a known Coder environment. If a saved environment was deleted, Tether shows it as missing until you choose another target.
+
+Recipe launches validate every selected slot before any process starts. If some sessions start and another fails or you cancel the remaining work, the dialog marks started slots and lets you start only the remaining selected slots without duplicating the successful ones. **Show started sessions** switches to the sessions that did start and applies the saved layout. Closing instead leaves any already-created sessions in the sidebar without changing focus or layout.
+
+Recipes use the same launch path as creating sessions manually. Manual CLI flags, disabled inherited flags, launch profiles, current environment defaults, and Vault references still apply at the next launch. Vault references are resolved fresh. Recipes do not stop sessions, create git worktrees, import or export files, or auto-start on app launch.
+
 ### Canvas workspace
 
 Select **Layout → Canvas** or **View → Canvas Mode** to use movable, resizable session panels. Canvas is independent of the split-pane setting and its four-pane limit.

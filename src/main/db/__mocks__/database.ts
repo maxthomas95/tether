@@ -18,6 +18,7 @@ function createFreshDb(): DbData {
     usageSummaries: [],
     knownHosts: [],
     launchSnapshots: {},
+    workspaceRecipes: [],
   };
 }
 

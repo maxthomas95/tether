@@ -58,6 +58,8 @@ Restore, automatic conversation resume, and the manual resume picker are on by d
 
 When a saved workspace is restored, Tether also restores the selected launch profile and any SESSION-level env-var overrides, CLI flags, and disabled inherited flags that were used to start each session. The saved record is encrypted with the OS keychain and the renderer only carries an opaque id. Global defaults, environment settings, and launch profile contents are read from current Settings at the next launch, and Vault references are resolved again. If the keychain is unavailable or a saved profile was deleted, Tether does not start that session and shows the restore error instead of launching it with different settings.
 
+Workspace recipes follow the same rule when you open them: saved launch references are protected, Vault values are resolved fresh, and current defaults, environment settings, and launch profile contents are read at launch time. Changing default flags, profile contents, or environment variables in Settings changes future recipe launches; it does not rewrite existing recipes.
+
 ### Update checks
 
 **Check for updates on launch** is on by default. Tether checks GitHub Releases once, about 15 seconds after launch. Updates are non-blocking — when one is available you'll get a toast pointing to the release page, where you can download and install it. You can also check manually from **Help → Check for Updates…**.
