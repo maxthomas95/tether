@@ -1,8 +1,16 @@
+import { Fragment } from 'react';
 import type { LayoutNode } from '../../shared/layout-types';
 import type { EnvironmentInfo, SessionInfo } from '../../shared/types';
 import type { TerminalManagerAPI } from '../hooks/useTerminalManager';
 import type { LayoutAction } from '../hooks/useLayoutState';
 import { TerminalPane } from './TerminalPane';
+
+interface TerminalSearchForwardingProps {
+  searchPaneId: string | null;
+  searchFocusRequest: number;
+  onOpenTerminalSearch: (paneId: string) => void;
+  onCloseTerminalSearch: (paneId: string) => void;
+}
 
 interface SplitLayoutProps {
   node: LayoutNode;
@@ -90,6 +98,13 @@ export function SplitLayout({
     );
   }
 
+  const searchProps: TerminalSearchForwardingProps = {
+    searchPaneId,
+    searchFocusRequest,
+    onOpenTerminalSearch,
+    onCloseTerminalSearch,
+  };
+
   return (
     <SplitContainer
       node={node}
@@ -111,10 +126,7 @@ export function SplitLayout({
       broadcastPaneIds={broadcastPaneIds}
       broadcastActive={broadcastActive}
       onToggleBroadcastTarget={onToggleBroadcastTarget}
-      searchPaneId={searchPaneId}
-      searchFocusRequest={searchFocusRequest}
-      onOpenTerminalSearch={onOpenTerminalSearch}
-      onCloseTerminalSearch={onCloseTerminalSearch}
+      searchProps={searchProps}
       onRestartInPane={onRestartInPane}
     />
   );
@@ -140,10 +152,7 @@ interface SplitContainerProps {
   broadcastPaneIds: ReadonlySet<string>;
   broadcastActive: boolean;
   onToggleBroadcastTarget: (paneId: string) => void;
-  searchPaneId: string | null;
-  searchFocusRequest: number;
-  onOpenTerminalSearch: (paneId: string) => void;
-  onCloseTerminalSearch: (paneId: string) => void;
+  searchProps: TerminalSearchForwardingProps;
   onRestartInPane?: (paneId: string, sessionId: string) => void;
 }
 
@@ -167,81 +176,45 @@ function SplitContainer({
   broadcastPaneIds,
   broadcastActive,
   onToggleBroadcastTarget,
-  searchPaneId,
-  searchFocusRequest,
-  onOpenTerminalSearch,
-  onCloseTerminalSearch,
+  searchProps,
   onRestartInPane,
 }: SplitContainerProps) {
   const [first, second] = node.children;
+  const childProps = {
+    layoutDispatch,
+    termManager,
+    sessions,
+    environments,
+    onChooseSession,
+    isDragging,
+    draggingPaneId,
+    onDragStateChange,
+    focusedPaneId,
+    maximizedPaneId,
+    enablePaneSplitting,
+    currentLeafCount,
+    maxPanes,
+    defaultFontSize,
+    onFontSizeDelta,
+    broadcastPaneIds,
+    broadcastActive,
+    onToggleBroadcastTarget,
+    ...searchProps,
+    onRestartInPane,
+  };
 
   return (
     <div
       className={`split-container split-container--${node.direction}`}
     >
-      <div
-        className="split-child"
-        style={{ flex: 0.5 }}
-      >
-        <SplitLayout
-          node={first}
-          layoutDispatch={layoutDispatch}
-          termManager={termManager}
-          sessions={sessions}
-          environments={environments}
-          onChooseSession={onChooseSession}
-          isDragging={isDragging}
-          draggingPaneId={draggingPaneId}
-          onDragStateChange={onDragStateChange}
-          focusedPaneId={focusedPaneId}
-          maximizedPaneId={maximizedPaneId}
-          enablePaneSplitting={enablePaneSplitting}
-          currentLeafCount={currentLeafCount}
-          maxPanes={maxPanes}
-          defaultFontSize={defaultFontSize}
-          onFontSizeDelta={onFontSizeDelta}
-          broadcastPaneIds={broadcastPaneIds}
-          broadcastActive={broadcastActive}
-          onToggleBroadcastTarget={onToggleBroadcastTarget}
-          searchPaneId={searchPaneId}
-          searchFocusRequest={searchFocusRequest}
-          onOpenTerminalSearch={onOpenTerminalSearch}
-          onCloseTerminalSearch={onCloseTerminalSearch}
-          onRestartInPane={onRestartInPane}
-        />
-      </div>
-      <div className={`split-separator split-separator--${node.direction}`} />
-      <div
-        className="split-child"
-        style={{ flex: 0.5 }}
-      >
-        <SplitLayout
-          node={second}
-          layoutDispatch={layoutDispatch}
-          termManager={termManager}
-          sessions={sessions}
-          environments={environments}
-          onChooseSession={onChooseSession}
-          isDragging={isDragging}
-          draggingPaneId={draggingPaneId}
-          onDragStateChange={onDragStateChange}
-          focusedPaneId={focusedPaneId}
-          maximizedPaneId={maximizedPaneId}
-          enablePaneSplitting={enablePaneSplitting}
-          currentLeafCount={currentLeafCount}
-          maxPanes={maxPanes}
-          defaultFontSize={defaultFontSize}
-          onFontSizeDelta={onFontSizeDelta}
-          broadcastPaneIds={broadcastPaneIds}
-          broadcastActive={broadcastActive}
-          onToggleBroadcastTarget={onToggleBroadcastTarget}
-          searchPaneId={searchPaneId}
-          searchFocusRequest={searchFocusRequest}
-          onOpenTerminalSearch={onOpenTerminalSearch}
-          onCloseTerminalSearch={onCloseTerminalSearch}
-          onRestartInPane={onRestartInPane}
-        />
-      </div>
+      {[first, second].map((child, index) => (
+        <Fragment key={child.id}>
+          {index === 1 && <div className={`split-separator split-separator--${node.direction}`} />}
+          <div className="split-child" style={{ flex: 0.5 }}>
+            <SplitLayout node={child} {...childProps} />
+          </div>
+        </Fragment>
+      ))}
     </div>
   );
 }

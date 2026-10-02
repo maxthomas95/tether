@@ -31,6 +31,7 @@ import type { TerminalCursorStyle } from './hooks/useTerminalManager';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 import { useWorkspacePersistence, type WorkspaceRestoreFailure } from './hooks/useWorkspacePersistence';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useTerminalSearch } from './hooks/useTerminalSearch';
 import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
 import {
@@ -114,8 +115,6 @@ export function App() {
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [terminalSearchPaneId, setTerminalSearchPaneId] = useState<string | null>(null);
-  const [terminalSearchFocusRequest, setTerminalSearchFocusRequest] = useState(0);
   const [welcomeInitialDirectory, setWelcomeInitialDirectory] = useState<string | undefined>();
   const [aboutOpen, setAboutOpen] = useState(false);
   const [usageHistoryOpen, setUsageHistoryOpen] = useState(false);
@@ -1488,26 +1487,31 @@ export function App() {
     || usageHistoryOpen || setupWizardOpen || hostVerifyRequest !== null || resumePickerFor !== null
     || vaultPrompt !== null || confirmDialogProps.isOpen;
 
-  const handleOpenTerminalSearch = useCallback((paneId?: string) => {
-    if (modalOpen) return;
-    const focusedPaneId = canvasEnabled ? canvasState.focusedPaneId : layoutState.focusedPaneId;
-    const nextPaneId = paneId ?? focusedPaneId;
-    if (!nextPaneId) return;
+  const focusedTerminalPaneId = canvasEnabled ? canvasState.focusedPaneId : layoutState.focusedPaneId;
+  const terminalSearchVisiblePaneIds = useMemo(() => {
+    if (canvasEnabled) return new Set(canvasState.panels.map(panel => panel.id));
+    if (!layoutState.root) return new Set<string>();
+    return new Set(getLeaves(layoutState.root).map(leaf => leaf.id));
+  }, [canvasEnabled, canvasState.panels, layoutState.root]);
+  const focusPaneForTerminalSearch = useCallback((paneId: string) => {
     if (canvasEnabled) {
-      canvasDispatch({ type: 'FOCUS_VISIBLE', paneId: nextPaneId });
+      canvasDispatch({ type: 'FOCUS_VISIBLE', paneId });
     } else {
-      layoutDispatch({ type: 'SET_FOCUS', paneId: nextPaneId });
+      layoutDispatch({ type: 'SET_FOCUS', paneId });
     }
-    setTerminalSearchPaneId(prev => {
-      if (prev && prev !== nextPaneId) termManager.clearFindInPane(prev);
-      return nextPaneId;
-    });
-    setTerminalSearchFocusRequest(value => value + 1);
-  }, [canvasDispatch, canvasEnabled, canvasState.focusedPaneId, layoutDispatch, layoutState.focusedPaneId, modalOpen, termManager]);
-
-  const handleCloseTerminalSearch = useCallback((paneId: string) => {
-    setTerminalSearchPaneId(prev => prev === paneId ? null : prev);
-  }, []);
+  }, [canvasDispatch, canvasEnabled, layoutDispatch]);
+  const {
+    searchPaneId: terminalSearchPaneId,
+    searchFocusRequest: terminalSearchFocusRequest,
+    openSearch: handleOpenTerminalSearch,
+    closeSearch: handleCloseTerminalSearch,
+  } = useTerminalSearch({
+    focusedPaneId: focusedTerminalPaneId,
+    modalOpen,
+    visiblePaneIds: terminalSearchVisiblePaneIds,
+    clearFindInPane: termManager.clearFindInPane,
+    focusPaneForSearch: focusPaneForTerminalSearch,
+  });
 
   // Keyboard shortcuts
   const shortcutActions = useMemo(() => ({
@@ -1621,16 +1625,6 @@ export function App() {
       return setsEqual(prev, next) ? prev : next;
     });
   }, [currentLeafCount, enablePaneSplitting, layoutState.root, sessions, canvasEnabled]);
-
-  useEffect(() => {
-    if (!terminalSearchPaneId) return;
-    const visiblePaneIds = canvasEnabled
-      ? new Set(canvasState.panels.map(panel => panel.id))
-      : new Set(layoutState.root ? getLeaves(layoutState.root).map(leaf => leaf.id) : []);
-    if (visiblePaneIds.has(terminalSearchPaneId)) return;
-    termManager.clearFindInPane(terminalSearchPaneId);
-    setTerminalSearchPaneId(null);
-  }, [canvasEnabled, canvasState.panels, layoutState.root, termManager, terminalSearchPaneId]);
 
   const handleToggleBroadcastTarget = useCallback((paneId: string) => {
     setBroadcastPaneIds(prev => {

@@ -5,12 +5,47 @@ import { Icon } from './Icon';
 interface TerminalSearchBarProps {
   paneId: string;
   focusRequest: number;
-  onSearch: (paneId: string, term: string, options?: { caseSensitive?: boolean; wholeWord?: boolean; previous?: boolean; incremental?: boolean }) => boolean;
+  onSearch: (paneId: string, term: string, options?: SearchOptions) => boolean;
   onResults: (paneId: string, listener: (event: ISearchResultChangeEvent) => void) => () => void;
   onClose: () => void;
 }
 
-export function TerminalSearchBar({ paneId, focusRequest, onSearch, onResults, onClose }: TerminalSearchBarProps) {
+type SearchOptions = { caseSensitive?: boolean; wholeWord?: boolean; previous?: boolean; incremental?: boolean };
+
+interface SearchButtonProps {
+  className: string;
+  title: string;
+  ariaLabel: string;
+  onClick: () => void;
+  onKeyDown: (e: React.KeyboardEvent) => void;
+  children: React.ReactNode;
+  pressed?: boolean;
+}
+
+function formatSearchStatus(result: ISearchResultChangeEvent | null, hasResult: boolean | null): string {
+  if (result && result.resultCount > 0 && result.resultIndex >= 0) return `${result.resultIndex + 1}/${result.resultCount}`;
+  if (result && result.resultCount > 0) return `${result.resultCount} matches`;
+  return hasResult === false ? 'No results' : '';
+}
+
+function SearchButton({ className, title, ariaLabel, onClick, onKeyDown, children, pressed }: Readonly<SearchButtonProps>) {
+  return (
+    <button
+      type="button"
+      className={className}
+      title={title}
+      aria-label={ariaLabel}
+      aria-pressed={pressed}
+      onMouseDown={e => e.stopPropagation()}
+      onKeyDown={onKeyDown}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function TerminalSearchBar({ paneId, focusRequest, onSearch, onResults, onClose }: Readonly<TerminalSearchBarProps>) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [term, setTerm] = useState('');
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -18,7 +53,7 @@ export function TerminalSearchBar({ paneId, focusRequest, onSearch, onResults, o
   const [hasResult, setHasResult] = useState<boolean | null>(null);
   const [result, setResult] = useState<ISearchResultChangeEvent | null>(null);
 
-  const runSearch = useCallback((nextTerm: string, options?: { previous?: boolean; incremental?: boolean }) => {
+  const runSearch = useCallback((nextTerm: string, options?: Pick<SearchOptions, 'previous' | 'incremental'>) => {
     if (!nextTerm) {
       setHasResult(null);
       setResult(null);
@@ -49,7 +84,7 @@ export function TerminalSearchBar({ paneId, focusRequest, onSearch, onResults, o
 
   useEffect(() => onResults(paneId, setResult), [onResults, paneId]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+  const handleControlKeyDown = useCallback((e: React.KeyboardEvent) => {
     e.stopPropagation();
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -60,13 +95,10 @@ export function TerminalSearchBar({ paneId, focusRequest, onSearch, onResults, o
     }
   }, [onClose, runSearch, term]);
 
-  const status = result && result.resultCount > 0 && result.resultIndex >= 0
-    ? `${result.resultIndex + 1}/${result.resultCount}`
-    : result && result.resultCount > 0 ? `${result.resultCount} matches`
-    : hasResult === false ? 'No results' : '';
+  const status = formatSearchStatus(result, hasResult);
 
   return (
-    <div className="terminal-search-bar" role="search" aria-label="Find in terminal" onMouseDown={e => e.stopPropagation()} onKeyDown={handleKeyDown}>
+    <div className="terminal-search-bar" role="search" aria-label="Find in terminal">
       <Icon name="search" size={14} />
       <input
         ref={inputRef}
@@ -74,26 +106,28 @@ export function TerminalSearchBar({ paneId, focusRequest, onSearch, onResults, o
         value={term}
         placeholder="Find in terminal"
         aria-label="Find in terminal"
+        onMouseDown={e => e.stopPropagation()}
+        onKeyDown={handleControlKeyDown}
         onChange={e => setTerm(e.target.value)}
       />
       <span className={`terminal-search-status ${hasResult === false ? 'terminal-search-status--empty' : ''}`} aria-live="polite">
         {status}
       </span>
-      <button type="button" className="terminal-search-toggle" aria-label="Match case" aria-pressed={caseSensitive} title="Match case" onClick={() => setCaseSensitive(v => !v)}>
+      <SearchButton className="terminal-search-toggle" ariaLabel="Match case" title="Match case" pressed={caseSensitive} onKeyDown={handleControlKeyDown} onClick={() => setCaseSensitive(v => !v)}>
         Aa
-      </button>
-      <button type="button" className="terminal-search-toggle" aria-label="Match whole word" aria-pressed={wholeWord} title="Whole word" onClick={() => setWholeWord(v => !v)}>
+      </SearchButton>
+      <SearchButton className="terminal-search-toggle" ariaLabel="Match whole word" title="Whole word" pressed={wholeWord} onKeyDown={handleControlKeyDown} onClick={() => setWholeWord(v => !v)}>
         W
-      </button>
-      <button type="button" className="terminal-search-button" title="Previous match" aria-label="Previous match" onClick={() => runSearch(term, { previous: true })}>
+      </SearchButton>
+      <SearchButton className="terminal-search-button" ariaLabel="Previous match" title="Previous match" onKeyDown={handleControlKeyDown} onClick={() => runSearch(term, { previous: true })}>
         Prev
-      </button>
-      <button type="button" className="terminal-search-button" title="Next match" aria-label="Next match" onClick={() => runSearch(term)}>
+      </SearchButton>
+      <SearchButton className="terminal-search-button" ariaLabel="Next match" title="Next match" onKeyDown={handleControlKeyDown} onClick={() => runSearch(term)}>
         Next
-      </button>
-      <button type="button" className="terminal-search-button" title="Close terminal search" aria-label="Close terminal search" onClick={onClose}>
+      </SearchButton>
+      <SearchButton className="terminal-search-button" ariaLabel="Close terminal search" title="Close terminal search" onKeyDown={handleControlKeyDown} onClick={onClose}>
         <Icon name="close" size={14} />
-      </button>
+      </SearchButton>
     </div>
   );
 }
