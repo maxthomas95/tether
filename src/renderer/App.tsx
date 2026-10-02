@@ -8,6 +8,7 @@ import { NewSessionDialog } from './components/sidebar/NewSessionDialog';
 import { NewEnvironmentDialog } from './components/sidebar/NewEnvironmentDialog';
 import { ResumeChatDialog } from './components/sidebar/ResumeChatDialog';
 import { SidebarResizeHandle } from './components/sidebar/SidebarResizeHandle';
+import { SidebarUtilities } from './components/sidebar/SidebarUtilities';
 import { QuotaFooter } from './components/sidebar/QuotaFooter';
 import { GlobalUsageFooter } from './components/sidebar/GlobalUsageFooter';
 import { VaultStatusPill } from './components/sidebar/VaultStatusPill';
@@ -2070,23 +2071,12 @@ export function App() {
         <VaultStatusPill onAuthError={notifyVaultAuthError} />
         <JobsOfficePill status={jobsStatus} active={officeOpen} onToggle={() => setOfficeOpen(v => !v)}
           onConfigure={() => { setSettingsInitialSection('integrations'); setSettingsOpen(true); }} />
-        <div className="sidebar-utilities">
-          <button className="sidebar-settings" onClick={() => setSettingsOpen(true)}><Icon name="settings" /> Settings</button>
-          {waitingCount > 0 && (
-            <button
-              type="button"
-              className="attention-queue-pill"
-              onClick={handleJumpToNextWaiting}
-              title={formatChord(resolvedBindings['session.nextWaiting'])
-                ? `Jump to next waiting session (${formatChord(resolvedBindings['session.nextWaiting'])})`
-                : 'Jump to next waiting session'}
-              aria-label={`${waitingCount} session${waitingCount === 1 ? '' : 's'} waiting — jump to next`}
-            >
-              <span className="status-dot status-dot--waiting" aria-hidden="true" />
-              <span className="attention-queue-label">{waitingCount} waiting</span>
-            </button>
-          )}
-        </div>
+        <SidebarUtilities
+          waitingCount={waitingCount}
+          nextWaitingShortcut={formatChord(resolvedBindings['session.nextWaiting'])}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onJumpToNextWaiting={handleJumpToNextWaiting}
+        />
       </aside>
       {sidebarVisible && <SidebarResizeHandle onResize={setSidebarWidth} />}
       <main
