@@ -1,5 +1,14 @@
 # Sessions
 
+## Check and update a session's CLI
+
+Choose **Check / update CLI…** from a Codex, Claude Code, or OpenCode session's menu.
+The maintenance terminal uses that session's machine or Coder workspace and its
+launch environment. Check the executable path and version before updating, and
+choose the update method matching your installation. Existing conversations keep
+running; restart or resume them when ready after an update. See **Settings → CLI
+updates** for installation methods and cancellation behavior.
+
 A **session** in Tether is a running CLI process in a specific directory and environment. You can have many sessions open at once, each with its own terminal. Tether is a "dumb pipe" — the PTY stream flows byte-for-byte into the terminal; nothing is parsed, rewritten, or intercepted.
 
 ## Creating Sessions

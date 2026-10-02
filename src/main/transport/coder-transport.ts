@@ -64,7 +64,7 @@ export class CoderTransport implements SessionTransport {
       ? `{ [ -d ${quotedSubDir} ] || GIT_ALLOW_PROTOCOL=https:ssh git clone -- ${quotePosixShellArg(cloneUrl)} ${quotedSubDir}; }`
       : '';
     const chain = [cloneStep, cdStep, baseCmd].filter(Boolean).join(' && ');
-    const cmd = `${chain}\n`;
+    const cmd = options.exitAfterCommand ? `${chain}; exit "$?"\n` : `${chain}\n`;
 
     // Native Windows executables receive argv directly. cmd.exe is retained
     // only for batch shims and unresolved names that require its PATH/PATHEXT

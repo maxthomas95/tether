@@ -1,5 +1,34 @@
 # Settings
 
+## CLI updates
+
+Open **File → CLI Tools…**, or **Settings → Sessions → Manage CLI tools…**, to check
+versions and update **Codex CLI**, **Claude Code**, or **OpenCode**. Choose the local
+machine, an SSH environment, or a Coder workspace. A session's **Check / update CLI…**
+menu action preselects its launch environment, including PATH and CLI home variables.
+
+**Check version** shows the executable path and installed version in a dedicated
+terminal. **Update** runs `codex update`, `claude update`, or `opencode upgrade`, then
+runs the version check again. Native output and interactive prompts appear unchanged.
+Output tabs retain the executable path, version before, updater output, and version
+after separately, including on Windows where starting a command can clear its screen.
+
+Choose the update method that matches your installation. Older npm-installed Codex
+releases without `codex update` can use the npm option. Claude installations managed
+by Homebrew or WinGet need their package-manager option; `claude update` can report
+up to date without upgrading these installations. Tether does not infer the install
+method from terminal output or change the CLI's configuration. Tool updaters use
+existing settings; package-manager options use the indicated package or channel.
+
+Updates affect the selected installation and may apply to multiple conversations.
+Existing sessions keep running. Restart or resume them when ready to use the new
+version. On Windows, an updater can fail if a running session locks the executable;
+stop affected sessions and retry. **Cancel**, closing the dialog, or closing Tether
+stops the maintenance terminal. Interrupted updates may need to be retried.
+
+Maintenance terminals are temporary: they are not saved as conversations and do not
+install Tether status hooks or contribute session usage statistics.
+
 Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **View** in the menu bar. Search for a settings section by name or topic, such as “theme”, “hooks”, or “usage”. The dialog has nine sections:
 
 - [General](#general) — session restore and update checks

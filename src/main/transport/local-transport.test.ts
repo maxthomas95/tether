@@ -18,6 +18,13 @@ const baseOptions = createTransportOptions('C:\\repo\\tether');
 const ptySpawnSpy = getPtySpawnSpy();
 
 describe('LocalTransport', () => {
+  it('runs maintenance argv without tokenizing or adding conversation flags', async () => {
+    platform.set('linux');
+    await new LocalTransport().start(baseOptions({ cliTool: 'claude', cliArgs: ['--verbose'],
+      toolSessionId: 'conversation', initialPrompt: 'agent prompt',
+      command: { file: 'example-cli', args: ['--home', '/path with spaces', 'update'] } }));
+    expect(ptySpawnSpy.mock.calls[0].slice(0, 2)).toEqual(['example-cli', ['--home', '/path with spaces', 'update']]);
+  });
   const { ptyHarness, platform } = setupPtyTransportTest();
 
   it('reports not connected before start', () => {

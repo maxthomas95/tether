@@ -17,6 +17,13 @@ const baseOptions = createTransportOptions('workspace1');
 const ptySpawnSpy = getPtySpawnSpy();
 
 describe('CoderTransport', () => {
+  it('exits maintenance shells with the command status and preserves exact argv', async () => {
+    platform.set('linux');
+    await new CoderTransport().start(baseOptions({ cliTool: 'claude', toolSessionId: 'ignored',
+      command: { file: 'tool', args: ['--home', '/path with spaces', 'update'] }, exitAfterCommand: true }));
+    const writes = ptyHarness.current!.write.mock.calls.map(c => c[0]).join('');
+    expect(writes).toBe(`'tool' '--home' '/path with spaces' 'update'; exit "$?"\n`);
+  });
   const { ptyHarness, platform } = setupPtyTransportTest();
 
   it('uses the default `coder` binary when none configured', async () => {

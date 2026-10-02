@@ -71,6 +71,7 @@ function dispatch(action: KeybindingAction, actions: ShortcutActions): void {
 export function useKeyboardShortcuts(
   actions: ShortcutActions,
   bindings: Record<KeybindingAction, Chord | null>,
+  enabled = true,
 ) {
   const chordLookup = useMemo(() => {
     const map = new Map<Chord, KeybindingAction>();
@@ -83,6 +84,7 @@ export function useKeyboardShortcuts(
   }, [bindings]);
 
   useEffect(() => {
+    if (!enabled) return;
     const handler = (e: KeyboardEvent) => {
       const chord = parseKeyEvent(e);
       if (!chord) return;
@@ -97,5 +99,5 @@ export function useKeyboardShortcuts(
 
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [actions, chordLookup]);
+  }, [actions, chordLookup, enabled]);
 }

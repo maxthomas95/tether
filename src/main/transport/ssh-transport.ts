@@ -31,6 +31,7 @@ type SshClient = InstanceType<typeof import('ssh2').Client>;
 type SshConnectConfig = Parameters<SshClient['connect']>[0];
 
 interface SshSessionSetupOptions {
+  replaceShell?: boolean;
   stream: NodeJS.ReadWriteStream;
   cmd: string;
   useSudo: boolean;
@@ -76,7 +77,7 @@ class SshSessionSetup {
       log.info('Shell prompt detected, sending sudo -i');
       this.state = 'waitPassword';
       this.buffer = '';
-      this.opts.stream.write('sudo -i\n');
+      this.opts.stream.write(this.opts.replaceShell ? 'exec sudo -i\n' : 'sudo -i\n');
     } else {
       log.info('Shell prompt detected, disabling echo before launch');
       this.startEchoOff();
@@ -243,8 +244,8 @@ export class SSHTransport implements SessionTransport {
       return;
     }
 
-    this.attachStreamHandlers(stream);
-    this.attachSessionSetup(stream, cmd, resolve, reject);
+    this.attachStreamHandlers(stream, options.exitAfterCommand);
+    this.attachSessionSetup(stream, cmd, resolve, reject, options.exitAfterCommand);
   }
 
   /**
@@ -267,7 +268,8 @@ export class SSHTransport implements SessionTransport {
     const launchCmd = envParts.length > 0
       ? `env ${envParts.join(' ')} ${cliCmd}`
       : cliCmd;
-    return `cd ${quoteRemotePath(options.workingDir)} && ${launchCmd}\n`;
+    const command = `cd ${quoteRemotePath(options.workingDir)} && ${launchCmd}`;
+    return options.exitAfterCommand ? `${command}; exit "$?"\n` : `${command}\n`;
   }
 
   private failShellStartup(
@@ -282,12 +284,16 @@ export class SSHTransport implements SessionTransport {
     reject(buildErr instanceof Error ? buildErr : new Error(String(buildErr)));
   }
 
-  private attachStreamHandlers(stream: NodeJS.ReadWriteStream): void {
+  private attachStreamHandlers(stream: NodeJS.ReadWriteStream, maintenance = false): void {
     // Use StringDecoder so multi-byte UTF-8 glyphs that straddle SSH packet
     // boundaries don't decode to U+FFFD and corrupt cursor math.
     const decoder = new StringDecoder('utf8');
     stream.on('data', (data: Buffer) => this.forwardDecodedData(decoder, data));
-    stream.on('close', () => this.handleStreamClose());
+    let exitInfo: TransportExitInfo = { exitCode: maintenance ? 1 : 0 };
+    stream.on('exit', (code: number | undefined, signal?: string) => {
+      exitInfo = { exitCode: code ?? (signal ? 1 : 0), signal };
+    });
+    stream.on('close', () => this.handleStreamClose(exitInfo));
   }
 
   private forwardDecodedData(decoder: StringDecoder, data: Buffer): void {
@@ -298,10 +304,10 @@ export class SSHTransport implements SessionTransport {
     }
   }
 
-  private handleStreamClose(): void {
+  private handleStreamClose(exitInfo: TransportExitInfo): void {
     this._connected = false;
     this.stream = null;
-    this.emitExit({ exitCode: 0 });
+    this.emitExit(exitInfo);
   }
 
   private attachSessionSetup(
@@ -309,8 +315,10 @@ export class SSHTransport implements SessionTransport {
     cmd: string,
     resolve: () => void,
     reject: (err: Error) => void,
+    replaceShell = false,
   ): void {
     const setup = new SshSessionSetup({
+      replaceShell,
       stream,
       cmd,
       useSudo: this.sshConfig.useSudo === true,

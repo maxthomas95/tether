@@ -27,6 +27,7 @@ interface SessionItemProps {
   onDuplicate: () => void;
   /** When provided, the context menu shows "Resume previous conversation...". */
   onResumePrevious?: () => void;
+  onCliMaintenance?: () => void;
   /** When true, render a small ↻ marker for sessions launched via resume. */
   showResumeBadge?: boolean;
   /** When true, render the "Enable/Disable Helm" context menu item (global Allow Helm is on). */
@@ -68,7 +69,7 @@ const PREVIEW_HOVER_DELAY_MS = 350;
  */
 let activeReorderSource: { id: string; environmentId: string | null; workingDir: string } | null = null;
 
-export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppressed, onClick, onStop, onRename, onRemove, onDuplicate, onResumePrevious, showResumeBadge, allowHelm, onToggleHelm, onToggleNotificationsMuted, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane, getPreviewLines }: SessionItemProps) {
+export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppressed, onClick, onStop, onRename, onRemove, onDuplicate, onResumePrevious, onCliMaintenance, showResumeBadge, allowHelm, onToggleHelm, onToggleNotificationsMuted, nested, onDragStart, onDragEnd, onReorderDrop, paneLocation, paneHidden, onFocusPane, getPreviewLines }: SessionItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.label);
@@ -371,6 +372,13 @@ export function SessionItem({ session, isActive, isVisibleInLayout, bangSuppress
               onKeyDown={onKeyActivate(() => { setShowMenu(false); onResumePrevious(); })}
             >
               Resume previous conversation...
+            </div>
+          )}
+          {onCliMaintenance && ['claude', 'codex', 'opencode'].includes(session.cliTool ?? 'claude') && (
+            <div className="context-menu-item" role="menuitem" tabIndex={0}
+              onClick={() => { setShowMenu(false); onCliMaintenance(); }}
+              onKeyDown={onKeyActivate(() => { setShowMenu(false); onCliMaintenance(); })}>
+              Check / update CLI…
             </div>
           )}
           {allowHelm && onToggleHelm && (
