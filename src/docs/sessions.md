@@ -11,6 +11,8 @@ updates** for installation methods and cancellation behavior.
 
 A **session** in Tether is a running CLI process in a specific directory and environment. You can have many sessions open at once, each with its own terminal. Tether is a "dumb pipe" — the PTY stream flows byte-for-byte into the terminal; nothing is parsed, rewritten, or intercepted.
 
+The optional **[Pip sidebar pet](settings.md#pip-sidebar-pet)** follows the focused session and reacts to its status. Enable it from **View → Pip Sidebar Pet**. Its **waiting** button opens another session that needs input, with permission prompts first.
+
 ## Creating Sessions
 
 On Windows, npm-installed CLI tools use their Windows command shim (for example,

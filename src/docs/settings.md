@@ -133,6 +133,18 @@ GIF, APNG, and WebP files are supported. Folders refresh every 30 seconds while 
 
 The panel is off by default and ships without media. Files stay on your computer; folders belong to the machine running Tether, including when your terminal sessions use SSH or Coder. The panel does not affect terminal output, session status, or CLI input.
 
+### Pip sidebar pet
+
+Choose **View → Pip Sidebar Pet** to invite Pip into the sidebar. Pip is an optional, local companion with expressive eyes, a swishing tail, and occasional comments about session activity. It is off by default and can live alongside the GIF panel.
+
+- Pip follows your focused session in single, split, and Canvas layouts. It reacts to starting or working agents, input and permission waits, idle sessions, and stopped sessions. A ready-for-input reaction means the agent is waiting for you; it does not certify that a task or test succeeded.
+- When another session is waiting, the **waiting** button switches to it, prioritizing permission prompts. Switching sessions quickly can make Pip dizzy. Click Pip, or focus it and press **Enter** or **Space**, to pet it.
+- **Quiet** keeps the expressions and silences the comments. **Personality & motion** lets you choose **Dry little gremlin** or **Cozy companion**, and turn ambient motion off. Your system's reduced-motion preference also stops animations and cursor tracking.
+- Automatic comments appear at most once every 25 seconds and return to a greeting after 12 seconds. Petting gets an immediate response. After 90 seconds without mouse, keyboard, or scroll activity in Tether, Pip takes a nap; using the app wakes it.
+- Preferences save immediately and persist across launches. Click **Pip** to collapse the panel, or **Hide Pip** to remove it. Reopen it from **View → Pip Sidebar Pet**. Collapsing it, hiding the sidebar, or minimizing the window suspends its timers and cursor tracking; reopening it does not replay missed reactions.
+
+Pip uses session labels, focus, and status metadata already available to the UI. It does not read terminal output, conversation contents, or files, and makes no model or network requests. It works with local, SSH, and Coder session metadata; how accurately it reacts depends on the status detection available for that session.
+
 ## Terminal
 
 ### Default font size
