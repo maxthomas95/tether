@@ -29,7 +29,7 @@ import { formatCost } from './utils/usage-format';
 import { useTerminalManager } from './hooks/useTerminalManager';
 import type { TerminalCursorStyle } from './hooks/useTerminalManager';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
-import { useWorkspacePersistence, type SavedWorkspaceSession } from './hooks/useWorkspacePersistence';
+import { useWorkspacePersistence, type WorkspaceRestoreFailure } from './hooks/useWorkspacePersistence';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
@@ -298,16 +298,9 @@ export function App() {
     ? findLeaf(layoutState.root, layoutState.focusedPaneId)
     : null;
   const activeSessionId = focusedLeaf?.sessionId ?? null;
-  const { retainFailedSessions, forgetFailedSessions } = useWorkspacePersistence(sessions, activeSessionId, savedCanvas, workspaceReady);
-  const handleForgetFailedSessions = useCallback(async () => {
-    const result = await confirmDialog({
-      title: 'Forget failed sessions?',
-      message: 'Remove the sessions that failed to restore from the saved workspace? They will no longer be retried on launch.',
-      confirmLabel: 'Forget sessions',
-      danger: true,
-    });
-    if (result.confirmed) forgetFailedSessions();
-  }, [confirmDialog, forgetFailedSessions]);
+  const { reportRestoreFailures, retainPendingRestores } = useWorkspacePersistence(
+    sessions, activeSessionId, savedCanvas, workspaceReady, { notify, confirm: confirmDialog },
+  );
   // Sessions currently mounted AND visible (maximize hides everything else).
   // Used by the sidebar to decide which sessions get the amber-with-bang
   // "needs attention" affordance — sessions you can't see should call out
@@ -464,16 +457,7 @@ export function App() {
 
           // Load saved workspace for ordering/focus hints
           const workspace = await window.electronAPI.workspace?.load?.();
-          const pending = workspace?.sessions.filter(saved => saved.restorePending) ?? [];
-          if (mounted && pending.length > 0) {
-            retainFailedSessions(pending);
-            notify({
-              type: 'warning',
-              title: `${pending.length} saved sessions awaiting restore`,
-              message: 'These entries will be retried on the next app launch.',
-              action: { label: 'Forget failed sessions', onClick: () => { void handleForgetFailedSessions(); } },
-            });
-          }
+          if (mounted && workspace) retainPendingRestores(workspace.sessions);
 
           // Determine session order: use workspace ordering if available, otherwise
           // use the order from the main process session list.
@@ -588,7 +572,7 @@ export function App() {
         // Build layout tree from restored sessions
         let root: LayoutNode | null = null;
         let focusPaneId: string | null = null;
-        const restoreFailures: Array<{ label: string; error: string; saved: SavedWorkspaceSession }> = [];
+        const restoreFailures: WorkspaceRestoreFailure[] = [];
 
         for (let i = 0; i < workspace.sessions.length; i++) {
           const saved = workspace.sessions[i];
@@ -640,21 +624,7 @@ export function App() {
           }
         }
 
-        if (mounted && restoreFailures.length > 0) {
-          retainFailedSessions(restoreFailures.map(failure => failure.saved));
-          const first = restoreFailures[0];
-          notify({
-            type: 'error',
-            title: restoreFailures.length === 1
-              ? `Failed to restore ${first.label}`
-              : `Failed to restore ${restoreFailures.length} sessions`,
-            message: `${first.error}. Saved entries will be retried on the next launch.`,
-            action: {
-              label: 'Forget failed sessions',
-              onClick: () => { void handleForgetFailedSessions(); },
-            },
-          });
-        }
+        if (mounted) reportRestoreFailures(restoreFailures);
 
         canvasDispatch({ type: 'RESTORE', saved: workspace.canvas, sessionIds: restoredCanvasIds });
         if (restoreCanvasMode && !workspace.canvas) {
