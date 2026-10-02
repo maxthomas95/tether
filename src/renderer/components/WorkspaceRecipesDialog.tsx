@@ -33,7 +33,6 @@ interface OpenRow {
   selected: boolean;
   workingDir: string;
   environmentId: string;
-  missingEnvironmentName?: string;
   disabledStarted?: boolean;
   error?: string;
 }
@@ -54,27 +53,12 @@ function environmentLabel(env: EnvironmentInfo | undefined): string {
   return `${env.type === 'ssh' ? 'SSH' : 'Coder'}: ${env.name}`;
 }
 
-function slotEnvironmentId(recipe: WorkspaceRecipe, index: number): string {
-  return recipe.sessions[index]?.environmentId ?? '';
-}
-
-function getEnvironmentName(recipe: WorkspaceRecipe, index: number, environments: EnvironmentInfo[]): string | undefined {
-  const id = slotEnvironmentId(recipe, index);
-  if (!id) return undefined;
-  return environments.find(env => env.id === id)?.name ?? id;
-}
-
-function initialRows(recipe: WorkspaceRecipe, environments: EnvironmentInfo[]): OpenRow[] {
-  return recipe.sessions.map((slot, index) => {
-    const environmentId = slot.environmentId ?? '';
-    const known = !environmentId || environments.some(env => env.id === environmentId);
-    return {
-      selected: true,
-      workingDir: slot.workingDir,
-      environmentId,
-      missingEnvironmentName: known ? undefined : getEnvironmentName(recipe, index, environments),
-    };
-  });
+function initialRows(recipe: WorkspaceRecipe): OpenRow[] {
+  return recipe.sessions.map(slot => ({
+    selected: true,
+    workingDir: slot.workingDir,
+    environmentId: slot.environmentId ?? '',
+  }));
 }
 
 function selectionCount(rows: OpenRow[]): number {
@@ -173,11 +157,11 @@ export function WorkspaceRecipesDialog({
       setRows([]);
       return;
     }
-    setRows(initialRows(selectedRecipe, environments));
+    setRows(initialRows(selectedRecipe));
     setLaunchState('idle');
     setLaunchPlan(null);
     setLaunchResult(null);
-  }, [selectedRecipe?.id, environments]);
+  }, [selectedRecipe?.id]);
 
   useEffect(() => {
     if (!saveOpen) return;
@@ -511,10 +495,10 @@ export function WorkspaceRecipesDialog({
                         </label>
                         <label className="workspace-recipes-field">
                           <span>Environment</span>
-                          <select value={row.environmentId} onChange={e => updateRow(index, { environmentId: e.target.value, missingEnvironmentName: undefined })} disabled={controlsDisabled || row.disabledStarted}>
+                          <select value={row.environmentId} onChange={e => updateRow(index, { environmentId: e.target.value })} disabled={controlsDisabled || row.disabledStarted}>
                             <option value="">Local PC</option>
                             {environments.map(env => <option key={env.id} value={env.id}>{environmentLabel(env)}</option>)}
-                            {missing && <option value={row.environmentId}>Missing: {row.missingEnvironmentName ?? row.environmentId}</option>}
+                            {missing && <option value={row.environmentId}>Missing: {row.environmentId}</option>}
                           </select>
                         </label>
                         {missing && <div className="workspace-recipes-warning">Saved environment is missing. Choose another target before opening.</div>}
@@ -527,7 +511,7 @@ export function WorkspaceRecipesDialog({
                 <div className="workspace-recipes-actions">
                   {launchState === 'launching' || launching ? <button className="form-btn" type="button" onClick={cancelLaunch} disabled={blocked}>Cancel remaining</button> : null}
                   {launchState === 'partial' && launchResult ? <button className="form-btn" type="button" onClick={() => void startLaunch(launchResult)} disabled={controlsDisabled || selectionCount(rows) === 0}>Start remaining selected</button> : null}
-                  {launchState === 'partial' && launchResult && successfulCount(launchResult) > 0 ? <button className="form-btn form-btn--primary" type="button" onClick={finishPartial} disabled={controlsDisabled}>Show started sessions</button> : null}
+                  {pendingStarted && launchResult ? <button className="form-btn form-btn--primary" type="button" onClick={finishPartial} disabled={controlsDisabled}>Show started sessions</button> : null}
                   <button className="form-btn form-btn--primary" type="button" onClick={() => void startLaunch()} disabled={controlsDisabled || selectionCount(rows) === 0}>Open selected sessions</button>
                 </div>
               </div>

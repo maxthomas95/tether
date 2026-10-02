@@ -325,6 +325,43 @@ describe('WorkspaceRecipesDialog', () => {
     expect(onFinish).toHaveBeenLastCalledWith(retryPlan, { sessionIds: ['new-s1', 'new-s2'], failures: [], cancelled: false });
   });
 
+  it('preserves started slots and edited rows when environments refresh', async () => {
+    const saved = recipe();
+    installApi([saved]);
+    const firstPlan = planFor(saved);
+    const retryPlan = planFor(saved, [1]);
+    api.prepareOpen.mockResolvedValueOnce({ ok: true, plan: firstPlan }).mockResolvedValueOnce({ ok: true, plan: retryPlan });
+    const partial: WorkspaceRecipeLaunchResult = { sessionIds: ['new-s1', null], failures: [{ sessionIndex: 1, label: 'Remote task', error: 'SSH offline' }], cancelled: false };
+    const onLaunch = vi.fn().mockResolvedValueOnce(partial).mockResolvedValueOnce({ sessionIds: ['new-s1', 'new-s2'], failures: [], cancelled: false });
+    await renderDialog({ onLaunch });
+    await act(async () => { clickText('Open selected sessions'); });
+    const dirs = host.querySelectorAll<HTMLInputElement>('.workspace-recipes-slot input:not([type="checkbox"])');
+    act(() => setValue(dirs[1], 'edited-remote-path'));
+    await act(async () => { root.render(createElement(WorkspaceRecipesDialog, { ...props, environments: [...props.environments, { ...sshEnv, id: 'new-ssh' }] })); });
+    expect(host.textContent).toContain('1 started');
+    expect(host.querySelector<HTMLInputElement>('.workspace-recipes-slot-check input')?.disabled).toBe(true);
+    expect(host.querySelectorAll<HTMLInputElement>('.workspace-recipes-slot input:not([type="checkbox"])')[1].value).toBe('edited-remote-path');
+    await act(async () => { clickText('Start remaining selected'); });
+    expect(onLaunch).toHaveBeenLastCalledWith(retryPlan, ['new-s1', null]);
+    expect(api.prepareOpen).toHaveBeenLastCalledWith({ recipeId: saved.id, selections: [{ sessionIndex: 1, workingDir: 'edited-remote-path', environmentId: 'missing-env' }] });
+  });
+
+  it('can show prior successes after preparing a retry fails', async () => {
+    const saved = recipe();
+    installApi([saved]);
+    const firstPlan = planFor(saved);
+    api.prepareOpen.mockResolvedValueOnce({ ok: true, plan: firstPlan }).mockResolvedValueOnce({ ok: false, failures: [{ sessionIndex: 1, label: 'Remote task', error: 'Saved environment was deleted' }] });
+    const partial: WorkspaceRecipeLaunchResult = { sessionIds: ['new-s1', null], failures: [{ sessionIndex: 1, label: 'Remote task', error: 'SSH offline' }], cancelled: false };
+    const onFinish = vi.fn();
+    await renderDialog({ onLaunch: vi.fn().mockResolvedValue(partial), onFinish });
+    await act(async () => { clickText('Open selected sessions'); });
+    await act(async () => { clickText('Start remaining selected'); });
+    expect(host.textContent).toContain('Saved environment was deleted');
+    clickText('Show started sessions');
+    expect(onFinish).toHaveBeenCalledWith(firstPlan, partial);
+    expect(props.onLaunch).toHaveBeenCalledOnce();
+  });
+
   it('cancels remaining launches and respects busy or blocked states', async () => {
     const saved = recipe();
     installApi([saved]);
