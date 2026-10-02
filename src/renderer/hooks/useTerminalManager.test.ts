@@ -65,10 +65,10 @@ let host: HTMLDivElement;
 let api: TerminalManagerAPI;
 let frames: FrameRequestCallback[];
 
-function Harness({ color = '#000000', cursor = 'block', scrollback = 10000 }: {
-  color?: string; cursor?: TerminalCursorStyle; scrollback?: number;
+function Harness({ color = '#000000', cursor = 'block', scrollback = 10000, fontFamily = '' }: {
+  color?: string; cursor?: TerminalCursorStyle; scrollback?: number; fontFamily?: string;
 }) {
-  api = useTerminalManager({ background: color }, color, cursor, true, scrollback);
+  api = useTerminalManager({ background: color }, fontFamily, cursor, true, scrollback);
   return null;
 }
 
@@ -112,9 +112,51 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
+  Reflect.deleteProperty(document, 'fonts');
 });
 
 describe('terminal session lifecycle', () => {
+  it('waits for fonts, ignores stale font loads, and refits only visible panes', async () => {
+    const finish = new Map<string, () => void>();
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: {
+        check: () => false,
+        load: vi.fn((font: string) => new Promise<void>(resolve => finish.set(font, resolve))),
+      },
+    });
+    render({ fontFamily: "'Iosevka Fixed', monospace" });
+    api.attachToPane('left', 'a', pane());
+    api.getOrCreate('b');
+    const visible = terminal('a');
+    const background = terminal('b');
+    expect(visible.options.fontFamily).toBe('monospace');
+    render({ fontFamily: "'IBM Plex Mono', monospace" });
+    mocks.resize.mockClear();
+    await act(async () => { finish.get("14px 'Iosevka Fixed', monospace")!(); });
+    expect(visible.options.fontFamily).toBe('monospace');
+    expect(mocks.resize).not.toHaveBeenCalled();
+    await act(async () => { finish.get("14px 'IBM Plex Mono', monospace")!(); });
+    for (const instance of [visible, background]) {
+      expect(instance.options.fontFamily).toBe("'IBM Plex Mono', monospace");
+      expect(instance.dispose).not.toHaveBeenCalled();
+    }
+    expect(mocks.resize.mock.calls).toEqual([['a', 100, 30]]);
+  });
+
+  it('uses the default preset when clearing a font before App updates its CSS', async () => {
+    document.documentElement.style.setProperty('--font-mono-terminal', "'Iosevka Fixed', monospace");
+    api.getOrCreate('a');
+    render({ fontFamily: "'IBM Plex Mono', monospace" });
+    await act(async () => {});
+    expect(terminal('a').options.fontFamily).toBe("'IBM Plex Mono', monospace");
+    render({ fontFamily: '' });
+    await act(async () => {});
+    expect(terminal('a').options.fontFamily).toContain("'Cascadia Code'");
+    expect(terminal('a').options.fontFamily).not.toContain('Iosevka');
+    document.documentElement.style.removeProperty('--font-mono-terminal');
+  });
+
   it('restores the terminal and transport dimensions after shrinking and expanding a pane', () => {
     const container = pane();
     api.attachToPane('left', 'coder-session', container);

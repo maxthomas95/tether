@@ -5,6 +5,7 @@ import { EnvVarEditor } from './EnvVarEditor';
 import { MigrateToVaultDialog } from './MigrateToVaultDialog';
 import { VaultPickerDialog } from './VaultPickerDialog';
 import { themeList } from '../styles/themes';
+import { TerminalAppearancePreview } from './TerminalAppearancePreview';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../utils/vault-path';
 
 const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
@@ -51,6 +52,14 @@ const TERMINAL_FONT_PRESETS: ReadonlyArray<{ label: string; value: string }> = [
   {
     label: 'JetBrains Mono',
     value: "'JetBrains Mono Variable', 'JetBrains Mono', 'Cascadia Code', Consolas, monospace",
+  },
+  {
+    label: 'Iosevka Fixed',
+    value: "'Iosevka Fixed', 'JetBrains Mono Variable', Consolas, monospace",
+  },
+  {
+    label: 'IBM Plex Mono',
+    value: "'IBM Plex Mono', 'JetBrains Mono Variable', Consolas, monospace",
   },
   {
     label: 'Fira Code',
@@ -999,10 +1008,17 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
             </select>
             <p className="form-hint">
               Applies to terminal panes only; Appearance controls the UI font separately.
-              JetBrains Mono is bundled with Tether. Other fonts use installed system
+              JetBrains Mono, Iosevka Fixed, and IBM Plex Mono are bundled with Tether.
+              Other fonts use installed system
               faces, with fallback fonts if the selected face is unavailable.
             </p>
           </div>
+
+          <TerminalAppearancePreview
+            themeName={currentTheme}
+            fontFamily={terminalFontFamily}
+            fontSize={terminalFontSize}
+          />
 
             </>
           )}

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-8Sxw9JEO8HOEBRLqgjtEl+T136/rUwQfYy57dKOIZMI='; style-src 'self' 'sha256-geK75pRI1sVjoOCR7D66pNgQxUZK5oS07RN1dYN9cHQ='; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-DFxz62Ee6kQ61i4CJl7+SqbYdBialKmXghAz+rHA09s='; style-src 'self' 'sha256-geK75pRI1sVjoOCR7D66pNgQxUZK5oS07RN1dYN9cHQ='; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" />
     <title>Tether</title>
     <script>
       // Apply the saved theme before any CSS/JS runs. The main process
@@ -26,6 +26,10 @@
           tether:         { bg:'#1f1c18', sidebar:'#1a1714', text:'#ece4d4', muted:'#ad9f8b', accent:'#c68a5c', border:'#3a342d' },
           'default-dark': { bg:'#171c22', sidebar:'#1e252d', text:'#e7eef5', muted:'#a7b5c4', accent:'#62d2eb', border:'#3d4a58' },
           'tether-light': { bg:'#ffffff', sidebar:'#f3f3f3', text:'#1f1f1f', muted:'#646b78', accent:'#0078d4', border:'#d4d4d4' },
+          nord:           { bg:'#2e3440', sidebar:'#272d38', text:'#eceff4', muted:'#b3bdce', accent:'#88c0d0', border:'#4c566a' },
+          'gruvbox-dark': { bg:'#282828', sidebar:'#1d2021', text:'#ebdbb2', muted:'#bdae93', accent:'#fe8019', border:'#665c54' },
+          'gruvbox-light':{ bg:'#fbf1c7', sidebar:'#f2e5bc', text:'#3c3836', muted:'#665c54', accent:'#af3a03', border:'#bdae93' },
+          harbor:         { bg:'#15232d', sidebar:'#101b23', text:'#e7e3d5', muted:'#a4b9bb', accent:'#70c1b3', border:'#3e606b' },
         };
         var match = /[?&]theme=([^&]+)/.exec(location.search);
         var name = match ? decodeURIComponent(match[1]) : 'mocha';

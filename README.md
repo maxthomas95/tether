@@ -103,7 +103,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Font customization** — pick terminal font (Cascadia Code, JetBrains Mono, Fira Code, Consolas) and UI font (IBM Plex Sans, Inter, Atkinson Hyperlegible, System) independently
 - **Clickable URLs** — `Ctrl+click` any printed link to open in the system browser
 - **In-app documentation** with `(?)` deep-link icons that jump from dialogs straight to the relevant docs section
-- **Seven themes** — Catppuccin (Mocha, Macchiato, Frappé, Latte), Brass, Tether (Default Dark), Tether Light — applied everywhere including the title bar and docs window
+- **Eleven themes** — Catppuccin (Mocha, Macchiato, Frappé, Latte), Brass, Tether (Default Dark), Tether Light, Nord, Gruvbox Dark/Light, Harbor — applied everywhere including the title bar and docs window; bundled Iosevka Fixed and IBM Plex Mono terminal fonts with a live specimen preview
 
 ### Operations
 

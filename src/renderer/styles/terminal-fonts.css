@@ -1,0 +1,30 @@
+/* Iosevka Fixed 34.9.0 — upstream webfonts, SIL Open Font License 1.1.
+ * Source is recorded in assets/fonts/README.md; licenses ship in public/licenses/. */
+@font-face {
+  font-family: 'Iosevka Fixed';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/iosevka-fixed-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Iosevka Fixed';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/iosevka-fixed-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Iosevka Fixed';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/iosevka-fixed-bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Iosevka Fixed';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/iosevka-fixed-bolditalic.woff2') format('woff2');
+}

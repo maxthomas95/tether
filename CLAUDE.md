@@ -21,7 +21,7 @@ Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provid
 - **Secrets:** HashiCorp Vault integration (KV v2) for env var refs
 - **State:** JSON file persistence (`{userData}/data.json`) — SQLite planned but deferred due to native module ABI issues
 - **IPC:** Electron IPC (commands + event channels for PTY data streaming)
-- **Themes:** Catppuccin (Mocha, Macchiato, Frappé, Latte) + Brass + Tether (Default Dark) + Tether Light
+- **Themes:** Catppuccin (Mocha, Macchiato, Frappé, Latte) + Brass + Tether (Default Dark) + Tether Light + Nord + Gruvbox (Dark, Light) + Harbor
 - **CLI tools registry:** Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, Custom — selected per session via `src/shared/cli-tools.ts`
 
 ## Architecture
@@ -284,7 +284,7 @@ src/
     styles/
       global.css                      # Component styles + CSS variable theming
       tokens.css                      # Design tokens (fonts, spacing)
-      themes.ts                       # 7 theme definitions
+      themes.ts                       # 11 theme definitions
     assets/logo.png
   shared/
     cli-tools.ts                      # CLI tool registry (Claude/Codex/Copilot/OpenCode/Custom)
