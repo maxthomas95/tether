@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
     sessionOrderPrefs: [],
     usageSummaries: [],
     knownHosts: [],
+    launchSnapshots: {},
+    workspaceRecipes: [],
     keybindings: {},
   } as DbData,
   saveDb: vi.fn(),

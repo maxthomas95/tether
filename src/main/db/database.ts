@@ -7,6 +7,8 @@ import { createLogger } from '../logger';
 import type { CliToolId } from '../../shared/cli-tools';
 import type { RepoGroupPref, SessionOrderPref } from '../../shared/types';
 import type { KeybindingAction, Chord } from '../../shared/keybindings';
+import type { WorkspaceRecipe } from '../../shared/workspace-recipes';
+import { normalizeWorkspaceRecipes } from '../workspace-recipes/normalize';
 
 const log = createLogger('database');
 
@@ -97,6 +99,7 @@ export interface DbData {
   usageSummaries: PersistedSessionUsage[];
   knownHosts: KnownHostEntry[];
   launchSnapshots: Record<string, LaunchSnapshotRow>;
+  workspaceRecipes: WorkspaceRecipe[];
   keybindings?: Partial<Record<KeybindingAction, Chord | null>>;
 }
 
@@ -338,6 +341,7 @@ function emptyDbData(): DbData {
     usageSummaries: [],
     knownHosts: [],
     launchSnapshots: {},
+    workspaceRecipes: [],
     keybindings: {},
   };
 }
@@ -376,6 +380,7 @@ function migrateLoadedDb(loaded: Record<string, unknown>): DbData {
     usageSummaries: (loaded.usageSummaries as PersistedSessionUsage[]) || [],
     knownHosts: (loaded.knownHosts as KnownHostEntry[]) || [],
     launchSnapshots: normalizeLaunchSnapshots(loaded.launchSnapshots),
+    workspaceRecipes: normalizeWorkspaceRecipes(loaded.workspaceRecipes),
     keybindings,
   };
 }

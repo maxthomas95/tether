@@ -26,6 +26,7 @@ function emptyDb(overrides: Partial<DbData> = {}): DbData {
     usageSummaries: [],
     knownHosts: [],
     launchSnapshots: {},
+    workspaceRecipes: [],
     ...overrides,
   };
 }
@@ -225,6 +226,29 @@ describe('scrubDbData', () => {
       },
     }));
     expect(out.launchSnapshots).toEqual({});
+  });
+
+  it('does not expose arbitrary recipe payload fields in diagnostics', () => {
+    const out = scrubDbData(emptyDb({
+      workspaceRecipes: [{
+        id: 'recipe-1',
+        version: 1,
+        name: 'Recipe',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        sessions: [{
+          label: 'API',
+          workingDir: 'C:/repo/api',
+          cliTool: 'codex',
+          launchSnapshotId: 'snap-1',
+          env: { TOKEN: 'secret' },
+          cliArgs: ['--token=secret'],
+        } as unknown as import('../../shared/workspace-recipes').WorkspaceRecipeSession],
+        layout: { mode: 'split', activeSessionIndex: 0, split: { type: 'leaf', sessionIndex: 0 } },
+      }],
+    }));
+    expect(JSON.stringify(out.workspaceRecipes)).not.toContain('TOKEN');
+    expect(JSON.stringify(out.workspaceRecipes)).not.toContain('--token');
   });
 
   it('redacts malformed env_vars JSON', () => {
