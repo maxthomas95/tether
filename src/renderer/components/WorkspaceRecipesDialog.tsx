@@ -27,6 +27,7 @@ interface WorkspaceRecipesDialogProps {
 
 type SaveMode = 'idle' | 'saving';
 type LaunchState = 'idle' | 'preparing' | 'launching' | 'partial' | 'error';
+type MutationState = 'idle' | 'renaming' | 'deleting';
 
 interface OpenRow {
   selected: boolean;
@@ -89,6 +90,16 @@ function successfulCount(result: WorkspaceRecipeLaunchResult | null): number {
   return result?.sessionIds.filter(Boolean).length ?? 0;
 }
 
+function mergeLaunchResults(previous: WorkspaceRecipeLaunchResult | undefined, next: WorkspaceRecipeLaunchResult): WorkspaceRecipeLaunchResult {
+  if (!previous) return next;
+  const length = Math.max(previous.sessionIds.length, next.sessionIds.length);
+  return {
+    cancelled: next.cancelled,
+    failures: next.failures,
+    sessionIds: Array.from({ length }, (_, index) => next.sessionIds[index] ?? previous.sessionIds[index] ?? null),
+  };
+}
+
 export function WorkspaceRecipesDialog({
   sessions,
   environments,
@@ -104,6 +115,10 @@ export function WorkspaceRecipesDialog({
   const nameInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(true);
   const restoreFocusRef = useRef(true);
+  const loadRequestRef = useRef(0);
+  const mutationRequestRef = useRef(0);
+  const captureRequestRef = useRef(0);
+  const launchRequestRef = useRef(0);
   useFocusTrap(dialogRef, !blocked, restoreFocusRef);
 
   const [recipes, setRecipes] = useState<WorkspaceRecipe[]>([]);
@@ -111,6 +126,7 @@ export function WorkspaceRecipesDialog({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<SaveMode>('idle');
+  const [mutation, setMutation] = useState<MutationState>('idle');
   const [saveOpen, setSaveOpen] = useState(false);
   const [recipeName, setRecipeName] = useState('');
   const [saveSessionIds, setSaveSessionIds] = useState<Set<string>>(() => new Set(sessions.length <= MAX_RECIPE_SESSIONS ? sessions.map(session => session.id) : []));
@@ -122,24 +138,27 @@ export function WorkspaceRecipesDialog({
   const [launchPlan, setLaunchPlan] = useState<WorkspaceRecipeOpenPlan | null>(null);
   const [launchResult, setLaunchResult] = useState<WorkspaceRecipeLaunchResult | null>(null);
 
-  const busy = launching || loading || saving === 'saving' || launchState === 'preparing' || launchState === 'launching';
+  const pendingStarted = successfulCount(launchResult) > 0 && (launchState === 'partial' || launchState === 'error');
+  const busy = launching || loading || saving === 'saving' || mutation !== 'idle' || launchState === 'preparing' || launchState === 'launching';
   const controlsDisabled = blocked || busy;
+  const navigationLocked = pendingStarted;
   const selectedRecipe = recipes.find(recipe => recipe.id === selectedId) ?? null;
 
   const envById = useMemo(() => new Map(environments.map(env => [env.id, env])), [environments]);
 
   const loadRecipes = useCallback(async () => {
+    const request = ++loadRequestRef.current;
     setLoading(true);
     setError(null);
     try {
       const next = await window.electronAPI.workspaceRecipes.list();
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || request !== loadRequestRef.current) return;
       setRecipes(next);
       setSelectedId(prev => prev && next.some(recipe => recipe.id === prev) ? prev : next[0]?.id ?? null);
     } catch (err) {
-      if (mountedRef.current) setError(err instanceof Error ? err.message : String(err));
+      if (mountedRef.current && request === loadRequestRef.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      if (mountedRef.current) setLoading(false);
+      if (mountedRef.current && request === loadRequestRef.current) setLoading(false);
     }
   }, []);
 
@@ -181,6 +200,10 @@ export function WorkspaceRecipesDialog({
   }, [blocked, close]);
 
   const openSave = () => {
+    if (navigationLocked) {
+      setError('Show started sessions or close this dialog before saving another workspace. Closing keeps started sessions in the sidebar without applying the saved layout.');
+      return;
+    }
     setSaveOpen(true);
     setRecipeName('');
     setError(null);
@@ -211,19 +234,20 @@ export function WorkspaceRecipesDialog({
       setError(`Choose between 1 and ${MAX_RECIPE_SESSIONS} sessions to save.`);
       return;
     }
+    const request = ++captureRequestRef.current;
     setSaving('saving');
     setError(null);
     try {
       const recipe = await onCapture(name, ids);
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || request !== captureRequestRef.current) return;
       setRecipes(prev => [recipe, ...prev.filter(item => item.id !== recipe.id)]);
       setSelectedId(recipe.id);
       setSaveOpen(false);
       setRecipeName('');
     } catch (err) {
-      if (mountedRef.current) setError(err instanceof Error ? err.message : String(err));
+      if (mountedRef.current && request === captureRequestRef.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      if (mountedRef.current) setSaving('idle');
+      if (mountedRef.current && request === captureRequestRef.current) setSaving('idle');
     }
   };
 
@@ -233,28 +257,44 @@ export function WorkspaceRecipesDialog({
       setError(`Use a workspace name between 1 and ${MAX_RECIPE_NAME_LENGTH} characters.`);
       return;
     }
+    const request = ++mutationRequestRef.current;
+    setMutation('renaming');
     setError(null);
     try {
       const updated = await window.electronAPI.workspaceRecipes.rename(recipe.id, name);
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || request !== mutationRequestRef.current) return;
       setRecipes(prev => prev.map(item => item.id === recipe.id ? updated : item));
       setRenamingId(null);
     } catch (err) {
-      if (mountedRef.current) setError(err instanceof Error ? err.message : String(err));
+      if (mountedRef.current && request === mutationRequestRef.current) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mountedRef.current && request === mutationRequestRef.current) setMutation('idle');
     }
   };
 
   const handleDelete = async (recipe: WorkspaceRecipe) => {
+    const request = ++mutationRequestRef.current;
+    setMutation('deleting');
     setError(null);
     try {
       await window.electronAPI.workspaceRecipes.delete(recipe.id);
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || request !== mutationRequestRef.current) return;
       setRecipes(prev => prev.filter(item => item.id !== recipe.id));
       setSelectedId(prev => prev === recipe.id ? null : prev);
       setDeleteConfirmId(null);
     } catch (err) {
-      if (mountedRef.current) setError(err instanceof Error ? err.message : String(err));
+      if (mountedRef.current && request === mutationRequestRef.current) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mountedRef.current && request === mutationRequestRef.current) setMutation('idle');
     }
+  };
+
+  const selectRecipe = (id: string) => {
+    if (navigationLocked) {
+      setError('Show started sessions or close this dialog before switching recipes. Closing keeps started sessions in the sidebar without applying the saved layout.');
+      return;
+    }
+    setSelectedId(id);
   };
 
   const updateRow = (index: number, patch: Partial<OpenRow>) => {
@@ -277,36 +317,42 @@ export function WorkspaceRecipesDialog({
       setError('Choose at least one session to open.');
       return;
     }
+    const request = ++launchRequestRef.current;
     setError(null);
     setRows(prev => prev.map(row => ({ ...row, error: undefined })));
     setLaunchState('preparing');
     try {
       const prepared: PreparedWorkspaceRecipe = await window.electronAPI.workspaceRecipes.prepareOpen({ recipeId: selectedRecipe.id, selections });
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || request !== launchRequestRef.current) return;
       if (!prepared.ok) {
-        setRows(prev => mergeFailures(prev, prepared.failures));
+        const rowFailures = prepared.failures.filter(failure => failure.sessionIndex >= 0);
+        const globalFailures = prepared.failures.filter(failure => failure.sessionIndex < 0);
+        setRows(prev => mergeFailures(prev, rowFailures));
+        setError(globalFailures.length ? globalFailures.map(failure => failure.error).join(' ') : null);
         setLaunchState('error');
         return;
       }
       setLaunchPlan(prepared.plan);
       setLaunchState('launching');
-      const result = await onLaunch(prepared.plan, previous?.sessionIds);
-      if (!mountedRef.current) return;
-      setLaunchResult(result);
+      const priorResult = previous ?? launchResult ?? undefined;
+      const result = await onLaunch(prepared.plan, priorResult?.sessionIds);
+      if (!mountedRef.current || request !== launchRequestRef.current) return;
+      const mergedResult = mergeLaunchResults(priorResult, result);
+      setLaunchResult(mergedResult);
       setRows(prev => prev.map((row, index) => ({
         ...row,
-        disabledStarted: Boolean(result.sessionIds[index]) || row.disabledStarted,
-        selected: result.sessionIds[index] ? false : row.selected,
+        disabledStarted: Boolean(mergedResult.sessionIds[index]) || row.disabledStarted,
+        selected: mergedResult.sessionIds[index] ? false : row.selected,
         error: result.failures.find(failure => failure.sessionIndex === index)?.error,
       })));
-      if (!result.cancelled && result.failures.length === 0) {
+      if (!mergedResult.cancelled && result.failures.length === 0) {
         restoreFocusRef.current = false;
-        onFinish(prepared.plan, result);
+        onFinish(prepared.plan, mergedResult);
       } else {
         setLaunchState('partial');
       }
     } catch (err) {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || request !== launchRequestRef.current) return;
       setError(err instanceof Error ? err.message : String(err));
       setLaunchState('error');
     }
@@ -319,6 +365,7 @@ export function WorkspaceRecipesDialog({
   };
 
   const cancelLaunch = () => {
+    if (blocked) return;
     onCancelLaunch();
     setLaunchState('partial');
   };
@@ -346,28 +393,38 @@ export function WorkspaceRecipesDialog({
           <button className="dialog-close" aria-label="Close workspaces" onClick={close} disabled={blocked} type="button">&times;</button>
         </div>
         <div className="workspace-recipes-status" id="workspace-recipes-status" role="status" aria-live="polite">
-          {blocked ? 'Vault is asking for access. Finish that prompt before changing workspace recipes.'
+          {blocked ? 'Finish the connection or Vault prompt before changing workspace recipes.'
             : launchState === 'launching' || launching ? 'Starting selected sessions…'
             : loading ? 'Loading saved workspaces…'
             : `${recipes.length} saved workspace${recipes.length === 1 ? '' : 's'}.`}
         </div>
-        {error && <div className="workspace-recipes-alert" role="alert">{error}</div>}
+        {error && (
+          <div className="workspace-recipes-alert" role="alert">
+            <span>{error}</span>
+            {!loading && recipes.length === 0 && <button type="button" onClick={() => void loadRecipes()} disabled={blocked}>Retry load</button>}
+          </div>
+        )}
+        {navigationLocked && !error && (
+          <div className="workspace-recipes-alert" role="status">
+            Show started sessions or close this dialog before switching recipes or saving another workspace. Closing keeps started sessions in the sidebar without applying the saved layout.
+          </div>
+        )}
         <div className="workspace-recipes-grid">
           <aside className="workspace-recipes-list" aria-label="Saved workspaces">
-            <button className="form-btn form-btn--primary workspace-recipes-save-btn" type="button" onClick={openSave} disabled={controlsDisabled || sessions.length === 0}>
+            <button className="form-btn form-btn--primary workspace-recipes-save-btn" type="button" onClick={openSave} disabled={controlsDisabled || navigationLocked || sessions.length === 0}>
               Save current workspace
             </button>
             {recipes.length === 0 && !loading ? (
               <div className="workspace-recipes-empty">
                 <strong>No saved workspaces yet.</strong>
                 <span>Capture the sessions you use together, then open fresh conversations from the recipe later.</span>
-                <button className="form-btn" type="button" onClick={openSave} disabled={controlsDisabled || sessions.length === 0}>Save this workspace</button>
+                <button className="form-btn" type="button" onClick={openSave} disabled={controlsDisabled || navigationLocked || sessions.length === 0}>Save this workspace</button>
               </div>
             ) : (
               <ul className="workspace-recipes-items">
                 {recipes.map(recipe => (
                   <li key={recipe.id} className={`workspace-recipes-item ${recipe.id === selectedId ? 'workspace-recipes-item--selected' : ''}`}>
-                    <button type="button" className="workspace-recipes-item-main" onClick={() => setSelectedId(recipe.id)} disabled={controlsDisabled}>
+                    <button type="button" className="workspace-recipes-item-main" onClick={() => selectRecipe(recipe.id)} disabled={controlsDisabled || navigationLocked}>
                       <span className="workspace-recipes-item-name">{recipe.name}</span>
                       <span>{recipe.sessions.length} session{recipe.sessions.length === 1 ? '' : 's'} · {recipe.layout.mode}</span>
                       <span>Updated {formatDate(recipe.updatedAt)}</span>
@@ -375,19 +432,19 @@ export function WorkspaceRecipesDialog({
                     {renamingId === recipe.id ? (
                       <div className="workspace-recipes-inline-edit">
                         <input value={renameValue} maxLength={MAX_RECIPE_NAME_LENGTH} onChange={e => setRenameValue(e.target.value)} aria-label="Workspace name" disabled={controlsDisabled} />
-                        <button type="button" onClick={() => void handleRename(recipe)} disabled={controlsDisabled}>Save</button>
+                        <button type="button" onClick={() => void handleRename(recipe)} disabled={controlsDisabled || mutation !== 'idle'}>Save</button>
                         <button type="button" onClick={() => setRenamingId(null)} disabled={controlsDisabled}>Cancel</button>
                       </div>
                     ) : deleteConfirmId === recipe.id ? (
                       <div className="workspace-recipes-inline-edit workspace-recipes-delete-confirm">
                         <span>Delete this recipe?</span>
-                        <button type="button" onClick={() => void handleDelete(recipe)} disabled={controlsDisabled}>Delete</button>
+                        <button type="button" onClick={() => void handleDelete(recipe)} disabled={controlsDisabled || mutation !== 'idle'}>Delete</button>
                         <button type="button" onClick={() => setDeleteConfirmId(null)} disabled={controlsDisabled}>Keep</button>
                       </div>
                     ) : (
                       <div className="workspace-recipes-item-actions">
                         <button type="button" onClick={() => { setRenamingId(recipe.id); setRenameValue(recipe.name); }} disabled={controlsDisabled}>Rename</button>
-                        <button type="button" onClick={() => setDeleteConfirmId(recipe.id)} disabled={controlsDisabled}>Delete</button>
+                        <button type="button" onClick={() => setDeleteConfirmId(recipe.id)} disabled={controlsDisabled || mutation !== 'idle'}>Delete</button>
                       </div>
                     )}
                   </li>
@@ -449,7 +506,7 @@ export function WorkspaceRecipesDialog({
                         </label>
                         <div className="workspace-recipes-slot-meta">{slot.cliTool}{slot.helmEnabled ? ' · Helm' : ''}</div>
                         <label className="workspace-recipes-field">
-                          <span>{slot.environmentId && envById.get(slot.environmentId)?.type === 'coder' ? 'Coder workspace' : 'Working directory'}</span>
+                          <span>{knownEnv?.type === 'coder' ? 'Coder workspace' : 'Working directory'}</span>
                           <input value={row.workingDir} onChange={e => updateRow(index, { workingDir: e.target.value })} disabled={controlsDisabled || row.disabledStarted} />
                         </label>
                         <label className="workspace-recipes-field">
@@ -468,9 +525,9 @@ export function WorkspaceRecipesDialog({
                   })}
                 </div>
                 <div className="workspace-recipes-actions">
-                  {launchState === 'launching' || launching ? <button className="form-btn" type="button" onClick={cancelLaunch}>Cancel remaining</button> : null}
+                  {launchState === 'launching' || launching ? <button className="form-btn" type="button" onClick={cancelLaunch} disabled={blocked}>Cancel remaining</button> : null}
                   {launchState === 'partial' && launchResult ? <button className="form-btn" type="button" onClick={() => void startLaunch(launchResult)} disabled={controlsDisabled || selectionCount(rows) === 0}>Start remaining selected</button> : null}
-                  {launchState === 'partial' && launchResult && successfulCount(launchResult) > 0 ? <button className="form-btn form-btn--primary" type="button" onClick={finishPartial}>Show started sessions</button> : null}
+                  {launchState === 'partial' && launchResult && successfulCount(launchResult) > 0 ? <button className="form-btn form-btn--primary" type="button" onClick={finishPartial} disabled={controlsDisabled}>Show started sessions</button> : null}
                   <button className="form-btn form-btn--primary" type="button" onClick={() => void startLaunch()} disabled={controlsDisabled || selectionCount(rows) === 0}>Open selected sessions</button>
                 </div>
               </div>

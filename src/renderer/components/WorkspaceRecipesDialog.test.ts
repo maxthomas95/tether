@@ -51,8 +51,9 @@ function planFor(r: WorkspaceRecipe, selectedIndexes = [0, 1]): WorkspaceRecipeO
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>(r => { resolve = r; });
-  return { promise, resolve };
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((r, j) => { resolve = r; reject = j; });
+  return { promise, resolve, reject };
 }
 
 function installApi(recipes: WorkspaceRecipe[] = []) {
@@ -140,6 +141,28 @@ describe('WorkspaceRecipesDialog', () => {
     expect(host.textContent).toContain('Saved pair');
   });
 
+
+
+  it('enforces the 64-session save limit and allows deselect/select-all recovery', async () => {
+    const manySessions: SessionInfo[] = Array.from({ length: 65 }, (_, index) => ({
+      id: `s${index}`, environmentId: null, label: `Session ${index}`, workingDir: `repo-${index}`, state: 'running', createdAt: '2026-10-02T00:00:00Z', cliTool: 'codex',
+    }));
+    const onCapture = vi.fn().mockResolvedValue(recipe({ id: 'many', name: 'Many' }));
+    await renderDialog({ sessions: manySessions, onCapture });
+
+    clickText('Save this workspace');
+    expect(host.textContent).toContain('0/64 selected');
+    const name = host.querySelector<HTMLInputElement>('input[placeholder="Daily review"]')!;
+    act(() => setValue(name, 'Many'));
+    clickText('Save workspace');
+    expect(host.textContent).toContain('Choose between 1 and 64 sessions');
+
+    clickText('Select all');
+    expect(host.textContent).toContain('64/64 selected');
+    await act(async () => { clickText('Save workspace'); });
+    expect(onCapture).toHaveBeenCalledWith('Many', manySessions.slice(0, 64).map(session => session.id));
+  });
+
   it('renames and deletes recipes with inline confirmation', async () => {
     installApi([recipe()]);
     await renderDialog();
@@ -154,6 +177,37 @@ describe('WorkspaceRecipesDialog', () => {
     clickText('Delete');
     expect(host.textContent).toContain('Delete this recipe?');
     await act(async () => { clickText('Delete'); });
+    expect(api.delete).toHaveBeenCalledWith('r1');
+  });
+
+
+
+  it('serializes rename and delete mutations and reports failures', async () => {
+    installApi([recipe()]);
+    const pendingRename = deferred<WorkspaceRecipe>();
+    api.rename.mockReturnValueOnce(pendingRename.promise);
+    await renderDialog();
+
+    clickText('Rename');
+    const input = host.querySelector<HTMLInputElement>('input[aria-label="Workspace name"]')!;
+    act(() => setValue(input, 'Busy rename'));
+    act(() => clickText('Save'));
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Save')!;
+    expect(saveButton.disabled).toBe(true);
+    pendingRename.reject(new Error('Name already exists'));
+    await act(async () => { await Promise.resolve(); });
+    expect(host.textContent).toContain('Name already exists');
+
+    api.rename.mockResolvedValueOnce({ ...recipe(), name: 'Busy rename' });
+    await act(async () => { clickText('Save'); });
+    clickText('Delete');
+    const pendingDelete = deferred<void>();
+    api.delete.mockReturnValueOnce(pendingDelete.promise);
+    act(() => clickText('Delete'));
+    const deleteButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Delete')!;
+    expect(deleteButton.disabled).toBe(true);
+    pendingDelete.resolve();
+    await act(async () => { await Promise.resolve(); });
     expect(api.delete).toHaveBeenCalledWith('r1');
   });
 
@@ -176,6 +230,29 @@ describe('WorkspaceRecipesDialog', () => {
     expect(host.textContent).toContain('Vault login required');
   });
 
+
+
+  it('shows global prepare failures and offers load retry after list errors', async () => {
+    const saved = recipe();
+    installApi([saved]);
+    api.prepareOpen.mockResolvedValue({ ok: false, failures: [{ sessionIndex: -1, label: 'Recipe', error: 'Snapshot is stale' }] } satisfies PreparedWorkspaceRecipe);
+    await renderDialog({ onLaunch: vi.fn() });
+    await act(async () => { clickText('Open selected sessions'); });
+    expect(host.textContent).toContain('Snapshot is stale');
+
+    installApi([]);
+    api.list.mockRejectedValueOnce(new Error('Cannot read recipes')).mockResolvedValueOnce([saved]);
+    act(() => root.unmount());
+    root = createRoot(host);
+    await act(async () => { root.render(createElement(WorkspaceRecipesDialog, baseProps())); });
+    await act(async () => { await Promise.resolve(); });
+    expect(host.textContent).toContain('Cannot read recipes');
+    await act(async () => { clickText('Retry load'); });
+    await act(async () => { await Promise.resolve(); });
+    expect(api.list).toHaveBeenCalledTimes(2);
+    expect(host.textContent).toContain('Daily workspace');
+  });
+
   it('supports local remapping and shows missing environment warnings until remapped', async () => {
     const saved = recipe();
     installApi([saved]);
@@ -189,10 +266,13 @@ describe('WorkspaceRecipesDialog', () => {
     const checkboxes = host.querySelectorAll<HTMLInputElement>('.workspace-recipes-slot-check input');
     act(() => checkboxes[0].click());
     const selects = host.querySelectorAll<HTMLSelectElement>('.workspace-recipes-slot select');
-    act(() => setValue(selects[1], ''));
+    act(() => setValue(selects[1], 'coder-env'));
+    expect(host.textContent).toContain('Coder workspace');
+    const dirs = host.querySelectorAll<HTMLInputElement>('.workspace-recipes-slot input:not([type="checkbox"])');
+    act(() => setValue(dirs[1], 'coder-workspace'));
 
     await act(async () => { clickText('Open selected sessions'); });
-    expect(api.prepareOpen).toHaveBeenCalledWith({ recipeId: 'r1', selections: [{ sessionIndex: 1, workingDir: 'old-remote', environmentId: undefined }] });
+    expect(api.prepareOpen).toHaveBeenCalledWith({ recipeId: 'r1', selections: [{ sessionIndex: 1, workingDir: 'coder-workspace', environmentId: 'coder-env' }] });
     expect(onLaunch).toHaveBeenCalledWith(plan, undefined);
     expect(onFinish).toHaveBeenCalled();
   });
@@ -220,6 +300,31 @@ describe('WorkspaceRecipesDialog', () => {
     expect(onFinish).toHaveBeenLastCalledWith(retryPlan, done);
   });
 
+
+
+  it('preserves started ids through prepare failures and a generic retry', async () => {
+    const saved = recipe();
+    const firstPlan = planFor(saved);
+    const retryPlan = planFor(saved, [1]);
+    installApi([saved]);
+    api.prepareOpen
+      .mockResolvedValueOnce({ ok: true, plan: firstPlan } satisfies PreparedWorkspaceRecipe)
+      .mockResolvedValueOnce({ ok: false, failures: [{ sessionIndex: -1, label: 'Recipe', error: 'Try again after reconnecting' }] } satisfies PreparedWorkspaceRecipe)
+      .mockResolvedValueOnce({ ok: true, plan: retryPlan } satisfies PreparedWorkspaceRecipe);
+    const partial: WorkspaceRecipeLaunchResult = { sessionIds: ['new-s1', null], failures: [{ sessionIndex: 1, label: 'Remote task', error: 'SSH offline' }], cancelled: false };
+    const doneRemaining: WorkspaceRecipeLaunchResult = { sessionIds: [null, 'new-s2'], failures: [], cancelled: false };
+    const onLaunch = vi.fn().mockResolvedValueOnce(partial).mockResolvedValueOnce(doneRemaining);
+    const onFinish = vi.fn();
+    await renderDialog({ onLaunch, onFinish });
+
+    await act(async () => { clickText('Open selected sessions'); });
+    await act(async () => { clickText('Start remaining selected'); });
+    expect(host.textContent).toContain('Try again after reconnecting');
+    await act(async () => { clickText('Open selected sessions'); });
+    expect(onLaunch).toHaveBeenLastCalledWith(retryPlan, ['new-s1', null]);
+    expect(onFinish).toHaveBeenLastCalledWith(retryPlan, { sessionIds: ['new-s1', 'new-s2'], failures: [], cancelled: false });
+  });
+
   it('cancels remaining launches and respects busy or blocked states', async () => {
     const saved = recipe();
     installApi([saved]);
@@ -241,6 +346,47 @@ describe('WorkspaceRecipesDialog', () => {
     });
     expect(props.onClose).not.toHaveBeenCalled();
     pending.resolve({ sessionIds: [null, null], failures: [], cancelled: true });
+  });
+
+
+
+  it('keeps started sessions pending finish and blocks recipe switching or saving', async () => {
+    const saved = recipe();
+    const other = recipe({ id: 'r2', name: 'Other workspace' });
+    installApi([saved, other]);
+    api.prepareOpen.mockResolvedValue({ ok: true, plan: planFor(saved) } satisfies PreparedWorkspaceRecipe);
+    const partial: WorkspaceRecipeLaunchResult = { sessionIds: ['new-s1', null], failures: [{ sessionIndex: 1, label: 'Remote task', error: 'SSH offline' }], cancelled: false };
+    await renderDialog({ onLaunch: vi.fn().mockResolvedValue(partial) });
+
+    await act(async () => { clickText('Open selected sessions'); });
+    expect(host.textContent).toContain('Show started sessions or close this dialog before switching recipes or saving another workspace');
+    const otherButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Other workspace'))!;
+    expect(otherButton.disabled).toBe(true);
+    const save = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Save current workspace')!;
+    expect(save.disabled).toBe(true);
+  });
+
+  it('ignores stale load and pending async completions after unmount', async () => {
+    const firstLoad = deferred<WorkspaceRecipe[]>();
+    installApi([]);
+    api.list.mockReturnValueOnce(firstLoad.promise);
+    await act(async () => { root.render(createElement(WorkspaceRecipesDialog, baseProps())); });
+    act(() => root.unmount());
+    firstLoad.resolve([recipe({ id: 'old', name: 'Old' })]);
+    await act(async () => { await Promise.resolve(); });
+    expect(host.textContent).not.toContain('Old');
+
+    root = createRoot(host);
+    api.list.mockResolvedValue([]);
+    const capture = deferred<WorkspaceRecipe>();
+    await renderDialog({ onCapture: vi.fn(() => capture.promise) });
+    clickText('Save this workspace');
+    const name = host.querySelector<HTMLInputElement>('input[placeholder="Daily review"]')!;
+    act(() => setValue(name, 'Pending'));
+    act(() => clickText('Save workspace'));
+    act(() => root.unmount());
+    capture.resolve(recipe({ id: 'pending', name: 'Pending' }));
+    await act(async () => { await Promise.resolve(); });
   });
 
   it('closes with Escape when not blocked', async () => {
