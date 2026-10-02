@@ -82,6 +82,30 @@ const codexHeader = (id: string, source: unknown = 'cli') => JSON.stringify({ ty
 afterEach(() => { for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
 
 describe('remote usage probe', () => {
+  it('sanitizes request usage, excludes inherited requests and feeds the shared accounting parser', () => {
+    const timestamp = '2026-10-01T23:59:00Z';
+    const counters = { input_tokens: 100, cached_input_tokens: 20, cache_write_input_tokens: 10,
+      output_tokens: 8, reasoning_output_tokens: 2, total_tokens: 108, secret: 'private' };
+    const record = (thread: string) => ({ type: 'token_usage_record', timestamp, payload: {
+      thread_id: thread, response_id: 'private-response', prompt: 'private prompt',
+      usage: counters, thread_token_usage: counters, turn_token_usage: { private: true },
+    } });
+    const data = codexHeader('a') + [
+      { type: 'turn_context', timestamp, payload: { model: 'gpt-5-codex', instructions: 'private' } },
+      record('parent'), record('a'),
+      { type: 'event_msg', timestamp, payload: { type: 'token_count', info: { total_token_usage: counters, last_token_usage: counters } } },
+    ].map(e => JSON.stringify(e)).join('\n') + '\n';
+    const f = fixture('codex', data);
+    const source = probe(f.request, { '10': { marker: 'pane-a', files: [f.file] } }).source;
+    const result = probe({ ...f.request, source, cursor: { offset: 0, identity: '' } });
+    expect(result.text).not.toMatch(/private|secret|parent|response_id|turn_token_usage/);
+    const parsed = parseCodexUsageText(result.text!, { startOffset: 0, priorModel: null, nativeSessionId: 'a' });
+    expect(parsed.messages).toHaveLength(1);
+    expect(parsed.messages[0]).toMatchObject({ inputTokens: 70, cacheReadTokens: 20,
+      cacheCreation5m: 10, outputTokens: 8, reasoningTokens: 2 });
+    expect(parsed.requestUsage?.tokenUsage.totalTokens).toBe(108);
+  });
+
   it('strips conversation content on the remote and advances across UTF-8/partial records', () => {
     const prefix = JSON.stringify({ type: 'user', message: 'private prompt 🍁' }) + '\n' + claude(10) + '\n';
     const f = fixture('claude', prefix + claude(20).slice(0, -2));

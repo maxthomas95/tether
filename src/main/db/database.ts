@@ -155,6 +155,11 @@ export interface PersistedSessionUsage {
     outputTokens: number;
     reasoningOutputTokens: number;
     totalTokens: number;
+    cacheWriteInputTokens?: number;
+  } | null;
+  codexRequestUsage?: {
+    nativeSessionId: string;
+    tokenUsage: NonNullable<PersistedSessionUsage['codexTokenUsage']>;
   } | null;
   messageCount: number;
   firstMessageAt: string | null;

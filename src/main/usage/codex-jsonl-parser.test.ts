@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { describe, expect, it, afterEach } from 'vitest';
-import { parseCodexJsonl } from './codex-jsonl-parser';
+import { parseCodexJsonl, parseCodexUsageText } from './codex-jsonl-parser';
 
 const tempDirs: string[] = [];
 
@@ -73,6 +73,25 @@ function turnContext(model: string, opts: { timestamp?: string; effort?: string;
   };
 }
 
+function requestRecord(opts: {
+  thread?: string; input?: number; cached?: number; writes?: number;
+  output?: number; reasoning?: number; cumulativeInput?: number; cumulativeOutput?: number;
+  timestamp?: string;
+} = {}): object {
+  const usage = {
+    input_tokens: opts.input ?? 100, cached_input_tokens: opts.cached ?? 0,
+    cache_write_input_tokens: opts.writes ?? 0, output_tokens: opts.output ?? 10,
+    reasoning_output_tokens: opts.reasoning ?? 0,
+    total_tokens: (opts.input ?? 100) + (opts.output ?? 10),
+  };
+  return { type: 'token_usage_record', timestamp: opts.timestamp ?? '2026-05-09T03:28:10.172Z', payload: {
+    thread_id: opts.thread ?? 'native', usage,
+    thread_token_usage: { ...usage, input_tokens: opts.cumulativeInput ?? usage.input_tokens,
+      output_tokens: opts.cumulativeOutput ?? usage.output_tokens,
+      total_tokens: (opts.cumulativeInput ?? usage.input_tokens) + (opts.cumulativeOutput ?? usage.output_tokens) },
+  } };
+}
+
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -80,6 +99,96 @@ afterEach(() => {
 });
 
 describe('parseCodexJsonl', () => {
+  it('counts compaction requests absent from token_count without billing context reports again', () => {
+    const text = [
+      turnContext('unknown-model-for-default-pricing'),
+      requestRecord({ input: 1000, cached: 200, writes: 100, output: 50, reasoning: 10 }),
+      tokenCountEvent({ total: 7988, cumulative: {} }),
+      requestRecord({ input: 100, output: 10, cumulativeInput: 1100, cumulativeOutput: 60 }),
+      tokenCountEvent({ input: 100, output: 10, cumulative: { input: 100, output: 10 } }),
+      tokenCountEvent({ input: 100, output: 10, cumulative: { input: 100, output: 10 } }),
+    ].map(e => JSON.stringify(e)).join('\n') + '\n';
+    const result = parseCodexUsageText(text, { startOffset: 0, priorModel: null });
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[0]).toMatchObject({ inputTokens: 700, cacheReadTokens: 200,
+      cacheCreation5m: 100, outputTokens: 50, reasoningTokens: 10 });
+    expect(result.messages[0].cost).toBeCloseTo(0.003285, 10);
+    expect(result.contextUsedTokens).toBe(110);
+    expect(result.tokenUsage?.totalTokens).toBe(110);
+    expect(result.requestUsage?.tokenUsage.totalTokens).toBe(1160);
+  });
+
+  it('keeps request checkpoints across partial writes, restarts and older repeated records', () => {
+    const file = path.join(makeTempDir(), 'rollout.jsonl');
+    writeJsonl(file, [turnContext('gpt-5-codex'), requestRecord()]);
+    const first = parseCodexJsonl(file, { startOffset: 0, priorModel: null });
+    const next = JSON.stringify(requestRecord({ cumulativeInput: 200, cumulativeOutput: 20 }));
+    fs.appendFileSync(file, next.slice(0, 25));
+    const partial = parseCodexJsonl(file, { startOffset: first.newByteOffset,
+      priorModel: first.currentModel, priorRequestUsage: first.requestUsage });
+    expect(partial.requestUsage).toEqual(first.requestUsage);
+    expect(partial.newByteOffset).toBe(first.newByteOffset);
+    fs.appendFileSync(file, next.slice(25) + '\n' + JSON.stringify(requestRecord()) + '\n');
+    const second = parseCodexJsonl(file, { startOffset: partial.newByteOffset,
+      priorModel: partial.currentModel, priorRequestUsage: partial.requestUsage });
+    expect(second.messages).toHaveLength(1);
+    expect(second.requestUsage?.tokenUsage.totalTokens).toBe(220);
+    fs.appendFileSync(file, next + '\n');
+    expect(parseCodexJsonl(file, { startOffset: second.newByteOffset,
+      priorModel: second.currentModel, priorRequestUsage: second.requestUsage }).messages).toEqual([]);
+    expect(parseCodexJsonl(file, { startOffset: fs.statSync(file).size,
+      priorModel: second.currentModel, priorRequestUsage: second.requestUsage }).requestUsage).toEqual(second.requestUsage);
+  });
+
+  it('ignores parent request records and copied headers in a subagent rollout', () => {
+    const text = [
+      { type: 'session_meta', payload: { id: 'child' } },
+      { type: 'session_meta', payload: { id: 'parent' } },
+      turnContext('gpt-5-codex'),
+      requestRecord({ thread: 'parent', input: 900 }),
+      requestRecord({ thread: 'child', input: 20 }),
+    ].map(e => JSON.stringify(e)).join('\n') + '\n';
+    const result = parseCodexUsageText(text, { startOffset: 0, priorModel: null });
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0].inputTokens).toBe(20);
+    expect(result.requestUsage?.nativeSessionId).toBe('child');
+  });
+
+  it('handles a request record arriving after its legacy counter without charging it twice', () => {
+    const first = parseCodexUsageText(JSON.stringify(tokenCountEvent({
+      input: 100, output: 10, cumulative: { input: 100, output: 10 },
+    })) + '\n', { startOffset: 0, priorModel: 'gpt-5-codex' });
+    const second = parseCodexUsageText(JSON.stringify(requestRecord()) + '\n', {
+      startOffset: first.newByteOffset, priorModel: first.currentModel, priorTokenUsage: first.tokenUsage,
+    });
+    expect(second.messages).toEqual([]);
+    expect(second.requestUsage?.tokenUsage.totalTokens).toBe(110);
+  });
+
+  it('retains older event-only usage before a transcript starts reporting request records', () => {
+    const text = [
+      tokenCountEvent({ input: 50, output: 5, cumulative: { input: 50, output: 5 } }),
+      requestRecord({ input: 100, output: 10, cumulativeInput: 150, cumulativeOutput: 15 }),
+      tokenCountEvent({ input: 100, output: 10, cumulative: { input: 150, output: 15 } }),
+    ].map(e => JSON.stringify(e)).join('\n') + '\n';
+    const result = parseCodexUsageText(text, { startOffset: 0, priorModel: 'gpt-5-codex' });
+    expect(result.messages.map(m => m.inputTokens)).toEqual([50, 100]);
+  });
+
+  it.each([
+    { timestamp: 'invalid' },
+    { payload: { thread_id: 123 } },
+    { payload: { thread_id: 'native', usage: { input_tokens: -1 } } },
+    { payload: { thread_id: 'native', usage: { input_tokens: 10, cached_input_tokens: 8, cache_write_input_tokens: 5 }, thread_token_usage: { input_tokens: 100 } } },
+    { payload: { thread_id: 'native', usage: { input_tokens: 100, output_tokens: 10 }, thread_token_usage: { input_tokens: 10, output_tokens: 1 } } },
+  ])('rejects malformed request records without suppressing valid legacy usage: %j', (override) => {
+    const text = [ { ...requestRecord(), ...override }, tokenCountEvent({ input: 20, output: 2 }) ]
+      .map(e => JSON.stringify(e)).join('\n') + '\n';
+    const result = parseCodexUsageText(text, { startOffset: 0, priorModel: 'gpt-5-codex' });
+    expect(result.requestUsage).toBeNull();
+    expect(result.messages.map(m => m.inputTokens)).toEqual([20]);
+  });
+
   it('attributes token deltas to the most recent turn_context model', () => {
     const dir = makeTempDir();
     const file = path.join(dir, 'rollout.jsonl');

@@ -31,7 +31,7 @@ export interface RemoteUsageReply {
   id?: number;
   status: 'ready' | 'pending';
   source?: RemoteUsageSource;
-  /** Sanitized JSONL: only model, timestamp, and numeric usage fields. */
+  /** Sanitized JSONL: only model, timestamp, numeric usage and native thread identity. */
   text?: string;
   offset?: number;
   reset?: boolean;

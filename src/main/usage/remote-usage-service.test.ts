@@ -26,6 +26,27 @@ beforeEach(() => { vi.useFakeTimers(); getDb().usageSummaries = []; usage = new 
 afterEach(() => { remote?.dispose(); usage.dispose(); vi.useRealTimers(); });
 
 describe('remote usage collection lifecycle', () => {
+  it('persists request accounting across remote restarts and resets it with a replaced file', () => {
+    const key = 'remote:codex';
+    const record = (input: number, cumulative: number) => JSON.stringify({
+      type: 'token_usage_record', timestamp: '2026-10-02T00:01:00Z', payload: { thread_id: 'native',
+        usage: { input_tokens: input, output_tokens: 10 },
+        thread_token_usage: { input_tokens: cumulative, output_tokens: cumulative / 10 },
+      },
+    }) + '\n';
+    usage.trackRemote(key, '/work', 'codex', 'env', source);
+    usage.applyRemote(key, { ...reply, offset: 100, text: record(100, 100) });
+    const restarted = new UsageService();
+    try {
+      expect(restarted.trackRemote(key, '/work', 'codex', 'env', source)).toEqual({ offset: 100, identity: 'inode' });
+      restarted.applyRemote(key, { ...reply, offset: 200, text: record(100, 100) + record(100, 200) });
+      expect(restarted.getSessionUsage(key)).toMatchObject({ inputTokens: 200, outputTokens: 20, messageCount: 2 });
+      expect(getDb().usageSummaries[0].codexRequestUsage?.tokenUsage.totalTokens).toBe(220);
+      restarted.applyRemote(key, { ...reply, offset: 50, reset: true, text: record(100, 100) });
+      expect(restarted.getSessionUsage(key)).toMatchObject({ inputTokens: 100, outputTokens: 10, messageCount: 1 });
+    } finally { restarted.dispose(); }
+  });
+
   it('persists cursors, retries disconnects, and never recounts a chunk', async () => {
     const poll = vi.fn()
       .mockResolvedValueOnce({ status: 'ready', source })
