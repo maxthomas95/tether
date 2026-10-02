@@ -213,8 +213,8 @@ export function App() {
   // Gate the persist effect until the restore effect has finished reading the
   // saved workspace. Otherwise the initial-mount persist (with sessions=[])
   // races ahead of the multi-IPC restore chain and clobbers the saved
-  // workspace before workspace.load() can read it. Ref (not state) so the
-  // flag flip doesn't itself trigger a persist with empty sessions.
+  // workspace before workspace.load() can read it. Persistence starts once
+  // the restored sessions and any failed entries have been accounted for.
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const savedCanvas = useMemo(() => saveCanvas(canvasState, sessions.map(s => s.id)), [canvasState, sessions]);
   const effectiveMaxPanes = canvasEnabled ? Number.POSITIVE_INFINITY : enablePaneSplitting ? maxPanes : 1;
