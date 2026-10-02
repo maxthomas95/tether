@@ -1923,20 +1923,6 @@ export function App() {
           <button className="new-session-btn" onClick={() => setSessionDialogOpen(true)}>
             <Icon name="plus" /> New session
           </button>
-          {waitingCount > 0 && (
-            <button
-              type="button"
-              className="attention-queue-pill"
-              onClick={handleJumpToNextWaiting}
-              title={formatChord(resolvedBindings['session.nextWaiting'])
-                ? `Jump to next waiting session (${formatChord(resolvedBindings['session.nextWaiting'])})`
-                : 'Jump to next waiting session'}
-              aria-label={`${waitingCount} session${waitingCount === 1 ? '' : 's'} waiting — jump to next`}
-            >
-              <span className="status-dot status-dot--waiting" aria-hidden="true" />
-              {waitingCount} waiting
-            </button>
-          )}
         </div>
         <div className="sidebar-section-heading">
           <span>Environments</span>
@@ -2086,6 +2072,20 @@ export function App() {
           onConfigure={() => { setSettingsInitialSection('integrations'); setSettingsOpen(true); }} />
         <div className="sidebar-utilities">
           <button className="sidebar-settings" onClick={() => setSettingsOpen(true)}><Icon name="settings" /> Settings</button>
+          {waitingCount > 0 && (
+            <button
+              type="button"
+              className="attention-queue-pill"
+              onClick={handleJumpToNextWaiting}
+              title={formatChord(resolvedBindings['session.nextWaiting'])
+                ? `Jump to next waiting session (${formatChord(resolvedBindings['session.nextWaiting'])})`
+                : 'Jump to next waiting session'}
+              aria-label={`${waitingCount} session${waitingCount === 1 ? '' : 's'} waiting — jump to next`}
+            >
+              <span className="status-dot status-dot--waiting" aria-hidden="true" />
+              <span className="attention-queue-label">{waitingCount} waiting</span>
+            </button>
+          )}
         </div>
       </aside>
       {sidebarVisible && <SidebarResizeHandle onResize={setSidebarWidth} />}
