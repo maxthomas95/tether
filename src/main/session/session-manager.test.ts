@@ -148,6 +148,7 @@ vi.mock('../coder/workspace-service', () => ({
 
 import { SessionManager, setHelmChildCallbacks } from './session-manager';
 import { remoteUsageService } from '../usage/remote-usage-service';
+import { buildSessionRestartOptions } from '../../renderer/utils/session-restart';
 
 function callbacks() {
   return {
@@ -227,6 +228,37 @@ describe('SessionManager', () => {
     transportHarness.state.startImpl.mockRejectedValueOnce(new Error('launch failed'));
     await expect(manager.createSession({ environmentId: 'env', cliTool: 'codex', workingDir: '/work' }, callbacks())).rejects.toThrow('launch failed');
     expect(remoteUsageService.start).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['ssh', 'claude'], ['ssh', 'codex'], ['coder', 'claude'], ['coder', 'codex'],
+  ] as const)('resumes the exact %s/%s conversation after disconnect, with hooks off', async (transport, cli) => {
+    envState.type = transport;
+    const workingDir = transport === 'coder' ? 'workspace::/work' : '/work';
+    const original = await manager.createSession({ environmentId: 'env', cliTool: cli, workingDir }, callbacks());
+    const nativeId = cli === 'claude' ? original.toolSessionId! : '019a0000-0000-7000-8000-000000000001';
+    vi.mocked(remoteUsageService.start).mock.calls[0][0].onSource('remote:original', nativeId);
+    transportHarness.state.instances[0].onExit.mock.calls[0][0]({ exitCode: 1 });
+
+    // Another conversation in the same directory must not affect recovery.
+    await manager.createSession({ environmentId: 'env', cliTool: cli, workingDir }, callbacks());
+    const restarted = await manager.createSession(buildSessionRestartOptions(original.toInfo()), callbacks());
+    const start = transportHarness.state.instances[2].start.mock.calls[0][0];
+    expect(restarted.id).not.toBe(original.id);
+    expect(start.resumeToolSessionId).toBe(nativeId);
+    expect(start.toolSessionId).toBe(nativeId);
+    expect(start.resumeClaudeSessionId).toBe(cli === 'claude' ? nativeId : undefined);
+    expect(restarted.toInfo()).toMatchObject({ toolSessionId: nativeId, resumed: true });
+    expect(vi.mocked(remoteUsageService.start).mock.calls[2][0].nativeSessionId).toBe(nativeId);
+  });
+
+  it.each(['ssh', 'coder'] as const)('restores a legacy Claude conversation id on %s', async transport => {
+    envState.type = transport;
+    const nativeId = '019a0000-0000-7000-8000-000000000002';
+    const session = await manager.createSession({ environmentId: 'env', workingDir: '/work',
+      resumeClaudeSessionId: nativeId }, callbacks());
+    expect(transportHarness.state.instances[0].start.mock.calls[0][0].resumeToolSessionId).toBe(nativeId);
+    expect(session.toInfo()).toMatchObject({ claudeSessionId: nativeId, toolSessionId: nativeId, resumed: true });
   });
 
   describe('spawn_session helm handler — cliTool', () => {

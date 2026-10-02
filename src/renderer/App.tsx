@@ -48,6 +48,7 @@ import { toolSupportsHistory } from '../shared/cli-tools';
 import { onKeyActivate, stopPropagationOnKey } from './utils/a11y';
 import { extractErrorMessage, formatSessionExitMessage } from './utils/errors';
 import { nextDuplicateLabel } from './utils/duplicate-label';
+import { buildSessionRestartOptions } from './utils/session-restart';
 import { selectNextWaiting } from './utils/attention-queue';
 import { readLastLines } from './utils/terminal-preview';
 import type { LayoutNode } from '../shared/layout-types';
@@ -1093,20 +1094,21 @@ export function App() {
   }, [termManager, layoutDispatch, markExpectedSessionExit, notifyError, clearPendingAckDrop]);
 
   const recreateFromSnapshot = useCallback((snap: SessionInfo) => {
+    const opts = buildSessionRestartOptions(snap);
     handleCreateSession(
-      snap.workingDir,
-      snap.label,
-      snap.environmentId || undefined,
+      opts.workingDir,
+      opts.label || '',
+      opts.environmentId,
       undefined,
       undefined,
+      opts.resumeToolSessionId,
       undefined,
       undefined,
+      opts.cliTool,
+      opts.customCliBinary,
       undefined,
-      snap.cliTool,
-      snap.customCliBinary,
-      undefined,
-      snap.worktreeOf,
-      snap.helmEnabled,
+      opts.worktreeOf,
+      opts.helmEnabled,
     );
   }, [handleCreateSession]);
 
@@ -1708,23 +1710,14 @@ export function App() {
   }, [enablePaneSplitting, layoutState.root, layoutState.focusedPaneId, layoutDispatch, canvasEnabled]);
 
   /**
-   * Defensive recovery for a dead session inside a layout: spawn a fresh
-   * session with the same params and swap it into the existing pane so the
-   * layout slot is preserved. Old session is cleaned up quietly.
+   * Recover a dead session in its existing pane, resuming its conversation
+   * when the native id is known. Old session is cleaned up quietly.
    */
   const handleRestartInPane = useCallback(async (paneId: string, deadSessionId: string) => {
     const dead = sessions.find(s => s.id === deadSessionId);
     if (!dead) return;
     try {
-      const createOpts: CreateSessionOptions = {
-        workingDir: dead.workingDir,
-        label: dead.label,
-        environmentId: dead.environmentId || undefined,
-        cliTool: dead.cliTool,
-        customCliBinary: dead.customCliBinary || undefined,
-        worktreeOf: dead.worktreeOf,
-        helmEnabled: dead.helmEnabled,
-      };
+      const createOpts = buildSessionRestartOptions(dead);
       const fresh = await window.electronAPI.session.create(createOpts);
       termManager.getOrCreate(fresh.id);
       setSessions(prev => [...prev.filter(s => s.id !== deadSessionId), fresh]);

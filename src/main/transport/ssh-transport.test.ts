@@ -205,6 +205,17 @@ describe('SSHTransport', () => {
     expect(writes).toContain("cd ~/'repo with spaces'");
   });
 
+  it.each(['claude', 'codex'] as const)('launches %s with the exact resume id without a picker', async cliTool => {
+    const t = new SSHTransport(baseConfig());
+    const { stream } = await startConnected(t, baseOptions({ cliTool, binaryName: cliTool,
+      toolSessionId: 'saved-id', resumeToolSessionId: 'saved-id' }));
+    const writes = stream.write.mock.calls.map(c => c[0]).join('');
+    expect(writes).toContain(cliTool === 'claude'
+      ? "'claude' '--resume' 'saved-id'" : "'codex' 'resume' 'saved-id'");
+    expect(writes).not.toContain('--session-id');
+    expect(writes).not.toContain('--last');
+  });
+
   it('shell-quotes launch values with metacharacters', async () => {
     const t = new SSHTransport(baseConfig());
     const { stream } = await startConnected(t, baseOptions({
