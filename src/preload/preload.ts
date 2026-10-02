@@ -51,6 +51,10 @@ const api: TetherAPI = {
     account: () => ipcRenderer.invoke(IPC.CODEX_ACCOUNT),
     configuration: (sessionId?: string) => ipcRenderer.invoke(IPC.CODEX_CONFIGURATION, sessionId),
   },
+  pip: {
+    comment: (request) => ipcRenderer.invoke(IPC.PIP_COMMENT, request),
+    cancelComment: () => ipcRenderer.invoke(IPC.PIP_CANCEL_COMMENT),
+  },
   platform: process.platform,
   homeDir: process.env.USERPROFILE || process.env.HOME || '',
 

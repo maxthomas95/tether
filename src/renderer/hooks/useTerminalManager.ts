@@ -6,6 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { PaneId } from '../../shared/layout-types';
 import { decodeOsc52Write } from '../utils/osc52';
 import { DEFAULT_TERMINAL_FONT, loadTerminalFont } from '../styles/terminal-fonts';
+import { reportPipActivity } from '../lib/pip-activity';
 
 interface ManagedTerminal {
   terminal: Terminal;
@@ -260,6 +261,14 @@ export function useTerminalManager(
     // Wire up input forwarding
     terminal.onData((data: string) => {
       sendInput(sessionId, data);
+      reportPipActivity(sessionId);
+    });
+    terminal.onKey(({ domEvent }) => {
+      if (domEvent.key === 'Enter' && !domEvent.shiftKey && !domEvent.ctrlKey && !domEvent.altKey && !domEvent.metaKey) {
+        // xterm fires onKey before onData. Finish the typing reaction after
+        // that input signal without delaying or changing the PTY write.
+        queueMicrotask(() => reportPipActivity(sessionId, true));
+      }
     });
 
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {

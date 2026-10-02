@@ -11,7 +11,7 @@ updates** for installation methods and cancellation behavior.
 
 A **session** in Tether is a running CLI process in a specific directory and environment. You can have many sessions open at once, each with its own terminal. Tether is a "dumb pipe" — the PTY stream flows byte-for-byte into the terminal; nothing is parsed, rewritten, or intercepted.
 
-The optional **[Pip sidebar pet](settings.md#pip-sidebar-pet)** follows the focused session and reacts to its status. Enable it from **View → Pip Sidebar Pet**. Its **waiting** button opens another session that needs input, with permission prompts first.
+The optional **[Pip sidebar pet](settings.md#pip-sidebar-pet)** follows the focused session, reacts to its status, and taps a tiny keyboard while you type. Enable it from **View → Pip Sidebar Pet**. Its **waiting** button opens another session that needs input, with permission prompts first. Optional AI quips and submitted-prompt sharing have separate switches in Pip's **Personality & comments** controls.
 
 ## Creating Sessions
 

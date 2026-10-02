@@ -2,8 +2,8 @@ import type { SessionInfo } from '../../shared/types';
 import type { PipSettings } from './pip-settings';
 
 export type PipSession = Pick<SessionInfo, 'id' | 'label' | 'workingDir' | 'state' | 'waitingReason'>;
-export type PipMood = 'curious' | 'busy' | 'permission' | 'waiting' | 'happy' | 'sleepy' | 'dizzy' | 'concerned';
-export type PipEventKind = 'switch' | 'dizzy' | 'working' | 'permission' | 'ready' | 'idle' | 'stopped' | 'attention' | 'pet' | 'nap';
+export type PipMood = 'curious' | 'busy' | 'permission' | 'waiting' | 'happy' | 'sleepy' | 'dizzy' | 'concerned' | 'typing';
+export type PipEventKind = 'switch' | 'dizzy' | 'working' | 'permission' | 'ready' | 'idle' | 'stopped' | 'attention' | 'pet' | 'nap' | 'submitted';
 export interface PipEvent { kind: PipEventKind; label: string; }
 export interface PipReaction { mood: PipMood; emote: string; line: string; }
 
@@ -28,9 +28,11 @@ export const PIP_MOOD_LABELS: Record<PipMood, string> = {
   curious: 'Keeping you company', busy: 'Supervising', permission: 'Waiting with you',
   waiting: 'Ready when you are', happy: 'Very pleased', sleepy: 'On nap duty',
   dizzy: 'Catching up', concerned: 'Checking in',
+  typing: 'Taking notes',
 };
 
 const EVENT_EXPRESSIONS: Record<PipEventKind, { mood: PipMood; emote: string }> = {
+  submitted: { mood: 'curious', emote: '↵' },
   switch: { mood: 'curious', emote: '' }, dizzy: { mood: 'dizzy', emote: '?!' },
   working: { mood: 'busy', emote: '···' }, permission: { mood: 'permission', emote: '?' },
   ready: { mood: 'happy', emote: '✧' }, idle: { mood: 'sleepy', emote: 'z z' },
@@ -40,18 +42,20 @@ const EVENT_EXPRESSIONS: Record<PipEventKind, { mood: PipMood; emote: string }> 
 
 const LINES: Record<PipSettings['personality'], Record<PipEventKind, readonly string[]>> = {
   dry: {
+    submitted: ['Another idea launched into the void. Bold.', 'Enter pressed. Plausible deniability lost.', 'I would have typed that. If I had fingers.'],
     switch: ['Ah, {session}. My other office.', 'New session. Same excellent supervisor.', 'I followed you. Very professional of me.'],
     dizzy: ['Are we coding or speed-dating repositories?', 'So many tabs. So few paws.'],
-    working: ["They're thinking. I'm also thinking. About snacks.", 'Excellent. Someone around here is working.', 'My contribution is moral support and fur.'],
+    working: ["They're thinking. I'm also thinking. About snacks.", 'Excellent. Someone around here is working.', 'My contribution is moral support and cable management.'],
     permission: ["Permission slip, please. I don't have thumbs.", 'Your agent has a question. I have several.', "Someone needs the human. That's you, apparently."],
     ready: ["They're ready for you. I'm ready for snacks.", 'Your agent is waiting. My supervision is impeccable.', 'The keyboard needs its human again.'],
     idle: ["I'll guard the sidebar. From inside this nap.", 'Scheduled maintenance: tiny nap.'],
-    stopped: ['This session has stopped. My shift apparently continues.', 'Agent offline. Cat still online.'],
+    stopped: ['This session has stopped. My shift apparently continues.', 'Agent offline. Gremlin still connected.'],
     attention: ['{session} needs you. I would go, but no thumbs.', 'A question from {session}. I delegated it to you.'],
     pet: ['Finally. My performance review.', 'Compensation received. Continue.', 'I accept payment in this exact format.'],
     nap: ['Wake me when the humans return.', "I'll guard the sidebar. From inside this nap.", 'Scheduled maintenance: tiny nap.'],
   },
   sweet: {
+    submitted: ['Your next idea is on its way.', 'A little nudge toward the next adventure.', 'Sent! I will keep you company.'],
     switch: ['Off to {session}! Coming with you.', 'A new little adventure. I am here.', 'Your {session} buddy has arrived.'],
     dizzy: ['Lots of adventures today! Let me catch up.', 'Tiny paws. So many places to be.'],
     working: ["You've got this. I'll keep you company.", 'Little paws, big moral support.', 'Busy brains. Cozy company.'],

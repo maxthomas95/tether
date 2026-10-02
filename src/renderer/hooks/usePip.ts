@@ -4,8 +4,8 @@ import {
   pipReaction, pipSessionLabel, pipSessionMood, type PipEvent, type PipSession,
 } from '../lib/pip-behavior';
 import type { PipSettings } from '../lib/pip-settings';
-
-interface Moment { event: PipEvent; variation: number; }
+import { PIP_ACTIVITY_EVENT, type PipActivity } from '../lib/pip-activity';
+import { usePipComments, type PipMoment } from './usePipComments';
 
 export function usePip(sessions: readonly PipSession[], activeSessionId: string | null, settings: PipSettings) {
   const panelRef = useRef<HTMLElement>(null);
@@ -15,13 +15,15 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
   const variation = useRef(0);
   const [visible, setVisible] = useState(!document.hidden);
   const [reducedMotion, setReducedMotion] = useState(() => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
-  const [expression, setExpression] = useState<Moment | null>(null);
-  const [speech, setSpeech] = useState<Moment | null>(null);
+  const [expression, setExpression] = useState<PipMoment | null>(null);
+  const [speech, setSpeech] = useState<PipMoment | null>(null);
+  const [typing, setTyping] = useState(false);
   const [napping, setNapping] = useState(false);
   const sleeping = useRef(false);
   const active = settings.enabled && !settings.collapsed && visible;
   const motionAllowed = active && settings.motion && !reducedMotion;
   const session = sessions.find(item => item.id === activeSessionId);
+  const comments = usePipComments(speech, activeSessionId, active, settings);
 
   useEffect(() => {
     const visibility = () => setVisible(!document.hidden);
@@ -75,6 +77,28 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
   }, [active, speech]);
 
   useEffect(() => {
+    setTyping(false);
+    if (!active || !activeSessionId) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const input = (event: Event) => {
+      const detail = (event as CustomEvent<PipActivity>).detail;
+      if (detail?.sessionId !== activeSessionId) return;
+      sleeping.current = false;
+      setNapping(false);
+      clearTimeout(timer);
+      if (detail.submitted) {
+        setTyping(false);
+        showEvent({ kind: 'submitted', label: '' });
+      } else {
+        setTyping(true);
+        timer = setTimeout(() => setTyping(false), 1200);
+      }
+    };
+    document.addEventListener(PIP_ACTIVITY_EVENT, input);
+    return () => { clearTimeout(timer); document.removeEventListener(PIP_ACTIVITY_EVENT, input); };
+  }, [active, activeSessionId, showEvent]);
+
+  useEffect(() => {
     if (!active) return;
     let timer: ReturnType<typeof setTimeout>;
     const wake = () => {
@@ -91,16 +115,21 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
         showEvent({ kind: 'nap', label: '' });
       }, PIP_NAP_DELAY_MS);
     };
+    const inputWake = (event: Event) => {
+      if ((event as CustomEvent<PipActivity>).detail?.sessionId === activeSessionId) wake();
+    };
     wake();
     document.addEventListener('pointermove', wake, { passive: true });
     document.addEventListener('pointerdown', wake, { passive: true });
     document.addEventListener('keydown', wake);
+    document.addEventListener(PIP_ACTIVITY_EVENT, inputWake);
     document.addEventListener('wheel', wake, { passive: true });
     return () => {
       clearTimeout(timer);
       document.removeEventListener('pointermove', wake);
       document.removeEventListener('pointerdown', wake);
       document.removeEventListener('keydown', wake);
+      document.removeEventListener(PIP_ACTIVITY_EVENT, inputWake);
       document.removeEventListener('wheel', wake);
     };
   }, [active, activeSessionId, showEvent]);
@@ -132,15 +161,15 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
   }, [motionAllowed]);
 
   const reaction = expression ? pipReaction(expression.event, settings.personality, expression.variation) : null;
-  const mood = napping ? 'sleepy' : reaction?.mood ?? pipSessionMood(session);
+  const mood = napping ? 'sleepy' : typing ? 'typing' : reaction?.mood ?? pipSessionMood(session);
   const greeting = settings.personality === 'dry' ? 'I supervise. You do the keyboard stuff.' : 'Your tiny coding buddy. Happy to be here.';
   const spokenLine = speech ? pipReaction(speech.event, settings.personality, speech.variation).line : greeting;
-  const line = settings.quiet ? 'Quiet company. Same tiny supervisor.' : spokenLine;
+  const line = settings.quiet ? 'Quiet company. Same tiny supervisor.' : comments.line ?? spokenLine;
   const idleEmote = mood === 'permission' ? '?' : '';
-  const emote = napping ? 'z z' : reaction?.emote ?? idleEmote;
+  const emote = napping ? 'z z' : typing ? '⌨' : reaction?.emote ?? idleEmote;
 
   return {
-    panelRef, active, motionAllowed, mood, line,
+    panelRef, active, motionAllowed, mood, line, comments,
     emote,
     following: session ? `Following ${pipSessionLabel(session)}` : 'Keeping you company',
     pet: () => { sleeping.current = false; setNapping(false); showEvent({ kind: 'pet', label: '' }, true); },

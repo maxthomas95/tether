@@ -759,6 +759,10 @@ export interface TetherAPI {
     account(): Promise<import('./codex-types').CodexAccountSnapshot>;
     configuration(sessionId?: string): Promise<import('./codex-types').CodexConfigurationSnapshot>;
   };
+  pip: {
+    comment(request: import('./pip').PipCommentRequest): Promise<import('./pip').PipCommentResult>;
+    cancelComment(): Promise<void>;
+  };
   repoGroup: {
     getPrefs(): Promise<RepoGroupPref[]>;
     setPrefs(environmentId: string, prefs: RepoGroupPref[]): Promise<void>;

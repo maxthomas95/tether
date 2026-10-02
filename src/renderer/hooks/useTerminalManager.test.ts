@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
     cols = 100;
     rows = 30;
     input?: (data: string) => void;
+    key?: (event: { domEvent: KeyboardEvent }) => void;
     options: Record<string, unknown>;
     parser = { registerOscHandler: vi.fn() };
     loadAddon = vi.fn((addon: { activate?: (terminal: FakeTerminal) => void }) => addon.activate?.(this));
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => {
     dispose = vi.fn(() => this.element?.remove());
     constructor(options: Record<string, unknown>) { this.options = { ...options }; }
     onData(callback: (data: string) => void) { this.input = callback; }
+    onKey(callback: (event: { domEvent: KeyboardEvent }) => void) { this.key = callback; }
     open(container: HTMLDivElement) {
       this.element = document.createElement('div');
       container.appendChild(this.element);
@@ -138,6 +140,24 @@ afterEach(() => {
 });
 
 describe('terminal session lifecycle', () => {
+  it('keeps input bytes unchanged and emits text-free Pip activity in xterm event order', async () => {
+    const events: unknown[] = [];
+    const listen = (event: Event) => events.push((event as CustomEvent).detail);
+    document.addEventListener('tether:pip-input', listen);
+    try {
+      api.getOrCreate('a');
+      const t = terminal('a');
+      t.input?.('private draft\x1b[200~raw\x1b[201~');
+      t.key?.({ domEvent: new KeyboardEvent('keydown', { key: 'Enter' }) });
+      t.input?.('\r');
+      await Promise.resolve();
+      expect(mocks.sendInput).toHaveBeenCalledWith('a', 'private draft\x1b[200~raw\x1b[201~');
+      expect(events).toEqual([{ sessionId: 'a', submitted: false }, { sessionId: 'a', submitted: false }, { sessionId: 'a', submitted: true }]);
+      t.key?.({ domEvent: new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true }) });
+      await Promise.resolve();
+      expect(events).toHaveLength(3);
+    } finally { document.removeEventListener('tether:pip-input', listen); }
+  });
   it('waits for fonts, ignores stale font loads, and refits only visible panes', async () => {
     const finish = new Map<string, () => void>();
     Object.defineProperty(document, 'fonts', {

@@ -15,6 +15,7 @@ import { registerKeybindingsHandlers } from './keybindings-handlers';
 import { registerNotificationsHandlers } from './notifications-handlers';
 import { registerJobsHandlers } from './jobs-handlers';
 import { registerCodexHandlers } from './codex-handlers';
+import { registerPipHandlers } from './pip-handlers';
 import { registerGifPanelHandlers } from './gif-panel-handlers';
 import { registerClipboardHandlers } from './clipboard-handlers';
 import { registerCliMaintenanceHandlers } from './cli-maintenance-handlers';
@@ -49,6 +50,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerNotificationsHandlers(ctx);
   registerJobsHandlers(ctx);
   registerCodexHandlers(ctx);
+  registerPipHandlers(ctx);
   registerGifPanelHandlers(ctx);
   registerClipboardHandlers(ctx);
   registerCliMaintenanceHandlers(ctx);

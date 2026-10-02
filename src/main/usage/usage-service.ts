@@ -677,6 +677,12 @@ export class UsageService {
     return this.tracked.get(sessionId)?.usage ?? null;
   }
 
+  /** Main-process side channels only; remote transcript paths are never local files. */
+  getLocalTranscriptPath(sessionId: string): string | null {
+    const tracked = this.tracked.get(sessionId);
+    return tracked && !tracked.remote && tracked.filePath ? tracked.filePath : null;
+  }
+
   getAll(): UsageInfo {
     const sessions: Record<string, SessionUsage> = {};
     const allUsage: SessionUsage[] = [];
