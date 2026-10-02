@@ -57,7 +57,7 @@ Most keyboard input is passed straight to the active session — Tether does not
 | Shortcut | Action |
 |----------|--------|
 | **Ctrl+C** | Copy the selection if there is one; otherwise passes through as **SIGINT** |
-| **Ctrl+Shift+C** | Always copy the selection |
+| **Ctrl+Shift+C** | Copy the selection; with no selection, leave the clipboard unchanged |
 | **Ctrl+V** | Paste. Uses bracketed paste when the app requests it, so a multi-line paste into Claude Code's input arrives as one block instead of a burst of submits |
 | **Ctrl+click** a printed URL | Open it in your browser (via `shell.openExternal`) |
 
