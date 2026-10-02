@@ -24,7 +24,7 @@ function PipArtwork() {
   </span>;
 }
 
-export function PipPanel({ settings, sessions, activeSessionId, busy, onSettingsChange, onActivateSession }: PipPanelProps) {
+export function PipPanel({ settings, sessions, activeSessionId, busy, onSettingsChange, onActivateSession }: Readonly<PipPanelProps>) {
   const pip = usePip(sessions, activeSessionId, settings);
   const contentId = useId();
   const optionsId = useId();
