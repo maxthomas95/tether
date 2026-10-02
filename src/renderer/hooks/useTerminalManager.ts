@@ -55,6 +55,18 @@ function trimSelectionTrailingSpaces(text: string): string {
   return lines.join('\n');
 }
 
+function writeClipboard(text: string): void {
+  void window.electronAPI.clipboard.writeText(text).catch(() => {});
+}
+
+function copySelection(terminal: Terminal, e: KeyboardEvent): false {
+  if (e.type === 'keydown') {
+    e.preventDefault();
+    if (terminal.hasSelection()) writeClipboard(trimSelectionTrailingSpaces(terminal.getSelection()));
+  }
+  return false;
+}
+
 /**
  * Scrollback buffer size constants. xterm.js's built-in default is 1000 lines,
  * which agent sessions blow past almost instantly. Tether's default is 10k.
@@ -185,7 +197,7 @@ export function useTerminalManager(
 
     const linksAddon = new WebLinksAddon((event, uri) => {
       if (!event.ctrlKey && !event.metaKey) return;
-      window.electronAPI.shell.openExternal(uri);
+      void window.electronAPI.shell.openExternal(uri);
     });
     terminal.loadAddon(linksAddon);
 
@@ -198,7 +210,7 @@ export function useTerminalManager(
     terminal.parser.registerOscHandler(52, (data: string) => {
       const text = decodeOsc52Write(data);
       if (text !== null) {
-        window.electronAPI.clipboard.writeText(text);
+        writeClipboard(text);
       }
       return true;
     });
@@ -220,28 +232,17 @@ export function useTerminalManager(
       }
 
       // Ctrl+C with selection → copy to clipboard
-      if (ctrl && e.key === 'c' && terminal.hasSelection()) {
-        window.electronAPI.clipboard.writeText(trimSelectionTrailingSpaces(terminal.getSelection()));
-        return false;
-      }
+      if (ctrl && e.key === 'c' && terminal.hasSelection()) return copySelection(terminal, e);
 
-      // Ctrl+V → paste from clipboard. Route through terminal.paste() rather
-      // than sending the raw string: paste() honors the app's bracketed-paste
-      // mode (DECSET 2004) and normalizes newlines, so multi-line pastes into
-      // Claude Code's fullscreen input land as one block instead of a burst of
-      // submits. It still fires onData → sendInput, so broadcast input keeps
-      // working.
+      // Ctrl+V → no preventDefault: the native paste event reaches xterm, which
+      // applies bracketed paste, so the renderer never reads the clipboard.
+      // Still return false, or xterm sends ^V and cancels that paste event.
       if (ctrl && e.key === 'v' && e.type === 'keydown') {
-        const text = window.electronAPI.clipboard.readText();
-        if (text) terminal.paste(text);
         return false;
       }
 
-      // Ctrl+Shift+C → always copy
-      if (ctrl && e.shiftKey && e.key === 'C') {
-        window.electronAPI.clipboard.writeText(trimSelectionTrailingSpaces(terminal.getSelection()));
-        return false;
-      }
+      // Ctrl+Shift+C → copy the selection, never passed through
+      if (ctrl && e.shiftKey && e.key === 'C') return copySelection(terminal, e);
 
       return true;
     });
