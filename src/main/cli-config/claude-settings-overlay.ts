@@ -277,7 +277,7 @@ export function scrubClaudeSettings(text: string | null): { text: string; change
  * to the user rather than overwrite mystery content.
  */
 export async function installClaudeHooks(ctx: ClaudeOverlayContext): Promise<boolean> {
-  return withMutex(async () => {
+  return withMutex(() => {
     const store = ctx.store ?? localConfigFileStore;
     const filePath = resolveSettingsPath(ctx);
     const helperCmd = helperCommand(ctx.helperPath, '--claude', ctx.platform);

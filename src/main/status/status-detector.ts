@@ -192,15 +192,7 @@ export class StatusDetector {
     // the byte (xterm.js will render/handle it on its own) — we only sniff
     // it so the notification service can decide whether to surface a toast.
     // Coalesced to one fire per BELL_COALESCE_MS to defang BEL-spamming CLIs.
-    if (this.bellCallback && data.indexOf(BEL) !== -1) {
-      const now = Date.now();
-      const last = this.lastBellAt.get(sessionId) ?? 0;
-      if (now - last >= BELL_COALESCE_MS) {
-        this.lastBellAt.set(sessionId, now);
-        try { this.bellCallback(sessionId); }
-        catch { /* swallow — bell is a notification, never a critical path */ }
-      }
-    }
+    this.emitBell(sessionId, data);
 
     // Hooks describe work; PTY bytes also include cursor movement, typing echo,
     // permission-dialog redraws and final output flushed after the Stop hook.
@@ -245,6 +237,16 @@ export class StatusDetector {
     // For hook-enabled CLIs mid-turn, both transitions are suppressed — the hook
     // is the canonical signal, and silence during an API call is normal.
     this.armSilenceTimers(sessionId);
+  }
+
+  private emitBell(sessionId: string, data: string): void {
+    if (!this.bellCallback || !data.includes(BEL)) return;
+    const now = Date.now();
+    const last = this.lastBellAt.get(sessionId) ?? 0;
+    if (now - last < BELL_COALESCE_MS) return;
+    this.lastBellAt.set(sessionId, now);
+    try { this.bellCallback(sessionId); }
+    catch { /* notifications never disrupt the session */ }
   }
 
   private armSilenceTimers(sessionId: string): void {

@@ -543,27 +543,7 @@ export class SessionManager {
     const session = this.sessions.get(tetherSessionId);
     if (!session || session.state === 'stopped' || session.state === 'dead') return;
     if (event.source === 'claude' && this.handleClaudeAgentEvent(session, event)) return;
-    if (event.source === 'codex') {
-      if (!this.handleCodexLifecycleEvent(session, event)) return;
-      if (type === 'session_start') {
-        statusDetector.markTurnComplete(tetherSessionId);
-        return;
-      }
-      if (
-        type === 'turn_start' ||
-        type === 'tool_complete' ||
-        type === 'compact_start' ||
-        type === 'compact_complete'
-      ) {
-        statusDetector.markTurnStarted(tetherSessionId);
-        return;
-      }
-      if (type === 'turn_interrupted' || type === 'session_end') {
-        statusDetector.markTurnComplete(tetherSessionId);
-        return;
-      }
-      if (type === 'subagent_start' || type === 'subagent_stop') return;
-    }
+    if (event.source === 'codex' && this.handleCodexStatusEvent(session, event)) return;
     if (type === 'session_start' || type === 'turn_start' || type === 'tool_start' || type === 'tool_complete' ||
       type === 'elicitation_complete' || type === 'elicitation_response') {
       statusDetector.markTurnStarted(tetherSessionId);
@@ -579,6 +559,28 @@ export class SessionManager {
       return;
     }
     // auth_success and any future event types fall through silently.
+  }
+
+  private handleCodexStatusEvent(session: Session, event: HookEvent): boolean {
+    if (!this.handleCodexLifecycleEvent(session, event)) return true;
+    switch (event.type) {
+      case 'session_start':
+      case 'turn_interrupted':
+      case 'session_end':
+        statusDetector.markTurnComplete(session.id);
+        return true;
+      case 'turn_start':
+      case 'tool_complete':
+      case 'compact_start':
+      case 'compact_complete':
+        statusDetector.markTurnStarted(session.id);
+        return true;
+      case 'subagent_start':
+      case 'subagent_stop':
+        return true;
+      default:
+        return false;
+    }
   }
 
   /** Returns true for rejected or consumed events, false for parent turn hooks. */
