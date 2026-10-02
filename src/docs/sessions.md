@@ -119,6 +119,11 @@ Right-click and choose **Remove** to drop the session from the sidebar. If it's 
 
 Right-click and choose **Duplicate** to clone a session with the same environment, working directory, profile, env vars, and flags. The label is preserved with a `(copy)` suffix (`(copy 2)` on subsequent dupes).
 
+The duplicate starts independently of the original. You can remove the original
+while an SSH connection is starting; the duplicate opens in the current layout
+when it is ready, even if the original pane has been removed or you switched to
+Canvas while waiting.
+
 ### Reordering
 
 Drag sessions within a group to reorder them. Order is persisted per repo group.

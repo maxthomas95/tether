@@ -168,7 +168,7 @@ export function App() {
     terminalScrollback,
   );
   const { layoutState, layoutDispatch, splitLayoutState, splitDispatch,
-    canvasState, canvasDispatch, canvasEnabled, setCanvasEnabled } = useWorkspaceLayout();
+    canvasState, canvasDispatch, canvasEnabled, setCanvasEnabled, openCreatedSession } = useWorkspaceLayout(enablePaneSplitting);
   const { notifications, notify, dismiss } = useNotifications();
   const notifyError = useCallback((title: string, err: unknown) => {
     notify({ type: 'error', title, message: extractErrorMessage(err) });
@@ -846,41 +846,12 @@ export function App() {
       termManager.getOrCreate(session.id);
       setSessions(prev => [...prev, session]);
 
-      const paneId = generatePaneId();
-      if (canvasEnabled) {
-        canvasDispatch({ type: 'OPEN', sessionId: session.id });
-      } else if (!layoutState.root) {
-        const root: LayoutNode = { type: 'leaf', id: paneId, sessionId: session.id };
-        layoutDispatch({ type: 'SET_ROOT', root });
-        layoutDispatch({ type: 'SET_FOCUS', paneId });
-      } else {
-        const leaves = getLeaves(layoutState.root);
-        const focusedLeaf = layoutState.focusedPaneId
-          ? leaves.find(l => l.id === layoutState.focusedPaneId)
-          : null;
-        const emptyLeaf = focusedLeaf?.sessionId === null
-          ? focusedLeaf
-          : leaves.find(l => l.sessionId === null);
-        const targetPaneId = focusedLeaf?.id ?? leaves[0]?.id;
-
-        if (enablePaneSplitting && emptyLeaf) {
-          layoutDispatch({ type: 'REPLACE_SESSION', paneId: emptyLeaf.id, sessionId: session.id });
-          layoutDispatch({ type: 'SET_FOCUS', paneId: emptyLeaf.id });
-        } else if (!enablePaneSplitting || getLeafCount(layoutState.root) >= effectiveMaxPanes) {
-          // Single-pane mode or full constrained layout: replace the focused pane.
-          if (targetPaneId) {
-            layoutDispatch({ type: 'REPLACE_SESSION', paneId: targetPaneId, sessionId: session.id });
-            layoutDispatch({ type: 'SET_FOCUS', paneId: targetPaneId });
-          }
-        } else if (targetPaneId) {
-          layoutDispatch({ type: 'ADD_PANE', targetPaneId, sessionId: session.id, zone: 'right' });
-        }
-      }
+      openCreatedSession(session.id);
     } catch (err) {
       console.error('Failed to create session:', err);
       notifyError('Failed to create session', err);
     }
-  }, [termManager, layoutState.root, layoutState.focusedPaneId, layoutDispatch, notifyError, enablePaneSplitting, effectiveMaxPanes, canvasEnabled, canvasDispatch]);
+  }, [termManager, notifyError, openCreatedSession]);
 
   const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
     try {
