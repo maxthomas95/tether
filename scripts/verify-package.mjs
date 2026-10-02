@@ -107,6 +107,14 @@ if (!ptyNativeBinding) {
   addFailure('node-pty has no unpacked native .node binding.');
 }
 
+if (path.basename(appDir).includes('-win32-')) {
+  const arch = path.basename(appDir).split('-').at(-1);
+  for (const file of ['conpty.dll', 'OpenConsole.exe']) {
+    const resource = `${ptyUnpacked}/prebuilds/win32-${arch}/conpty/${file}`;
+    if (!unpackedFiles.includes(resource)) addFailure(`Bundled ConPTY resource is missing: ${resource}`);
+  }
+}
+
 // Forge copies extraResources to their basename under resources/ (e.g.
 // mcp-servers/tether-helm -> resources/tether-helm).
 for (const resource of [

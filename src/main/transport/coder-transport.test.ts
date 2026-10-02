@@ -70,6 +70,7 @@ describe('CoderTransport', () => {
     await new CoderTransport().start(baseOptions());
     const [file] = ptySpawnSpy.mock.calls[0];
     expect(file).toBe('coder');
+    expect(ptySpawnSpy.mock.calls[0][2].useConptyDll).toBeUndefined();
   });
 
   it('uses an overridden binaryPath when provided', async () => {
@@ -121,6 +122,7 @@ describe('CoderTransport', () => {
     const [file, args] = ptySpawnSpy.mock.calls[0];
     expect(file).toBe(process.execPath);
     expect(args).toEqual(['ssh', 'ws']);
+    expect(ptySpawnSpy.mock.calls[0][2].useConptyDll).toBe(true);
   });
 
   it('on win32, uses cmd.exe for an unresolved command', async () => {

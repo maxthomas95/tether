@@ -113,6 +113,8 @@ Double-click the label in the sidebar, or right-click and choose **Rename**. Ent
 
 **Ctrl+W** or **Stop** requests shutdown of the active session. Local and Coder sessions terminate their local PTY process; SSH sends **Ctrl+C**, then `exit`, and closes the connection. If the session remains alive, Tether escalates after the 3-second grace period. A second **Stop** during that period forces an immediate kill.
 
+Windows local and Coder sessions use the bundled terminal backend so **Stop** works with the packaged app's security hardening enabled.
+
 ### Removing
 
 Right-click and choose **Remove** to drop the session from the sidebar. If it's still running, it's stopped first.

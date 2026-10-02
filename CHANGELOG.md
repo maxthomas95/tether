@@ -4,10 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## Unreleased
+## [0.6.7-beta.6] - 2026-10-01
+
+Beta release carrying the changes since `0.6.6-beta.5`, with terminal search, expanded Codex visibility, CLI maintenance, new appearance options, Pip, and session reliability fixes. Available on the Beta update channel.
+
+### New Features
+- **Terminal search** - search each pane's scrollback with next/previous matches, case sensitivity, whole-word and regular-expression options (#245).
+- **Codex visibility and controls** - inspect selected effective configuration, load account usage and quota, choose model/reasoning/profile defaults, and opt into passive lifecycle metadata (#225).
+- **CLI maintenance** - check and update installed Codex, Claude Code, and OpenCode tools from Tether (#246).
+- **Appearance options** - additional themes, bundled terminal fonts, and a live font/ANSI-color preview (#247).
+- **Pip sidebar companion** - an optional local pet that reacts to session status and helps find waiting sessions, with preferences that apply immediately (#251, #252).
+- **Home screen** - spinning ASCII Tether logo and dismissible recent-project shortcuts (#242, #250).
 
 ### Bug Fixes
-- **Remote usage collection** - start the usage reader once per connection and keep it resident, instead of running a fresh `sudo` login shell for every poll of every session. On an elevated SSH host the old behaviour authenticated through PAM thousands of times an hour, which filled the host's auth log, logged a failed `pam_unix` attempt per poll, and re-sent the sudo password every few seconds.
+- **Packaged Windows session shutdown** - use the bundled ConPTY backend for local and Coder PTYs so stopping sessions works with Electron's RunAsNode fuse disabled.
+- **Session restore** - preserve launch profiles, session environment overrides and CLI flags in encrypted snapshots; report unavailable keys or deleted profiles instead of silently changing launch settings (#249).
+- **Remote conversation resume** - resume saved SSH and Coder conversations after a disconnect (#239).
+- **Terminal resizing and duplicate sessions** - refit panes after canvas/window changes and open delayed duplicates in the current layout (#238, #248).
+- **Session status and sidebar stability** - respect Claude and Codex turn lifecycle and keep attention badges from shifting controls (#240, #241, #243).
+- **Codex cost accounting** - count per-request and compaction records without duplicate history or double-billing reasoning tokens (#244).
+- **Remote usage collection** - keep one usage reader resident per connection instead of authenticating a fresh sudo shell for every poll (#233).
+- **Clipboard and lifecycle failures** - route clipboard writes through main-process IPC and harden Vault, Coder and session error handling (#230, #235).
+
+### Security and Internal
+- **Credential and desktop security** - reject Vault redirects and insecure non-loopback HTTP, invalidate stale tokens, encrypt legacy literal environment values atomically, and redact them from diagnostics. Remote launch credentials use an echo-off stdin handshake; privileged IPC, embedded Office pages, hooks and Helm connections have tighter trust and authentication checks (#254).
+- **Electron runtime** - upgrade to Electron 44.5.1 and verify the sandboxed packaged preload (#254).
+- Update Electron and dependencies, require patched archive handling, and restore the shared CI security baseline (#231, #232, #234, #236, #237).
+- Run Sonar analysis through GitHub Actions with coverage and a versioned baseline (#226).
+- Add contributor, community conduct and private security-reporting guidance (#253).
+- Refresh the bundled LiteLLM pricing snapshot used for offline API-cost estimates.
+
+### Beta Notes
+- Saved launch settings, usage checkpoints and appearance/Pip preferences extend the existing JSON persistence model; secret-bearing launch snapshots use the OS keychain.
+- Terminal bytes continue through the raw PTY path. Status, usage and Pip use passive metadata; Pip makes no model or network requests.
+- Codex account/configuration actions are explicit, and lifecycle hooks remain an experimental opt-in.
+- SSH and Coder hosts need POSIX `sh` and `stty` for the credential-safe launch handshake. Existing plaintext credentials migrate in place to OS-keychain encryption; a failed migration preserves the original file.
+- Windows installer and portable builds are unsigned.
 
 ---
 

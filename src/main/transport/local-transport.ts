@@ -76,6 +76,9 @@ export class LocalTransport implements SessionTransport {
       argCount: tokenizedArgs.length,
     });
     this.ptyProcess = pty.spawn(spawnFile, spawnArgs, {
+      // The bundled ConPTY closes sessions without node-pty's fork helper,
+      // which cannot run when Electron's RunAsNode fuse is disabled.
+      ...(isWin32 ? { useConptyDll: true } : {}),
       name: 'xterm-256color',
       cols: options.cols,
       rows: options.rows,

@@ -44,6 +44,7 @@ describe('LocalTransport', () => {
     const [file, args] = ptySpawnSpy.mock.calls[0];
     expect(file).toBe(process.execPath);
     expect(args).toEqual([]);
+    expect(ptySpawnSpy.mock.calls[0][2].useConptyDll).toBe(true);
   });
 
   it('on win32, uses cmd.exe for an unresolved command', async () => {
@@ -85,6 +86,7 @@ describe('LocalTransport', () => {
     const [file, args] = ptySpawnSpy.mock.calls[0];
     expect(file).toBe('claude');
     expect(args).toEqual([]);
+    expect(ptySpawnSpy.mock.calls[0][2].useConptyDll).toBeUndefined();
   });
 
   it('tokenizes multi-token cliArgs entries on whitespace', async () => {
