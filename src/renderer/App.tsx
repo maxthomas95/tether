@@ -581,6 +581,7 @@ export function App() {
               worktreeOf: saved.worktreeOf,
               helmEnabled: saved.helmEnabled,
               parentSessionId: saved.parentSessionId,
+              launchSnapshotId: saved.launchSnapshotId,
             });
             if (!mounted) return;
             restoredCanvasIds[i] = session.id;
@@ -677,6 +678,7 @@ export function App() {
         worktreeOf: s.worktreeOf,
         helmEnabled: s.helmEnabled,
         parentSessionId: s.parentSessionId,
+        launchSnapshotId: s.launchSnapshotId,
       })),
       Math.max(0, activeIndex),
       savedCanvas,
@@ -807,7 +809,7 @@ export function App() {
     return () => { removeData(); removeState(); removeExit(); removeUpdated(); removeCreated(); };
   }, [termManager, notify]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean) => {
+  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean, launchSnapshotId?: string) => {
     const createOpts: CreateSessionOptions = {
       workingDir,
       label: label || undefined,
@@ -823,6 +825,7 @@ export function App() {
       cloneUrl,
       worktreeOf,
       helmEnabled,
+      launchSnapshotId,
     };
     try {
       // If this session would resolve vault:// refs but the Vault token is
@@ -1037,7 +1040,7 @@ export function App() {
       .filter(s => s.workingDir === source.workingDir)
       .map(s => s.label);
     const label = nextDuplicateLabel(source.label, siblingLabels);
-    handleCreateSession(source.workingDir, label, source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined, source.helmEnabled);
+    handleCreateSession(source.workingDir, label, source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined, source.helmEnabled, source.launchSnapshotId);
   }, [sessions, handleCreateSession]);
 
   const sessionsInGroup = useCallback((environmentId: string, workingDir: string): SessionInfo[] => {
@@ -1083,6 +1086,7 @@ export function App() {
       undefined,
       opts.worktreeOf,
       opts.helmEnabled,
+      opts.launchSnapshotId,
     );
   }, [handleCreateSession]);
 

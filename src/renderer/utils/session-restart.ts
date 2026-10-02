@@ -13,6 +13,7 @@ export function buildSessionRestartOptions(session: SessionInfo): CreateSessionO
     customCliBinary: session.customCliBinary || undefined,
     worktreeOf: session.worktreeOf,
     helmEnabled: session.helmEnabled,
+    launchSnapshotId: session.launchSnapshotId,
     resumeToolSessionId: toolSupportsResume(cliTool) ? nativeId : undefined,
   };
 }

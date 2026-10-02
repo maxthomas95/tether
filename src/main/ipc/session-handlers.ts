@@ -15,6 +15,7 @@ import * as sessionRepo from '../db/session-repo';
 import { getStatus as getVaultStatus } from '../vault/vault-auth';
 import { createLogger } from '../logger';
 import type { HandlerContext } from './helpers';
+import type { SavedSession, SavedWorkspace } from '../db/database';
 
 const log = createLogger('ipc:session');
 
@@ -121,20 +122,30 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
 
   // === Workspace save/restore ===
 
-  ipcMain.handle(IPC.WORKSPACE_SAVE, async (_event, sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string }>, activeIndex: number, canvas?: import('../../shared/canvas-types').SavedCanvas) => {
+  ipcMain.handle(IPC.WORKSPACE_SAVE, async (_event, sessions: SavedSession[], activeIndex: number, canvas?: import('../../shared/canvas-types').SavedCanvas) => {
     const { getDb, saveDb } = await import('../db/database');
     // Codex toolSessionIds are captured at spawn time via the codex session
     // watcher and pushed to the renderer, so whatever the renderer hands us
     // here is already the real conversation id (or undefined if codex hadn't
     // written its transcript yet — in which case we'd rather not resume than
     // resume a stale/unrelated conversation).
-    getDb().savedWorkspace = { sessions, activeIndex, ...(canvas ? { canvas } : {}) };
+    getDb().savedWorkspace = {
+      sessions: sessions.map(projectSavedSession),
+      activeIndex,
+      ...(canvas ? { canvas } : {}),
+    };
     saveDb();
   });
 
   ipcMain.handle(IPC.WORKSPACE_LOAD, async () => {
     const { getDb } = await import('../db/database');
-    return getDb().savedWorkspace;
+    const saved = getDb().savedWorkspace;
+    if (!saved) return null;
+    return {
+      sessions: saved.sessions.map(projectSavedSession),
+      activeIndex: saved.activeIndex,
+      ...(saved.canvas ? { canvas: saved.canvas } : {}),
+    } satisfies SavedWorkspace;
   });
 
   ipcMain.handle(IPC.TRANSCRIPTS_LIST, async (_event, workingDir: string, cliTool: CliToolId = 'claude') => {
@@ -153,4 +164,20 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     const { listTranscripts } = await import('../claude/transcripts');
     return listTranscripts(workingDir);
   });
+}
+
+function projectSavedSession(input: SavedSession): SavedSession {
+  return {
+    workingDir: input.workingDir,
+    label: input.label,
+    environmentId: input.environmentId,
+    cliTool: input.cliTool,
+    customCliBinary: input.customCliBinary,
+    toolSessionId: input.toolSessionId,
+    claudeSessionId: input.claudeSessionId,
+    worktreeOf: input.worktreeOf,
+    helmEnabled: input.helmEnabled,
+    parentSessionId: input.parentSessionId,
+    launchSnapshotId: input.launchSnapshotId,
+  };
 }

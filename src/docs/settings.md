@@ -56,6 +56,8 @@ Controls what happens to your sessions when you quit and relaunch Tether:
 
 Restore, automatic conversation resume, and the manual resume picker are on by default. The resumed-session badge is off by default.
 
+When a saved workspace is restored, Tether also restores the selected launch profile and any SESSION-level env-var overrides, CLI flags, and disabled inherited flags that were used to start each session. The saved record is encrypted with the OS keychain and the renderer only carries an opaque id. Global defaults, environment settings, and launch profile contents are read from current Settings at the next launch, and Vault references are resolved again. If the keychain is unavailable or a saved profile was deleted, Tether leaves that session stopped and shows the restore error instead of launching it with different settings.
+
 ### Update checks
 
 **Check for updates on launch** is on by default. Tether checks GitHub Releases once, about 15 seconds after launch. Updates are non-blocking — when one is available you'll get a toast pointing to the release page, where you can download and install it. You can also check manually from **Help → Check for Updates…**.
@@ -293,7 +295,7 @@ To opt out:
 When sharing ends or the server changes, Tether makes a best-effort request to remove its agents from the previous office. If that server cannot be reached, its stale-agent timeout clears them later. Closing the office view only closes the view; use the settings above to opt out of sharing.
 ### Diagnostics export
 
-Open **About → Export diagnostics for support** to create a zip containing a scrubbed copy of `data.json`, rotated logs, and a version/OS manifest. Credentials and encrypted secret values are redacted; Vault references are preserved. Log scrubbing removes recognized credential patterns. The export is in About, not a control in this settings section.
+Open **About → Export diagnostics for support** to create a zip containing a scrubbed copy of `data.json`, rotated logs, and a version/OS manifest. Credentials, encrypted secret values, and saved launch-setting snapshots are redacted; Vault references are preserved. Log scrubbing removes recognized credential patterns. The export is in About, not a control in this settings section.
 
 ## Usage
 

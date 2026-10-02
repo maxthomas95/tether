@@ -162,6 +162,8 @@ export function scrubDbData(input: DbData): DbData {
     }
   }
 
+  db.launchSnapshots = {};
+
   return db;
 }
 

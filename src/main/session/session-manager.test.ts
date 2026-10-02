@@ -47,8 +47,9 @@ const transportHarness = vi.hoisted(() => {
 
 vi.mock('electron', () => ({
   safeStorage: {
-    isEncryptionAvailable: () => false,
-    decryptString: () => '',
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(`encrypted:${value}`, 'utf8'),
+    decryptString: (value: Buffer) => value.toString('utf8').replace(/^encrypted:/, ''),
   },
 }));
 
@@ -68,10 +69,13 @@ const dbState = vi.hoisted(() => ({
   config: {} as Record<string, string>,
   defaultEnvVars: {} as Record<string, string>,
   defaultCliFlagsPerTool: {} as Record<string, string[]>,
+  launchSnapshots: {} as Record<string, { id: string; version: 1; encryptedIntent: string; createdAt: string; updatedAt: string }>,
+  saveCount: 0,
 }));
 
 vi.mock('../db/database', () => ({
   getDb: () => dbState,
+  saveDb: () => { dbState.saveCount += 1; },
 }));
 
 const envState = vi.hoisted(() => ({ type: '' }));
@@ -173,6 +177,8 @@ describe('SessionManager', () => {
     dbState.config = {};
     dbState.defaultEnvVars = {};
     dbState.defaultCliFlagsPerTool = {};
+    dbState.launchSnapshots = {};
+    dbState.saveCount = 0;
     helmHarness.capturedHandlers = null;
     helmHarness.setup.mockReset();
     helmHarness.setup.mockImplementation(async (_id: string, handlers: Record<string, (params: Record<string, unknown>) => Promise<unknown>>) => {
@@ -196,6 +202,71 @@ describe('SessionManager', () => {
     expect(session.toInfo().codexLaunch).toEqual({ model: 'new-model', profile: 'work', reasoningEffort: 'xhigh' });
     expect(JSON.stringify(session.toInfo())).not.toContain('SECRET');
     expect(cliArgs).toEqual(['--model', 'new-model', '-c model_reasoning_effort=xhigh', '-c private_value=SECRET']);
+  });
+
+  it('stores launch overrides only in an opaque encrypted snapshot id', async () => {
+    const session = await manager.createSession({
+      workingDir: 'C:/projects/tether',
+      cliTool: 'codex',
+      env: { ARBITRARY_SECRET: 'plain-secret' },
+      cliArgs: ['-c private_value=SECRET'],
+      disabledInheritedFlags: ['--profile=old'],
+    }, callbacks());
+    const info = session.toInfo();
+    expect(info.launchSnapshotId).toBeTruthy();
+    expect(JSON.stringify(info)).not.toContain('plain-secret');
+    expect(JSON.stringify(info)).not.toContain('private_value');
+    expect(JSON.stringify(dbState.launchSnapshots)).not.toContain('plain-secret');
+    expect(JSON.stringify(dbState.launchSnapshots)).not.toContain('private_value');
+    expect(dbState.saveCount).toBe(1);
+  });
+
+  it('restores encrypted launch overrides while preserving caller metadata and native resume id', async () => {
+    const original = await manager.createSession({
+      workingDir: 'C:/projects/original',
+      label: 'Original',
+      cliTool: 'codex',
+      env: { FEATURE_TOKEN: 'secret-token' },
+      cliArgs: ['--model', 'gpt-5'],
+      disabledInheritedFlags: ['--model=gpt-4'],
+    }, callbacks());
+    const restored = await manager.createSession({
+      workingDir: 'C:/projects/new',
+      label: 'Restored',
+      cliTool: 'codex',
+      launchSnapshotId: original.toInfo().launchSnapshotId,
+      resumeToolSessionId: 'native-id',
+    }, callbacks());
+    const start = transportHarness.state.instances[1].start.mock.calls[0][0];
+    expect(restored.toInfo()).toMatchObject({
+      workingDir: 'C:/projects/new',
+      label: 'Restored',
+      launchSnapshotId: original.toInfo().launchSnapshotId,
+    });
+    expect(start.env.FEATURE_TOKEN).toBe('secret-token');
+    expect(start.cliArgs).toEqual(['--model', 'gpt-5']);
+    expect(start.resumeToolSessionId).toBeUndefined();
+  });
+
+  it('creates a new snapshot when callers override a saved launch intent', async () => {
+    const original = await manager.createSession({
+      workingDir: 'C:/projects/original',
+      env: { TOKEN: 'old' },
+      cliArgs: ['--model', 'old'],
+    }, callbacks());
+    const sourceId = original.toInfo().launchSnapshotId;
+    const duplicate = await manager.createSession({
+      workingDir: 'C:/projects/duplicate',
+      launchSnapshotId: sourceId,
+      env: { TOKEN: 'new' },
+      cliArgs: ['--model', 'new'],
+    }, callbacks());
+    const start = transportHarness.state.instances[1].start.mock.calls[0][0];
+    expect(duplicate.toInfo().launchSnapshotId).toBeTruthy();
+    expect(duplicate.toInfo().launchSnapshotId).not.toBe(sourceId);
+    expect(start.env.TOKEN).toBe('new');
+    expect(start.cliArgs).toEqual(['--model', 'new']);
+    expect(Object.keys(dbState.launchSnapshots)).toHaveLength(2);
   });
 
   it.each([

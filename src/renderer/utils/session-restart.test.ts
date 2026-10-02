@@ -26,4 +26,8 @@ describe('session recovery identity', () => {
     expect(buildSessionRestartOptions({ ...dead, cliTool: 'codex', claudeSessionId: 'legacy' }).resumeToolSessionId).toBeUndefined();
     expect(buildSessionRestartOptions({ ...dead, cliTool: 'custom', toolSessionId: 'id' }).resumeToolSessionId).toBeUndefined();
   });
+
+  it('carries the opaque launch snapshot id without exposing launch values', () => {
+    expect(buildSessionRestartOptions({ ...dead, launchSnapshotId: 'snap-1' }).launchSnapshotId).toBe('snap-1');
+  });
 });

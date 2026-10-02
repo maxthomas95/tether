@@ -1,6 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { scrubDbData, scrubLogLine, scrubLogText } from './scrub';
 import type { DbData, EnvironmentRow, GitProviderRow, LaunchProfileRow } from '../db/database';
+
+vi.mock('electron', () => ({
+  safeStorage: {
+    isEncryptionAvailable: () => false,
+    encryptString: () => Buffer.from(''),
+    decryptString: () => '',
+  },
+}));
 
 function emptyDb(overrides: Partial<DbData> = {}): DbData {
   return {
@@ -17,6 +25,7 @@ function emptyDb(overrides: Partial<DbData> = {}): DbData {
     sessionOrderPrefs: [],
     usageSummaries: [],
     knownHosts: [],
+    launchSnapshots: {},
     ...overrides,
   };
 }
@@ -201,6 +210,21 @@ describe('scrubDbData', () => {
     const out = scrubDbData(db);
     expect(out.usageSummaries).toHaveLength(1);
     expect(out.knownHosts[0].keyHash).toBe('sha256:abc');
+  });
+
+  it('drops encrypted launch snapshots from diagnostics', () => {
+    const out = scrubDbData(emptyDb({
+      launchSnapshots: {
+        'snap-1': {
+          id: 'snap-1',
+          version: 1,
+          encryptedIntent: 'tether-safe:v1:encrypted',
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      },
+    }));
+    expect(out.launchSnapshots).toEqual({});
   });
 
   it('leaves malformed env_vars JSON alone rather than crashing', () => {

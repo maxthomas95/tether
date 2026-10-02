@@ -124,6 +124,8 @@ while an SSH connection is starting; the duplicate opens in the current layout
 when it is ready, even if the original pane has been removed or you switched to
 Canvas while waiting.
 
+Duplicate keeps the selected launch profile and the session-specific environment and CLI flag overrides from the original session. Global defaults, environment variables from the selected environment, and the profile's current contents are read again at launch, so later Settings changes still apply. Vault references are resolved fresh. If the saved profile was deleted, or the OS keychain cannot read the saved launch settings, Tether stops before starting a process instead of launching with different defaults.
+
 ### Reordering
 
 Drag sessions within a group to reorder them. Order is persisted per repo group.
@@ -134,7 +136,7 @@ Right-click a session and choose **Mute notifications** to silence desktop notif
 
 ### Pane recovery
 
-If a session inside a split pane dies, the pane shows an in-pane overlay with **Restart in this pane** (re-spawn with the same params and resume the known conversation, keeping the layout slot) or **Close pane**.
+If a session inside a split pane dies, the pane shows an in-pane overlay with **Restart in this pane** (re-spawn with the same working directory, environment, launch profile, session overrides, and known conversation, keeping the layout slot) or **Close pane**.
 
 ## Broadcast Input
 
@@ -188,6 +190,8 @@ Hover any session row for about a third of a second and a small popover shows it
 ## Workspace Persistence
 
 Tether saves open sessions and their order to `{userData}/data.json` as the workspace changes. Writes are atomic (tmp file → fsync → rename) and survive AV / OneDrive transient locks via a short retry loop. On next launch, saved sessions reopen when **Restore sessions on launch** is enabled.
+
+Workspace restore keeps an opaque reference to the encrypted launch settings for each saved session. It restores the selected launch profile and any session-specific environment variables, CLI flags, and disabled inherited flags. Global defaults, environment settings, and the profile's current values are still read from current configuration, and Vault references are resolved again during launch. Older workspace entries without saved launch settings reopen with their existing metadata-only behavior.
 
 ### Canvas workspace
 
