@@ -137,6 +137,14 @@ const api: TetherAPI = {
       ipcRenderer.invoke(IPC.WORKSPACE_LOAD),
   },
 
+  workspaceRecipes: {
+    list: () => ipcRenderer.invoke(IPC.WORKSPACE_RECIPES_LIST),
+    capture: (options: import('../shared/workspace-recipes').CaptureWorkspaceRecipe) => ipcRenderer.invoke(IPC.WORKSPACE_RECIPES_CAPTURE, options),
+    rename: (id: string, name: string) => ipcRenderer.invoke(IPC.WORKSPACE_RECIPES_RENAME, id, name),
+    delete: (id: string) => ipcRenderer.invoke(IPC.WORKSPACE_RECIPES_DELETE, id),
+    prepareOpen: (options: import('../shared/workspace-recipes').PrepareWorkspaceRecipe) => ipcRenderer.invoke(IPC.WORKSPACE_RECIPES_PREPARE_OPEN, options),
+  },
+
   transcripts: {
     list: (workingDir: string, cliTool?: CliToolId): Promise<TranscriptInfo[]> => ipcRenderer.invoke(IPC.TRANSCRIPTS_LIST, workingDir, cliTool),
   },

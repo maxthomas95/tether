@@ -685,6 +685,7 @@ export interface TetherAPI {
     save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string; launchSnapshotId?: string; restorePending?: boolean }>, activeIndex: number, canvas?: import('./canvas-types').SavedCanvas): Promise<void>;
     load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string; launchSnapshotId?: string; restorePending?: boolean }>; activeIndex: number; canvas?: import('./canvas-types').SavedCanvas } | null>;
   };
+  workspaceRecipes: import('./workspace-recipes').WorkspaceRecipesAPI;
   transcripts: {
     list(workingDir: string, cliTool?: CliToolId): Promise<TranscriptInfo[]>;
   };
