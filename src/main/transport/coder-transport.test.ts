@@ -57,6 +57,18 @@ describe('CoderTransport', () => {
     expect(writes).not.toContain('cd ');
   });
 
+  it.each(['claude', 'codex'] as const)('launches %s with the exact resume id inside its workspace', async cliTool => {
+    platform.set('linux');
+    await new CoderTransport().start(baseOptions({ workingDir: 'ws::/work', cliTool, binaryName: cliTool,
+      toolSessionId: 'saved-id', resumeToolSessionId: 'saved-id' }));
+    const writes = ptyHarness.current!.write.mock.calls.map(c => c[0]).join('');
+    expect(writes).toContain("cd '/work'");
+    expect(writes).toContain(cliTool === 'claude'
+      ? "'claude' '--resume' 'saved-id'" : "'codex' 'resume' 'saved-id'");
+    expect(writes).not.toContain('--session-id');
+    expect(writes).not.toContain('--last');
+  });
+
   it('on win32, launches a resolved executable directly', async () => {
     platform.set('win32');
     await new CoderTransport({ binaryPath: process.execPath }).start(baseOptions({ workingDir: 'ws' }));

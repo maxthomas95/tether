@@ -38,7 +38,11 @@ Install Git in an absolute directory listed on your system PATH. Tether's Git op
 
 ## Resume Conversation
 
-For local Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode sessions, use **Resume conversation** in the launcher to choose history for the working directory. Tether uses `claude --resume <id>`, `codex resume <id>`, `copilot --resume <id>`, or `opencode --session <id>`. Tether's conversation picker and automatic resume are unavailable for SSH, Coder, and Custom sessions.
+For local Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode sessions, use **Resume conversation** in the launcher to choose history for the working directory. Tether uses `claude --resume <id>`, `codex resume <id>`, `copilot --resume <id>`, or `opencode --session <id>`. The conversation picker is local-only.
+
+For Claude Code and Codex CLI over **SSH or Coder**, **Restart in this pane** and **Restart all** resume the exact conversation when Tether knows its native session ID. Workspace restore also uses that ID when **Resume previous conversations** is enabled. Claude's ID is assigned at launch; Codex's ID is captured by the passive remote usage connection, independently of status hooks. Tether never chooses the most recent conversation in the directory, so another session in the same repo cannot change which conversation is resumed.
+
+Recovery requires the same remote host or Coder workspace, CLI user/home, and saved conversation history. If the remote history was deleted, the CLI reports a resume error. If Tether never captured an ID (for example, remote Codex usage collection was unavailable before disconnection), restarting opens a fresh session and you can use the CLI's own resume picker to recover older history. Resuming restores saved conversation context; it does not reattach a surviving process or keep a task running through disconnection.
 
 Claude Code and GitHub Copilot transcript lookups require a full session UUID. Invalid identifiers are treated as unavailable conversations and are not used as filesystem paths.
 
@@ -106,7 +110,7 @@ Right-click a session and choose **Mute notifications** to silence desktop notif
 
 ### Pane recovery
 
-If a session inside a split pane dies, the pane shows an in-pane overlay with **Restart in this pane** (re-spawn with the same params, keeping the layout slot) or **Close pane**.
+If a session inside a split pane dies, the pane shows an in-pane overlay with **Restart in this pane** (re-spawn with the same params and resume the known conversation, keeping the layout slot) or **Close pane**.
 
 ## Broadcast Input
 
@@ -119,7 +123,7 @@ Toggle broadcast targets from each pane header. With at least two live targets s
 Right-click a repo-group header in the sidebar for bulk actions across every session in that group:
 
 - **Stop all** — gracefully stop every running session under this working directory (auto-escalates to forced kill after 3 seconds per session)
-- **Restart all** — stop and re-spawn each session with its original params
+- **Restart all** — stop and re-spawn each session with its original params, resuming its known conversation
 - **Clear all** — stop and remove every session
 
 ## Helm (opt-in)

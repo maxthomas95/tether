@@ -768,7 +768,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
               </label>
               <p className="form-hint">
                 Reopen the saved Claude Code, Codex CLI, GitHub Copilot CLI, or OpenCode conversation when its history is available.
-                Local environments only; SSH and Coder sessions always start fresh.
+                SSH and Coder Claude/Codex sessions also resume when their conversation ID was captured.
               </p>
 
               <label className="form-radio-label" style={{ marginTop: 6 }}>

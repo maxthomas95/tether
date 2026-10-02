@@ -21,7 +21,7 @@ Use **Save** to apply settings changes. Theme selection previews immediately and
 Controls what happens to your sessions when you quit and relaunch Tether:
 
 - **Restore sessions on launch** — automatically reopen your saved workspace (sessions and pane layout) when Tether starts.
-- **Resume previous conversations** — reopen a saved Claude Code, Codex CLI, GitHub Copilot CLI, or OpenCode conversation when its local history is available. Local environments only; SSH and Coder sessions always start fresh.
+- **Resume previous conversations** — reopen a saved Claude Code, Codex CLI, GitHub Copilot CLI, or OpenCode conversation when its local history is available. SSH and Coder Claude/Codex sessions also resume when Tether saved their native conversation ID and the remote history still exists.
 - **Show a badge on resumed sessions** — adds a small ↻ marker next to sessions that were resumed from a prior conversation.
 - **Enable conversation resume** — lets you manually pick an older conversation for any of those four tools in a local working directory. See [Sessions](sessions.md#resume-conversation).
 

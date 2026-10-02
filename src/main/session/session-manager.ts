@@ -881,8 +881,8 @@ export class SessionManager {
     // on-disk history; SSH/Coder history is remote and transport-specific.
     let toolSessionId: string | undefined;
     let resumeId: string | undefined;
+    const requestedResumeId = opts.resumeToolSessionId || (cliTool === 'claude' ? opts.resumeClaudeSessionId : undefined);
     if (toolSupportsResume(cliTool) && transport instanceof LocalTransport) {
-      const requestedResumeId = opts.resumeToolSessionId || (cliTool === 'claude' ? opts.resumeClaudeSessionId : undefined);
       if (cliTool === 'claude' && requestedResumeId && transcriptExists(opts.workingDir, requestedResumeId)) {
         // Resume the existing transcript and reuse the same id going forward.
         resumeId = requestedResumeId;
@@ -922,11 +922,18 @@ export class SessionManager {
       resolvedEnv.TETHER_USAGE_SESSION_ID = id;
       session.usageSessionId = `remote-pending:${id}`;
       session.remoteUsageStatus = 'pending';
-      if (cliTool === 'claude') {
+      // Remote history belongs to the remote CLI, not this machine. Pass the
+      // exact saved id through and let the CLI report missing history rather
+      // than silently opening an unrelated conversation.
+      if (requestedResumeId) {
+        resumeId = requestedResumeId;
+        toolSessionId = requestedResumeId;
+        session.resumed = true;
+      } else if (cliTool === 'claude') {
         toolSessionId = uuidv4();
-        session.claudeSessionId = toolSessionId;
-        session.toolSessionId = toolSessionId;
       }
+      session.toolSessionId = toolSessionId || null;
+      session.claudeSessionId = cliTool === 'claude' ? toolSessionId || null : null;
     }
 
     try {
