@@ -493,13 +493,21 @@ textarea:focus-visible,
   color: var(--text-muted);
   font-size: var(--text-sm);
 }
-.sidebar-utilities { padding: var(--space-2); border-top: 1px solid var(--border-color); }
+.sidebar-utilities {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  padding: var(--space-2);
+  border-top: 1px solid var(--border-color);
+}
 .sidebar-settings {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-2);
+  gap: var(--space-1-5);
+  flex-shrink: 0;
+  height: 36px;
+  padding: var(--space-1-5);
   border: 0;
   border-radius: var(--control-radius);
   background: transparent;
@@ -509,16 +517,15 @@ textarea:focus-visible,
 }
 .sidebar-settings:hover { background: var(--bg-hover); color: var(--text-primary); }
 
-/* Attention queue pill — sidebar-header affordance for "N waiting", shown
- * only when at least one session is blocked on the user. Clicking cycles
- * through them the same way as the Jump to Next Waiting shortcut/menu item. */
+/* Keep the attention queue in the existing utilities row so status changes
+ * never move session rows or their open menus. */
 .attention-queue-pill {
   display: flex;
   align-items: center;
   gap: var(--space-1-5);
-  width: 100%;
-  margin-top: var(--space-1-5);
-  padding: var(--space-1) var(--space-3);
+  min-width: 0;
+  height: 32px;
+  padding: var(--space-1) var(--space-1-5);
   background: color-mix(in srgb, var(--status-waiting) 8%, var(--bg-sidebar));
   border: 1px solid color-mix(in srgb, var(--status-waiting) 40%, var(--border-color));
   border-radius: var(--control-radius);
@@ -526,6 +533,12 @@ textarea:focus-visible,
   font-size: var(--text-xs);
   cursor: pointer;
   transition: var(--hover-transition);
+}
+
+.attention-queue-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .attention-queue-pill:hover {

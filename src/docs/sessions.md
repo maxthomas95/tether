@@ -163,9 +163,9 @@ Terminals refit when you resize a pane or the Tether window, including after max
 
 ## Attention queue
 
-With several sessions running at once, "which one needs me?" is the recurring question. The attention queue answers it: press **Ctrl+Shift+A** (or click **Session → Jump to Next Waiting**, or the amber **N waiting** pill in the sidebar header) to jump straight to the next session that's amber — **Waiting** — sorted permission prompts first, then oldest-waiting first. Repeated presses cycle through the whole queue, wrapping back to the start once you've seen them all, so it doubles as a "drain the queue" loop across a busy sidebar.
+With several sessions running at once, "which one needs me?" is the recurring question. The attention queue answers it: press **Ctrl+Shift+A** (or click **Session → Jump to Next Waiting**, or the amber **N waiting** pill beside **Settings** at the bottom of the sidebar) to jump straight to the next session that's amber — **Waiting** — sorted permission prompts first, then oldest-waiting first. Repeated presses cycle through the whole queue, wrapping back to the start once you've seen them all, so it doubles as a "drain the queue" loop across a busy sidebar.
 
-The pill only appears when at least one session is waiting, and shows the live count. Muting suppresses desktop notifications and generic webhooks, but leaves the session in the attention queue.
+The pill only appears when at least one session is waiting, and shows the live count. It shares the existing Settings row, so appearing or disappearing does not move session rows or their action menus. Muting suppresses desktop notifications and generic webhooks, but leaves the session in the attention queue.
 
 The shortcut is remappable like any other; see [Keyboard Shortcuts](keyboard-shortcuts.md).
 
