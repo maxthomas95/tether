@@ -72,6 +72,8 @@ import { OfficePane } from './components/OfficePane';
 import { JobsOfficePill } from './components/sidebar/JobsOfficePill';
 import { GifPanel } from './components/sidebar/GifPanel';
 import { useGifPanelSettings } from './hooks/useGifPanelSettings';
+import { PipPanel } from './components/sidebar/PipPanel';
+import { usePipSettings } from './hooks/usePipSettings';
 
 /**
  * Delay before dropping a waiting-ack when a session transitions back to
@@ -174,6 +176,7 @@ export function App() {
     notify({ type: 'error', title, message: extractErrorMessage(err) });
   }, [notify]);
   const gifPanel = useGifPanelSettings(notifyError);
+  const pip = usePipSettings(notifyError);
   const notifyVaultAuthError = useCallback((err: unknown) => {
     const message = extractErrorMessage(err);
     if (/cancel/i.test(message)) return;
@@ -1833,6 +1836,7 @@ export function App() {
         { label: 'Canvas Mode', checked: canvasEnabled, disabled: !workspaceReady, onClick: () => handleCanvasMode(!canvasEnabled) },
         { label: 'Toggle Sidebar', shortcut: formatChord(resolvedBindings['sidebar.toggle']) || undefined, onClick: () => setSidebarVisible(v => !v) },
         { label: 'GIF Panel', checked: gifPanel.settings?.enabled ?? false, disabled: !gifPanel.settings, onClick: () => { void gifPanel.toggle(); setSidebarVisible(true); } },
+        { label: 'Pip Sidebar Pet', checked: pip.settings?.enabled ?? false, disabled: !pip.settings || pip.busy, onClick: () => { void pip.toggle(); setSidebarVisible(true); } },
         ...(jobsStatus?.detected ? [
           { label: 'J.O.B.S. Office', checked: officeOpen, onClick: () => setOfficeOpen(v => !v) },
         ] : []),
@@ -1858,7 +1862,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle, pip.settings, pip.busy, pip.toggle]);
 
   return (
     <div className="app-layout" data-density={uiDensity}>
@@ -2036,6 +2040,8 @@ export function App() {
           })}
         </div>
         {sidebarVisible && gifPanel.settings?.enabled && <GifPanel settings={gifPanel.settings} onSettingsChange={gifPanel.setSettings} />}
+        {sidebarVisible && pip.settings?.enabled && <PipPanel settings={pip.settings} sessions={sessions}
+          activeSessionId={activeSessionId} busy={pip.busy} onSettingsChange={pip.update} onActivateSession={handleActivateFromSearch} />}
         <GlobalUsageFooter
           environments={environments}
           onOpenHistory={() => setUsageHistoryOpen(true)}
