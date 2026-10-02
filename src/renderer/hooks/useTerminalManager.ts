@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { PaneId } from '../../shared/layout-types';
 import { decodeOsc52Write } from '../utils/osc52';
@@ -9,6 +10,7 @@ import { DEFAULT_TERMINAL_FONT, loadTerminalFont } from '../styles/terminal-font
 interface ManagedTerminal {
   terminal: Terminal;
   fitAddon: FitAddon;
+  searchAddon: SearchAddon;
   linksAddon: WebLinksAddon;
 }
 
@@ -16,6 +18,7 @@ interface PaneEntry {
   sessionId: string;
   terminal: Terminal;
   fitAddon: FitAddon;
+  searchAddon: SearchAddon;
   linksAddon: WebLinksAddon;
   container: HTMLDivElement | null;
 }
@@ -104,6 +107,8 @@ export interface TerminalManagerAPI {
   detachPane: (paneId: PaneId) => void;
   fitPane: (paneId: PaneId) => void;
   focusPane: (paneId: PaneId) => void;
+  findInPane: (paneId: PaneId, term: string, options?: { caseSensitive?: boolean; wholeWord?: boolean; previous?: boolean; incremental?: boolean }) => boolean;
+  clearFindInPane: (paneId: PaneId) => void;
   setSessionFontSize: (sessionId: string, fontSize: number) => void;
   setBroadcastTargets: (sessionIds: readonly string[]) => void;
   remove: (sessionId: string) => void;
@@ -220,6 +225,9 @@ export function useTerminalManager(
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
 
+    const searchAddon = new SearchAddon();
+    terminal.loadAddon(searchAddon);
+
     const linksAddon = new WebLinksAddon((event, uri) => {
       if (!event.ctrlKey && !event.metaKey) return;
       void window.electronAPI.shell.openExternal(uri);
@@ -272,7 +280,7 @@ export function useTerminalManager(
       return true;
     });
 
-    return { terminal, fitAddon, linksAddon };
+    return { terminal, fitAddon, searchAddon, linksAddon };
   }, [sendInput]);
 
   // Get or create a background terminal for sessions not in any visible pane
@@ -319,6 +327,7 @@ export function useTerminalManager(
 
     let terminal: Terminal;
     let fitAddon: FitAddon;
+    let searchAddon: SearchAddon;
     let linksAddon: WebLinksAddon;
 
     // Reuse background terminal if it exists — it has the scrollback buffer
@@ -327,6 +336,7 @@ export function useTerminalManager(
     if (bg) {
       terminal = bg.terminal;
       fitAddon = bg.fitAddon;
+      searchAddon = bg.searchAddon;
       linksAddon = bg.linksAddon;
       backgroundTerminals.current.delete(sessionId);
       wasBackground = true;
@@ -341,11 +351,12 @@ export function useTerminalManager(
       const managed = createTerminal(sessionId);
       terminal = managed.terminal;
       fitAddon = managed.fitAddon;
+      searchAddon = managed.searchAddon;
       linksAddon = managed.linksAddon;
       terminal.open(container);
     }
 
-    const paneEntry = { sessionId, terminal, fitAddon, linksAddon, container };
+    const paneEntry = { sessionId, terminal, fitAddon, searchAddon, linksAddon, container };
     panes.current.set(paneId, paneEntry);
 
     // Fit after the layout has settled — a single rAF can be too early for
@@ -376,7 +387,7 @@ export function useTerminalManager(
     const entry = panes.current.get(paneId);
     if (!entry) return;
 
-    const { sessionId, terminal, fitAddon, linksAddon } = entry;
+    const { sessionId, terminal, fitAddon, searchAddon, linksAddon } = entry;
 
     // Check if any OTHER pane shows this session
     let otherPaneExists = false;
@@ -394,7 +405,7 @@ export function useTerminalManager(
       if (terminal.element?.parentElement) {
         terminal.element.parentElement.removeChild(terminal.element);
       }
-      backgroundTerminals.current.set(sessionId, { terminal, fitAddon, linksAddon });
+      backgroundTerminals.current.set(sessionId, { terminal, fitAddon, searchAddon, linksAddon });
     } else {
       terminal.dispose();
     }
@@ -430,6 +441,27 @@ export function useTerminalManager(
     if (!entry) return;
     entry.terminal.focus();
     fitVisiblePane(entry);
+  }, []);
+
+  const findInPane = useCallback<TerminalManagerAPI['findInPane']>((paneId, term, options = {}) => {
+    const entry = panes.current.get(paneId);
+    if (!entry) return false;
+    if (!term) {
+      entry.searchAddon.clearDecorations();
+      return false;
+    }
+    const searchOptions = {
+      caseSensitive: options.caseSensitive ?? false,
+      wholeWord: options.wholeWord ?? false,
+      incremental: options.incremental ?? false,
+    };
+    return options.previous
+      ? entry.searchAddon.findPrevious(term, searchOptions)
+      : entry.searchAddon.findNext(term, searchOptions);
+  }, []);
+
+  const clearFindInPane = useCallback((paneId: PaneId) => {
+    panes.current.get(paneId)?.searchAddon.clearDecorations();
   }, []);
 
   // Remove ALL terminals for a session (panes + background)
@@ -471,8 +503,10 @@ export function useTerminalManager(
     detachPane,
     fitPane,
     focusPane,
+    findInPane,
+    clearFindInPane,
     setSessionFontSize,
     setBroadcastTargets,
     remove,
-  }), [getOrCreate, peek, writeData, attachToPane, detachPane, fitPane, focusPane, setSessionFontSize, setBroadcastTargets, remove]);
+  }), [getOrCreate, peek, writeData, attachToPane, detachPane, fitPane, focusPane, findInPane, clearFindInPane, setSessionFontSize, setBroadcastTargets, remove]);
 }

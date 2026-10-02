@@ -6,6 +6,7 @@ import type { LayoutAction } from '../hooks/useLayoutState';
 import { DropZoneOverlay } from './DropZoneOverlay';
 import { CliToolBadge } from './CliToolBadge';
 import { PaneStatusStrip } from './PaneStatusStrip';
+import { TerminalSearchBar } from './TerminalSearchBar';
 import { abbreviatePath } from '../utils/paths';
 import { Icon } from './Icon';
 
@@ -31,6 +32,9 @@ interface TerminalPaneProps {
   isBroadcastTarget: boolean;
   isBroadcastActive: boolean;
   onToggleBroadcastTarget: (paneId: string) => void;
+  isSearchOpen: boolean;
+  onOpenSearch: (paneId: string) => void;
+  onCloseSearch: (paneId: string) => void;
   /** Recreate the dead session in this pane with the same params. */
   onRestartInPane?: (paneId: string, sessionId: string) => void;
 }
@@ -57,9 +61,13 @@ export function TerminalPane({
   isBroadcastTarget,
   isBroadcastActive,
   onToggleBroadcastTarget,
+  isSearchOpen,
+  onOpenSearch,
+  onCloseSearch,
   onRestartInPane,
 }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const previousSessionIdRef = useRef<string | null>(sessionId);
   const isPlaceholder = sessionId === null;
   const isDead = !isPlaceholder && (session?.state === 'dead' || session?.state === 'stopped');
 
@@ -67,6 +75,7 @@ export function TerminalPane({
   useEffect(() => {
     const container = containerRef.current;
     if (!container || sessionId === null) {
+      termManager.clearFindInPane(paneId);
       termManager.detachPane(paneId);
       return;
     }
@@ -74,9 +83,17 @@ export function TerminalPane({
     termManager.attachToPane(paneId, sessionId, container, !canvas);
 
     return () => {
+      termManager.clearFindInPane(paneId);
       termManager.detachPane(paneId);
     };
   }, [paneId, sessionId, termManager, canvas]);
+
+  useEffect(() => {
+    if (previousSessionIdRef.current !== sessionId) {
+      if (isSearchOpen) onCloseSearch(paneId);
+      previousSessionIdRef.current = sessionId;
+    }
+  }, [isSearchOpen, onCloseSearch, paneId, sessionId]);
 
   // Attaching several visible canvas panels must not let the last one steal focus.
   useEffect(() => {
@@ -169,6 +186,18 @@ export function TerminalPane({
     onToggleBroadcastTarget(paneId);
   }, [paneId, onToggleBroadcastTarget]);
 
+  const handleOpenSearch = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    handleFocus();
+    onOpenSearch(paneId);
+  }, [handleFocus, onOpenSearch, paneId]);
+
+  const handleCloseSearch = useCallback(() => {
+    termManager.clearFindInPane(paneId);
+    onCloseSearch(paneId);
+    requestAnimationFrame(() => termManager.focusPane(paneId));
+  }, [onCloseSearch, paneId, termManager]);
+
   const label = session?.label || 'Session';
   const path = session ? abbreviatePath(session.workingDir) : '';
   const headerLabel = isPlaceholder ? 'Empty pane' : label;
@@ -215,6 +244,18 @@ export function TerminalPane({
         </span>
         {!isPlaceholder && <span className="terminal-pane-environment" title={environmentLabel}>{environmentLabel}</span>}
         {isBroadcastTarget && <span className="terminal-pane-broadcast-label">{isBroadcastActive ? 'Broadcasting' : 'Broadcast selected'}</span>}
+        {sessionId && (
+          <button
+            type="button"
+            className={`terminal-pane-header-btn ${isSearchOpen ? 'terminal-pane-header-btn--active' : ''}`}
+            onClick={handleOpenSearch}
+            title="Find in terminal"
+            aria-label="Find in terminal"
+            aria-pressed={isSearchOpen}
+          >
+            <Icon name="search" />
+          </button>
+        )}
         {enablePaneSplitting && sessionId && !isDead && (
           <button
             type="button"
@@ -258,6 +299,13 @@ export function TerminalPane({
           </button>
         ) : (
           <div className="terminal-pane-content">
+            {isSearchOpen && (
+              <TerminalSearchBar
+                paneId={paneId}
+                onSearch={termManager.findInPane}
+                onClose={handleCloseSearch}
+              />
+            )}
             <div
               ref={containerRef}
               className="terminal-pane-xterm"

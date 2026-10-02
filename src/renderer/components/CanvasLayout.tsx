@@ -21,6 +21,9 @@ interface CanvasLayoutProps {
   onRestartInPane: (paneId: string, sessionId: string) => void;
   onChooseSession: () => void;
   onDropComplete: () => void;
+  searchPaneId: string | null;
+  onOpenTerminalSearch: (paneId: string) => void;
+  onCloseTerminalSearch: (paneId: string) => void;
 }
 
 interface Gesture {
@@ -60,7 +63,8 @@ const EDGE_NAMES: Record<string, string> = { n: 'top', e: 'right', s: 'bottom', 
 const noop = () => {};
 
 export function CanvasLayout({ state, dispatch, termManager, sessions, environments, defaultFontSize,
-  onFontSizeDelta, onRestartInPane, onChooseSession, onDropComplete }: CanvasLayoutProps) {
+  onFontSizeDelta, onRestartInPane, onChooseSession, onDropComplete, searchPaneId,
+  onOpenTerminalSearch, onCloseTerminalSearch }: CanvasLayoutProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const gestureRef = useRef<Gesture | null>(null);
   const [gesture, setGesture] = useState<Gesture | null>(null);
@@ -212,6 +216,9 @@ export function CanvasLayout({ state, dispatch, termManager, sessions, environme
               enablePaneSplitting={false} currentLeafCount={state.panels.length} maxPanes={Number.POSITIVE_INFINITY}
               defaultFontSize={defaultFontSize} onFontSizeDelta={onFontSizeDelta}
               isBroadcastTarget={false} isBroadcastActive={false} onToggleBroadcastTarget={noop}
+              isSearchOpen={searchPaneId === panel.id}
+              onOpenSearch={onOpenTerminalSearch}
+              onCloseSearch={onCloseTerminalSearch}
               onRestartInPane={onRestartInPane}
             />
             {!maximized && EDGES.map(edge => <button type="button" key={edge}

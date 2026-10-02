@@ -39,9 +39,15 @@ const mocks = vi.hoisted(() => {
       this.terminal.rows = Math.max(1, Math.floor(container.clientHeight / 20));
     });
   }
+  class FakeSearchAddon {
+    findNext = vi.fn(() => true);
+    findPrevious = vi.fn(() => true);
+    clearDecorations = vi.fn();
+  }
   return {
     FakeTerminal,
     FakeFitAddon,
+    FakeSearchAddon,
     resize: vi.fn(),
     sendInput: vi.fn(),
     setOutputMode: vi.fn().mockResolvedValue(undefined),
@@ -54,6 +60,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('@xterm/xterm', () => ({ Terminal: mocks.FakeTerminal }));
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: mocks.FakeFitAddon }));
+vi.mock('@xterm/addon-search', () => ({ SearchAddon: mocks.FakeSearchAddon }));
 vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }));
 
 import { useTerminalManager, type TerminalManagerAPI, type TerminalCursorStyle } from './useTerminalManager';
@@ -94,6 +101,12 @@ function pane() {
 
 function terminal(sessionId: string) {
   return api.peek(sessionId) as unknown as InstanceType<typeof mocks.FakeTerminal>;
+}
+
+function searchAddon(sessionId: string) {
+  return terminal(sessionId).loadAddon.mock.calls
+    .map(([addon]) => addon)
+    .find(addon => addon instanceof mocks.FakeSearchAddon) as InstanceType<typeof mocks.FakeSearchAddon>;
 }
 
 beforeEach(() => {
@@ -221,6 +234,40 @@ describe('terminal session lifecycle', () => {
     expect(original.refresh).toHaveBeenLastCalledWith(0, 29);
     expect(original.scrollToBottom).toHaveBeenCalled();
     expect(original.focus).not.toHaveBeenCalled();
+  });
+
+  it('searches the focused pane without writing process input and keeps the addon through detach', () => {
+    const first = pane();
+    api.attachToPane('left', 'a', first);
+    const addon = searchAddon('a');
+
+    expect(api.findInPane('left', 'needle', { caseSensitive: true, incremental: true })).toBe(true);
+    expect(addon.findNext).toHaveBeenCalledExactlyOnceWith('needle', {
+      caseSensitive: true,
+      wholeWord: false,
+      incremental: true,
+    });
+    api.findInPane('left', ' needle ');
+    expect(addon.findNext).toHaveBeenLastCalledWith(' needle ', {
+      caseSensitive: false,
+      wholeWord: false,
+      incremental: false,
+    });
+    expect(mocks.sendInput).not.toHaveBeenCalled();
+
+    api.detachPane('left');
+    const second = pane();
+    api.attachToPane('right', 'a', second, false);
+    expect(searchAddon('a')).toBe(addon);
+    expect(api.findInPane('right', 'needle', { previous: true, wholeWord: true })).toBe(true);
+    expect(addon.findPrevious).toHaveBeenCalledExactlyOnceWith('needle', {
+      caseSensitive: false,
+      wholeWord: true,
+      incremental: false,
+    });
+
+    api.clearFindInPane('right');
+    expect(addon.clearDecorations).toHaveBeenCalledOnce();
   });
 
   it('discards delayed layout work after another session reuses the same pane container', () => {

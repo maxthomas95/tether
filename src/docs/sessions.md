@@ -146,6 +146,17 @@ Broadcast input is available in split layouts. Entering Canvas clears broadcast 
 
 Toggle broadcast targets from each pane header. With at least two live targets selected, input from a selected pane is sent to every selected session. Input from an unselected pane stays in that pane. Dead or stopped sessions are removed from the targets. Use **Session → Clear Broadcast Input Targets** to reset.
 
+## Finding Text in a Terminal
+
+Press **Ctrl+Shift+F**, choose **Session → Find in Terminal**, or click the find button in a pane header to search the focused terminal's scrollback. The search bar stays inside that pane, works in single, split, and Canvas layouts, and searches the existing xterm buffer without sending anything to the CLI.
+
+- Type to search incrementally
+- **Enter** jumps to the next match
+- **Shift+Enter** jumps to the previous match
+- **Aa** toggles match case
+- **W** toggles whole-word matching
+- **Esc** closes the bar, clears search highlights, and returns focus to the terminal
+
 ## Bulk Actions on a Group
 
 Right-click a repo-group header in the sidebar for bulk actions across every session in that group:

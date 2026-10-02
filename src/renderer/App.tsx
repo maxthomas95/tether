@@ -114,6 +114,7 @@ export function App() {
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [terminalSearchPaneId, setTerminalSearchPaneId] = useState<string | null>(null);
   const [welcomeInitialDirectory, setWelcomeInitialDirectory] = useState<string | undefined>();
   const [aboutOpen, setAboutOpen] = useState(false);
   const [usageHistoryOpen, setUsageHistoryOpen] = useState(false);
@@ -1482,10 +1483,30 @@ export function App() {
     setSessionDialogOpen(true);
   }, []);
 
+  const handleOpenTerminalSearch = useCallback((paneId?: string) => {
+    const focusedPaneId = canvasEnabled ? canvasState.focusedPaneId : layoutState.focusedPaneId;
+    const nextPaneId = paneId ?? focusedPaneId;
+    if (!nextPaneId) return;
+    if (canvasEnabled) {
+      canvasDispatch({ type: 'FOCUS_VISIBLE', paneId: nextPaneId });
+    } else {
+      layoutDispatch({ type: 'SET_FOCUS', paneId: nextPaneId });
+    }
+    setTerminalSearchPaneId(prev => {
+      if (prev && prev !== nextPaneId) termManager.clearFindInPane(prev);
+      return nextPaneId;
+    });
+  }, [canvasDispatch, canvasEnabled, canvasState.focusedPaneId, layoutDispatch, layoutState.focusedPaneId, termManager]);
+
+  const handleCloseTerminalSearch = useCallback((paneId: string) => {
+    setTerminalSearchPaneId(prev => prev === paneId ? null : prev);
+  }, []);
+
   // Keyboard shortcuts
   const shortcutActions = useMemo(() => ({
     onNewSession: () => setSessionDialogOpen(true),
     onOpenSearch: () => setSearchOpen(true),
+    onFindInTerminal: () => handleOpenTerminalSearch(),
     onToggleSidebar: () => setSidebarVisible(v => !v),
     onStopSession: () => { if (activeSessionId) handleStop(activeSessionId); },
     onOpenSettings: () => setSettingsOpen(true),
@@ -1543,7 +1564,7 @@ export function App() {
         targetPaneId: neighborId,
       });
     },
-  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom, handleJumpToNextWaiting, canvasEnabled, canvasState]);
+  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom, handleJumpToNextWaiting, canvasEnabled, canvasState, handleOpenTerminalSearch]);
 
   useKeyboardShortcuts(shortcutActions, resolvedBindings, maintenanceTarget === null);
 
@@ -1593,6 +1614,16 @@ export function App() {
       return setsEqual(prev, next) ? prev : next;
     });
   }, [currentLeafCount, enablePaneSplitting, layoutState.root, sessions, canvasEnabled]);
+
+  useEffect(() => {
+    if (!terminalSearchPaneId) return;
+    const visiblePaneIds = canvasEnabled
+      ? new Set(canvasState.panels.map(panel => panel.id))
+      : new Set(layoutState.root ? getLeaves(layoutState.root).map(leaf => leaf.id) : []);
+    if (visiblePaneIds.has(terminalSearchPaneId)) return;
+    termManager.clearFindInPane(terminalSearchPaneId);
+    setTerminalSearchPaneId(null);
+  }, [canvasEnabled, canvasState.panels, layoutState.root, termManager, terminalSearchPaneId]);
 
   const handleToggleBroadcastTarget = useCallback((paneId: string) => {
     setBroadcastPaneIds(prev => {
@@ -1791,6 +1822,7 @@ export function App() {
       label: 'Session',
       items: [
         { label: 'Find Session...', shortcut: formatChord(resolvedBindings['search.open']) || undefined, onClick: () => setSearchOpen(true), disabled: sessions.length === 0 },
+        { label: 'Find in Terminal', shortcut: formatChord(resolvedBindings['terminal.find']) || undefined, onClick: () => handleOpenTerminalSearch(), disabled: !(canvasEnabled ? canvasState.focusedPaneId : layoutState.focusedPaneId) },
         { label: 'Jump to Next Waiting', shortcut: formatChord(resolvedBindings['session.nextWaiting']) || undefined, onClick: handleJumpToNextWaiting, disabled: waitingCount === 0 },
         { separator: true },
         { label: 'Stop Session', shortcut: formatChord(resolvedBindings['session.stop']) || undefined, onClick: () => { if (activeSessionId) handleStop(activeSessionId); }, disabled: !isAlive },
@@ -1836,7 +1868,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle, pip.settings, pip.busy, pip.toggle]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, layoutState.focusedPaneId, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, canvasState.focusedPaneId, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle, pip.settings, pip.busy, pip.toggle, handleOpenTerminalSearch]);
 
   return (
     <div className="app-layout" data-density={uiDensity}>
@@ -2044,7 +2076,10 @@ export function App() {
             sessions={sessions} environments={environments} defaultFontSize={defaultTerminalFontSize}
             onFontSizeDelta={handleSessionFontSizeChange} onRestartInPane={handleRestartInPane}
             onChooseSession={() => sessions.length ? setSearchOpen(true) : setSessionDialogOpen(true)}
-            onDropComplete={() => setIsDragging(false)} />
+            onDropComplete={() => setIsDragging(false)}
+            searchPaneId={terminalSearchPaneId}
+            onOpenTerminalSearch={handleOpenTerminalSearch}
+            onCloseTerminalSearch={handleCloseTerminalSearch} />
         ) : layoutState.root ? (
           <SplitLayout
             node={layoutState.maximizedPaneId
@@ -2071,6 +2106,9 @@ export function App() {
             broadcastPaneIds={broadcastPaneIds}
             broadcastActive={broadcastActive}
             onToggleBroadcastTarget={handleToggleBroadcastTarget}
+            searchPaneId={terminalSearchPaneId}
+            onOpenTerminalSearch={handleOpenTerminalSearch}
+            onCloseTerminalSearch={handleCloseTerminalSearch}
             onRestartInPane={handleRestartInPane}
           />
         ) : (

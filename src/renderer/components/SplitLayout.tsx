@@ -24,6 +24,9 @@ interface SplitLayoutProps {
   broadcastPaneIds: ReadonlySet<string>;
   broadcastActive: boolean;
   onToggleBroadcastTarget: (paneId: string) => void;
+  searchPaneId: string | null;
+  onOpenTerminalSearch: (paneId: string) => void;
+  onCloseTerminalSearch: (paneId: string) => void;
   onRestartInPane?: (paneId: string, sessionId: string) => void;
 }
 
@@ -47,6 +50,9 @@ export function SplitLayout({
   broadcastPaneIds,
   broadcastActive,
   onToggleBroadcastTarget,
+  searchPaneId,
+  onOpenTerminalSearch,
+  onCloseTerminalSearch,
   onRestartInPane,
 }: SplitLayoutProps) {
   if (node.type === 'leaf') {
@@ -73,6 +79,9 @@ export function SplitLayout({
         isBroadcastTarget={broadcastPaneIds.has(node.id)}
         isBroadcastActive={broadcastActive}
         onToggleBroadcastTarget={onToggleBroadcastTarget}
+        isSearchOpen={searchPaneId === node.id}
+        onOpenSearch={onOpenTerminalSearch}
+        onCloseSearch={onCloseTerminalSearch}
         onRestartInPane={onRestartInPane}
       />
     );
@@ -99,6 +108,9 @@ export function SplitLayout({
       broadcastPaneIds={broadcastPaneIds}
       broadcastActive={broadcastActive}
       onToggleBroadcastTarget={onToggleBroadcastTarget}
+      searchPaneId={searchPaneId}
+      onOpenTerminalSearch={onOpenTerminalSearch}
+      onCloseTerminalSearch={onCloseTerminalSearch}
       onRestartInPane={onRestartInPane}
     />
   );
@@ -124,6 +136,9 @@ interface SplitContainerProps {
   broadcastPaneIds: ReadonlySet<string>;
   broadcastActive: boolean;
   onToggleBroadcastTarget: (paneId: string) => void;
+  searchPaneId: string | null;
+  onOpenTerminalSearch: (paneId: string) => void;
+  onCloseTerminalSearch: (paneId: string) => void;
   onRestartInPane?: (paneId: string, sessionId: string) => void;
 }
 
@@ -147,6 +162,9 @@ function SplitContainer({
   broadcastPaneIds,
   broadcastActive,
   onToggleBroadcastTarget,
+  searchPaneId,
+  onOpenTerminalSearch,
+  onCloseTerminalSearch,
   onRestartInPane,
 }: SplitContainerProps) {
   const [first, second] = node.children;
@@ -179,6 +197,9 @@ function SplitContainer({
           broadcastPaneIds={broadcastPaneIds}
           broadcastActive={broadcastActive}
           onToggleBroadcastTarget={onToggleBroadcastTarget}
+          searchPaneId={searchPaneId}
+          onOpenTerminalSearch={onOpenTerminalSearch}
+          onCloseTerminalSearch={onCloseTerminalSearch}
           onRestartInPane={onRestartInPane}
         />
       </div>
@@ -207,6 +228,9 @@ function SplitContainer({
           broadcastPaneIds={broadcastPaneIds}
           broadcastActive={broadcastActive}
           onToggleBroadcastTarget={onToggleBroadcastTarget}
+          searchPaneId={searchPaneId}
+          onOpenTerminalSearch={onOpenTerminalSearch}
+          onCloseTerminalSearch={onCloseTerminalSearch}
           onRestartInPane={onRestartInPane}
         />
       </div>

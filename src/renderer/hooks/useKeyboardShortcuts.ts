@@ -11,6 +11,7 @@ export type PaneDirection = 'left' | 'right' | 'up' | 'down';
 export interface ShortcutActions {
   onNewSession: () => void;
   onOpenSearch: () => void;
+  onFindInTerminal: () => void;
   onSwitchSession: (index: number) => void;
   onNextSession: () => void;
   onPrevSession: () => void;
@@ -39,6 +40,7 @@ function dispatch(action: KeybindingAction, actions: ShortcutActions): void {
     case 'session.new': actions.onNewSession(); return;
     case 'session.stop': actions.onStopSession(); return;
     case 'search.open': actions.onOpenSearch(); return;
+    case 'terminal.find': actions.onFindInTerminal(); return;
     case 'sidebar.toggle': actions.onToggleSidebar(); return;
     case 'settings.open': actions.onOpenSettings(); return;
     case 'shortcuts.show': actions.onShowShortcuts(); return;
@@ -90,6 +92,7 @@ export function useKeyboardShortcuts(
       if (!chord) return;
       const action = chordLookup.get(chord);
       if (!action) return;
+      if (action === 'terminal.find' && isEditableTarget(e.target)) return;
       // Arrow-key chords must not hijack native arrow behavior in
       // non-xterm editable fields (inline rename, dialog inputs).
       if (chord.includes('arrow') && isEditableTarget(e.target)) return;
