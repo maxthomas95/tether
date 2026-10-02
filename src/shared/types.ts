@@ -167,6 +167,8 @@ export interface EnvironmentInfo {
 export interface SessionInfo {
   /** Tether profile name as captured at launch, distinct from a native Codex profile. */
   launchProfileName?: string;
+  /** Opaque id for encrypted main-process launch settings. */
+  launchSnapshotId?: string;
   /** Allowlisted launch overrides; observed runtime metadata may differ. */
   codexLaunch?: { model?: string; reasoningEffort?: string; profile?: string };
   id: string;
@@ -277,6 +279,8 @@ export interface CreateSessionOptions {
   cliArgs?: string[];
   /** Inherited flags the user explicitly disabled for this session. */
   disabledInheritedFlags?: string[];
+  /** Opaque id for encrypted launch settings retained by the main process. */
+  launchSnapshotId?: string;
   /** When set, launch the selected CLI tool by resuming this tool-native session id. */
   resumeToolSessionId?: string;
   /** Legacy alias for Claude Code resume. */
@@ -678,8 +682,8 @@ export interface TetherAPI {
     writeText(text: string): Promise<void>;
   };
   workspace: {
-    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>, activeIndex: number, canvas?: import('./canvas-types').SavedCanvas): Promise<void>;
-    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string }>; activeIndex: number; canvas?: import('./canvas-types').SavedCanvas } | null>;
+    save(sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string; launchSnapshotId?: string; restorePending?: boolean }>, activeIndex: number, canvas?: import('./canvas-types').SavedCanvas): Promise<void>;
+    load(): Promise<{ sessions: Array<{ workingDir: string; label: string; environmentId?: string; cliTool?: string; customCliBinary?: string; toolSessionId?: string; claudeSessionId?: string; worktreeOf?: string; helmEnabled?: boolean; parentSessionId?: string; launchSnapshotId?: string; restorePending?: boolean }>; activeIndex: number; canvas?: import('./canvas-types').SavedCanvas } | null>;
   };
   transcripts: {
     list(workingDir: string, cliTool?: CliToolId): Promise<TranscriptInfo[]>;

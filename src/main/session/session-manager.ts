@@ -29,6 +29,8 @@ import { usageService } from '../usage/usage-service';
 import { remoteUsageService } from '../usage/remote-usage-service';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { createLogger } from '../logger';
+import { applyLaunchIntent, captureLaunchIntent, persistLaunchSnapshot, prepareLaunchSnapshot, readLaunchIntent } from './launch-snapshots';
+import type { LaunchSnapshotRow } from '../db/database';
 
 const log = createLogger('session');
 const CLI_TOOL_IDS: CliToolId[] = ['claude', 'codex', 'copilot', 'opencode', 'custom'];
@@ -287,6 +289,7 @@ export class Session {
   readonly worktreeOf: string | null;
   /** Allowlisted launch metadata; never retain arbitrary flags or environment values. */
   launchProfileName?: string;
+  launchSnapshotId?: string;
   codexLaunch?: SessionInfo['codexLaunch'];
   usageSessionId?: string;
   remoteUsageStatus?: 'pending' | 'collecting' | 'unavailable';
@@ -333,9 +336,40 @@ export class Session {
       parentSessionId: this.parentSessionId || undefined,
       notificationsMuted: this.notificationsMuted || undefined,
       launchProfileName: this.launchProfileName,
+      launchSnapshotId: this.launchSnapshotId,
       codexLaunch: this.codexLaunch,
     };
   }
+}
+
+function hasInlineLaunchIntent(opts: CreateSessionOptions): boolean {
+  return !!(
+    opts.profileId ||
+    Object.prototype.hasOwnProperty.call(opts, 'env') && opts.env !== undefined ||
+    Object.prototype.hasOwnProperty.call(opts, 'cliArgs') && opts.cliArgs !== undefined ||
+    Object.prototype.hasOwnProperty.call(opts, 'disabledInheritedFlags') && opts.disabledInheritedFlags !== undefined
+  );
+}
+
+function resolveLaunchOptions(opts: CreateSessionOptions, prepareSnapshot: boolean): { opts: CreateSessionOptions; snapshotId?: string; snapshotRow?: LaunchSnapshotRow } {
+  if (!opts.launchSnapshotId) {
+    const row = prepareSnapshot ? prepareLaunchSnapshot(captureLaunchIntent(opts)) : null;
+    return { opts, snapshotId: row?.id, snapshotRow: row ?? undefined };
+  }
+  const saved = readLaunchIntent(opts.launchSnapshotId);
+  if (!hasInlineLaunchIntent(opts)) {
+    return { opts: applyLaunchIntent(opts, saved), snapshotId: opts.launchSnapshotId };
+  }
+  const restored = applyLaunchIntent(opts, saved);
+  const merged = {
+    ...restored,
+    profileId: opts.profileId ?? restored.profileId,
+    env: opts.env ? { ...opts.env } : restored.env,
+    cliArgs: opts.cliArgs ? [...opts.cliArgs] : restored.cliArgs,
+    disabledInheritedFlags: opts.disabledInheritedFlags ? [...opts.disabledInheritedFlags] : restored.disabledInheritedFlags,
+  };
+  const row = prepareSnapshot ? prepareLaunchSnapshot(captureLaunchIntent(merged)) : null;
+  return { opts: merged, snapshotId: row?.id, snapshotRow: row ?? undefined };
 }
 
 /**
@@ -346,6 +380,8 @@ export class Session {
  * IPC so the renderer can prompt for Vault login before `session.create` runs.
  */
 export async function findVaultRefInSession(opts: CreateSessionOptions): Promise<string | null> {
+  const { opts: launchOpts } = resolveLaunchOptions(opts, false);
+  opts = launchOpts;
   const { getDb } = await import('../db/database');
   const appEnvVars = decryptEnvVarsRecord(getDb().defaultEnvVars || {});
   let envEnvVars: Record<string, string> = {};
@@ -648,6 +684,8 @@ export class SessionManager {
     opts: CreateSessionOptions,
     callbacks: SessionCallbacks,
   ): Promise<Session> {
+    const prepared = resolveLaunchOptions(opts, true);
+    opts = prepared.opts;
     const id = uuidv4();
     const label = opts.label || opts.workingDir.split(/[\\/]/).pop() || 'Untitled';
     const cliTool: CliToolId = opts.cliTool || 'claude';
@@ -661,6 +699,7 @@ export class SessionManager {
       parentSessionId: opts.parentSessionId,
     });
     this.sessions.set(id, session);
+    session.launchSnapshotId = prepared.snapshotId;
     this.callbacksMap.set(id, callbacks);
 
     // Compute the hook env up front so we know whether this session is
@@ -992,6 +1031,9 @@ export class SessionManager {
         cloneUrl: opts.cloneUrl,
         initialPrompt: opts.initialPrompt,
       });
+      if (prepared.snapshotRow) {
+        persistLaunchSnapshot(prepared.snapshotRow);
+      }
     } catch (err) {
       log.error('Transport start failed', { id, error: err instanceof Error ? err.message : String(err) });
       statusDetector.unregister(id);

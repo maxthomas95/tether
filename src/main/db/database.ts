@@ -21,10 +21,16 @@ export interface SavedSession {
   toolSessionId?: string;
   /** Legacy UUID of the Claude conversation to resume on next launch. */
   claudeSessionId?: string;
+  /** Source repo path when this session was created as a managed worktree. */
+  worktreeOf?: string;
   /** When true, re-wire the Helm MCP on next launch of this session. */
   helmEnabled?: boolean;
   /** Parent Helm session id for dispatched children — drives the 🪝 badge. */
   parentSessionId?: string;
+  /** Opaque id for main-only encrypted launch intent. */
+  launchSnapshotId?: string;
+  /** Renderer recovery metadata: retry this entry on the next app launch. */
+  restorePending?: boolean;
 }
 
 export interface SavedWorkspace {
@@ -67,6 +73,14 @@ export interface KnownHostEntry {
   firstSeen: string;      // ISO timestamp (same as trustedAt for TOFU)
 }
 
+export interface LaunchSnapshotRow {
+  id: string;
+  version: 1;
+  encryptedIntent: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DbData {
   environments: EnvironmentRow[];
   sessions: SessionRow[];
@@ -81,6 +95,7 @@ export interface DbData {
   sessionOrderPrefs: SessionOrderPref[];
   usageSummaries: PersistedSessionUsage[];
   knownHosts: KnownHostEntry[];
+  launchSnapshots: Record<string, LaunchSnapshotRow>;
   keybindings?: Partial<Record<KeybindingAction, Chord | null>>;
 }
 
@@ -281,6 +296,31 @@ function normalizeLaunchProfiles(profiles: unknown): LaunchProfileRow[] {
   });
 }
 
+function normalizeLaunchSnapshots(value: unknown): Record<string, LaunchSnapshotRow> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out: Record<string, LaunchSnapshotRow> = {};
+  for (const [id, row] of Object.entries(value as Record<string, unknown>)) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+    const record = row as Record<string, unknown>;
+    if (
+      record.id === id &&
+      record.version === 1 &&
+      typeof record.encryptedIntent === 'string' &&
+      typeof record.createdAt === 'string' &&
+      typeof record.updatedAt === 'string'
+    ) {
+      out[id] = {
+        id: record.id,
+        version: 1,
+        encryptedIntent: record.encryptedIntent,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+      };
+    }
+  }
+  return out;
+}
+
 function emptyDbData(): DbData {
   return {
     environments: [],
@@ -296,6 +336,7 @@ function emptyDbData(): DbData {
     sessionOrderPrefs: [],
     usageSummaries: [],
     knownHosts: [],
+    launchSnapshots: {},
     keybindings: {},
   };
 }
@@ -333,6 +374,7 @@ function migrateLoadedDb(loaded: Record<string, unknown>): DbData {
     sessionOrderPrefs: (loaded.sessionOrderPrefs as SessionOrderPref[]) || [],
     usageSummaries: (loaded.usageSummaries as PersistedSessionUsage[]) || [],
     knownHosts: (loaded.knownHosts as KnownHostEntry[]) || [],
+    launchSnapshots: normalizeLaunchSnapshots(loaded.launchSnapshots),
     keybindings,
   };
 }

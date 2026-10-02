@@ -17,6 +17,7 @@ function createFreshDb(): DbData {
     sessionOrderPrefs: [],
     usageSummaries: [],
     knownHosts: [],
+    launchSnapshots: {},
   };
 }
 

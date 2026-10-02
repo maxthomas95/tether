@@ -29,6 +29,7 @@ import { formatCost } from './utils/usage-format';
 import { useTerminalManager } from './hooks/useTerminalManager';
 import type { TerminalCursorStyle } from './hooks/useTerminalManager';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
+import { useWorkspacePersistence, type WorkspaceRestoreFailure } from './hooks/useWorkspacePersistence';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
@@ -212,10 +213,10 @@ export function App() {
   // Gate the persist effect until the restore effect has finished reading the
   // saved workspace. Otherwise the initial-mount persist (with sessions=[])
   // races ahead of the multi-IPC restore chain and clobbers the saved
-  // workspace before workspace.load() can read it. Ref (not state) so the
-  // flag flip doesn't itself trigger a persist with empty sessions.
-  const restorationCompleteRef = useRef(false);
+  // workspace before workspace.load() can read it. Persistence starts once
+  // the restored sessions and any failed entries have been accounted for.
   const [workspaceReady, setWorkspaceReady] = useState(false);
+  const savedCanvas = useMemo(() => saveCanvas(canvasState, sessions.map(s => s.id)), [canvasState, sessions]);
   const effectiveMaxPanes = canvasEnabled ? Number.POSITIVE_INFINITY : enablePaneSplitting ? maxPanes : 1;
 
   const handleCanvasMode = useCallback((enabled: boolean) => {
@@ -297,6 +298,9 @@ export function App() {
     ? findLeaf(layoutState.root, layoutState.focusedPaneId)
     : null;
   const activeSessionId = focusedLeaf?.sessionId ?? null;
+  const { reportRestoreFailures, retainPendingRestores } = useWorkspacePersistence(
+    sessions, activeSessionId, savedCanvas, workspaceReady, { notify, confirm: confirmDialog },
+  );
   // Sessions currently mounted AND visible (maximize hides everything else).
   // Used by the sidebar to decide which sessions get the amber-with-bang
   // "needs attention" affordance — sessions you can't see should call out
@@ -453,6 +457,7 @@ export function App() {
 
           // Load saved workspace for ordering/focus hints
           const workspace = await window.electronAPI.workspace?.load?.();
+          if (mounted && workspace) retainPendingRestores(workspace.sessions);
 
           // Determine session order: use workspace ordering if available, otherwise
           // use the order from the main process session list.
@@ -466,6 +471,10 @@ export function App() {
             const remaining = new Set(activeSessions.map(s => s.id));
 
             for (const saved of workspace.sessions) {
+              if (saved.restorePending) {
+                reconnectedCanvasIds.push(null);
+                continue;
+              }
               const found = activeSessions.find(s =>
                 remaining.has(s.id) && (
                   (saved.toolSessionId && s.toolSessionId === saved.toolSessionId) ||
@@ -563,7 +572,7 @@ export function App() {
         // Build layout tree from restored sessions
         let root: LayoutNode | null = null;
         let focusPaneId: string | null = null;
-        const restoreFailures: Array<{ label: string; error: string }> = [];
+        const restoreFailures: WorkspaceRestoreFailure[] = [];
 
         for (let i = 0; i < workspace.sessions.length; i++) {
           const saved = workspace.sessions[i];
@@ -581,6 +590,7 @@ export function App() {
               worktreeOf: saved.worktreeOf,
               helmEnabled: saved.helmEnabled,
               parentSessionId: saved.parentSessionId,
+              launchSnapshotId: saved.launchSnapshotId,
             });
             if (!mounted) return;
             restoredCanvasIds[i] = session.id;
@@ -609,20 +619,12 @@ export function App() {
             restoreFailures.push({
               label: saved.label || saved.workingDir,
               error: extractErrorMessage(err),
+              saved,
             });
           }
         }
 
-        if (mounted && restoreFailures.length > 0) {
-          const first = restoreFailures[0];
-          notify({
-            type: 'error',
-            title: restoreFailures.length === 1
-              ? `Failed to restore ${first.label}`
-              : `Failed to restore ${restoreFailures.length} sessions`,
-            message: first.error,
-          });
-        }
+        if (mounted) reportRestoreFailures(restoreFailures);
 
         canvasDispatch({ type: 'RESTORE', saved: workspace.canvas, sessionIds: restoredCanvasIds });
         if (restoreCanvasMode && !workspace.canvas) {
@@ -645,43 +647,12 @@ export function App() {
         // failure, or full restore) flips the flag — otherwise persist would
         // be permanently silent and subsequent user actions wouldn't save.
         if (mounted) {
-          restorationCompleteRef.current = true;
           setWorkspaceReady(true);
         }
       }
     });
     return () => { mounted = false; };
   }, []);
-
-  const savedCanvas = useMemo(() => saveCanvas(canvasState, sessions.map(s => s.id)), [canvasState, sessions]);
-
-  // Persist workspace on every change. Sync (no debounce) so a close/remove
-  // is on disk before the user can quit — `beforeunload` IPC races renderer
-  // teardown and can't be relied on as a backup.
-  //
-  // Gated on restorationCompleteRef so the initial-mount fire (sessions=[])
-  // doesn't clobber the saved workspace before the restore effect's chain of
-  // IPCs (env.list → 4× config.get → workspace.load) has a chance to read it.
-  useEffect(() => {
-    if (!restorationCompleteRef.current) return;
-    const activeIndex = sessions.findIndex(s => s.id === activeSessionId);
-    window.electronAPI.workspace?.save?.(
-      sessions.map(s => ({
-        workingDir: s.workingDir,
-        label: s.label,
-        environmentId: s.environmentId || undefined,
-        cliTool: s.cliTool,
-        customCliBinary: s.customCliBinary,
-        toolSessionId: s.toolSessionId || s.claudeSessionId,
-        claudeSessionId: s.claudeSessionId,
-        worktreeOf: s.worktreeOf,
-        helmEnabled: s.helmEnabled,
-        parentSessionId: s.parentSessionId,
-      })),
-      Math.max(0, activeIndex),
-      savedCanvas,
-    );
-  }, [sessions, activeSessionId, savedCanvas]);
 
   useEffect(() => {
     if (!workspaceReady) return;
@@ -807,7 +778,7 @@ export function App() {
     return () => { removeData(); removeState(); removeExit(); removeUpdated(); removeCreated(); };
   }, [termManager, notify]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean) => {
+  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean, launchSnapshotId?: string) => {
     const createOpts: CreateSessionOptions = {
       workingDir,
       label: label || undefined,
@@ -823,6 +794,7 @@ export function App() {
       cloneUrl,
       worktreeOf,
       helmEnabled,
+      launchSnapshotId,
     };
     try {
       // If this session would resolve vault:// refs but the Vault token is
@@ -1037,7 +1009,7 @@ export function App() {
       .filter(s => s.workingDir === source.workingDir)
       .map(s => s.label);
     const label = nextDuplicateLabel(source.label, siblingLabels);
-    handleCreateSession(source.workingDir, label, source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined, source.helmEnabled);
+    handleCreateSession(source.workingDir, label, source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined, source.helmEnabled, source.launchSnapshotId);
   }, [sessions, handleCreateSession]);
 
   const sessionsInGroup = useCallback((environmentId: string, workingDir: string): SessionInfo[] => {
@@ -1083,6 +1055,7 @@ export function App() {
       undefined,
       opts.worktreeOf,
       opts.helmEnabled,
+      opts.launchSnapshotId,
     );
   }, [handleCreateSession]);
 
