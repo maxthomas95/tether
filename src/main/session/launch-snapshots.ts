@@ -21,12 +21,11 @@ function cloneRecord(value: unknown): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Saved launch settings are invalid');
   }
-  const out: Record<string, string> = {};
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+  const entries = Object.entries(value as Record<string, unknown>);
+  for (const [, item] of entries) {
     if (typeof item !== 'string') throw new Error('Saved launch settings are invalid');
-    out[key] = item;
   }
-  return out;
+  return Object.fromEntries(entries) as Record<string, string>;
 }
 
 function cloneStringArray(value: unknown): string[] {

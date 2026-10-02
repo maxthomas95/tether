@@ -1,10 +1,11 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LaunchProfileRow } from '../db/database';
 
 const electronState = vi.hoisted(() => ({
-  userData: `${process.env.TEMP || process.env.TMP || process.cwd()}\\tether-launch-snapshots-${process.pid}`,
+  userData: '',
   encryptionAvailable: true,
   decryptFails: false,
 }));
@@ -52,16 +53,16 @@ function profile(overrides: Partial<LaunchProfileRow> = {}): LaunchProfileRow {
 
 describe('launch snapshots', () => {
   beforeEach(() => {
-    fs.mkdirSync(electronState.userData, { recursive: true });
-    closeDb();
-    fs.rmSync(electronState.userData, { recursive: true, force: true });
+    // The database caches its file path, so reuse this isolated temp directory.
+    if (!electronState.userData) {
+      electronState.userData = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-launch-snapshots-'));
+    }
     fs.mkdirSync(electronState.userData, { recursive: true });
     electronState.encryptionAvailable = true;
     electronState.decryptFails = false;
   });
 
   afterEach(() => {
-    fs.mkdirSync(electronState.userData, { recursive: true });
     closeDb();
     fs.rmSync(electronState.userData, { recursive: true, force: true });
   });
@@ -104,6 +105,18 @@ describe('launch snapshots', () => {
     expect(captureLaunchIntent({ workingDir: '/repo' })).toBeNull();
     expect(createLaunchSnapshot(null)).toBeUndefined();
     expect(getDb().launchSnapshots).toEqual({});
+  });
+
+  it('preserves environment keys that match object prototype names', () => {
+    const snapshotId = createLaunchSnapshot(captureLaunchIntent({
+      workingDir: '/repo',
+      env: JSON.parse('{"__proto__":"original-value","constructor":"other-value"}'),
+    }));
+    const restored = readLaunchIntent(snapshotId!);
+    expect(Object.entries(restored.env!)).toEqual([
+      ['__proto__', 'original-value'],
+      ['constructor', 'other-value'],
+    ]);
   });
 
   it('captures explicit empty overrides as a launch intent', () => {
