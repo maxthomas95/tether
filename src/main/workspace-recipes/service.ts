@@ -43,7 +43,8 @@ function assertRecipeLimit(): void {
   }
 }
 
-function assertUniqueSessionIds(sessionIds: string[]): void {
+function assertUniqueSessionIds(sessionIds: unknown): asserts sessionIds is string[] {
+  if (!Array.isArray(sessionIds)) throw new Error('Recipe session ids are invalid');
   if (sessionIds.length < 1 || sessionIds.length > MAX_RECIPE_SESSIONS) {
     throw new Error(`Recipes must contain between 1 and ${MAX_RECIPE_SESSIONS} sessions`);
   }
@@ -132,6 +133,9 @@ export function deleteWorkspaceRecipe(id: string): void {
 }
 
 function getSelectionFailure(recipe: WorkspaceRecipe, selection: WorkspaceRecipeSelection, seen: Set<number>): WorkspaceRecipeFailure | null {
+  if (!selection || typeof selection !== 'object' || Array.isArray(selection)) {
+    return { sessionIndex: -1, label: 'Session ?', error: 'Session selection is invalid' };
+  }
   const index = selection.sessionIndex;
   const label = Number.isInteger(index) && index >= 0 && index < recipe.sessions.length
     ? recipe.sessions[index].label
@@ -143,6 +147,9 @@ function getSelectionFailure(recipe: WorkspaceRecipe, selection: WorkspaceRecipe
   seen.add(index);
   if (typeof selection.workingDir !== 'string' || !selection.workingDir.trim()) {
     return { sessionIndex: index, label, error: 'Working directory is required' };
+  }
+  if (Object.prototype.hasOwnProperty.call(selection, 'environmentId') && selection.environmentId !== undefined && typeof selection.environmentId !== 'string') {
+    return { sessionIndex: index, label, error: 'Environment is invalid' };
   }
   return null;
 }
@@ -176,8 +183,9 @@ function validateSnapshot(recipe: WorkspaceRecipe, sessionIndex: number): Worksp
   try {
     readLaunchIntent(session.launchSnapshotId);
     return null;
-  } catch {
-    return { sessionIndex, label: session.label, error: 'Saved launch settings are unavailable' };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Saved launch settings are unavailable';
+    return { sessionIndex, label: session.label, error: message };
   }
 }
 
@@ -228,4 +236,3 @@ export async function prepareOpenWorkspaceRecipe(options: PrepareWorkspaceRecipe
   };
   return { ok: true, plan };
 }
-

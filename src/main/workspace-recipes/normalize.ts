@@ -6,14 +6,19 @@ import type {
   WorkspaceRecipeSession,
 } from '../../shared/workspace-recipes';
 import { MAX_RECIPE_NAME_LENGTH, MAX_RECIPE_SESSIONS, MAX_WORKSPACE_RECIPES } from '../../shared/workspace-recipes';
-import type { CliToolId } from '../../shared/cli-tools';
+import { CLI_TOOL_REGISTRY, type CliToolId } from '../../shared/cli-tools';
 
-const CLI_TOOLS: ReadonlySet<CliToolId> = new Set(['claude', 'codex', 'copilot', 'opencode', 'custom']);
+const CLI_TOOLS: ReadonlySet<string> = new Set(Object.keys(CLI_TOOL_REGISTRY));
 const MAX_SPLIT_DEPTH = 6;
 const MIN_RATIO = 0.15;
 const MAX_RATIO = 0.85;
 const MAX_CANVAS_COORD = 100_000;
-const MAX_CANVAS_SIZE = 10_000;
+const MIN_CANVAS_WIDTH = 280;
+const MAX_CANVAS_WIDTH = 4096;
+const MIN_CANVAS_HEIGHT = 180;
+const MAX_CANVAS_HEIGHT = 4096;
+const MIN_CANVAS_Z = 0;
+const MAX_CANVAS_Z = 100_000;
 
 export function normalizeRecipeName(name: unknown): string {
   if (typeof name !== 'string') throw new Error('Recipe name is required');
@@ -44,12 +49,24 @@ export function normalizeRecipeSession(value: unknown): WorkspaceRecipeSession {
     workingDir: input.workingDir,
     cliTool: cliTool as CliToolId,
   };
-  if (typeof input.environmentId === 'string' && input.environmentId) out.environmentId = input.environmentId;
-  if (cliTool === 'custom' && typeof input.customCliBinary === 'string' && input.customCliBinary.trim()) {
-    out.customCliBinary = input.customCliBinary;
+  if (Object.prototype.hasOwnProperty.call(input, 'environmentId')) {
+    if (typeof input.environmentId !== 'string' || !input.environmentId) throw new Error('Recipe session environment is invalid');
+    out.environmentId = input.environmentId;
   }
-  if (input.helmEnabled === true) out.helmEnabled = true;
-  if (typeof input.launchSnapshotId === 'string' && input.launchSnapshotId) out.launchSnapshotId = input.launchSnapshotId;
+  if (cliTool === 'custom') {
+    if (typeof input.customCliBinary !== 'string' || !input.customCliBinary.trim()) throw new Error('Custom recipe session binary is invalid');
+    out.customCliBinary = input.customCliBinary;
+  } else if (Object.prototype.hasOwnProperty.call(input, 'customCliBinary') && input.customCliBinary !== undefined) {
+    throw new Error('Recipe session custom binary is invalid');
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'helmEnabled')) {
+    if (typeof input.helmEnabled !== 'boolean') throw new Error('Recipe session Helm flag is invalid');
+    if (input.helmEnabled) out.helmEnabled = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'launchSnapshotId')) {
+    if (typeof input.launchSnapshotId !== 'string' || !input.launchSnapshotId) throw new Error('Recipe session launch settings are invalid');
+    out.launchSnapshotId = input.launchSnapshotId;
+  }
   return out;
 }
 
@@ -111,9 +128,9 @@ function normalizeCanvas(value: unknown, sessionCount: number): SavedCanvas | un
       sessionIndex,
       x: assertFiniteBounded(panel.x, 'Canvas x', -MAX_CANVAS_COORD, MAX_CANVAS_COORD),
       y: assertFiniteBounded(panel.y, 'Canvas y', -MAX_CANVAS_COORD, MAX_CANVAS_COORD),
-      width: assertFiniteBounded(panel.width, 'Canvas width', 1, MAX_CANVAS_SIZE),
-      height: assertFiniteBounded(panel.height, 'Canvas height', 1, MAX_CANVAS_SIZE),
-      z: assertFiniteBounded(panel.z, 'Canvas z', -MAX_CANVAS_COORD, MAX_CANVAS_COORD),
+      width: assertFiniteBounded(panel.width, 'Canvas width', MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH),
+      height: assertFiniteBounded(panel.height, 'Canvas height', MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT),
+      z: assertFiniteBounded(panel.z, 'Canvas z', MIN_CANVAS_Z, MAX_CANVAS_Z),
     };
   });
   const viewport = input.viewport && typeof input.viewport === 'object' && !Array.isArray(input.viewport)
@@ -179,13 +196,16 @@ export function normalizeWorkspaceRecipe(value: unknown): WorkspaceRecipe {
 export function normalizeWorkspaceRecipes(value: unknown): WorkspaceRecipe[] {
   if (!Array.isArray(value)) return [];
   const out: WorkspaceRecipe[] = [];
+  const ids = new Set<string>();
   const names = new Set<string>();
   for (const item of value) {
     if (out.length >= MAX_WORKSPACE_RECIPES) break;
     try {
       const recipe = normalizeWorkspaceRecipe(item);
+      if (ids.has(recipe.id)) continue;
       const nameKey = recipe.name.toLocaleLowerCase();
       if (names.has(nameKey)) continue;
+      ids.add(recipe.id);
       names.add(nameKey);
       out.push(recipe);
     } catch {

@@ -114,7 +114,7 @@ describe('workspace recipe service', () => {
     expect(getDb().workspaceRecipes).toEqual([]);
   });
 
-  it('defaults old databases to an empty recipe list and drops invalid recipes on reload', () => {
+  it('defaults old databases to an empty recipe list and drops invalid or duplicate recipes on reload', () => {
     const snapshots = getDb().launchSnapshots;
     closeDb();
     const valid = recipe({
@@ -142,7 +142,17 @@ describe('workspace recipe service', () => {
       usageSummaries: [],
       knownHosts: [],
       launchSnapshots: snapshots,
-      workspaceRecipes: [valid, { ...valid, id: 'bad', name: '' }],
+      workspaceRecipes: [
+        valid,
+        { ...valid, id: 'bad', name: '' },
+        { ...valid, id: 'recipe-1', name: 'Duplicate Id' },
+        { ...valid, id: 'bad-env', sessions: [{ ...valid.sessions[0], environmentId: 42 }] },
+        { ...valid, id: 'bad-snapshot', sessions: [{ ...valid.sessions[0], launchSnapshotId: '' }] },
+        { ...valid, id: 'bad-helm', sessions: [{ ...valid.sessions[0], helmEnabled: 'yes' }] },
+        { ...valid, id: 'bad-custom', sessions: [{ ...valid.sessions[0], cliTool: 'custom' }] },
+        { ...valid, id: 'bad-canvas', layout: { mode: 'canvas', activeSessionIndex: 0, split: null,
+          canvas: { panels: [{ sessionIndex: 0, x: 0, y: 0, width: 279, height: 300, z: 1 }], viewport: { x: 0, y: 0 }, focusedSessionIndex: 0 } } },
+      ],
     }, null, 2));
 
     const reloaded = getDb();
@@ -155,6 +165,27 @@ describe('workspace recipe service', () => {
     });
     expect(JSON.stringify(reloaded.workspaceRecipes)).not.toContain('SECRET');
     expect(JSON.stringify(reloaded.workspaceRecipes)).not.toContain('--drop-me');
+  });
+
+  it('accepts existing canvas bounds and rejects out-of-range z during migration', () => {
+    closeDb();
+    const bounded = recipe({
+      id: 'bounded',
+      layout: { mode: 'canvas', activeSessionIndex: 0, split: null,
+        canvas: { panels: [{ sessionIndex: 0, x: 0, y: 0, width: 280, height: 180, z: 100000 }], viewport: { x: 0, y: 0 }, focusedSessionIndex: 0 } },
+    });
+    const badZ = recipe({
+      id: 'bad-z',
+      name: 'Bad Z',
+      layout: { mode: 'canvas', activeSessionIndex: 0, split: null,
+        canvas: { panels: [{ sessionIndex: 0, x: 0, y: 0, width: 280, height: 180, z: -1 }], viewport: { x: 0, y: 0 }, focusedSessionIndex: 0 } },
+    });
+    fs.writeFileSync(path.join(electronState.userData, 'data.json'), JSON.stringify({
+      environments: [], sessions: [], launchProfiles: [], config: {}, defaultEnvVars: {}, defaultCliFlags: [],
+      defaultCliFlagsPerTool: {}, savedWorkspace: null, gitProviders: [], repoGroupPrefs: [], sessionOrderPrefs: [],
+      usageSummaries: [], knownHosts: [], launchSnapshots: {}, workspaceRecipes: [bounded, badZ],
+    }, null, 2));
+    expect(getDb().workspaceRecipes.map(r => r.id)).toEqual(['bounded']);
   });
 
   it('captures authoritative safe live-session metadata and leaves the DB unchanged on failed capture', () => {
@@ -263,6 +294,7 @@ describe('workspace recipe service', () => {
       sessions: [
         recipe().sessions[0],
         { label: 'Remote', workingDir: '/remote', environmentId: 'env-ssh', cliTool: 'claude' },
+        { label: 'Remote Two', workingDir: '/remote-two', environmentId: 'env-ssh', cliTool: 'claude' },
       ],
       layout: {
         mode: 'canvas',
@@ -275,10 +307,12 @@ describe('workspace recipe service', () => {
     const failed = await prepareOpenWorkspaceRecipe({
       recipeId: 'recipe-1',
       selections: [
+        null as unknown as { sessionIndex: number; workingDir: string },
         { sessionIndex: 0, workingDir: path.join(electronState.userData, 'missing'), environmentId: 'env-local' },
         { sessionIndex: 0, workingDir: localDir },
         { sessionIndex: 9, workingDir: localDir },
         { sessionIndex: 1, workingDir: '/remote/path', environmentId: 'missing-env' },
+        { sessionIndex: 2, workingDir: '/remote/path', environmentId: 0 as unknown as string },
       ],
     });
     expect(failed.ok).toBe(false);
@@ -287,6 +321,8 @@ describe('workspace recipe service', () => {
       'Session slot was selected more than once',
       'Session slot is invalid',
       'Environment was not found',
+      'Session selection is invalid',
+      'Environment is invalid',
     ]));
 
     const prepared = await prepareOpenWorkspaceRecipe({
@@ -298,7 +334,7 @@ describe('workspace recipe service', () => {
     });
     expect(prepared.ok).toBe(true);
     if (prepared.ok) {
-      expect(prepared.plan).toMatchObject({ recipeId: 'recipe-1', name: 'Morning', sessionCount: 2 });
+      expect(prepared.plan).toMatchObject({ recipeId: 'recipe-1', name: 'Morning', sessionCount: 3 });
       expect(prepared.plan.sessions).toEqual([
         { sessionIndex: 0, options: { label: 'API', workingDir: localDir, cliTool: 'codex', launchSnapshotId: 'snap-1' } },
         { sessionIndex: 1, options: { label: 'Remote', workingDir: 'coder-workspace::/repo', environmentId: 'env-ssh', cliTool: 'claude' } },
@@ -315,6 +351,6 @@ describe('workspace recipe service', () => {
       selections: [{ sessionIndex: 0, workingDir: electronState.userData }],
     });
     expect(prepared.ok).toBe(false);
-    if (!prepared.ok) expect(prepared.failures[0].error).toBe('Saved launch settings are unavailable');
+    if (!prepared.ok) expect(prepared.failures[0].error).toBe('Saved launch settings were not found');
   });
 });
