@@ -104,7 +104,7 @@ function spawnCodexAppServer(
   return spawnImpl(launch.file, launch.args, spawnOptions(launch));
 }
 
-function spawnOptions(launch: CodexExecutableLaunch): SpawnOptionsWithoutStdio {
+export function spawnOptions(launch: CodexExecutableLaunch): SpawnOptionsWithoutStdio {
   return {
     windowsVerbatimArguments: launch.kind === 'cmd',
     detached: launch.kind === 'direct' && process.platform !== 'win32',
@@ -290,7 +290,7 @@ function errorResult(method: CodexAppServerMethod, error: string): CodexAppServe
   return { method, ok: false, error };
 }
 
-function disposeChild(
+export function disposeChild(
   child: ChildProcessWithoutNullStreams,
   cleanupSpawnImpl: typeof spawn,
   resolveWindowsSystemExecutableImpl: typeof resolveWindowsSystemExecutable,
@@ -334,7 +334,7 @@ function killDirectChild(child: ChildProcessWithoutNullStreams): void {
   }
 }
 
-class JsonLineParser {
+export class JsonLineParser {
   private readonly decoder = new StringDecoder('utf8');
   private pending = Buffer.alloc(0);
 

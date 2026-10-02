@@ -135,15 +135,24 @@ The panel is off by default and ships without media. Files stay on your computer
 
 ### Pip sidebar pet
 
-Choose **View → Pip Sidebar Pet** to invite Pip into the sidebar. Pip is an optional, local companion with expressive eyes, a swishing tail, and occasional comments about session activity. It is off by default and can live alongside the GIF panel.
+Choose **View → Pip Sidebar Pet** to invite Pip into the sidebar. Pip is a small cable gremlin with a terminal face, a linked-cable badge, and a looped tether tail. Its colors follow your Tether theme. It is off by default and can live alongside the GIF panel.
 
 - Pip follows your focused session in single, split, and Canvas layouts. It reacts to starting or working agents, input and permission waits, idle sessions, and stopped sessions. A ready-for-input reaction means the agent is waiting for you; it does not certify that a task or test succeeded.
 - When another session is waiting, the **waiting** button switches to it, prioritizing permission prompts. Switching sessions quickly can make Pip dizzy. Click Pip, or focus it and press **Enter** or **Space**, to pet it.
-- **Quiet** keeps the expressions and silences the comments. **Personality & motion** lets you choose **Dry little gremlin** or **Cozy companion**, and turn ambient motion off. Your system's reduced-motion preference also stops animations and cursor tracking.
+- Pip perks up and taps a tiny keyboard while you type in the focused terminal. Pressing **Enter** gets an occasional reaction; this signals a keypress, not proof that the CLI accepted a prompt. Draft text is never collected for this animation.
+- **Quiet** keeps the expressions and silences local and AI comments. **Personality & comments** lets you choose **Dry little gremlin** or **Cozy companion**, and turn ambient motion off. Your system's reduced-motion preference also stops animations and cursor tracking.
 - Automatic comments appear at most once every 25 seconds and return to a greeting after 12 seconds. Petting gets an immediate response. After 90 seconds without mouse, keyboard, or scroll activity in Tether, Pip takes a nap; using the app wakes it.
 - Preferences save immediately and persist across launches. Click **Pip** to collapse the panel, or **Hide Pip** to remove it. Reopen it from **View → Pip Sidebar Pet**. Collapsing it, hiding the sidebar, or minimizing the window suspends its timers and cursor tracking; reopening it does not replay missed reactions.
 
-Pip uses session labels, focus, and status metadata already available to the UI. It does not read terminal output, conversation contents, or files, and makes no model or network requests. It works with local, SSH, and Coder session metadata; how accurately it reacts depends on the status detection available for that session.
+Local reactions use session labels, focus, status metadata, and a text-free typing signal. They make no model or network requests and work with local, SSH, and Coder sessions. How accurately Pip reacts depends on that session's status detection. Pip never parses or alters terminal output.
+
+#### Optional AI quips
+
+- Enable **AI quips through Codex** in **Personality & comments** to get occasional generated comments using your local Codex CLI's ChatGPT sign-in. This uses your subscription allowance. API-key sign-in is not used for Pip. AI comments are off by default.
+- Pip selects **GPT-6 Luna**, or **GPT-5.6 Luna** if the current model is absent from the installed CLI's catalog, with the lowest supported reasoning effort and standard speed. It never silently falls back to a larger model. If sign-in, model access, or the connection is unavailable, local quips continue.
+- Requests are limited to one every two minutes and twelve attempts per hour, including failures. Each request is a fresh, temporary conversation. Quiet, collapse, hide, and minimize cancel pending requests; missed events are not replayed.
+- By default Pip supplies only the event (for example, an input wait or Enter press) and chosen personality. Session labels, project paths, draft text, and terminal output are excluded from that context. Codex runs the temporary conversation in Tether's neutral app directory rather than your project.
+- Separately enable **Share submitted prompts** for specific jokes. Pip reads up to 400 characters of the latest available prompt submitted within the past five minutes from an already-attributed **local Claude or Codex transcript**. Remote sessions and other CLIs use activity only. Common credentials are scrubbed, but arbitrary private text may remain; enabling this sends that excerpt to OpenAI. Pip does not collect draft keystrokes or inspect project files. Tether does not save excerpts or generated comments.
 
 ## Terminal
 

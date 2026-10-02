@@ -7,6 +7,7 @@ export type CodexExecutableLaunch =
   | { kind: 'cmd'; file: string; args: string[] };
 
 export interface ResolveCodexExecutableOptions {
+  args?: readonly string[];
   platform?: NodeJS.Platform;
   pathEnv?: string;
   pathExt?: string;
@@ -67,7 +68,7 @@ function resolveWindowsCodex(opts: ResolveCodexExecutableOptions): CodexExecutab
   }
 
   for (const candidate of executableCandidates) {
-    if (existsSync(candidate)) return { kind: 'direct', file: candidate, args: ['app-server'] };
+    if (existsSync(candidate)) return { kind: 'direct', file: candidate, args: [...(opts.args ?? ['app-server'])] };
   }
 
   for (const candidate of shimCandidates) {
@@ -77,7 +78,8 @@ function resolveWindowsCodex(opts: ResolveCodexExecutableOptions): CodexExecutab
       if (/[%^!"\r\n\0]/.test(candidate)) continue;
       const cmd = resolveWindowsSystemExecutable('cmd.exe', opts);
       if (!cmd) return null;
-      return { kind: 'cmd', file: cmd, args: ['/d', '/v:off', '/s', '/c', `"${quoteCmdExeArg(candidate)} app-server"`] };
+      const args = opts.args ? opts.args.map(quoteCmdExeArg).join(' ') : 'app-server';
+      return { kind: 'cmd', file: cmd, args: ['/d', '/v:off', '/s', '/c', `"${quoteCmdExeArg(candidate)} ${args}"`] };
     }
   }
 
@@ -94,7 +96,7 @@ function resolvePosixCodex(opts: ResolveCodexExecutableOptions): CodexExecutable
 
   for (const directory of pathEntries) {
     const candidate = path.posix.resolve(directory, 'codex');
-    if (existsSync(candidate)) return { kind: 'direct', file: candidate, args: ['app-server'] };
+    if (existsSync(candidate)) return { kind: 'direct', file: candidate, args: [...(opts.args ?? ['app-server'])] };
   }
 
   return null;

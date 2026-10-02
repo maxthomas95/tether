@@ -99,6 +99,8 @@ export const IPC = {
   USAGE_EXPORT: 'usage:export',
   CODEX_ACCOUNT: 'codex:account',
   CODEX_CONFIGURATION: 'codex:configuration',
+  PIP_COMMENT: 'pip:comment',
+  PIP_CANCEL_COMMENT: 'pip:cancel-comment',
 
   // Update
   UPDATE_CHECK: 'update:check',

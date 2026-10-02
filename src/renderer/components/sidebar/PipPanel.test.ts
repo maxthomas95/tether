@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PipPanel } from './PipPanel';
 import { DEFAULT_PIP_SETTINGS, type PipSettings } from '../../lib/pip-settings';
 import { PIP_COMMENT_COOLDOWN_MS, PIP_EXPRESSION_MS, PIP_NAP_DELAY_MS, PIP_SPEECH_MS, type PipSession } from '../../lib/pip-behavior';
+import { reportPipActivity } from '../../lib/pip-activity';
 
 let container: HTMLDivElement;
 let root: Root;
@@ -61,6 +62,64 @@ afterEach(async () => {
 });
 
 describe('Pip sidebar interactions', () => {
+  it('reacts only to focused terminal activity and clears typing on submit or collapse', async () => {
+    await render();
+    await act(async () => reportPipActivity('b'));
+    expect(panel().dataset.mood).toBe('busy');
+    await act(async () => reportPipActivity('a'));
+    expect(panel().dataset.mood).toBe('typing');
+    await act(async () => reportPipActivity('a', true));
+    expect(panel().dataset.mood).toBe('curious');
+    expect(line()).toContain('idea');
+    await act(async () => reportPipActivity('a'));
+    settings = { ...settings, collapsed: true };
+    await render();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('stays awake during focused terminal input even when xterm stops DOM key propagation', async () => {
+    await render();
+    await advance(PIP_NAP_DELAY_MS - 500);
+    await act(async () => reportPipActivity('a'));
+    await advance(600);
+    expect(panel().dataset.mood).toBe('typing');
+    await advance(1200);
+    expect(panel().dataset.mood).toBe('busy');
+  });
+
+  it('ignores a delayed AI reply after switching focus and cancels the request', async () => {
+    let resolve!: (value: unknown) => void;
+    const comment = vi.fn(() => new Promise(done => { resolve = done; }));
+    const cancelComment = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('electronAPI', { pip: { comment, cancelComment } });
+    settings = { ...settings, aiComments: true };
+    await render();
+    await state('waiting', 'permission');
+    await advance(600);
+    expect(comment).toHaveBeenCalledWith({ event: 'permission', sessionId: 'a' });
+    focused = 'b';
+    await render();
+    expect(cancelComment).toHaveBeenCalled();
+    await act(async () => resolve({ status: 'ready', line: 'Stale quip', model: 'gpt-6-luna', reason: null }));
+    expect(line()).not.toBe('Stale quip');
+  });
+
+  it('keeps AI requests off by default and exposes separate prompt consent', async () => {
+    const comment = vi.fn();
+    vi.stubGlobal('electronAPI', { pip: { comment } });
+    await render();
+    await state('waiting', 'permission');
+    await advance(600);
+    expect(comment).not.toHaveBeenCalled();
+    await click('.pip-options-toggle');
+    const aiToggle = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('AI quips'))!.querySelector('input')!;
+    await act(async () => aiToggle.click());
+    expect(save).toHaveBeenLastCalledWith({ aiComments: true });
+    expect(container.textContent).not.toContain('Share submitted prompts');
+    settings = { ...settings, aiComments: true };
+    await render();
+    expect(container.textContent).toContain('Share submitted prompts');
+  });
   it('follows real focus and lets keyboard-compatible petting respond immediately', async () => {
     await render();
     expect(panel().dataset.mood).toBe('busy');

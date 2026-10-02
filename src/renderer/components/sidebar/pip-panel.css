@@ -1,65 +1,67 @@
-/* Pip keeps the approved lavender fur; surrounding chrome follows every Tether theme. */
+/* A small creature made from Tether's linked cable and terminal vocabulary. */
 .pip-panel {
-  --pip-fur: #b5a0e3;
-  --pip-fur-shade: #9179c5;
-  --pip-face: #363044;
-  --pip-ear: #e6b9d3;
-  --pip-eye: #fff4d2;
-  flex: 0 1 auto;
-  min-height: 34px;
-  max-height: 40%;
-  overflow: auto;
-  border-top: 1px solid var(--border-color);
-  color: var(--text-primary);
-  font-size: var(--text-xs);
+  --pip-shell: color-mix(in srgb, var(--accent) 22%, #25c9ad);
+  --pip-shell-light: color-mix(in srgb, var(--pip-shell) 40%, #e1fff2);
+  --pip-shell-shade: color-mix(in srgb, var(--pip-shell) 72%, #153b4b);
+  --pip-face: #142e3b;
+  --pip-eye: #dbffef;
+  flex: 0 1 auto; min-height: 34px; max-height: 40%; overflow: auto;
+  border-top: 1px solid var(--border-color); color: var(--text-primary); font-size: var(--text-xs);
 }
 .pip-header { display: flex; align-items: center; gap: 6px; padding: 3px 8px; }
 .pip-heading { display: flex; align-items: center; gap: 6px; flex: 1; padding: 6px 0; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
 .pip-quiet { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); cursor: pointer; }
 .pip-quiet input, .pip-options input { accent-color: var(--accent); }
 .pip-panel button:disabled, .pip-panel input:disabled, .pip-panel select:disabled { opacity: .5; cursor: default; }
+.pip-panel :is(button, input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .pip-content { padding: 0 10px 8px; }
-.pip-speech { position: relative; display: flex; align-items: center; min-height: 54px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); overflow-wrap: anywhere; font-size: var(--text-sm); line-height: 1.4; }
+.pip-speech { position: relative; display: flex; align-items: center; min-height: 52px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); overflow-wrap: anywhere; font-size: var(--text-sm); line-height: 1.45; }
 .pip-speech::after { content: ''; position: absolute; bottom: -6px; left: calc(50% - 5px); width: 10px; height: 10px; background: var(--bg-primary); border-bottom: 1px solid var(--border-color); border-right: 1px solid var(--border-color); transform: rotate(45deg); }
 .pip-panel[data-quiet="true"] .pip-speech { color: var(--text-secondary); }
-.pip-stage { position: relative; display: grid; place-items: center; height: 146px; }
-.pip-ground { position: absolute; bottom: 12px; width: 146px; height: 9px; border-radius: 50%; background: var(--border-color); opacity: .65; }
-.pip-pet-button { position: relative; width: 174px; height: 154px; padding: 0; border: 0; background: transparent; transform: scale(.86); transform-origin: 50% 90%; cursor: pointer; border-radius: 12px; }
-.pip-creature { position: absolute; width: 154px; height: 146px; bottom: 0; left: 10px; animation: pip-breathe 4s ease-in-out infinite; transform-origin: 50% 95%; }
-.pip-tail { position: absolute; width: 72px; height: 28px; right: -8px; bottom: 10px; border: 13px solid var(--pip-fur-shade); border-left: 0; border-top: 0; border-radius: 0 0 52px 0; transform-origin: 10% 90%; animation: pip-tail 5s ease-in-out infinite; }
-.pip-body { position: absolute; width: 82px; height: 75px; left: 37px; bottom: 7px; border-radius: 45% 45% 35% 35%; background: var(--pip-fur-shade); }
-.pip-belly { position: absolute; width: 40px; height: 42px; left: 21px; top: 27px; border-radius: 50%; background: var(--pip-fur); }
-.pip-paw { position: absolute; width: 31px; height: 18px; bottom: 3px; background: var(--pip-fur); border-radius: 70% 70% 40% 40%; }
-.pip-paw-left { left: 29px; }
-.pip-paw-right { right: 27px; }
-.pip-head { position: absolute; width: 113px; height: 85px; left: 21px; top: 25px; border-radius: 40% 40% 45% 45%; background: var(--pip-fur); transform: rotate(var(--pip-tilt, -3deg)); transition: transform 260ms ease; }
-.pip-ear { position: absolute; width: 35px; height: 43px; top: -21px; background: var(--pip-fur); border-radius: 6px 29px 0 0; transform: rotate(-12deg); }
-.pip-ear::after { content: ''; position: absolute; width: 20px; height: 23px; left: 7px; top: 9px; border-radius: 3px 20px 0 0; background: var(--pip-ear); }
-.pip-ear-left { left: 2px; }
-.pip-ear-right { right: 2px; transform: scaleX(-1) rotate(-12deg); }
-.pip-face { position: absolute; width: 89px; height: 51px; left: 12px; top: 22px; border-radius: 45%; background: var(--pip-face); }
-.pip-eye { position: absolute; top: 13px; width: 15px; height: 20px; background: var(--pip-eye); border-radius: 50%; transform-origin: center; animation: pip-blink 7s infinite; transition: height 160ms, top 160ms; }
+.pip-stage { position: relative; display: grid; place-items: center; height: 144px; }
+.pip-ground { position: absolute; bottom: 7px; width: 116px; height: 7px; border-radius: 50%; background: var(--border-color); opacity: .5; }
+.pip-pet-button { position: absolute; bottom: 10px; left: calc(50% - 90px); width: 180px; height: 160px; padding: 0; border: 0; background: transparent; transform: scale(.84); transform-origin: 50% 100%; cursor: pointer; border-radius: 18px; }
+.pip-creature { position: absolute; inset: 0; animation: pip-breathe 4.8s ease-in-out infinite; transform-origin: 50% 95%; }
+.pip-cable { position: absolute; inset: 0; width: 180px; height: 160px; overflow: visible; }
+.pip-tail { stroke: var(--pip-shell-shade); stroke-width: 8; stroke-linecap: round; transform-origin: 105px 132px; animation: pip-tail 5s ease-in-out infinite; }
+.pip-plug { fill: var(--pip-shell-light); stroke: var(--pip-shell-shade); stroke-width: 3; stroke-linecap: round; }
+.pip-body { position: absolute; width: 66px; height: 63px; left: 51px; bottom: 13px; border-radius: 43% 43% 32% 32%; background: var(--pip-shell-shade); box-shadow: inset 3px 0 0 var(--pip-shell); }
+.pip-link { position: absolute; width: 24px; height: 24px; left: 21px; top: 31px; stroke: var(--pip-shell-light); stroke-width: 3; stroke-linecap: round; }
+.pip-paw { position: absolute; width: 28px; height: 18px; bottom: 8px; background: var(--pip-shell); border-radius: 60% 60% 35% 35%; box-shadow: inset 0 -3px 0 var(--pip-shell-shade); }
+.pip-paw-left { left: 42px; }
+.pip-paw-right { left: 99px; }
+.pip-head { position: absolute; width: 112px; height: 83px; left: 28px; top: 27px; border-radius: 31px 31px 26px 26px; background: var(--pip-shell); box-shadow: inset 0 4px 0 var(--pip-shell-light), inset 0 -5px 0 var(--pip-shell-shade); transform: rotate(var(--pip-tilt, -4deg)); transition: transform 260ms ease; }
+.pip-ear { position: absolute; width: 25px; height: 27px; top: -17px; border: 6px solid var(--pip-shell); border-bottom: 0; border-radius: 13px 13px 0 0; transform: rotate(-18deg); }
+.pip-ear-left { left: 7px; }
+.pip-ear-right { right: 7px; transform: rotate(18deg); }
+.pip-face { position: absolute; width: 88px; height: 52px; left: 12px; top: 16px; border-radius: 20px 20px 18px 18px; background: var(--pip-face); box-shadow: inset 0 2px 0 #0c202a; }
+.pip-eye { position: absolute; top: 12px; width: 16px; height: 19px; background: var(--pip-eye); border-radius: 5px; transform-origin: center; animation: pip-blink 7s infinite; transition: height 160ms, top 160ms; }
 .pip-eye-left { left: 18px; }
 .pip-eye-right { right: 18px; }
-.pip-pupil { position: absolute; width: 7px; height: 11px; background: var(--pip-face); border-radius: 50%; top: 5px; left: 4px; transform: translate(var(--pip-gaze-x, 0px), var(--pip-gaze-y, 0px)); transition: transform 100ms ease-out; }
-.pip-nose { position: absolute; top: 29px; left: 42px; width: 6px; height: 5px; border-radius: 50% 50% 60% 60%; background: var(--pip-ear); }
-.pip-mouth { position: absolute; top: 35px; left: 35px; width: 20px; height: 8px; border-bottom: 2px solid var(--pip-ear); border-radius: 0 0 50% 50%; }
-.pip-cheek { position: absolute; top: 32px; width: 12px; height: 5px; border-radius: 50%; background: var(--pip-ear); opacity: .45; }
-.pip-cheek-left { left: 7px; }
-.pip-cheek-right { right: 7px; }
-.pip-emote { position: absolute; right: max(8px, calc(50% - 94px)); top: 16px; color: var(--accent); font-size: 18px; font-weight: 500; transform: rotate(12deg); }
+.pip-pupil { position: absolute; width: 6px; height: 10px; background: var(--pip-face); border-radius: 2px; top: 5px; left: 5px; transform: translate(var(--pip-gaze-x, 0px), var(--pip-gaze-y, 0px)); transition: transform 100ms ease-out; }
+.pip-mouth { position: absolute; top: 36px; left: 37px; width: 15px; height: 6px; border-bottom: 2px solid var(--pip-shell-light); border-radius: 0 0 6px 6px; }
+.pip-cursor { position: absolute; right: 7px; bottom: 7px; width: 5px; height: 2px; background: var(--pip-shell); opacity: .6; }
+.pip-status-light { position: absolute; width: 5px; height: 5px; bottom: 6px; left: 54px; border-radius: 50%; background: var(--pip-eye); }
+.pip-keyboard { position: absolute; left: 43px; bottom: 2px; display: flex; gap: 4px; align-items: center; justify-content: center; width: 83px; height: 20px; border: 2px solid var(--pip-shell-shade); border-radius: 5px; background: var(--bg-primary); transform: rotate(3deg) translateY(4px); opacity: 0; transition: opacity 120ms; }
+.pip-keyboard i { width: 8px; height: 4px; border-radius: 1px; background: var(--pip-shell); }
+.pip-emote { position: absolute; right: max(8px, calc(50% - 94px)); top: 17px; color: var(--accent); font-size: 18px; font-weight: 500; transform: rotate(12deg); }
 .pip-panel[data-mood="busy"] .pip-head { --pip-tilt: 5deg; }
-.pip-panel[data-mood="busy"] .pip-tail { animation-duration: 1s; }
-.pip-panel[data-mood="permission"] .pip-eye { height: 25px; top: 9px; }
+.pip-panel[data-mood="busy"] .pip-tail { animation-duration: 1.6s; }
+.pip-panel[data-mood="typing"] .pip-head { --pip-tilt: 0deg; }
+.pip-panel[data-mood="typing"] .pip-keyboard { opacity: 1; }
+.pip-panel[data-mood="typing"] .pip-paw { bottom: 19px; animation: pip-tap .28s ease-in-out infinite alternate; }
+.pip-panel[data-mood="typing"] .pip-paw-right { animation-delay: .14s; }
+.pip-panel[data-mood="typing"] .pip-cursor { height: 7px; width: 4px; opacity: 1; }
+.pip-panel[data-mood="permission"] .pip-eye { height: 25px; top: 8px; }
 .pip-panel[data-mood="permission"] .pip-head { --pip-tilt: -12deg; }
-.pip-panel[data-mood="happy"] .pip-eye { top: 17px; height: 7px; border-radius: 80% 80% 0 0; }
-.pip-panel[data-mood="happy"] .pip-pupil { visibility: hidden; }
-.pip-panel[data-mood="happy"] .pip-mouth { height: 11px; background: var(--pip-ear); border: 0; }
-.pip-panel[data-mood="sleepy"] .pip-eye { height: 3px; top: 24px; border-radius: 50%; }
-.pip-panel[data-mood="sleepy"] .pip-pupil { visibility: hidden; }
+.pip-panel[data-mood="permission"] .pip-status-light { background: #ffe19b; }
+.pip-panel[data-mood="happy"] .pip-eye { top: 17px; height: 7px; border-radius: 7px 7px 0 0; }
+.pip-panel[data-mood="happy"] .pip-pupil, .pip-panel[data-mood="sleepy"] .pip-pupil, .pip-panel[data-mood="dizzy"] .pip-pupil { visibility: hidden; }
+.pip-panel[data-mood="happy"] .pip-mouth { height: 9px; top: 31px; background: var(--pip-shell-light); border: 0; }
+.pip-panel[data-mood="sleepy"] .pip-eye { height: 3px; top: 24px; border-radius: 2px; }
 .pip-panel[data-mood="sleepy"] .pip-head { --pip-tilt: 12deg; }
-.pip-panel[data-mood="dizzy"] .pip-eye { background: repeating-radial-gradient(circle, var(--pip-eye) 0 2px, var(--pip-face) 3px 4px); }
-.pip-panel[data-mood="dizzy"] .pip-pupil { visibility: hidden; }
+.pip-panel[data-mood="sleepy"] .pip-status-light { opacity: .3; }
+.pip-panel[data-mood="dizzy"] .pip-eye { border-radius: 50%; background: repeating-radial-gradient(circle, var(--pip-eye) 0 2px, var(--pip-face) 3px 4px); }
 .pip-panel[data-mood="concerned"] .pip-head { --pip-tilt: -10deg; }
 .pip-panel[data-mood="concerned"] .pip-mouth { transform: rotate(180deg); }
 .pip-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--text-secondary); min-height: 24px; }
@@ -72,12 +74,15 @@
 .pip-options { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--border-color); }
 .pip-options label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--text-secondary); }
 .pip-options select { flex: 1; min-width: 0; max-width: 100%; padding: 3px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--control-radius); font: inherit; }
-.pip-panel[data-motion="false"] .pip-creature, .pip-panel[data-motion="false"] .pip-tail, .pip-panel[data-motion="false"] .pip-eye { animation: none; }
-.pip-panel[data-motion="false"] .pip-head, .pip-panel[data-motion="false"] .pip-eye, .pip-panel[data-motion="false"] .pip-pupil { transition: none; }
-@keyframes pip-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
-@keyframes pip-tail { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(12deg); } }
+.pip-options-help { margin: -2px 0 2px; color: var(--text-secondary); line-height: 1.5; }
+.pip-ai-status { color: var(--text-secondary); line-height: 1.5; }
+.pip-panel[data-motion="false"] :is(.pip-creature, .pip-tail, .pip-eye, .pip-paw) { animation: none; }
+.pip-panel[data-motion="false"] :is(.pip-head, .pip-eye, .pip-pupil, .pip-keyboard) { transition: none; }
+@keyframes pip-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes pip-tail { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(6deg); } }
 @keyframes pip-blink { 0%, 43%, 47%, 100% { scale: 1 1; } 45% { scale: 1 .08; } }
+@keyframes pip-tap { from { transform: translateY(0); } to { transform: translateY(3px); } }
 @media (prefers-reduced-motion: reduce) {
-  .pip-creature, .pip-tail, .pip-eye { animation: none; }
-  .pip-head, .pip-eye, .pip-pupil { transition: none; }
+  .pip-creature, .pip-tail, .pip-eye, .pip-paw { animation: none; }
+  .pip-head, .pip-eye, .pip-pupil, .pip-keyboard { transition: none; }
 }

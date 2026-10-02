@@ -77,7 +77,7 @@ describe('Pip presentation preferences and reactions', () => {
 
   it('accepts only known preferences and valid types', () => {
     expect(readPipSettings('{"enabled":true,"collapsed":true,"quiet":true,"motion":false,"personality":"sweet","unknown":123}'))
-      .toEqual({ enabled: true, collapsed: true, quiet: true, motion: false, personality: 'sweet' });
+      .toEqual({ ...DEFAULT_PIP_SETTINGS, enabled: true, collapsed: true, quiet: true, motion: false, personality: 'sweet' });
     expect(readPipSettings('{"enabled":"true","collapsed":0,"quiet":{},"motion":null,"personality":"unknown"}')).toEqual(DEFAULT_PIP_SETTINGS);
   });
 

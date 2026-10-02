@@ -1,6 +1,8 @@
 import { createTrustedIpc } from './trusted-ipc';
 import { IPC } from '../../shared/constants';
 import type { HandlerContext } from './helpers';
+import { cancelPipComments } from '../pip/comment-service';
+import { PIP_SETTINGS_KEY } from '../../shared/pip';
 import { decryptSecretFromStorage, encryptSecretForStorage } from '../db/secret-storage';
 
 export { SECRET_CONFIG_KEYS, isSecretConfigValue } from '../db/secret-storage';
@@ -36,6 +38,7 @@ export function registerConfigHandlers(ctx: HandlerContext): void {
     const { getDb, saveDb } = await import('../db/database');
     getDb().config[key] = encryptConfigValue(key, value);
     saveDb();
+    if (key === PIP_SETTINGS_KEY) cancelPipComments();
     // Forward theme changes to the docs window so it stays in sync.
     if (key === 'theme') {
       const { getDocsWindow } = await import('../index');
