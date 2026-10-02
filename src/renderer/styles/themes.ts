@@ -377,6 +377,149 @@ export const tetherLight: TetherTheme = {
   },
 };
 
+// ── Nord ────────────────────────────────────────────────────────────
+// Polar Night / Snow Storm / Frost / Aurora: https://www.nordtheme.com/
+export const nord: TetherTheme = {
+  name: 'nord',
+  label: 'Nord',
+  isDark: true,
+  titlebar: { color: '#272d38', symbolColor: '#eceff4' },
+  css: {
+    '--bg-primary': '#2e3440',
+    '--bg-sidebar': '#272d38',
+    '--bg-header': '#3b4252',
+    '--bg-hover': '#434c5e',
+    '--bg-active': '#4c566a',
+    '--text-primary': '#eceff4',
+    '--text-secondary': '#d8dee9',
+    '--text-muted': '#b3bdce',
+    '--border-color': '#4c566a',
+    '--accent': '#88c0d0',
+    '--status-running': '#a3be8c',
+    '--status-waiting': '#ebcb8b',
+    '--status-idle': '#b3bdce',
+    '--status-dead': '#bf616a',
+    '--btn-primary-text': '#2e3440',
+    '--shadow-opacity': '0.5',
+  },
+  xterm: {
+    background: '#2e3440', foreground: '#d8dee9',
+    cursor: '#88c0d0', cursorAccent: '#2e3440',
+    selectionBackground: '#434c5e', selectionForeground: '#eceff4',
+    black: '#3b4252', red: '#bf616a', green: '#a3be8c', yellow: '#ebcb8b',
+    blue: '#81a1c1', magenta: '#b48ead', cyan: '#88c0d0', white: '#e5e9f0',
+    brightBlack: '#4c566a', brightRed: '#bf616a', brightGreen: '#a3be8c', brightYellow: '#ebcb8b',
+    brightBlue: '#81a1c1', brightMagenta: '#b48ead', brightCyan: '#8fbcbb', brightWhite: '#eceff4',
+  },
+};
+
+// ── Gruvbox ─────────────────────────────────────────────────────────
+// Retro groove palette: https://github.com/morhetz/gruvbox
+export const gruvboxDark: TetherTheme = {
+  name: 'gruvbox-dark',
+  label: 'Gruvbox Dark',
+  isDark: true,
+  titlebar: { color: '#1d2021', symbolColor: '#ebdbb2' },
+  css: {
+    '--bg-primary': '#282828',
+    '--bg-sidebar': '#1d2021',
+    '--bg-header': '#32302f',
+    '--bg-hover': '#3c3836',
+    '--bg-active': '#504945',
+    '--text-primary': '#ebdbb2',
+    '--text-secondary': '#d5c4a1',
+    '--text-muted': '#bdae93',
+    '--border-color': '#665c54',
+    '--accent': '#fe8019',
+    '--status-running': '#b8bb26',
+    '--status-waiting': '#fabd2f',
+    '--status-idle': '#bdae93',
+    '--status-dead': '#fb4934',
+    '--btn-primary-text': '#282828',
+    '--shadow-opacity': '0.55',
+  },
+  xterm: {
+    background: '#282828', foreground: '#ebdbb2',
+    cursor: '#fe8019', cursorAccent: '#282828',
+    selectionBackground: '#504945', selectionForeground: '#fbf1c7',
+    black: '#282828', red: '#cc241d', green: '#98971a', yellow: '#d79921',
+    blue: '#458588', magenta: '#b16286', cyan: '#689d6a', white: '#a89984',
+    brightBlack: '#928374', brightRed: '#fb4934', brightGreen: '#b8bb26', brightYellow: '#fabd2f',
+    brightBlue: '#83a598', brightMagenta: '#d3869b', brightCyan: '#8ec07c', brightWhite: '#ebdbb2',
+  },
+};
+
+export const gruvboxLight: TetherTheme = {
+  name: 'gruvbox-light',
+  label: 'Gruvbox Light',
+  isDark: false,
+  titlebar: { color: '#f2e5bc', symbolColor: '#3c3836' },
+  css: {
+    '--bg-primary': '#fbf1c7',
+    '--bg-sidebar': '#f2e5bc',
+    '--bg-header': '#ebdbb2',
+    '--bg-hover': '#ebdbb2',
+    '--bg-active': '#d5c4a1',
+    '--text-primary': '#3c3836',
+    '--text-secondary': '#504945',
+    '--text-muted': '#665c54',
+    '--border-color': '#bdae93',
+    '--accent': '#af3a03',
+    '--status-running': '#427b58',
+    '--status-waiting': '#8f6200',
+    '--status-idle': '#665c54',
+    '--status-dead': '#9d0006',
+    '--btn-primary-text': '#fbf1c7',
+    '--shadow-opacity': '0.15',
+  },
+  xterm: {
+    background: '#fbf1c7', foreground: '#3c3836',
+    cursor: '#af3a03', cursorAccent: '#fbf1c7',
+    selectionBackground: '#d5c4a1', selectionForeground: '#282828',
+    black: '#3c3836', red: '#9d0006', green: '#79740e', yellow: '#b57614',
+    blue: '#076678', magenta: '#8f3f71', cyan: '#427b58', white: '#7c6f64',
+    brightBlack: '#928374', brightRed: '#9d0006', brightGreen: '#79740e', brightYellow: '#b57614',
+    brightBlue: '#076678', brightMagenta: '#8f3f71', brightCyan: '#427b58', brightWhite: '#3c3836',
+  },
+};
+
+// ── Harbor — Tether original ────────────────────────────────────────
+// Ocean navy, sea-glass teal, and pale rope. The warm text keeps this
+// distinct from Nord's steel blues while status colors retain their roles.
+export const harbor: TetherTheme = {
+  name: 'harbor',
+  label: 'Harbor',
+  isDark: true,
+  titlebar: { color: '#101b23', symbolColor: '#e7e3d5' },
+  css: {
+    '--bg-primary': '#15232d',
+    '--bg-sidebar': '#101b23',
+    '--bg-header': '#1c303b',
+    '--bg-hover': '#25414c',
+    '--bg-active': '#31535f',
+    '--text-primary': '#e7e3d5',
+    '--text-secondary': '#c4d3d3',
+    '--text-muted': '#a4b9bb',
+    '--border-color': '#3e606b',
+    '--accent': '#70c1b3',
+    '--status-running': '#9bc88d',
+    '--status-waiting': '#e8c078',
+    '--status-idle': '#a4b9bb',
+    '--status-dead': '#ee8f88',
+    '--btn-primary-text': '#101b23',
+    '--shadow-opacity': '0.55',
+  },
+  xterm: {
+    background: '#15232d', foreground: '#e7e3d5',
+    cursor: '#70c1b3', cursorAccent: '#15232d',
+    selectionBackground: '#31535f', selectionForeground: '#f4f0e5',
+    black: '#25414c', red: '#ee8f88', green: '#9bc88d', yellow: '#e8c078',
+    blue: '#83b4d5', magenta: '#cba3c8', cyan: '#70c1b3', white: '#c4d3d3',
+    brightBlack: '#6e929a', brightRed: '#ffaaa0', brightGreen: '#b4dda1', brightYellow: '#f5d595',
+    brightBlue: '#9dcbea', brightMagenta: '#dfbadb', brightCyan: '#98dacd', brightWhite: '#f4f0e5',
+  },
+};
+
 // ── Registry ────────────────────────────────────────────────────────
 export const themes: Record<string, TetherTheme> = {
   mocha,
@@ -386,9 +529,13 @@ export const themes: Record<string, TetherTheme> = {
   tether,
   'default-dark': defaultDark,
   'tether-light': tetherLight,
+  nord,
+  'gruvbox-dark': gruvboxDark,
+  'gruvbox-light': gruvboxLight,
+  harbor,
 };
 
-export const themeList: TetherTheme[] = [mocha, macchiato, frappe, latte, tether, defaultDark, tetherLight];
+export const themeList: TetherTheme[] = [mocha, macchiato, frappe, latte, tether, defaultDark, tetherLight, nord, gruvboxDark, gruvboxLight, harbor];
 
 export const DEFAULT_THEME = 'mocha';
 

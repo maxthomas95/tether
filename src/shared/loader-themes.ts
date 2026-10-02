@@ -72,6 +72,22 @@ export const LOADER_THEMES: Record<string, LoaderTheme> = {
     accent: '#0078d4',
     border: '#d4d4d4',
   },
+  nord: {
+    bg: '#2e3440', sidebar: '#272d38', text: '#eceff4',
+    muted: '#b3bdce', accent: '#88c0d0', border: '#4c566a',
+  },
+  'gruvbox-dark': {
+    bg: '#282828', sidebar: '#1d2021', text: '#ebdbb2',
+    muted: '#bdae93', accent: '#fe8019', border: '#665c54',
+  },
+  'gruvbox-light': {
+    bg: '#fbf1c7', sidebar: '#f2e5bc', text: '#3c3836',
+    muted: '#665c54', accent: '#af3a03', border: '#bdae93',
+  },
+  harbor: {
+    bg: '#15232d', sidebar: '#101b23', text: '#e7e3d5',
+    muted: '#a4b9bb', accent: '#70c1b3', border: '#3e606b',
+  },
 };
 
 export const DEFAULT_LOADER_THEME = 'mocha';

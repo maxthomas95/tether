@@ -2076,6 +2076,17 @@ summary.form-label::marker, .settings-advanced > summary::marker { color: var(--
 .theme-option-preview > span:last-child { display: flex; align-items: center; justify-content: space-between; flex: 1; padding: 12px; font-size: 20px; }
 .theme-option-preview i { width: 16px; height: 4px; border-radius: 2px; }
 
+.terminal-appearance-preview {
+  padding: var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--control-radius);
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+.terminal-appearance-preview .xterm-helper-textarea {
+  visibility: hidden;
+}
+
 /* --- Help anchor (?) icon ---
    Drop next to a section title / sidebar block header to deep-link
    into the docs window. Muted by default; lights up on hover. */

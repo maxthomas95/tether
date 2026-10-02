@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { PaneId } from '../../shared/layout-types';
 import { decodeOsc52Write } from '../utils/osc52';
+import { DEFAULT_TERMINAL_FONT, loadTerminalFont } from '../styles/terminal-fonts';
 
 interface ManagedTerminal {
   terminal: Terminal;
@@ -33,9 +34,6 @@ function fitVisiblePane(entry: PaneEntry): void {
   }
 }
 
-const FALLBACK_TERMINAL_FONT =
-  "'JetBrains Mono Variable', 'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace";
-
 /**
  * Read the terminal font stack from the `--font-mono-terminal` CSS variable
  * (defined in tokens.css). This is the seam that lets a future "Terminal font
@@ -44,12 +42,12 @@ const FALLBACK_TERMINAL_FONT =
  */
 function getTerminalFontFamily(): string {
   if (typeof window === 'undefined' || !document.documentElement) {
-    return FALLBACK_TERMINAL_FONT;
+    return DEFAULT_TERMINAL_FONT;
   }
   const value = getComputedStyle(document.documentElement)
     .getPropertyValue('--font-mono-terminal')
     .trim();
-  return value || FALLBACK_TERMINAL_FONT;
+  return value || DEFAULT_TERMINAL_FONT;
 }
 
 export type TerminalCursorStyle = 'block' | 'underline' | 'bar';
@@ -125,6 +123,11 @@ export function useTerminalManager(
   const cursorStyleRef = useRef<TerminalCursorStyle>(cursorStyle);
   const cursorBlinkRef = useRef<boolean>(cursorBlink);
   const scrollbackRef = useRef<number>(clampScrollback(scrollback));
+  const resolvedFontFamily = fontFamilyTrigger === undefined
+    ? getTerminalFontFamily()
+    : fontFamilyTrigger.trim() || DEFAULT_TERMINAL_FONT;
+  const fontFamilyRef = useRef(resolvedFontFamily);
+  fontFamilyRef.current = resolvedFontFamily;
 
   // Update theme on all existing terminals when it changes
   useEffect(() => {
@@ -138,19 +141,23 @@ export function useTerminalManager(
     }
   }, [xtermTheme]);
 
-  // Re-read the `--font-mono-terminal` CSS var when the user changes the
-  // terminal font setting. The trigger value isn't used directly — App.tsx
-  // applies the value to the CSS var, and we resolve through getComputedStyle
-  // so the same path runs whether the user picks a preset or clears it.
+  // App's CSS effect runs after this hook's effects. Use the saved preset
+  // directly and wait for its webfont before xterm measures the new columns.
   useEffect(() => {
-    const family = getTerminalFontFamily();
-    for (const entry of panes.current.values()) {
-      entry.terminal.options.fontFamily = family;
-    }
-    for (const managed of backgroundTerminals.current.values()) {
-      managed.terminal.options.fontFamily = family;
-    }
-  }, [fontFamilyTrigger]);
+    const family = resolvedFontFamily;
+    let cancelled = false;
+    void loadTerminalFont(family).catch(() => {}).then(() => {
+      if (cancelled) return;
+      for (const entry of panes.current.values()) {
+        entry.terminal.options.fontFamily = family;
+        fitVisiblePane(entry);
+      }
+      for (const managed of backgroundTerminals.current.values()) {
+        managed.terminal.options.fontFamily = family;
+      }
+    });
+    return () => { cancelled = true; };
+  }, [resolvedFontFamily]);
 
   // Propagate cursor shape + blink to every live terminal when the user
   // changes the setting. Mirrors the theme/font-family pattern above.
@@ -198,11 +205,15 @@ export function useTerminalManager(
   }, []);
 
   const createTerminal = useCallback((sessionId: string): ManagedTerminal => {
+    const family = fontFamilyRef.current;
     const terminal = new Terminal({
       ...BASE_TERMINAL_OPTIONS,
       cursorStyle: cursorStyleRef.current,
       cursorBlink: cursorBlinkRef.current,
-      fontFamily: getTerminalFontFamily(),
+      // A pending font effect will apply the chosen face once loaded. Start
+      // with a stable fallback so a restored pane never measures a webfont
+      // before its bytes arrive, then keeps those fallback column metrics.
+      fontFamily: !document.fonts || document.fonts.check(`14px ${family}`) ? family : 'monospace',
       scrollback: scrollbackRef.current,
       theme: themeRef.current,
     });

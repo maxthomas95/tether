@@ -180,3 +180,28 @@
   /* See latte for rationale. */
   --inner-highlight: 0 0 0 0 transparent;
 }
+:root[data-theme='nord'] {
+  --surface-1: #2e3440;
+  --surface-2: #303746;
+  --surface-3: #272d38;
+  --surface-4: #3b4252;
+}
+:root[data-theme='gruvbox-dark'] {
+  --surface-1: #282828;
+  --surface-2: #242424;
+  --surface-3: #1d2021;
+  --surface-4: #32302f;
+}
+:root[data-theme='gruvbox-light'] {
+  --surface-1: #fbf1c7;
+  --surface-2: #f2e5bc;
+  --surface-3: #f2e5bc;
+  --surface-4: #ebdbb2;
+  --inner-highlight: 0 0 0 0 transparent;
+}
+:root[data-theme='harbor'] {
+  --surface-1: #15232d;
+  --surface-2: #192b35;
+  --surface-3: #101b23;
+  --surface-4: #1c303b;
+}

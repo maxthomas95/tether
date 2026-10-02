@@ -10,6 +10,13 @@ import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-sans/700.css';
 import '@fontsource-variable/jetbrains-mono';
+// Terminal alternatives are bundled so local and remote sessions use the
+// same font without requiring an OS install or fetching from a CDN.
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/400-italic.css';
+import '@fontsource/ibm-plex-mono/700.css';
+import '@fontsource/ibm-plex-mono/700-italic.css';
+import './styles/terminal-fonts.css';
 // Optional UI font alternates exposed via Settings → Sessions.
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';

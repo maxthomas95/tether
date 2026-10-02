@@ -53,7 +53,7 @@ Both buttons hand off to your OS file manager (Explorer on Windows, Finder on ma
 
 ### Theme
 
-Tether ships with seven built-in themes:
+Tether ships with eleven built-in themes:
 
 | Theme | Style |
 |-------|-------|
@@ -64,6 +64,10 @@ Tether ships with seven built-in themes:
 | **Brass** | Dark — warm rope / canvas / copper palette |
 | **Tether (Default Dark)** | Dark — cool graphite surfaces and cyan focus accents |
 | **Tether Light** | Light — VS Code Light+ inspired, white canvas |
+| **Nord** | Dark — arctic blue-gray surfaces and icy cyan accents |
+| **Gruvbox Dark** | Dark — earthy charcoal with retro orange and green |
+| **Gruvbox Light** | Light — warm parchment with earthy accents |
+| **Harbor** | Dark — Tether original, ocean navy with sea-glass teal and pale rope text |
 
 The theme applies to the entire app: title bar, sidebar, terminal, dialogs, and this documentation window. The documentation window uses the same palette definitions as the main window.
 
@@ -110,17 +114,21 @@ Number of lines of output kept per pane (100&ndash;100,000; default 10,000). Lar
 
 ### Terminal font family
 
-Pick from five presets:
+Pick from seven presets:
 
 | Preset | Notes |
 |--------|-------|
 | **Default (Cascadia Code)** | Cascadia Code, with bundled JetBrains Mono and system fallbacks |
 | **JetBrains Mono** | Bundled with Tether |
+| **Iosevka Fixed** | Bundled — narrow columns for split panes, without ligatures |
+| **IBM Plex Mono** | Bundled — companion to Tether's IBM Plex Sans interface |
 | **Fira Code** | Must be installed on the OS |
 | **Cascadia Code** | Same face as the default, with a plain Consolas fallback stack |
 | **Consolas** | Bundled with Windows |
 
-This only affects terminal panes. **Appearance → UI font family** controls the interface font separately. Other faces need to be installed on your machine; each preset includes fallback fonts.
+This only affects terminal panes. **Appearance → UI font family** controls the interface font separately. JetBrains Mono, Iosevka Fixed, and IBM Plex Mono work offline without an OS font install. Other faces use system fonts; each preset includes fallback fonts. Theme and font selections are independent.
+
+The **Font preview** updates as you change the font or size, using the selected theme. Compare paths, `0O 1lI`, bold and italic text, box-drawing alignment, and all sixteen ANSI colors before saving. **Save** applies the font and size to sessions; **Cancel** discards the font changes.
 
 ### Hide terminal cursor
 
