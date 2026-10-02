@@ -302,7 +302,7 @@ function readOrEmpty(store: ConfigFileStore, filePath: string): string {
  * we never silently displace their configuration.
  */
 export async function installCodexHooks(ctx: CodexOverlayContext): Promise<boolean> {
-  return withMutex(async () => {
+  return withMutex(() => {
     const store = ctx.store ?? localConfigFileStore;
     const filePath = resolveConfigPath(ctx);
     const merged = mergeCodexConfig(readOrEmpty(store, filePath), ctx.helperPath);

@@ -102,27 +102,28 @@ function readStdin() {
   });
 }
 
+const CLAUDE_NOTIFICATION_TYPES = new Set([
+  'permission_prompt', 'idle_prompt', 'auth_success',
+  'elicitation_dialog', 'elicitation_complete', 'elicitation_response',
+]);
+
 function classifyClaude(payload) {
   // Claude hook payloads carry `hook_event_name` ('Notification' | 'Stop' | ...)
   // and, for Notification, `notification_type` ('permission_prompt' |
   // 'idle_prompt' | 'auth_success' | 'elicitation_*'). Map both into our
   // flat event enum so the detector doesn't need to know the Claude schema.
-  if (payload.hook_event_name === 'Stop') return 'turn_complete';
-  if (payload.hook_event_name === 'UserPromptSubmit') return 'turn_start';
-  if (payload.hook_event_name === 'PreToolUse') return 'tool_start';
-  if (payload.hook_event_name === 'PostToolUse' || payload.hook_event_name === 'PostToolUseFailure') return 'tool_complete';
-  if (payload.hook_event_name === 'SubagentStart') return 'subagent_start';
-  if (payload.hook_event_name === 'SubagentStop') return 'subagent_stop';
-  if (payload.hook_event_name === 'Notification') {
-    const t = payload.notification_type;
-    if (t === 'permission_prompt') return 'permission_prompt';
-    if (t === 'idle_prompt') return 'idle_prompt';
-    if (t === 'auth_success') return 'auth_success';
-    if (t === 'elicitation_dialog') return 'elicitation_dialog';
-    if (t === 'elicitation_complete') return 'elicitation_complete';
-    if (t === 'elicitation_response') return 'elicitation_response';
+  switch (payload.hook_event_name) {
+    case 'Stop': return 'turn_complete';
+    case 'UserPromptSubmit': return 'turn_start';
+    case 'PreToolUse': return 'tool_start';
+    case 'PostToolUse':
+    case 'PostToolUseFailure': return 'tool_complete';
+    case 'SubagentStart': return 'subagent_start';
+    case 'SubagentStop': return 'subagent_stop';
+    case 'Notification':
+      return CLAUDE_NOTIFICATION_TYPES.has(payload.notification_type) ? payload.notification_type : null;
+    default: return null;
   }
-  return null;
 }
 
 function classifyCodex(payload) {
