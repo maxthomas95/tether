@@ -43,7 +43,8 @@ export function captureLaunchIntent(opts: CreateSessionOptions): LaunchIntent | 
   if (hasOwn(opts, 'env') && opts.env !== undefined) intent.env = cloneRecord(opts.env);
   if (hasOwn(opts, 'cliArgs') && opts.cliArgs !== undefined) intent.cliArgs = cloneStringArray(opts.cliArgs);
   if (hasOwn(opts, 'disabledInheritedFlags') && opts.disabledInheritedFlags !== undefined) intent.disabledInheritedFlags = cloneStringArray(opts.disabledInheritedFlags);
-  return intent.profileId || intent.env || intent.cliArgs || intent.disabledInheritedFlags ? intent : null;
+  return intent.profileId || Object.keys(intent.env ?? {}).length || intent.cliArgs?.length || intent.disabledInheritedFlags?.length
+    ? intent : null;
 }
 
 function validateLaunchIntent(value: unknown): LaunchIntent {

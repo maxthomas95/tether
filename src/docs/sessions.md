@@ -193,6 +193,8 @@ Tether saves open sessions and their order to `{userData}/data.json` as the work
 
 Workspace restore keeps an opaque reference to the encrypted launch settings for each saved session. It restores the selected launch profile and any session-specific environment variables, CLI flags, and disabled inherited flags. Global defaults, environment settings, and the profile's current values are still read from current configuration, and Vault references are resolved again during launch. Older workspace entries without saved launch settings reopen with their existing metadata-only behavior.
 
+Entries that fail to restore remain saved for the next launch, even while other sessions open or close. The error notification offers **Forget failed sessions**; confirming removes those entries from the saved workspace. Dismissing the notification keeps them saved.
+
 ### Canvas workspace
 
 Select **Layout → Canvas** or **View → Canvas Mode** to use movable, resizable session panels. Canvas is independent of the split-pane setting and its four-pane limit.

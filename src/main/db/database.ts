@@ -29,6 +29,8 @@ export interface SavedSession {
   parentSessionId?: string;
   /** Opaque id for main-only encrypted launch intent. */
   launchSnapshotId?: string;
+  /** Renderer recovery metadata: retry this entry on the next app launch. */
+  restorePending?: boolean;
 }
 
 export interface SavedWorkspace {

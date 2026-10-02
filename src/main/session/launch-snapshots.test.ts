@@ -119,13 +119,11 @@ describe('launch snapshots', () => {
     ]);
   });
 
-  it('captures explicit empty overrides as a launch intent', () => {
-    expect(captureLaunchIntent({ workingDir: '/repo', env: {}, cliArgs: [], disabledInheritedFlags: [] })).toEqual({
-      version: 1,
-      env: {},
-      cliArgs: [],
-      disabledInheritedFlags: [],
-    });
+  it('skips encryption when explicitly empty overrides leave no launch intent', () => {
+    electronState.encryptionAvailable = false;
+    const intent = captureLaunchIntent({ workingDir: '/repo', env: {}, cliArgs: [], disabledInheritedFlags: [] });
+    expect(intent).toBeNull();
+    expect(createLaunchSnapshot(intent)).toBeUndefined();
   });
 
   it('rejects missing, plaintext, malformed, unsupported, decryption, deleted-profile, and keychain failures', () => {

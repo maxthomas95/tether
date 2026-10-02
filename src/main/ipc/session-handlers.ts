@@ -179,5 +179,6 @@ function projectSavedSession(input: SavedSession): SavedSession {
     helmEnabled: input.helmEnabled,
     parentSessionId: input.parentSessionId,
     launchSnapshotId: input.launchSnapshotId,
+    restorePending: input.restorePending === true ? true : undefined,
   };
 }

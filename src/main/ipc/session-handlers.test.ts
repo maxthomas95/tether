@@ -184,10 +184,10 @@ describe('session-handlers', () => {
 
   describe('workspace save/load', () => {
     it('WORKSPACE_SAVE persists into db.savedWorkspace', async () => {
-      const sessions = [{ workingDir: '/r', label: 'a', launchSnapshotId: 'snap-1', env: { SECRET: 'nope' } }];
+      const sessions = [{ workingDir: '/r', label: 'a', launchSnapshotId: 'snap-1', restorePending: true, env: { SECRET: 'nope' } }];
       await harness.invoke(IPC.WORKSPACE_SAVE, sessions, 0);
       expect(dbState.savedWorkspace).toEqual({
-        sessions: [{ workingDir: '/r', label: 'a', launchSnapshotId: 'snap-1' }],
+        sessions: [{ workingDir: '/r', label: 'a', launchSnapshotId: 'snap-1', restorePending: true }],
         activeIndex: 0,
       });
       expect(JSON.stringify(dbState.savedWorkspace)).not.toContain('SECRET');

@@ -284,7 +284,7 @@ describe('SessionManager', () => {
     expect(Object.keys(dbState.launchSnapshots)).toHaveLength(2);
   });
 
-  it('creates a new empty snapshot when callers explicitly clear saved launch overrides', async () => {
+  it('drops the snapshot reference when callers explicitly clear all saved launch overrides', async () => {
     const original = await manager.createSession({
       workingDir: 'C:/projects/original',
       env: { TOKEN: 'old' },
@@ -299,11 +299,10 @@ describe('SessionManager', () => {
       disabledInheritedFlags: [],
     }, callbacks());
     const start = transportHarness.state.instances[1].start.mock.calls[0][0];
-    expect(cleared.toInfo().launchSnapshotId).toBeTruthy();
-    expect(cleared.toInfo().launchSnapshotId).not.toBe(original.toInfo().launchSnapshotId);
+    expect(cleared.toInfo().launchSnapshotId).toBeUndefined();
     expect(start.env.TOKEN).toBeUndefined();
     expect(start.cliArgs).toBeUndefined();
-    expect(Object.keys(dbState.launchSnapshots)).toHaveLength(2);
+    expect(Object.keys(dbState.launchSnapshots)).toHaveLength(1);
   });
 
   it('fails before transport start when saved launch settings cannot be read', async () => {
@@ -335,7 +334,9 @@ describe('SessionManager', () => {
 
   it('does not require keychain or persist a snapshot for empty ordinary launches', async () => {
     safeStorageState.available = false;
-    const session = await manager.createSession({ workingDir: 'C:/projects/plain' }, callbacks());
+    const session = await manager.createSession({
+      workingDir: 'C:/projects/plain', env: {}, cliArgs: [], disabledInheritedFlags: [],
+    }, callbacks());
     expect(session.toInfo().launchSnapshotId).toBeUndefined();
     expect(dbState.launchSnapshots).toEqual({});
     expect(transportHarness.state.instances[0].start).toHaveBeenCalledOnce();

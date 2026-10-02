@@ -56,7 +56,7 @@ Controls what happens to your sessions when you quit and relaunch Tether:
 
 Restore, automatic conversation resume, and the manual resume picker are on by default. The resumed-session badge is off by default.
 
-When a saved workspace is restored, Tether also restores the selected launch profile and any SESSION-level env-var overrides, CLI flags, and disabled inherited flags that were used to start each session. The saved record is encrypted with the OS keychain and the renderer only carries an opaque id. Global defaults, environment settings, and launch profile contents are read from current Settings at the next launch, and Vault references are resolved again. If the keychain is unavailable or a saved profile was deleted, Tether leaves that session stopped and shows the restore error instead of launching it with different settings.
+When a saved workspace is restored, Tether also restores the selected launch profile and any SESSION-level env-var overrides, CLI flags, and disabled inherited flags that were used to start each session. The saved record is encrypted with the OS keychain and the renderer only carries an opaque id. Global defaults, environment settings, and launch profile contents are read from current Settings at the next launch, and Vault references are resolved again. If the keychain is unavailable or a saved profile was deleted, Tether does not start that session and shows the restore error instead of launching it with different settings.
 
 ### Update checks
 

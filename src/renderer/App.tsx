@@ -29,6 +29,7 @@ import { formatCost } from './utils/usage-format';
 import { useTerminalManager } from './hooks/useTerminalManager';
 import type { TerminalCursorStyle } from './hooks/useTerminalManager';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
+import { useWorkspacePersistence, type SavedWorkspaceSession } from './hooks/useWorkspacePersistence';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTheme } from './hooks/useTheme';
 import { themeList } from './styles/themes';
@@ -214,8 +215,8 @@ export function App() {
   // races ahead of the multi-IPC restore chain and clobbers the saved
   // workspace before workspace.load() can read it. Ref (not state) so the
   // flag flip doesn't itself trigger a persist with empty sessions.
-  const restorationCompleteRef = useRef(false);
   const [workspaceReady, setWorkspaceReady] = useState(false);
+  const savedCanvas = useMemo(() => saveCanvas(canvasState, sessions.map(s => s.id)), [canvasState, sessions]);
   const effectiveMaxPanes = canvasEnabled ? Number.POSITIVE_INFINITY : enablePaneSplitting ? maxPanes : 1;
 
   const handleCanvasMode = useCallback((enabled: boolean) => {
@@ -297,6 +298,16 @@ export function App() {
     ? findLeaf(layoutState.root, layoutState.focusedPaneId)
     : null;
   const activeSessionId = focusedLeaf?.sessionId ?? null;
+  const { retainFailedSessions, forgetFailedSessions } = useWorkspacePersistence(sessions, activeSessionId, savedCanvas, workspaceReady);
+  const handleForgetFailedSessions = useCallback(async () => {
+    const result = await confirmDialog({
+      title: 'Forget failed sessions?',
+      message: 'Remove the sessions that failed to restore from the saved workspace? They will no longer be retried on launch.',
+      confirmLabel: 'Forget sessions',
+      danger: true,
+    });
+    if (result.confirmed) forgetFailedSessions();
+  }, [confirmDialog, forgetFailedSessions]);
   // Sessions currently mounted AND visible (maximize hides everything else).
   // Used by the sidebar to decide which sessions get the amber-with-bang
   // "needs attention" affordance — sessions you can't see should call out
@@ -453,6 +464,16 @@ export function App() {
 
           // Load saved workspace for ordering/focus hints
           const workspace = await window.electronAPI.workspace?.load?.();
+          const pending = workspace?.sessions.filter(saved => saved.restorePending) ?? [];
+          if (mounted && pending.length > 0) {
+            retainFailedSessions(pending);
+            notify({
+              type: 'warning',
+              title: `${pending.length} saved sessions awaiting restore`,
+              message: 'These entries will be retried on the next app launch.',
+              action: { label: 'Forget failed sessions', onClick: () => { void handleForgetFailedSessions(); } },
+            });
+          }
 
           // Determine session order: use workspace ordering if available, otherwise
           // use the order from the main process session list.
@@ -466,6 +487,10 @@ export function App() {
             const remaining = new Set(activeSessions.map(s => s.id));
 
             for (const saved of workspace.sessions) {
+              if (saved.restorePending) {
+                reconnectedCanvasIds.push(null);
+                continue;
+              }
               const found = activeSessions.find(s =>
                 remaining.has(s.id) && (
                   (saved.toolSessionId && s.toolSessionId === saved.toolSessionId) ||
@@ -563,7 +588,7 @@ export function App() {
         // Build layout tree from restored sessions
         let root: LayoutNode | null = null;
         let focusPaneId: string | null = null;
-        const restoreFailures: Array<{ label: string; error: string }> = [];
+        const restoreFailures: Array<{ label: string; error: string; saved: SavedWorkspaceSession }> = [];
 
         for (let i = 0; i < workspace.sessions.length; i++) {
           const saved = workspace.sessions[i];
@@ -610,18 +635,24 @@ export function App() {
             restoreFailures.push({
               label: saved.label || saved.workingDir,
               error: extractErrorMessage(err),
+              saved,
             });
           }
         }
 
         if (mounted && restoreFailures.length > 0) {
+          retainFailedSessions(restoreFailures.map(failure => failure.saved));
           const first = restoreFailures[0];
           notify({
             type: 'error',
             title: restoreFailures.length === 1
               ? `Failed to restore ${first.label}`
               : `Failed to restore ${restoreFailures.length} sessions`,
-            message: first.error,
+            message: `${first.error}. Saved entries will be retried on the next launch.`,
+            action: {
+              label: 'Forget failed sessions',
+              onClick: () => { void handleForgetFailedSessions(); },
+            },
           });
         }
 
@@ -646,44 +677,12 @@ export function App() {
         // failure, or full restore) flips the flag — otherwise persist would
         // be permanently silent and subsequent user actions wouldn't save.
         if (mounted) {
-          restorationCompleteRef.current = true;
           setWorkspaceReady(true);
         }
       }
     });
     return () => { mounted = false; };
   }, []);
-
-  const savedCanvas = useMemo(() => saveCanvas(canvasState, sessions.map(s => s.id)), [canvasState, sessions]);
-
-  // Persist workspace on every change. Sync (no debounce) so a close/remove
-  // is on disk before the user can quit — `beforeunload` IPC races renderer
-  // teardown and can't be relied on as a backup.
-  //
-  // Gated on restorationCompleteRef so the initial-mount fire (sessions=[])
-  // doesn't clobber the saved workspace before the restore effect's chain of
-  // IPCs (env.list → 4× config.get → workspace.load) has a chance to read it.
-  useEffect(() => {
-    if (!restorationCompleteRef.current) return;
-    const activeIndex = sessions.findIndex(s => s.id === activeSessionId);
-    window.electronAPI.workspace?.save?.(
-      sessions.map(s => ({
-        workingDir: s.workingDir,
-        label: s.label,
-        environmentId: s.environmentId || undefined,
-        cliTool: s.cliTool,
-        customCliBinary: s.customCliBinary,
-        toolSessionId: s.toolSessionId || s.claudeSessionId,
-        claudeSessionId: s.claudeSessionId,
-        worktreeOf: s.worktreeOf,
-        helmEnabled: s.helmEnabled,
-        parentSessionId: s.parentSessionId,
-        launchSnapshotId: s.launchSnapshotId,
-      })),
-      Math.max(0, activeIndex),
-      savedCanvas,
-    );
-  }, [sessions, activeSessionId, savedCanvas]);
 
   useEffect(() => {
     if (!workspaceReady) return;
