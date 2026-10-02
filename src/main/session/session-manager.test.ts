@@ -231,6 +231,29 @@ describe('SessionManager', () => {
     expect(remoteUsageService.start).not.toHaveBeenCalled();
   });
 
+  it.each(['claude', 'codex'] as const)('keeps a starting SSH %s duplicate alive when the original is removed', async cliTool => {
+    envState.type = 'ssh';
+    const opts = { environmentId: 'env', cliTool, workingDir: '/work' };
+    const original = await manager.createSession(opts, callbacks());
+    let connected!: () => void;
+    transportHarness.state.startImpl.mockImplementationOnce(() => new Promise<void>(resolve => { connected = resolve; }));
+    const cb = callbacks();
+    const creation = manager.createSession({ ...opts, label: 'work (copy)' }, cb);
+    await vi.waitFor(() => expect(transportHarness.state.instances[1]?.start).toHaveBeenCalled());
+
+    manager.removeSession(original.id);
+    expect(transportHarness.state.instances[0].dispose).toHaveBeenCalledOnce();
+    expect(transportHarness.state.instances[1].dispose).not.toHaveBeenCalled();
+    connected();
+    const duplicate = await creation;
+    expect(manager.getSession(original.id)).toBeUndefined();
+    expect(manager.getSession(duplicate.id)).toBe(duplicate);
+    expect(duplicate.transport).not.toBeNull();
+    const raw = '\x1b[32mduplicate ready\x1b[0m\r\n';
+    transportHarness.state.instances[1].onData.mock.calls[0][0](raw);
+    expect(cb.onData).toHaveBeenCalledWith(duplicate.id, raw);
+  });
+
   it.each([
     ['ssh', 'claude'], ['ssh', 'codex'], ['coder', 'claude'], ['coder', 'codex'],
   ] as const)('resumes the exact %s/%s conversation after disconnect, with hooks off', async (transport, cli) => {

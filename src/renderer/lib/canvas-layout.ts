@@ -141,6 +141,7 @@ export function canvasReducer(state: CanvasState, action: CanvasAction): CanvasS
       return focus(next, next.panels.find(p => p.sessionId === action.focusedSessionId)?.id ?? next.panels[0]?.id ?? null);
     }
     case 'RESTORE': return restoreCanvas(action.saved, action.sessionIds, state.viewport);
+    case 'OPEN_SESSION': return open(state, action.sessionId);
     case 'OPEN': return open(state, action.sessionId, action.position);
     case 'ADD_PANE': return open(state, action.sessionId);
     case 'SET_FOCUS': return focus(state, action.paneId);

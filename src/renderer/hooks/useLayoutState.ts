@@ -13,10 +13,12 @@ import {
   swapLeafSessions,
   clampMaxPanes,
   compactPlaceholders,
+  generatePaneId,
 } from '../lib/layout-tree';
 
 export type LayoutAction =
   | { type: 'SET_ROOT'; root: LayoutNode | null }
+  | { type: 'OPEN_SESSION'; sessionId: string; split: boolean }
   | { type: 'ADD_PANE'; targetPaneId: string; sessionId: string; zone: DropZone }
   | { type: 'REMOVE_PANE'; paneId: string }
   | { type: 'COMPACT_PLACEHOLDER'; paneId: string }
@@ -40,6 +42,28 @@ function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
   switch (action.type) {
     case 'SET_ROOT':
       return { ...state, root: action.root };
+
+    case 'OPEN_SESSION': {
+      const leaves = getLeaves(state.root);
+      const existing = leaves.find(l => l.sessionId === action.sessionId);
+      if (existing) return { ...state, focusedPaneId: existing.id, maximizedPaneId: null };
+      if (!state.root) {
+        const root: LayoutNode = { type: 'leaf', id: generatePaneId(), sessionId: action.sessionId };
+        return { ...state, root, focusedPaneId: root.id, maximizedPaneId: null };
+      }
+      const focused = leaves.find(l => l.id === state.focusedPaneId) ?? leaves[0];
+      const empty = focused.sessionId === null ? focused : leaves.find(l => l.sessionId === null);
+      if (action.split && empty) {
+        return { ...state, root: replaceSession(state.root, empty.id, action.sessionId),
+          focusedPaneId: empty.id, maximizedPaneId: null };
+      }
+      if (!action.split || leaves.length >= state.maxPanes) {
+        return { ...state, root: replaceSession(state.root, focused.id, action.sessionId),
+          focusedPaneId: focused.id, maximizedPaneId: null };
+      }
+      const { root, newPaneId } = addPaneConstrained(state.root, action.sessionId, state.maxPanes, focused.id, 'right');
+      return { ...state, root, focusedPaneId: newPaneId, maximizedPaneId: null };
+    }
 
     case 'ADD_PANE': {
       // Prevent duplicate: don't add if session is already in a pane
