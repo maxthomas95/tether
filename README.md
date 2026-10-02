@@ -185,7 +185,9 @@ Contributor / design docs:
 
 ## Contributing
 
-Tether is in active development. If you're interested in contributing, check the [Architecture](docs/ARCHITECTURE.md) doc to understand the codebase, then look at the open issues.
+Tether is in active development. See the [contributing guide](CONTRIBUTING.md) for setup, project conventions, validation, and pull requests. Please follow our [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Report suspected vulnerabilities privately using our [security policy](SECURITY.md).
 
 ## License
 
