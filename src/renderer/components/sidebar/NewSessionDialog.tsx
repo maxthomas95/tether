@@ -338,12 +338,12 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     window.electronAPI.config.get('enableResumePicker').then(value => setEnableResumePicker(value !== 'false')).catch(() => {});
     window.electronAPI.config.getDefaultEnvVars?.()?.then(setAppDefaultEnvVars).catch(() => {});
     window.electronAPI.config.getDefaultCliFlagsPerTool?.()?.then(v => setDefaultCliFlagsPerTool(v || {})).catch(() => {});
-    window.electronAPI.config.get('reposRoot').then(val => {
+    window.electronAPI.config.get('reposRoot').then(async val => {
       setReposRoot(val);
       if (val) {
         setReposRootInput(val);
         setCloneDestination(val);
-        window.electronAPI.scanReposDir(val).then(setRepoDirs).catch(() => setRepoDirs([]));
+        setRepoDirs(await window.electronAPI.scanReposDir(val).catch(() => []));
       }
     }).catch(() => {});
     window.electronAPI.gitProvider.list().then(setGitProviders).catch(() => {});

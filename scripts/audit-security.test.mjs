@@ -49,9 +49,9 @@ test('requires the exact installed mitigation', () => {
   assert.doesNotThrow(() => verifyBracesPatch());
   const integrity = JSON.parse(readFileSync(new URL('./braces-patch-integrity.json', import.meta.url), 'utf8'));
   integrity.sha256['node_modules/braces/lib/parse.js'] = 'missing';
-  assert.throws(() => verifyBracesPatch(undefined, integrity), /integrity mismatch/);
+  assert.throws(() => verifyBracesPatch({ integrity }), /integrity mismatch/);
   integrity.sha256 = {};
-  assert.throws(() => verifyBracesPatch(undefined, integrity), /manifest is incomplete/);
+  assert.throws(() => verifyBracesPatch({ integrity }), /manifest is incomplete/);
 });
 
 for (const [open, close] of [['{', '}'], ['(', ')']]) {

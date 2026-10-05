@@ -29,7 +29,7 @@ function isCoveredBuildIssue(name, issues, lock, seen = new Set()) {
     ? isCoveredBuildIssue(via, issues, lock, next) : isReviewedAdvisory(name, via, issue, lock));
 }
 
-export function verifyBracesPatch(repoRoot = root, integrity) {
+export function verifyBracesPatch({ repoRoot = root, integrity } = {}) {
   const manifest = integrity ?? JSON.parse(readFileSync(resolve(repoRoot, 'scripts/braces-patch-integrity.json'), 'utf8'));
   if (Object.keys(manifest.sha256).length !== patchedFiles.length
     || patchedFiles.some(file => typeof manifest.sha256[file] !== 'string')) {

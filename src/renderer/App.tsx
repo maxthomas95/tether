@@ -53,6 +53,7 @@ import type { PaneLocation } from './lib/layout-tree';
 import { toolSupportsHistory } from '../shared/cli-tools';
 import { onKeyActivate, stopPropagationOnKey } from './utils/a11y';
 import { extractErrorMessage, formatSessionExitMessage } from './utils/errors';
+import { initializeWorkspace } from './utils/workspace-initialization';
 import { nextDuplicateLabel } from './utils/duplicate-label';
 import { buildSessionRestartOptions } from './utils/session-restart';
 import { selectNextWaiting } from './utils/attention-queue';
@@ -441,9 +442,8 @@ export function App() {
   // sessions exist we reconnect to them instead of spawning new processes.
   useEffect(() => {
     let mounted = true;
-    let restoreFailed = false;
-    window.electronAPI.environment.list().then(async (envs) => {
-      try {
+    void initializeWorkspace(async () => {
+        const envs = await window.electronAPI.environment.list();
         if (!mounted) return;
         setEnvironments(envs);
 
@@ -648,18 +648,10 @@ export function App() {
           splitDispatch({ type: 'SET_ROOT', root: normalizedRoot });
           if (normalizedFocusPaneId) splitDispatch({ type: 'SET_FOCUS', paneId: normalizedFocusPaneId });
         }
-      } catch (error) {
-        restoreFailed = true;
-        if (mounted) notifyError('Workspace restore failed; restart Tether to retry. Saved workspace kept', error);
-      } finally {
-        // Successful early exits also open persistence. Unexpected startup
-        // failures keep it closed so an empty UI cannot overwrite saved chats.
-        if (mounted && !restoreFailed) {
-          setWorkspaceReady(true);
-        }
-      }
-    }).catch(error => {
-      if (mounted) notifyError('Workspace restore failed; restart Tether to retry. Saved workspace kept', error);
+    }, {
+      isMounted: () => mounted,
+      onReady: () => setWorkspaceReady(true),
+      onError: error => notifyError('Workspace restore failed; restart Tether to retry. Saved workspace kept', error),
     });
     return () => { mounted = false; };
   }, []);

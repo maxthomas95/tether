@@ -107,7 +107,7 @@ jobs:
           node-version: '24'
       - run: npm i -g npm@10.9.4 --ignore-scripts
       - run: npm ci --ignore-scripts
-      - run: npx patch-package --error-on-fail
+      - run: node node_modules/patch-package/index.js --error-on-fail
       - run: npm run test:security
       - run: npm run audit:security
       - run: npm audit --omit=dev --audit-level=high

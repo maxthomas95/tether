@@ -163,6 +163,9 @@ vi.mock('../coder/workspace-service', () => ({
 }));
 
 import { SessionManager, findVaultRefInSession, setHelmChildCallbacks } from './session-manager';
+import { detectNewCodexSession } from '../codex/session-watcher';
+import { detectNewCopilotSession } from '../copilot/session-watcher';
+import { detectNewOpencodeSession } from '../opencode/session-watcher';
 import { remoteUsageService } from '../usage/remote-usage-service';
 import { buildSessionRestartOptions } from '../../renderer/utils/session-restart';
 import { statusDetector } from '../status/status-detector';
@@ -205,6 +208,25 @@ describe('SessionManager', () => {
 
   afterEach(() => {
     manager.dispose();
+  });
+
+  it.each([
+    ['codex', detectNewCodexSession, 'codexDetectCancel'],
+    ['copilot', detectNewCopilotSession, 'copilotDetectCancel'],
+    ['opencode', detectNewOpencodeSession, 'opencodeDetectCancel'],
+  ] as const)('keeps the %s PTY running after its metadata watcher rejects', async (cliTool, detect, cancelKey) => {
+    let reject!: (error: Error) => void;
+    const promise = new Promise<string | null>((_resolve, fail) => { reject = fail; });
+    vi.mocked(detect).mockReturnValueOnce({ cancel: vi.fn(), promise });
+    const cb = callbacks();
+    const session = await manager.createSession({ workingDir: 'C:/projects/tether', cliTool }, cb);
+    reject(new Error('metadata unavailable'));
+    await promise.catch(() => {});
+    await Promise.resolve();
+    expect(session[cancelKey]).toBeNull();
+    expect(manager.getSession(session.id)).toBe(session);
+    expect(transportHarness.state.instances[0].dispose).not.toHaveBeenCalled();
+    expect(cb.onData).not.toHaveBeenCalled();
   });
 
   it('captures only selected Codex launch metadata after inherited flags are disabled', async () => {
