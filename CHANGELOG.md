@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.6.9-beta.8] - 2026-10-05
+
+Beta fixes found during daily use, available on the Beta update channel.
+
+### Bug Fixes
+- **Windows Codex multiline input** - Shift+Enter adds a draft line instead of printing `[13;2u`; broadcast input respects each terminal's requested keyboard mode (#261).
+- **CLI settings** - replace the Codex-only tab with shared CLI tools settings, including guided Claude model and OpenCode model/agent controls. Preserve independent tool presets and profile flags (#261).
+- **Theme consistency** - improve native dropdown and maintenance menu contrast, preserve readable button hover colors, and use the theme accent for Usage filter and other checkboxes (#261, #262).
+- **SSH sudo launch** - only answer sudo prompts after the shell has started the expected sudo command (#259).
+- **Launch profiles** - saving a profile can clear its last CLI flag or environment variable (#260).
+
+### Beta Notes
+- Existing preferences are preserved. GIFs, Pip, AI quips and prompt sharing remain off by default.
+- Refresh the bundled pricing snapshot used for offline API-cost estimates.
+- Raw terminal output and transport behavior stay unchanged. Windows artifacts remain unsigned.
+
 ## [0.6.8-beta.7] - 2026-10-04
 
 Final stabilization beta before the planned `0.7.0` stable release, available
