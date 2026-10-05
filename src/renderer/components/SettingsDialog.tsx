@@ -15,6 +15,7 @@ import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 import { KeybindingsEditor } from './KeybindingsEditor';
 import { HelpAnchor } from './HelpAnchor';
 import { CodexLaunchControls, CodexSettingsSection } from './CodexSettingsSection';
+import { CliLaunchControls } from './CliLaunchControls';
 import { JobsSettingsSection } from './JobsSettingsSection';
 import { DEFAULT_JOBS_SETTINGS } from '../../shared/jobs';
 import type { KeybindingAction, Chord } from '../../shared/keybindings';
@@ -107,14 +108,14 @@ function formatExpiry(expiresAt?: string): string {
   return `in ${Math.round(hours / 24)}d`;
 }
 
-type SettingsSection = 'appearance' | 'general' | 'terminal' | 'sessions' | 'codex' | 'notifications' | 'shortcuts' | 'integrations' | 'usage';
+type SettingsSection = 'appearance' | 'general' | 'terminal' | 'sessions' | 'cli-tools' | 'notifications' | 'shortcuts' | 'integrations' | 'usage';
 
 const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
   { id: 'general', label: 'General' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'terminal', label: 'Terminal' },
   { id: 'sessions', label: 'Sessions' },
-  { id: 'codex', label: 'Codex' },
+  { id: 'cli-tools', label: 'CLI tools' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'integrations', label: 'Integrations' },
@@ -127,7 +128,7 @@ const SECTION_HELP: Record<SettingsSection, { title: string; anchor: string }> =
   general:       { title: 'General',       anchor: 'general' },
   terminal:      { title: 'Terminal',      anchor: 'terminal' },
   sessions:      { title: 'Sessions',      anchor: 'sessions' },
-  codex:         { title: 'Codex',         anchor: 'codex' },
+  'cli-tools':   { title: 'CLI tools',     anchor: 'cli-tools' },
   notifications: { title: 'Notifications', anchor: 'notifications' },
   shortcuts:     { title: 'Shortcuts',     anchor: 'shortcuts' },
   integrations:  { title: 'Integrations',  anchor: 'integrations' },
@@ -294,6 +295,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       setRestoreOnLaunch(restore !== 'false');
       setCliFlagsPerTool(perToolFlags || {});
       setDefaultCliTool(isCliToolId(cliToolSetting) ? cliToolSetting : 'claude');
+      setFlagTool(isCliToolId(cliToolSetting) && cliToolSetting !== 'custom' ? cliToolSetting : 'claude');
       setDefaultCustomCliBinary(typeof customCliBinarySetting === 'string' ? customCliBinarySetting.trim() : '');
       setResumePreviousChats(resumeChats !== 'false');
       setShowResumeBadge(badge === 'true');
@@ -617,8 +619,8 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
     appearance: 'theme color dark light font interface density comfortable compact',
     general: 'restore resume startup launch update folder logs',
     terminal: 'terminal cursor font size scrollback blink',
-    sessions: 'cli tool default flags profiles environment variables helm hooks splitting maximum panes advanced',
-    codex: 'codex account usage quota configuration model reasoning profile hooks lifecycle mcp skill',
+    sessions: 'profiles environment variables helm hooks splitting maximum panes advanced',
+    'cli-tools': 'claude codex opencode copilot cli default flags update account usage quota configuration model agent reasoning profile hooks lifecycle mcp skill',
     notifications: 'notifications alerts sound waiting idle webhook',
     shortcuts: 'shortcuts keyboard keybindings remap',
     integrations: 'integrations git github ado gitea vault ssh known hosts jobs office',
@@ -628,6 +630,8 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
     `${section.label} ${sectionTerms[section.id]}`.toLowerCase().includes(sectionQuery.trim().toLowerCase()));
   const handleSectionSearch = (query: string) => {
     setSectionQuery(query);
+    const tool = FLAG_TOOLS.find(id => query.toLowerCase().includes(id));
+    if (tool) { setFlagTool(tool); setCustomFlag(''); }
     const match = SECTIONS.find(section => `${section.label} ${sectionTerms[section.id]}`.toLowerCase().includes(query.trim().toLowerCase()));
     if (match) setActiveSection(match.id);
   };
@@ -1014,105 +1018,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
           {activeSection === 'sessions' && matchingSections.length > 0 && (
             <>
           <SectionHeader section="sessions" />
-          <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label" htmlFor={`${settingsId}-default-cli-tool`} style={{ fontSize: 14, marginBottom: 8 }}>
-              Default CLI Tool
-            </label>
-            <p className="form-hint" style={{ marginBottom: 8 }}>
-              Preselected when you open the New Session dialog. You can still change it per session.
-            </p>
-            <select
-              id={`${settingsId}-default-cli-tool`}
-              className="form-input"
-              value={defaultCliTool}
-              onChange={e => setDefaultCliTool(e.target.value as CliToolId)}
-            >
-              {CLI_TOOL_IDS.map(id => (
-                <option key={id} value={id}>{CLI_TOOL_REGISTRY[id].displayName}</option>
-              ))}
-            </select>
-            {defaultCliTool === 'custom' && (
-              <input
-                className="form-input"
-                aria-label="Custom CLI binary"
-                value={defaultCustomCliBinary}
-                onChange={e => setDefaultCustomCliBinary(e.target.value)}
-                placeholder="my-agent-cli"
-                spellCheck={false}
-                style={{ marginTop: 8 }}
-              />
-            )}
-          </div>
-
-          <div className="form-group" style={{ marginTop: 20 }}>
-            <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
-              Default CLI Flags
-            </div>
-            <p className="form-hint" style={{ marginBottom: 8 }}>
-              Applied to sessions using the selected CLI tool.
-            </p>
-
-            <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
-              {FLAG_TOOLS.map(id => (
-                <button
-                  key={id}
-                  className={`form-btn${flagTool === id ? ' form-btn--primary' : ''}`}
-                  style={{ fontSize: 12, padding: '3px 10px' }}
-                  onClick={() => { setFlagTool(id); setCustomFlag(''); }}
-                >
-                  {CLI_TOOL_REGISTRY[id].displayName}
-                </button>
-              ))}
-            </div>
-
-            {loaded && (
-              <>
-                {commonFlags.length > 0 ? commonFlags.map(({ flag, label }) => (
-                  <label key={flag} className="form-radio-label" style={{ marginBottom: 4 }}>
-                    <input
-                      type="checkbox"
-                      checked={currentToolFlags.includes(flag)}
-                      onChange={() => toggleFlag(flag)}
-                    />
-                    <code className="cli-flag-code">{flag}</code>
-                    <span className="form-hint" style={{ display: 'inline', marginLeft: 6 }}>{label}</span>
-                  </label>
-                )) : (
-                  <p className="form-hint" style={{ marginBottom: 8 }}>No common flags defined for {toolDef?.displayName || flagTool}.</p>
-                )}
-
-                {extraFlags.length > 0 && (
-                  <div style={{ marginTop: 8 }}>
-                    {extraFlags.map(flag => (
-                      <div key={flag} className="cli-flag-custom">
-                        <code className="cli-flag-code">{flag}</code>
-                        <button className="env-editor-btn env-editor-btn--remove" onClick={() => removeFlag(flag)}>&times;</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="form-row" style={{ marginTop: 8 }}>
-                  <input
-                    className="form-input"
-                    aria-label={`Custom ${toolDef?.displayName || flagTool} flag`}
-                    value={customFlag}
-                    onChange={e => setCustomFlag(e.target.value)}
-                    placeholder="--custom-flag"
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomFlag(); } }}
-                  />
-                  <button className="form-btn" onClick={addCustomFlag}>Add Flag</button>
-                </div>
-              </>
-            )}
-          </div>
-
           {/* === Launch Profiles === */}
-          {onOpenCliMaintenance && <div className="form-group">
-            <div className="form-label">CLI updates</div>
-            <p className="form-hint">Check versions and update Codex, Claude Code, or OpenCode on your local machine, an SSH host, or a Coder workspace.</p>
-            <button className="form-btn" onClick={onOpenCliMaintenance}>Manage CLI tools…</button>
-          </div>}
           {loaded && (
             <div className="form-group" style={{ marginTop: 20 }}>
               <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
@@ -1123,7 +1029,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
               </p>
 
               {profiles.map(p => (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, padding: '6px 8px', background: 'var(--bg-tertiary)', borderRadius: 4 }}>
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, padding: '6px 8px', background: 'var(--bg-primary)', borderRadius: 4 }}>
                   <span style={{ flex: 1, fontWeight: 500 }}>
                     {p.name}
                     {p.isDefault && <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.6 }}>(default)</span>}
@@ -1235,6 +1141,13 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
                         }
                       }}>Add</button>
                     </div>
+                    <CliLaunchControls
+                      key={profileFlagTool}
+                      tool={profileFlagTool}
+                      title={`Guided ${CLI_TOOL_REGISTRY[profileFlagTool].displayName} launch`}
+                      flags={currentProfileToolFlags}
+                      onFlagsChange={flags => setNewProfileCliFlagsPerTool(prev => ({ ...prev, [profileFlagTool]: flags }))}
+                    />
                     {profileFlagTool === 'codex' && (
                       <CodexLaunchControls
                         title="Guided Codex launch"
@@ -1367,9 +1280,116 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
             </>
           )}
 
-          {activeSection === 'codex' && matchingSections.length > 0 && (
+          {activeSection === 'cli-tools' && matchingSections.length > 0 && (
             <>
-              <SectionHeader section="codex" />
+              <SectionHeader section="cli-tools" />
+          {onOpenCliMaintenance && <div className="form-group">
+            <div className="form-label">CLI updates</div>
+            <p className="form-hint">Check versions and update Codex, Claude Code, or OpenCode on your local machine, an SSH host, or a Coder workspace.</p>
+            <button className="form-btn" onClick={onOpenCliMaintenance}>Manage CLI tools…</button>
+          </div>}
+          <div className="form-group" style={{ marginTop: 20 }}>
+            <label className="form-label" htmlFor={`${settingsId}-default-cli-tool`} style={{ fontSize: 14, marginBottom: 8 }}>
+              Default CLI Tool
+            </label>
+            <p className="form-hint" style={{ marginBottom: 8 }}>
+              Preselected when you open the New Session dialog. You can still change it per session.
+            </p>
+            <select
+              id={`${settingsId}-default-cli-tool`}
+              className="form-input"
+              value={defaultCliTool}
+              onChange={e => setDefaultCliTool(e.target.value as CliToolId)}
+            >
+              {CLI_TOOL_IDS.map(id => (
+                <option key={id} value={id}>{CLI_TOOL_REGISTRY[id].displayName}</option>
+              ))}
+            </select>
+            {defaultCliTool === 'custom' && (
+              <input
+                className="form-input"
+                aria-label="Custom CLI binary"
+                value={defaultCustomCliBinary}
+                onChange={e => setDefaultCustomCliBinary(e.target.value)}
+                placeholder="my-agent-cli"
+                spellCheck={false}
+                style={{ marginTop: 8 }}
+              />
+            )}
+          </div>
+
+          <div className="form-group" style={{ marginTop: 20 }}>
+            <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
+              Default CLI Flags
+            </div>
+            <p className="form-hint" style={{ marginBottom: 8 }}>
+              Applied to sessions using the selected CLI tool.
+            </p>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
+              {FLAG_TOOLS.map(id => (
+                <button
+                  key={id}
+                  className={`form-btn${flagTool === id ? ' form-btn--primary' : ''}`}
+                  style={{ fontSize: 12, padding: '3px 10px' }}
+                  aria-pressed={flagTool === id}
+                  onClick={() => { setFlagTool(id); setCustomFlag(''); }}
+                >
+                  {CLI_TOOL_REGISTRY[id].displayName}
+                </button>
+              ))}
+            </div>
+
+            <CliLaunchControls
+              key={flagTool}
+              tool={flagTool}
+              title={`Default ${toolDef.displayName} launch`}
+              flags={currentToolFlags}
+              onFlagsChange={flags => setCliFlagsPerTool(prev => ({ ...prev, [flagTool]: flags }))}
+            />
+            {loaded && (
+              <>
+                {commonFlags.length > 0 ? commonFlags.map(({ flag, label }) => (
+                  <label key={flag} className="form-radio-label" style={{ marginBottom: 4 }}>
+                    <input
+                      type="checkbox"
+                      checked={currentToolFlags.includes(flag)}
+                      onChange={() => toggleFlag(flag)}
+                    />
+                    <code className="cli-flag-code">{flag}</code>
+                    <span className="form-hint" style={{ display: 'inline', marginLeft: 6 }}>{label}</span>
+                  </label>
+                )) : (
+                  <p className="form-hint" style={{ marginBottom: 8 }}>No common flags defined for {toolDef?.displayName || flagTool}.</p>
+                )}
+
+                {extraFlags.length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    {extraFlags.map(flag => (
+                      <div key={flag} className="cli-flag-custom">
+                        <code className="cli-flag-code">{flag}</code>
+                        <button className="env-editor-btn env-editor-btn--remove" onClick={() => removeFlag(flag)}>&times;</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="form-row" style={{ marginTop: 8 }}>
+                  <input
+                    className="form-input"
+                    aria-label={`Custom ${toolDef?.displayName || flagTool} flag`}
+                    value={customFlag}
+                    onChange={e => setCustomFlag(e.target.value)}
+                    placeholder="--custom-flag"
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomFlag(); } }}
+                  />
+                  <button className="form-btn" onClick={addCustomFlag}>Add Flag</button>
+                </div>
+              </>
+            )}
+          </div>
+
+              {flagTool === 'codex' && (
               <CodexSettingsSection
                 cliFlagsPerTool={cliFlagsPerTool}
                 onCliFlagsPerToolChange={setCliFlagsPerTool}
@@ -1383,6 +1403,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
                 onQuotaWarningPercentChange={setCodexQuotaWarningPercent}
                 sessions={sessions}
               />
+              )}
             </>
           )}
 

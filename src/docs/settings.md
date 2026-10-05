@@ -2,7 +2,7 @@
 
 ## CLI updates
 
-Open **File → CLI Tools…**, or **Settings → Sessions → Manage CLI tools…**, to check
+Open **File → CLI Tools…**, or **Settings → CLI tools → Manage CLI tools…**, to check
 versions and update **Codex CLI**, **Claude Code**, or **OpenCode**. Choose the local
 machine, an SSH environment, or a Coder workspace. A session's **Check / update CLI…**
 menu action preselects its launch environment, including PATH and CLI home variables.
@@ -34,11 +34,11 @@ Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **Vie
 - [General](#general) — session restore and update checks
 - [Appearance](#appearance) — theme previews, UI font, and interface density
 - [Terminal](#terminal) — terminal font, cursor shape, and scrollback
-- [Sessions](#sessions) — default CLI, Helm toggle, default env vars, per-CLI flag presets, launch profiles
+- [Sessions](#sessions) — launch profiles, default env vars, Helm and status hooks
 - [Notifications](#notifications) — desktop notification triggers and suppression
 - [Shortcuts](#shortcuts) — keyboard shortcut customization
 - [Integrations](#integrations) — Vault, Git providers, SSH known hosts, diagnostics, J.O.B.S. office
-- [Codex](#codex) - launch controls, account usage, configuration inspection and lifecycle visibility
+- [CLI tools](#cli-tools) — Claude, Codex, OpenCode and Copilot launch defaults, updates and native controls
 - [Usage](#usage) — cost tracking, history dialog, exports, subscription quota
 
 Use **Save** to apply settings changes. Theme selection previews immediately and reverts on **Cancel**. Actions with their own buttons apply immediately: shortcut edits, profile and provider changes, known-host revocation, Vault login/logout and migration, **Test now** for J.O.B.S., exports, and resetting session font sizes. The dialog's **Cancel** button does not undo those actions.
@@ -194,7 +194,7 @@ When the xterm.js cursor is visible, pick its shape (block / underline / bar) an
 
 ## Sessions
 
-Common CLI defaults and launch profiles appear first. Expand **Advanced session options** for Helm, CLI status hooks, pane splitting, and the maximum pane count. These options keep their existing opt-in behavior.
+Launch profiles and default environment variables appear first. CLI defaults and per-tool controls are under **CLI tools**. Expand **Advanced session options** for Helm, CLI status hooks, pane splitting, and the maximum pane count. These options keep their existing opt-in behavior.
 
 ### Allow Helm
 
@@ -221,10 +221,6 @@ Turns on drag-to-split and the split pane layout. When off, the standard layout 
 
 **Maximum panes** sets a limit of 1, 2, or 4 (default 4 when splitting is enabled). The title bar's **Layout** control changes the same settings immediately. Lowering the limit leaves other sessions running in the sidebar.
 
-### Default CLI tool
-
-The CLI tool preselected when you open the New Session dialog. Pick Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, or Custom. Custom also stores the binary name/path to prefill in the session form.
-
 ### Default environment variables
 
 Key-value pairs applied as the **global defaults** for every new session. Common examples:
@@ -234,10 +230,6 @@ Key-value pairs applied as the **global defaults** for every new session. Common
 - Project-specific tokens, proxy settings, etc.
 
 Every nonempty literal env-var value is encrypted at rest via OS keychain storage, including values with ordinary names such as `CONNECTION_STRING`. Vault references remain references. On upgrade, Tether automatically encrypts legacy plaintext env values, provider tokens, SSH passwords, and secret settings before opening the database. If encryption fails, the original file is preserved and loading fails; Tether does not create a plaintext backup. For best practice, store sensitive values in [Vault](vault.md) and reference them instead.
-
-### Default CLI flags (per tool)
-
-Default command-line flags appended whenever a session of that CLI tool is launched. Separate presets are available for Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode. Use **Add Flag** for additional flags for the selected tool. Custom binaries accept flags in the New Session dialog; they do not have a preset tab here. Multi-token entries like `--permission-mode plan` are split on whitespace. Entries in `--flag=value` form are kept together. This is not a shell-style quoted-argument parser.
 
 ### Launch profiles
 
@@ -358,15 +350,31 @@ Two buttons here — **Export as CSV…** and **Export as JSON…**. CSV is one 
 
 **Show usage quota in sidebar** is on by default. Tether can poll subscription quota and show the remaining budget in the sidebar footer. Codex quota uses the supported Codex app-server interface instead of reading local auth tokens directly. Disable here if you're on metered API billing instead. See [Usage & Quota](usage-quota.md#quota-tracking).
 
-## Codex
+## CLI tools
 
-### Launch controls
+Select Claude Code, Codex CLI, OpenCode or GitHub Copilot CLI to edit that tool's defaults and flags. The same native launch controls are available in the per-tool launch profile editor under **Sessions**. **Save** applies defaults to future sessions; running sessions keep their launch settings. Use **Manage CLI tools…** for version checks and updates.
+
+### Default CLI tool
+
+The CLI tool preselected when you open the New Session dialog. Pick Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, or Custom. Custom also stores the binary name/path to prefill in the session form.
+
+### Default CLI flags (per tool)
+
+Default command-line flags appended whenever a session of that CLI tool is launched. Separate presets are available for Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode. Use **Add Flag** for additional flags for the selected tool. Custom binaries accept flags in the New Session dialog; they do not have a preset tab here. Multi-token entries like `--permission-mode plan` are split on whitespace. Entries in `--flag=value` form are kept together. This is not a shell-style quoted-argument parser.
+
+### Claude Code and OpenCode
+
+Claude has a guided model field; OpenCode has model (`provider/model`) and agent fields. Enter identifiers supported by the installed CLI, or clear a field to use the CLI's own configuration. Controls update the corresponding native flags and preserve unrelated flags. Incomplete or combined manual presets must be resolved in **Default CLI Flags** before guided edits can apply. Tether does not edit these tools' native configuration or request account information. Claude status hooks are controlled under **Sessions → Advanced session options**; usage for every supported CLI remains under **Usage**.
+
+### Codex
+
+#### Launch controls
 
 Choose a default model, reasoning effort or native Codex profile for new Codex sessions. The same controls are available in a Tether launch profile's Codex flags editor. Tether launch profiles and native Codex profiles are separate: the former combines Tether environment/flag defaults, while the latter selects Codex's own profile through `--profile`.
 
 Inspect configuration to load the installed CLI's model and native-profile choices, or enter an identifier manually. Native profiles are discovered from `*.config.toml` files in the Codex home. Ambiguous manual flags are preserved and must be resolved in the flags editor before guided changes can apply. Saving defaults does not change an already-running session.
 
-### Account and configuration
+#### Account and configuration
 
 **Load account usage** requests account-wide Codex statistics and quota windows. This is separate from the local API-equivalent estimates in [Usage & Quota](usage-quota.md). Fields the CLI or account cannot report stay unavailable.
 
@@ -374,13 +382,13 @@ Inspect configuration to load the installed CLI's model and native-profile choic
 
 Only selected settings and integration names are displayed. Tether does not expose raw config, credentials, hook commands, server URLs or environment values. Neither action runs automatically when Settings opens.
 
-### Lifecycle visibility
+#### Lifecycle visibility
 
 **Track Codex lifecycle hooks** is an experimental, explicit opt-in. It also requires **CLI status hooks** in Sessions and takes effect on the next Tether launch. Tether adds asynchronous observer hooks to the native Codex hooks file while preserving existing valid hooks. Malformed configuration is left untouched.
 
 Review and trust the installed commands using Codex's native `/hooks` flow when prompted. Tether does not bypass that review. Hook events provide session activity, permission waits, compaction and subagent metadata; they do not approve requests, alter tool results or modify terminal output. Missing or unsupported hooks leave their metadata unavailable. Local lifecycle installation does not install these additional hooks on remote hosts.
 
-### Quota warning
+#### Quota warning
 
 Set **Codex quota warning** to the percentage remaining at which you want an in-app notification. `0` disables it. **Subscription quota** under Usage must also be enabled. Only fresh successful observations can warn, and the provider reset time prevents repeated warnings across restarts.
 

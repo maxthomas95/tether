@@ -12,6 +12,7 @@ export function useTheme(onError?: (title: string, error: unknown) => void) {
   const applyTheme = useCallback((theme: TetherTheme) => {
     const root = document.documentElement;
     root.dataset.theme = theme.name;
+    root.style.colorScheme = theme.isDark ? 'dark' : 'light';
     for (const [prop, value] of Object.entries(theme.css)) {
       root.style.setProperty(prop, value);
     }
