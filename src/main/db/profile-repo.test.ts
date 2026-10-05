@@ -41,3 +41,9 @@ it('can make an existing profile default without changing its flags or environme
     env_vars: replacement.env_vars, cli_flags_per_tool: replacement.cli_flags_per_tool,
   });
 });
+
+it('clears the last flag and env var when the update sends them as empty', () => {
+  const profile = createProfile({ name: 'api', cliFlagsPerTool: { claude: ['BAD_FLAG'] }, cliFlags: ['BAD_FLAG'], envVars: { REGION: 'east' } });
+  updateProfile(profile.id, { name: 'api', envVars: {}, cliFlagsPerTool: {}, cliFlags: [] });
+  expect(listProfiles().find(row => row.id === profile.id)).toMatchObject({ env_vars: '{}', cli_flags: '[]', cli_flags_per_tool: '{}' });
+});
