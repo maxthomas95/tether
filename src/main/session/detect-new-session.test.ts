@@ -16,6 +16,7 @@ describe('session transcript detection', () => {
     const handle = detectNewSession({ ...options, list });
     await vi.advanceTimersByTimeAsync(0);
     handle.cancel();
+    handle.cancel();
     await expect(handle.promise).resolves.toBeNull();
     await vi.advanceTimersByTimeAsync(500);
     expect(list).toHaveBeenCalledOnce();
@@ -31,6 +32,14 @@ describe('session transcript detection', () => {
     complete([transcript('late')]);
     await Promise.resolve();
     expect(claimedIds.size).toBe(0);
+  });
+
+  it('ignores a read rejection that arrives after cancellation', async () => {
+    let reject!: (error: Error) => void;
+    const handle = detectNewSession({ ...options, list: () => new Promise((_resolve, fail) => { reject = fail; }) });
+    handle.cancel();
+    reject(new Error('late read failure'));
+    await expect(handle.promise).resolves.toBeNull();
   });
 
   it.each(['synchronous', 'asynchronous'])('settles a %s read failure without rejecting', async (kind) => {

@@ -5,6 +5,24 @@ import { expect, it, vi } from 'vitest';
 import { VaultStatusPill } from './VaultStatusPill';
 import type { VaultStatus } from '../../../shared/types';
 
+it('ignores a pending Vault failure after unmount and removes the listener', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  let reject!: (error: Error) => void;
+  const unsubscribe = vi.fn();
+  vi.stubGlobal('electronAPI', { vault: {
+    status: () => new Promise((_resolve, fail) => { reject = fail; }), onStatusChange: () => unsubscribe,
+  } });
+  const root = createRoot(document.createElement('div'));
+  try {
+    await act(async () => root.render(React.createElement(VaultStatusPill)));
+    await act(async () => root.unmount());
+    await act(async () => reject(new Error('late Vault failure')));
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it('handles an unavailable initial status and accepts later status events', async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   let update!: (status: VaultStatus) => void;

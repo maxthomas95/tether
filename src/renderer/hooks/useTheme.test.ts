@@ -80,3 +80,19 @@ it('applies the default palette when the saved preference cannot be read', async
   expect(theme.themeName).toBe(DEFAULT_THEME);
   expect(document.documentElement.dataset.theme).toBe(DEFAULT_THEME);
 });
+
+it.each(['resolve', 'reject'])('ignores a late saved-theme %s after unmount', async outcome => {
+  await act(async () => root.unmount());
+  let resolve!: (value: string) => void;
+  let reject!: (error: Error) => void;
+  window.electronAPI.config.get = vi.fn(() => new Promise<string | null>((done, fail) => { resolve = done; reject = fail; }));
+  root = createRoot(container);
+  await act(async () => root.render(createElement(Harness)));
+  overlay.mockClear();
+  await act(async () => root.unmount());
+  await act(async () => {
+    if (outcome === 'resolve') resolve('brass');
+    else reject(new Error('late failure'));
+  });
+  expect(overlay).not.toHaveBeenCalled();
+});

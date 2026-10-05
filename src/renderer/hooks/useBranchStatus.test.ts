@@ -25,3 +25,21 @@ it('clears unavailable status and recovers on the next focus refresh', async () 
     vi.unstubAllGlobals();
   }
 });
+
+it('unsubscribes and ignores a pending Git failure after the group is removed', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  let reject!: (error: Error) => void;
+  const branchStatus = vi.fn(() => new Promise((_resolve, fail) => { reject = fail; }));
+  vi.stubGlobal('electronAPI', { git: { branchStatus } });
+  function Harness() { useBranchStatus('/repo', true); return null; }
+  const root = createRoot(document.createElement('div'));
+  try {
+    await act(async () => root.render(createElement(Harness)));
+    await act(async () => root.unmount());
+    await act(async () => reject(new Error('late Git failure')));
+    window.dispatchEvent(new Event('focus'));
+    expect(branchStatus).toHaveBeenCalledOnce();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
