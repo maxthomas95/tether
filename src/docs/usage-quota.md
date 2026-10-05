@@ -72,6 +72,8 @@ The sidebar footer shows today's cost and a seven-day sparkline. Click it to ope
 
 Filter by CLI, project, environment, model and UTC date range. Compare the selected period with the preceding period of the same length, inspect the daily trend and click a day to narrow the session ledger.
 
+Filter checkboxes use the current theme's accent color and follow its light or dark appearance.
+
 The sortable ledger expands into per-model input, output, cache and reasoning breakdowns. Model and date filters use the matching daily model usage rather than a conversation's entire lifetime. Unknown daily timing is included only in all-time views and is labelled; approximate snapshots remain distinguishable. No conversation text is displayed.
 
 ## Budget Guardrails

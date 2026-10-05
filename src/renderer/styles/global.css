@@ -30,6 +30,10 @@
 }
 
 button, input, select, textarea { font-family: inherit; }
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
 button svg { flex-shrink: 0; }
 summary { cursor: pointer; }
 summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -2207,10 +2211,6 @@ summary.form-label::marker, .settings-advanced > summary::marker { color: var(--
   font-size: var(--text-base);
   color: var(--text-primary);
   cursor: pointer;
-}
-
-.form-radio-label input[type="radio"] {
-  accent-color: var(--accent);
 }
 
 /* Hint text */
