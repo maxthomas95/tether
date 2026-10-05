@@ -9,7 +9,7 @@ import { TerminalAppearancePreview } from './TerminalAppearancePreview';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../utils/vault-path';
 
 const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
-import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, CreateLaunchProfileOptions, VaultConfig, VaultStatus, CliToolId, KnownHostInfo, UsageExportFormat, NotificationPrefs, JobsStatus, JobsSettings, SessionInfo } from '../../shared/types';
+import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, VaultConfig, VaultStatus, CliToolId, KnownHostInfo, UsageExportFormat, NotificationPrefs, JobsStatus, JobsSettings, SessionInfo } from '../../shared/types';
 import { DEFAULT_NOTIFICATION_PREFS } from '../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 import { KeybindingsEditor } from './KeybindingsEditor';
@@ -19,9 +19,8 @@ import { JobsSettingsSection } from './JobsSettingsSection';
 import { DEFAULT_JOBS_SETTINGS } from '../../shared/jobs';
 import type { KeybindingAction, Chord } from '../../shared/keybindings';
 import type { TerminalCursorStyle } from '../hooks/useTerminalManager';
+import { FLAG_TOOLS, buildLaunchProfileOptions } from '../utils/launch-profile-options';
 
-/** CLI tools that have definable flags (exclude 'custom' which has no known flags). */
-const FLAG_TOOLS = (['claude', 'codex', 'copilot', 'opencode'] as const) satisfies readonly CliToolId[];
 const CLI_TOOL_IDS = Object.keys(CLI_TOOL_REGISTRY) as CliToolId[];
 const DEFAULT_PROVIDER_URLS: Partial<Record<GitProviderType, string>> = {
   github: 'https://api.github.com',
@@ -95,17 +94,6 @@ const UI_FONT_PRESETS: ReadonlyArray<{ label: string; value: string }> = [
     value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
   },
 ];
-
-function compactFlagsPerTool(flags: Partial<Record<CliToolId, string[]>>): Partial<Record<CliToolId, string[]>> {
-  const result: Partial<Record<CliToolId, string[]>> = {};
-  for (const toolId of FLAG_TOOLS) {
-    const toolFlags = flags[toolId]?.filter(Boolean) || [];
-    if (toolFlags.length > 0) {
-      result[toolId] = toolFlags;
-    }
-  }
-  return result;
-}
 
 function formatExpiry(expiresAt?: string): string {
   if (!expiresAt) return '';
@@ -1259,13 +1247,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="form-btn form-btn--primary" onClick={async () => {
                       if (!newProfileName.trim()) return;
-                      const profileFlags = compactFlagsPerTool(newProfileCliFlagsPerTool);
-                      const opts: CreateLaunchProfileOptions = {
-                        name: newProfileName.trim(),
-                        envVars: Object.keys(newProfileEnvVars).length > 0 ? newProfileEnvVars : undefined,
-                        cliFlagsPerTool: Object.keys(profileFlags).length > 0 ? profileFlags : undefined,
-                        cliFlags: profileFlags.claude,
-                      };
+                      const opts = buildLaunchProfileOptions(newProfileName, newProfileEnvVars, newProfileCliFlagsPerTool);
                       if (editingProfileId) {
                         await window.electronAPI.profile.update(editingProfileId, opts);
                       } else {
