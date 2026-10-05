@@ -1,0 +1,12 @@
+{
+  "upstreamCommit": "28d440b5dd449dbf1fe6f3506cf94ecca4d02660",
+  "expires": "2026-11-04T00:00:00Z",
+  "sha256": {
+    "patches/braces+3.0.3.patch": "3615e06a82900fa80ef37d6dd3021fd836a99a3acfd071e88d0db1b9bb4cac58",
+    "node_modules/braces/lib/parse.js": "72aabaadaa555cdfbd07fbd7c7f743373e4dc8eec04a97550cc57bbeec30eb6c",
+    "node_modules/braces/lib/compile.js": "b651f7715e6db8942ce61d3394357b4d81c8ece88240aa31a458ea1165edd195",
+    "node_modules/braces/lib/expand.js": "7ea3e14c2b2b256ef244fd3d83b8fcaa20aa2232b4e6d768c3bb6ab567f66cf5",
+    "node_modules/braces/lib/stringify.js": "49dc2d8bafa74f34715a18a845bcb82ce66caaf3bab4cf117998e06b1f9a50a9",
+    "node_modules/braces/lib/constants.js": "f9fb688959232eee3e6ad7906a5b0e3234815db49ee857ef86983d65b917dc7c"
+  }
+}

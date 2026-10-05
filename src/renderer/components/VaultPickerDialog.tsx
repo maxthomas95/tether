@@ -65,7 +65,7 @@ export function VaultPickerDialog({ isOpen, onClose, onSelect }: Readonly<VaultP
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
-    Promise.all([
+    void Promise.all([
       window.electronAPI.vault.getConfig().catch(() => null),
       window.electronAPI.vault.status().catch(() => null),
     ]).then(([cfg, status]) => {

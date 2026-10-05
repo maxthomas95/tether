@@ -117,14 +117,17 @@ export function generatePipComment(options: PipCommentClientOptions): Promise<Pi
           } });
         } else if (message.id === 5) {
           const result = object(message.result);
-          threadId = String(object(result.thread).id ?? '');
+          const id = object(result.thread).id;
+          threadId = typeof id === 'string' && id.length <= 512 ? id.trim() : '';
           if (!model || !threadId || result.model !== model.model || result.modelProvider !== 'openai' || object(result.thread).ephemeral !== true) { finish(); break; }
           send({ id: 6, method: 'turn/start', params: {
             threadId, model: model.model, ...(model.effort ? { effort: model.effort } : {}), serviceTier: 'default',
             input: [{ type: 'text', text: JSON.stringify({ event: options.event, ...(options.prompt ? { submittedPromptExcerpt: options.prompt } : {}) }), text_elements: [] }],
           } });
         } else if (message.id === 6) {
-          turnId = String(object(object(message.result).turn).id ?? '');
+          const id = object(object(message.result).turn).id;
+          turnId = typeof id === 'string' && id.length <= 512 ? id.trim() : '';
+          if (!turnId) { finish(); break; }
         } else if (typeof message.method === 'string') {
           // Decline any server-initiated interaction; this feature never executes tools.
           if (message.id !== undefined) { finish(); break; }
@@ -135,7 +138,7 @@ export function generatePipComment(options: PipCommentClientOptions): Promise<Pi
           if (message.method === 'item/completed' && item.type === 'agentMessage') finalText = typeof item.text === 'string' ? item.text : '';
           if (message.method === 'turn/completed') {
             const turn = object(params.turn);
-            if (turnId && turn.id !== turnId) continue;
+            if (!turnId || turn.id !== turnId) continue;
             const line = finalText.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
             finish(turn.status === 'completed' && line && line.length <= 180
               ? { status: 'ready', line, model: model?.model ?? null, reason: null } : FAILURE);

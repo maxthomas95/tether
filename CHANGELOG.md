@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.6.8-beta.7] - 2026-10-04
+
+Final stabilization beta before the planned `0.7.0` stable release, available
+on the Beta update channel.
+
+### New Features
+- **Workspace recipes** - save and reopen session groups with their layout and launch settings (#256).
+- **Optional Pip comments** - opt into short Codex-generated comments with local fallback, bounded requests, and separate consent for prompt excerpts (#257). Comments and prompt sharing are off by default.
+
+### Reliability and Security
+- Cancel conversation-ID detection immediately on session stop; settle failed transcript reads without interrupting the CLI.
+- Preserve the saved workspace after unexpected startup restore failures and report how to retry.
+- Handle background quota, Git, Vault, theme, repository lookup and session-metadata failures; make intentional background promises explicit for Sonar analysis.
+- Reject malformed Pip thread/turn IDs and completion events that precede the turn acknowledgement.
+- Upgrade the build-only HTTP cache dependency to its patched release. Backport bounded nesting and AST-cycle protection to the build-only `braces` dependency, with regression tests and an integrity-checked audit disposition expiring 2026-11-04.
+
+### Beta Notes
+- Runtime and Helm dependency audits remain strict. The root npm audit still lists the mitigated `braces` advisory against its published version; see [dependency security checks](docs/DEPENDENCY_SECURITY.md).
+- Terminal bytes remain unchanged; status, usage, recipes and Pip use separate metadata. Windows artifacts remain unsigned.
+
 ## [0.6.7-beta.6] - 2026-10-01
 
 Beta release carrying the changes since `0.6.6-beta.5`, with terminal search, expanded Codex visibility, CLI maintenance, new appearance options, Pip, and session reliability fixes. Available on the Beta update channel.

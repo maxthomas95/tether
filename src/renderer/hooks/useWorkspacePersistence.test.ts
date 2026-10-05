@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { SessionInfo, TetherAPI } from '../../shared/types';
 import { useWorkspacePersistence } from './useWorkspacePersistence';
+import { initializeWorkspace } from '../utils/workspace-initialization';
 
 let root: Root;
 let host: HTMLDivElement;
@@ -25,7 +26,7 @@ function render(sessions = noSessions, ready = false) {
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   window.electronAPI = { workspace: { save } } as unknown as TetherAPI;
-  save.mockClear();
+  save.mockReset().mockResolvedValue(undefined);
   notify.mockClear();
   confirm.mockReset().mockResolvedValue({ confirmed: false, checkboxValue: false });
   host = document.createElement('div');
@@ -101,4 +102,34 @@ it('reports multiple restore failures and leaves successful empty restores quiet
   expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Failed to restore 2 sessions' }));
   render(noSessions, true);
   expect(save.mock.calls.at(-1)![0]).toHaveLength(2);
+});
+
+it.each(['environment', 'layout'])('keeps the saved workspace when the %s startup read fails', async failingRead => {
+  const original = [{ workingDir: '/saved', toolSessionId: 'native-1', launchSnapshotId: 'protected-1' }];
+  let stored = original;
+  save.mockImplementation(async value => { stored = value; });
+  render();
+  const error = new Error(`${failingRead} read failed`);
+  await act(async () => initializeWorkspace(async () => {
+    if (failingRead === 'environment') throw error;
+    await Promise.resolve();
+    throw error;
+  }, { isMounted: () => true, onReady: () => render(noSessions, true), onError: notify }));
+  expect(stored).toBe(original);
+  expect(save).not.toHaveBeenCalled();
+  expect(notify).toHaveBeenCalledWith(error);
+});
+
+it('enables saving after a successful empty restore and ignores completion after unmount', async () => {
+  render();
+  await act(async () => initializeWorkspace(async () => {}, {
+    isMounted: () => true, onReady: () => render(noSessions, true), onError: notify,
+  }));
+  expect(save).toHaveBeenCalledExactlyOnceWith([], 0, undefined);
+  const ready = vi.fn();
+  for (const restore of [async () => {}, async () => { throw new Error('late failure'); }]) {
+    await initializeWorkspace(restore, { isMounted: () => false, onReady: ready, onError: notify });
+  }
+  expect(ready).not.toHaveBeenCalled();
+  expect(notify).not.toHaveBeenCalled();
 });

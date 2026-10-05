@@ -23,7 +23,7 @@ export function PaneStatusStrip({ sessionId, remoteStatus, tetherSessionId, sess
 
   const refreshConfig = useCallback(() => {
     const generation = ++configGenerationRef.current;
-    Promise.all([
+    void Promise.all([
       window.electronAPI.config.get('cliHooksEnabled').catch(() => null),
       window.electronAPI.config.get('codexLifecycleHooksEnabled').catch(() => null),
     ]).then(([cliHooksEnabled, codexLifecycleHooksEnabled]) => {

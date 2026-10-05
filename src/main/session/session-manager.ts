@@ -1090,6 +1090,9 @@ export class SessionManager {
         // catches the new transcript — no waiting for the periodic backfill.
         usageService.trackSession(detectedId, opts.workingDir, 'codex', opts.environmentId ?? undefined);
         callbacks.onUpdate?.(session.id, session.toInfo());
+      }).catch(() => {
+        session.codexDetectCancel = null;
+        log.warn('Could not attach detected Codex session metadata');
       });
     }
 
@@ -1104,6 +1107,9 @@ export class SessionManager {
         if (!detectedId || !this.sessions.has(session.id)) return;
         session.toolSessionId = detectedId;
         callbacks.onUpdate?.(session.id, session.toInfo());
+      }).catch(() => {
+        session.copilotDetectCancel = null;
+        log.warn('Could not attach detected Copilot session metadata');
       });
     }
 
@@ -1120,6 +1126,9 @@ export class SessionManager {
         // created (non-resumed) session is attributed to its environment.
         usageService.trackSession(detectedId, opts.workingDir, 'opencode', opts.environmentId ?? undefined);
         callbacks.onUpdate?.(session.id, session.toInfo());
+      }).catch(() => {
+        session.opencodeDetectCancel = null;
+        log.warn('Could not attach detected OpenCode session metadata');
       });
     }
 

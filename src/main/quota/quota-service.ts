@@ -91,8 +91,11 @@ export class QuotaService {
   start(): void {
     if (!this._enabled || this.pollInterval) return;
     log.info('Quota polling started');
-    this.fetchQuota();
-    this.pollInterval = setInterval(() => this.fetchQuota(), POLL_INTERVAL_MS);
+    const refresh = () => {
+      void this.fetchQuota().catch(() => log.warn('Background quota refresh failed'));
+    };
+    refresh();
+    this.pollInterval = setInterval(refresh, POLL_INTERVAL_MS);
   }
 
   stop(): void {

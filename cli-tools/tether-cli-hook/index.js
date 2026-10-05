@@ -297,4 +297,5 @@ async function main() {
   sock.on('close', () => { clearTimeout(timer); process.exit(0); });
 }
 
-main();
+// Hook failures must never break the agent CLI's own lifecycle pipeline.
+main().catch(() => process.exit(0));

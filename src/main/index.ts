@@ -323,7 +323,7 @@ if (!gotTheLock) {
     loadPrices(app.getPath('userData'));
     // Background refresh — never awaited, never blocks startup. Failures
     // are logged inside the fetcher and leave the cache untouched.
-    refreshPricesInBackground();
+    void refreshPricesInBackground();
     // Boot CLI hook bridge + install settings overlays. Never awaited —
     // session creation degrades to byte-level if this hasn't completed
     // yet (envForSession returns {} until the bridge is up).
@@ -362,7 +362,7 @@ if (!gotTheLock) {
         hookShutdownDone = true;
         app.quit();
       }, capMs);
-      Promise.allSettled([stopHookService(), stopRemoteHookService()]).then(() => {
+      void Promise.allSettled([stopHookService(), stopRemoteHookService()]).then(() => {
         clearTimeout(timer);
         hookShutdownDone = true;
         app.quit();
