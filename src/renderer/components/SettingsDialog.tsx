@@ -269,7 +269,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
     if (!isOpen) { setLoaded(false); return; }
     let cancelled = false;
     setSaveError('');
-    Promise.all([
+    void Promise.all([
       window.electronAPI.config.getDefaultEnvVars?.()?.catch(() => ({})),
       window.electronAPI.config.get?.('restoreOnLaunch')?.catch(() => null),
       window.electronAPI.config.getDefaultCliFlagsPerTool?.()?.catch(() => ({})),

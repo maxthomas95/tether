@@ -3,7 +3,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useTheme } from './useTheme';
-import { getTheme } from '../styles/themes';
+import { DEFAULT_THEME, getTheme } from '../styles/themes';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -11,10 +11,11 @@ let root: Root;
 let container: HTMLDivElement;
 let theme: ReturnType<typeof useTheme>;
 const persist = vi.fn().mockResolvedValue(undefined);
-const overlay = vi.fn();
+const overlay = vi.fn().mockResolvedValue(undefined);
+const onError = vi.fn();
 
 function Harness() {
-  theme = useTheme();
+  theme = useTheme(onError);
   return null;
 }
 
@@ -60,4 +61,22 @@ it('keeps explicit menu theme changes persistent', () => {
   act(() => theme.setTheme('brass'));
   expect(theme.themeName).toBe('brass');
   expect(persist).toHaveBeenCalledExactlyOnceWith('theme', 'brass');
+});
+
+it('keeps the selected palette and reports a failed preference write', async () => {
+  const error = new Error('write failed');
+  persist.mockRejectedValueOnce(error);
+  overlay.mockRejectedValueOnce(new Error('overlay unavailable'));
+  await act(async () => theme.setTheme('brass'));
+  expect(theme.themeName).toBe('brass');
+  expect(onError).toHaveBeenCalledWith('Could not save the theme', error);
+});
+
+it('applies the default palette when the saved preference cannot be read', async () => {
+  await act(async () => root.unmount());
+  window.electronAPI.config.get = vi.fn().mockRejectedValue(new Error('read failed'));
+  root = createRoot(container);
+  await act(async () => root.render(createElement(Harness)));
+  expect(theme.themeName).toBe(DEFAULT_THEME);
+  expect(document.documentElement.dataset.theme).toBe(DEFAULT_THEME);
 });

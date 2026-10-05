@@ -129,7 +129,7 @@ export function GlobalUsageFooter({ onOpenHistory, onBudgetCrossed, environments
       weekly: 'usageBudget.lastWeeklyWarningPeriod',
     };
 
-    Promise.all([
+    void Promise.all([
       window.electronAPI.config.get(markerKeys.daily).catch(() => null),
       window.electronAPI.config.get(markerKeys.weekly).catch(() => null),
     ]).then(([dailyMarker, weeklyMarker]) => {

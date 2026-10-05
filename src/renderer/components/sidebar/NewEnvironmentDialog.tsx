@@ -186,7 +186,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') onClose();
-    if (e.key === 'Enter' && name.trim() && (type !== 'ssh' || host.trim())) handleSubmit();
+    if (e.key === 'Enter' && name.trim() && (type !== 'ssh' || host.trim())) void handleSubmit();
   };
 
   return (

@@ -216,7 +216,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
     if (!isOpen) return;
     let cancelled = false;
 
-    Promise.all([
+    void Promise.all([
       window.electronAPI.config.get('reposRoot').catch(() => null),
       window.electronAPI.config.get('defaultCliTool').catch(() => null),
       window.electronAPI.config.get('defaultCustomCliBinary').catch(() => null),
@@ -283,7 +283,7 @@ export function SetupWizard({ isOpen, onClose, onComplete, onEnvironmentCreated,
     let cancelled = false;
     setCliStatusLoaded(false);
 
-    Promise.all(KNOWN_CLI_TOOL_IDS.map(async (id) => {
+    void Promise.all(KNOWN_CLI_TOOL_IDS.map(async (id) => {
       const found = await window.electronAPI.shell.commandExists(CLI_TOOL_REGISTRY[id].binaryName)
         .catch(() => false);
       return [id, found] as const;

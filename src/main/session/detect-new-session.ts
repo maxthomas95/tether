@@ -48,21 +48,27 @@ export function detectNewSession(opts: DetectNewSessionOptions): DetectHandle {
     preexistingIds,
   } = opts;
 
-  let cancelled = false;
+  let settled = false;
   let timer: NodeJS.Timeout | null = null;
+  let finish: (id: string | null) => void = () => {};
 
   let preexisting: Set<string> | null = snapshotOnFirstTick
     ? null
     : new Set(preexistingIds ?? []);
 
   const promise = new Promise<string | null>((resolve) => {
+    finish = (id) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(id);
+    };
     const start = Date.now();
     const poll = async () => {
-      if (cancelled) {
-        resolve(null);
-        return;
-      }
+      if (settled) return;
       const items = await list();
+      // A stop can happen while an asynchronous directory read is in flight.
+      if (settled) return;
       if (preexisting === null) {
         preexisting = new Set(items.map(t => t.id));
       } else {
@@ -74,27 +80,33 @@ export function detectNewSession(opts: DetectNewSessionOptions): DetectHandle {
           const found = candidates[0].id;
           claimedIds.add(found);
           logger.info(`Captured ${logLabel} session id`, { ...logContext, id: found });
-          resolve(found);
+          finish(found);
           return;
         }
       }
 
       if (Date.now() - start > timeoutMs) {
         logger.warn(`${logLabel} session id detection timed out`, logContext);
-        resolve(null);
+        finish(null);
         return;
       }
-      timer = setTimeout(poll, pollIntervalMs);
+      timer = setTimeout(runPoll, pollIntervalMs);
     };
-    poll();
+    const runPoll = () => {
+      void poll().catch(() => {
+        if (settled) return;
+        // Transcript reads are passive metadata. A failure must not affect
+        // the CLI process or leave the detection handle pending forever.
+        logger.warn(`${logLabel} session id detection failed`, logContext);
+        finish(null);
+      });
+    };
+    runPoll();
   });
 
   return {
     promise,
-    cancel: () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    },
+    cancel: () => finish(null),
   };
 }
 

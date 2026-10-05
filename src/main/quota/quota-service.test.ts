@@ -1,5 +1,23 @@
-import { describe, expect, it } from 'vitest';
-import { normalizeCodexResetAt } from './quota-service';
+import { describe, expect, it, vi } from 'vitest';
+import { normalizeCodexResetAt, QuotaService } from './quota-service';
+
+it('continues background polling after a failed refresh and stops cleanly', async () => {
+  vi.useFakeTimers();
+  const service = new QuotaService();
+  const refresh = vi.spyOn(service, 'fetchQuota').mockRejectedValue(new Error('refresh failed'));
+  try {
+    service.start();
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    service.stop();
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+  } finally {
+    service.stop();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  }
+});
 
 describe('normalizeCodexResetAt', () => {
   it('converts Unix seconds to an ISO timestamp', () => {

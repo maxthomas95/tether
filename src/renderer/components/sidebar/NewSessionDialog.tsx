@@ -343,9 +343,9 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       if (val) {
         setReposRootInput(val);
         setCloneDestination(val);
-        window.electronAPI.scanReposDir(val).then(setRepoDirs);
+        window.electronAPI.scanReposDir(val).then(setRepoDirs).catch(() => setRepoDirs([]));
       }
-    });
+    }).catch(() => {});
     window.electronAPI.gitProvider.list().then(setGitProviders).catch(() => {});
     window.electronAPI.vault.status().then(s => setVaultEnabled(s.loggedIn)).catch(() => {});
     window.electronAPI.config.get?.('allowHelm')?.then(v => setAllowHelm(v === 'true')).catch(() => {});

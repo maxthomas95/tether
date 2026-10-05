@@ -161,7 +161,11 @@ export function App() {
   const envMenuRef = useRef<HTMLDivElement>(null);
   const [keybindingOverrides, setKeybindingOverrides] = useState<KeybindingOverrides>({});
   const resolvedBindings = useMemo(() => resolveBindings(keybindingOverrides), [keybindingOverrides]);
-  const { themeName, setTheme, previewTheme, xtermTheme } = useTheme();
+  const { notifications, notify, dismiss } = useNotifications();
+  const notifyError = useCallback((title: string, err: unknown) => {
+    notify({ type: 'error', title, message: extractErrorMessage(err) });
+  }, [notify]);
+  const { themeName, setTheme, previewTheme, xtermTheme } = useTheme(notifyError);
   const effectiveXtermTheme = useMemo(
     () => hideTerminalCursor ? withHiddenXtermCursor(xtermTheme) : xtermTheme,
     [hideTerminalCursor, xtermTheme],
@@ -175,10 +179,6 @@ export function App() {
   );
   const { layoutState, layoutDispatch, splitLayoutState, splitDispatch,
     canvasState, canvasDispatch, canvasEnabled, setCanvasEnabled, openCreatedSession } = useWorkspaceLayout(enablePaneSplitting);
-  const { notifications, notify, dismiss } = useNotifications();
-  const notifyError = useCallback((title: string, err: unknown) => {
-    notify({ type: 'error', title, message: extractErrorMessage(err) });
-  }, [notify]);
   const gifPanel = useGifPanelSettings(notifyError);
   const pip = usePipSettings(notifyError);
   const notifyVaultAuthError = useCallback((err: unknown) => {
@@ -367,7 +367,7 @@ export function App() {
   // Load resume-related UI settings
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
+    void Promise.all([
       window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
       window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
       window.electronAPI.config.get?.('enablePaneSplitting')?.catch(() => null),
@@ -441,6 +441,7 @@ export function App() {
   // sessions exist we reconnect to them instead of spawning new processes.
   useEffect(() => {
     let mounted = true;
+    let restoreFailed = false;
     window.electronAPI.environment.list().then(async (envs) => {
       try {
         if (!mounted) return;
@@ -647,15 +648,18 @@ export function App() {
           splitDispatch({ type: 'SET_ROOT', root: normalizedRoot });
           if (normalizedFocusPaneId) splitDispatch({ type: 'SET_FOCUS', paneId: normalizedFocusPaneId });
         }
+      } catch (error) {
+        restoreFailed = true;
+        if (mounted) notifyError('Workspace restore failed; restart Tether to retry. Saved workspace kept', error);
       } finally {
-        // Open the persist gate. Done in finally so every exit path (early
-        // return for `restoreOnLaunch=false`, empty workspace, partial loop
-        // failure, or full restore) flips the flag — otherwise persist would
-        // be permanently silent and subsequent user actions wouldn't save.
-        if (mounted) {
+        // Successful early exits also open persistence. Unexpected startup
+        // failures keep it closed so an empty UI cannot overwrite saved chats.
+        if (mounted && !restoreFailed) {
           setWorkspaceReady(true);
         }
       }
+    }).catch(error => {
+      if (mounted) notifyError('Workspace restore failed; restart Tether to retry. Saved workspace kept', error);
     });
     return () => { mounted = false; };
   }, []);
@@ -1466,8 +1470,9 @@ export function App() {
   const setWindowZoom = useCallback((level: number) => {
     const clamped = Math.max(-3, Math.min(3, level));
     window.electronAPI.webFrame.setZoomLevel(clamped);
-    window.electronAPI.config.set?.('windowZoomLevel', String(clamped));
-  }, []);
+    window.electronAPI.config.set?.('windowZoomLevel', String(clamped))
+      .catch(error => notifyError('Could not save the window zoom', error));
+  }, [notifyError]);
 
   const handleSessionFontSizeChange = useCallback((sessionId: string, delta: number) => {
     setSessions(prev => prev.map(s => {

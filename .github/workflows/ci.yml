@@ -50,6 +50,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - run: npm run test:packaging
+      - run: npm run test:security
 
   sonar:
     name: SonarQube scan
@@ -104,7 +105,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: npm audit --audit-level=high
+      - run: npm i -g npm@10.9.4 --ignore-scripts
+      - run: npm ci --ignore-scripts
+      - run: npx patch-package --error-on-fail
+      - run: npm run test:security
+      - run: npm run audit:security
       - run: npm audit --omit=dev --audit-level=high
 
   helm:

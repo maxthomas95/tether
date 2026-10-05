@@ -28,6 +28,33 @@ function fixture() {
 }
 
 describe('Pip bounded Codex turn', () => {
+  it.each([null, 123, {}, '', ' ', 'x'.repeat(513)])('rejects malformed thread and turn IDs: %j', async id => {
+    const thread = fixture();
+    const threadResult = thread.start();
+    thread.metadata();
+    thread.frame({ id: 5, result: { model: 'gpt-6-luna', modelProvider: 'openai', thread: { id, ephemeral: true } } });
+    expect((await threadResult).status).toBe('unavailable');
+    expect(thread.writes.some(row => row.method === 'turn/start')).toBe(false);
+
+    const turn = fixture();
+    const turnResult = turn.start();
+    turn.metadata();
+    turn.thread();
+    turn.frame({ id: 6, result: { turn: { id } } });
+    expect((await turnResult).status).toBe('unavailable');
+  });
+
+  it('ignores completion before a turn ID has been acknowledged', async () => {
+    const f = fixture();
+    const pending = f.start();
+    f.metadata();
+    f.thread();
+    f.frame({ method: 'item/completed', params: { threadId: 'pip', item: { type: 'agentMessage', text: 'Premature completion' } } });
+    f.frame({ method: 'turn/completed', params: { threadId: 'pip', turn: { status: 'completed' } } });
+    f.frame({ id: 6, result: { turn: { id: 'quip' } } });
+    f.frame({ method: 'turn/completed', params: { threadId: 'pip', turn: { id: 'quip', status: 'completed' } } });
+    expect((await pending).status).toBe('ready');
+  });
   it('discovers the economical tier, uses lowest supported effort, and never chooses full models', () => {
     expect(selectPipModel({ data: [{ model: 'gpt-6.1-sol' }] })).toBeNull();
     expect(selectPipModel({ data: [{ model: 'gpt-5.6-luna' }] })?.model).toBe('gpt-5.6-luna');

@@ -22,6 +22,8 @@ export function useBranchStatus(repoPath: string, enabled: boolean): RepoBranchS
       window.electronAPI.git.branchStatus(repoPath).then((result) => {
         if (cancelled) return;
         setStatus(result);
+      }).catch(() => {
+        if (!cancelled) setStatus(null);
       });
     };
 

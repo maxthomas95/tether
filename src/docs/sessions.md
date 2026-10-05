@@ -49,6 +49,11 @@ Install Git in an absolute directory listed on your system PATH. Tether's Git op
 
 ## Resume Conversation
 
+If workspace initialization fails, Tether reports the error and keeps the saved
+workspace intact. Restart Tether to retry before relying on workspace saving.
+Stopping a session cancels its conversation-ID watcher immediately. A transcript
+read failure ends that watcher without interrupting the running CLI.
+
 For local Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode sessions, use **Resume conversation** in the launcher to choose history for the working directory. Tether uses `claude --resume <id>`, `codex resume <id>`, `copilot --resume <id>`, or `opencode --session <id>`. The conversation picker is local-only.
 
 For Claude Code and Codex CLI over **SSH or Coder**, **Restart in this pane** and **Restart all** resume the exact conversation when Tether knows its native session ID. Workspace restore also uses that ID when **Resume previous conversations** is enabled. Claude's ID is assigned at launch; Codex's ID is captured by the passive remote usage connection, independently of status hooks. Tether never chooses the most recent conversation in the directory, so another session in the same repo cannot change which conversation is resumed.

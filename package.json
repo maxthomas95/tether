@@ -1,7 +1,7 @@
 {
   "name": "tether",
   "productName": "Tether",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "description": "A unified control plane for managing agent CLI sessions across local, remote, and containerized environments.",
   "main": ".vite/build/index.js",
   "private": true,
@@ -16,6 +16,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:packaging": "node --test scripts/extract-zip.test.mjs",
+    "test:security": "node --test scripts/audit-security.test.mjs",
+    "audit:security": "node scripts/audit-security.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,tsx}\""

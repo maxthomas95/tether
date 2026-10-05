@@ -45,6 +45,8 @@ export function VaultStatusPill({ onAuthError }: Readonly<VaultStatusPillProps>)
     let cancelled = false;
     window.electronAPI.vault.status().then(s => {
       if (!cancelled) setStatus(s);
+    }).catch(() => {
+      if (!cancelled) setStatus(null);
     });
     const unsub = window.electronAPI.vault.onStatusChange(setStatus);
     return () => { cancelled = true; unsub(); };

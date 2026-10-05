@@ -27,7 +27,7 @@ export function useUsage(): { usage: UsageInfo | null; enabled: boolean; cliTool
       window.electronAPI.config.get('cliToolBreakdownEnabled').then(val => {
         if (active && request === generation) setCliToolBreakdownEnabled(val === 'true');
       }).catch(() => {});
-      Promise.all([
+      void Promise.all([
         window.electronAPI.config.get('usageBudget.dailyUsd').catch(() => null),
         window.electronAPI.config.get('usageBudget.weeklyUsd').catch(() => null),
       ]).then(([dailyUsd, weeklyUsd]) => {
