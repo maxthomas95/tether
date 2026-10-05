@@ -69,3 +69,7 @@ Terminal search uses the terminal's scrollback buffer and does not send input to
 Claude Code's full-screen rendering (`/tui fullscreen`, or `CLAUDE_CODE_NO_FLICKER=1`) — like other full-screen TUIs such as vim or htop — turns on **mouse reporting**. That hands your click-and-drag to the app instead of selecting text, so ordinary drag-to-select stops working. To select text natively, **hold Shift while you drag**: that bypasses the app's mouse capture and lets Tether's terminal make the selection, and **Ctrl+C** / **Ctrl+Shift+C** then copy it.
 
 This matters most over **SSH and Coder**, where the remote CLI can't reach your local clipboard on its own. When a CLI copies to the clipboard itself — Claude Code does this over SSH using the OSC 52 escape sequence — Tether forwards it to your local clipboard automatically, so a copy inside the remote session lands on your local machine. (For safety, this is one-way: remote apps can write your clipboard, never read it.)
+
+### Multiline CLI prompts
+
+In a terminal pane, **Shift+Enter** inserts a newline in supported agent CLIs. Tether honors the Windows input protocol requested by native Codex, avoiding visible `[13;2u` text. Other CLIs keep modified Enter. **Enter** still submits normally; additional Ctrl/Alt/Meta modifiers follow the CLI's own bindings. Customized CLI keymaps can change how these keys behave.

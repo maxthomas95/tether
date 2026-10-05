@@ -90,11 +90,11 @@ Enable **Show usage quota in sidebar** (on by default) in [Settings -> Usage](se
 
 Codex quota uses the installed Codex CLI's supported app-server interface. Tether shows reported quota buckets with their actual window durations and retains the last successful observation when a refresh fails. A last-known reading is labelled with its observation time. Availability depends on the installed CLI, sign-in and account mode.
 
-Set **Codex quota warning** in [Settings -> Codex](settings.md#codex) to a remaining-percentage threshold. `0` disables notifications. Fresh successful measurements at or below the threshold produce one in-app warning per reported window reset. Stale, failed, expired and unknown measurements do not trigger warnings. Subscription quota must be enabled.
+Set **Codex quota warning** in [Settings → CLI tools → Codex CLI](settings.md#codex) to a remaining-percentage threshold. `0` disables notifications. Fresh successful measurements at or below the threshold produce one in-app warning per reported window reset. Stale, failed, expired and unknown measurements do not trigger warnings. Subscription quota must be enabled.
 
 ## Codex Account Usage
 
-[Settings -> Codex](settings.md#codex) has an explicit **Load account usage** action. It displays the account-wide token summary, daily trend, streaks, longest turn and quota windows that Codex reports. These figures have a different scope from Tether's local session estimates and are never added to them. Unsupported methods or unavailable account fields are labelled. Opening Settings alone does not request account usage.
+[Settings → CLI tools → Codex CLI](settings.md#codex) has an explicit **Load account usage** action. It displays the account-wide token summary, daily trend, streaks, longest turn and quota windows that Codex reports. These figures have a different scope from Tether's local session estimates and are never added to them. Unsupported methods or unavailable account fields are labelled. Opening Settings alone does not request account usage.
 
 ## Privacy
 

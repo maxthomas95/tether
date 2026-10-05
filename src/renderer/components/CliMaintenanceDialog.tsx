@@ -174,17 +174,17 @@ export function CliMaintenanceDialog({ environments, sessions, initialEnvironmen
         <div className="dialog-body">
           <p className="form-hint">Check and update the CLI installed on a selected machine or workspace.</p>
           <div className="cli-maintenance-controls">
-            <label className="form-label">CLI<select aria-label="CLI" className="form-select" value={tool} disabled={busy} onChange={e => { setTool(e.target.value as MaintainableCliTool); setMethod('native'); resetOutput(); }}>
+            <label className="form-label">CLI<select aria-label="CLI" className="form-input" value={tool} disabled={busy} onChange={e => { setTool(e.target.value as MaintainableCliTool); setMethod('native'); resetOutput(); }}>
               {TOOLS.map(id => <option key={id} value={id}>{CLI_TOOL_REGISTRY[id].displayName}</option>)}
             </select></label>
-            <label className="form-label">Target<select aria-label="Target" className="form-select" value={target} disabled={busy} onChange={e => { setTarget(e.target.value); setMethod('native'); resetOutput(); }}>
+            <label className="form-label">Target<select aria-label="Target" className="form-input" value={target} disabled={busy} onChange={e => { setTarget(e.target.value); setMethod('native'); resetOutput(); }}>
               <optgroup label="Environments"><option value="env:">Local PC</option>{environments.map(e => <option key={e.id} value={`env:${e.id}`}>{e.name} ({e.type === 'ssh' ? 'SSH' : e.type === 'coder' ? 'Coder' : 'Local'})</option>)}</optgroup>
               {sessions.length > 0 && <optgroup label="Use a session’s launch environment">{sessions.map(s => <option key={s.id} value={`session:${s.id}`}>{s.label} · {environments.find(e => e.id === s.environmentId)?.name ?? 'Local PC'}</option>)}</optgroup>}
             </select></label>
-            {coder && !sessionId && <label className="form-label">Coder workspace<select aria-label="Coder workspace" className="form-select" value={workspace} disabled={busy || loadingWorkspaces} onChange={e => { setWorkspace(e.target.value); resetOutput(); }}>
+            {coder && !sessionId && <label className="form-label">Coder workspace<select aria-label="Coder workspace" className="form-input" value={workspace} disabled={busy || loadingWorkspaces} onChange={e => { setWorkspace(e.target.value); resetOutput(); }}>
               <option value="">{loadingWorkspaces ? 'Loading workspaces…' : 'Choose a workspace'}</option>{workspaces.map(w => <option key={`${w.owner}/${w.name}`} value={`${w.owner}/${w.name}`}>{w.owner}/{w.name} ({w.status})</option>)}
             </select></label>}
-            <label className="form-label">Update method<select aria-label="Update method" className="form-select" value={selectedMethod.id} disabled={busy} onChange={e => { setMethod(e.target.value as CliUpdateMethod); resetOutput(); }}>
+            <label className="form-label">Update method<select aria-label="Update method" className="form-input" value={selectedMethod.id} disabled={busy} onChange={e => { setMethod(e.target.value as CliUpdateMethod); resetOutput(); }}>
               {methods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select></label>
           </div>

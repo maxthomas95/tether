@@ -7,6 +7,7 @@ import type { PaneId } from '../../shared/layout-types';
 import { decodeOsc52Write } from '../utils/osc52';
 import { DEFAULT_TERMINAL_FONT, loadTerminalFont } from '../styles/terminal-fonts';
 import { reportPipActivity } from '../lib/pip-activity';
+import { encodeShiftEnter } from '../utils/terminal-input';
 
 interface ManagedTerminal {
   terminal: Terminal;
@@ -134,6 +135,7 @@ export function useTerminalManager(
   const backgroundTerminals = useRef(new Map<string, ManagedTerminal>());
   const searchResultListeners = useRef(new Map<PaneId, Set<(event: ISearchResultChangeEvent) => void>>());
   const broadcastTargets = useRef(new Set<string>());
+  const win32InputModes = useRef(new Map<string, boolean>());
   const themeRef = useRef<ITheme | undefined>(xtermTheme);
   const cursorStyleRef = useRef<TerminalCursorStyle>(cursorStyle);
   const cursorBlinkRef = useRef<boolean>(cursorBlink);
@@ -219,6 +221,14 @@ export function useTerminalManager(
     broadcastTargets.current = new Set(sessionIds);
   }, []);
 
+  const sendNewline = useCallback((sessionId: string) => {
+    const targets = broadcastTargets.current;
+    const destinationIds = targets.size > 1 && targets.has(sessionId) ? targets : [sessionId];
+    for (const targetId of destinationIds) {
+      window.electronAPI.session.sendInput(targetId, encodeShiftEnter(win32InputModes.current.get(targetId) === true));
+    }
+  }, []);
+
   const createTerminal = useCallback((sessionId: string): ManagedTerminal => {
     const family = fontFamilyRef.current;
     const terminal = new Terminal({
@@ -258,6 +268,19 @@ export function useTerminalManager(
       return true;
     });
 
+    // Observe terminal input negotiation through xterm's parser. Returning
+    // false leaves normal terminal processing and all PTY output untouched.
+    for (const [final, enabled] of [['h', true], ['l', false]] as const) {
+      terminal.parser.registerCsiHandler({ prefix: '?', final }, params => {
+        if (params.includes(9001)) win32InputModes.current.set(sessionId, enabled);
+        return false;
+      });
+    }
+    terminal.parser.registerEscHandler({ final: 'c' }, () => {
+      win32InputModes.current.delete(sessionId);
+      return false;
+    });
+
     // Wire up input forwarding
     terminal.onData((data: string) => {
       sendInput(sessionId, data);
@@ -274,10 +297,13 @@ export function useTerminalManager(
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
 
-      // Shift+Enter → newline without submit
-      if (e.key === 'Enter' && e.shiftKey) {
+      // Use the input protocol requested by each CLI. Native Windows Codex
+      // requests Win32 key events; CSI-u appears as literal text there.
+      if (e.key === 'Enter' && e.shiftKey && !ctrl && !e.altKey) {
         if (e.type === 'keydown') {
-          sendInput(sessionId, '\x1b[13;2u');
+          e.preventDefault();
+          sendNewline(sessionId);
+          reportPipActivity(sessionId);
         }
         return false;
       }
@@ -299,7 +325,7 @@ export function useTerminalManager(
     });
 
     return { terminal, fitAddon, searchAddon, linksAddon };
-  }, [sendInput]);
+  }, [sendInput, sendNewline]);
 
   // Get or create a background terminal for sessions not in any visible pane
   const getOrCreate = useCallback((sessionId: string): ManagedTerminal => {
@@ -515,6 +541,7 @@ export function useTerminalManager(
 
   // Remove ALL terminals for a session (panes + background)
   const remove = useCallback((sessionId: string) => {
+    win32InputModes.current.delete(sessionId);
     // Remove from panes
     for (const [paneId, entry] of panes.current.entries()) {
       if (entry.sessionId === sessionId) {
@@ -544,6 +571,7 @@ export function useTerminalManager(
         managed.terminal.dispose();
       }
       backgroundTerminals.current.clear();
+      win32InputModes.current.clear();
     };
   }, []);
 

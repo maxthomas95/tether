@@ -16,7 +16,16 @@ export interface CliToolDef {
   supportsSessionResume: boolean;
   historyProvider?: 'claude' | 'codex' | 'copilot' | 'opencode';
   commonFlags: Array<{ flag: string; label: string }>;
+  launchOptions?: CliLaunchOption[];
   maintenance?: { methods: CliMaintenanceMethod[] };
+}
+
+export interface CliLaunchOption {
+  flag: '--model' | '--agent';
+  shortFlag?: '-m';
+  label: string;
+  placeholder: string;
+  hint: string;
 }
 
 export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
@@ -24,6 +33,7 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     id: 'claude',
     displayName: 'Claude Code',
     binaryName: 'claude',
+    launchOptions: [{ flag: '--model', label: 'Model', placeholder: 'CLI default', hint: 'Enter a model name or alias supported by your Claude installation. Leave empty to use Claude’s default.' }],
     maintenance: { methods: [
       { id: 'native', label: 'Claude updater (native / npm)', file: 'claude', args: ['update'] },
       { id: 'npm', label: 'npm global installation (latest)', file: 'npm', args: ['install', '-g', '@anthropic-ai/claude-code'] },
@@ -79,6 +89,10 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     id: 'opencode',
     displayName: 'OpenCode',
     binaryName: 'opencode',
+    launchOptions: [
+      { flag: '--model', shortFlag: '-m', label: 'Model', placeholder: 'provider/model', hint: 'Use the provider/model identifier from OpenCode. Leave empty to use its configured default.' },
+      { flag: '--agent', label: 'Agent', placeholder: 'CLI default', hint: 'Enter an agent available in your OpenCode configuration. Leave empty to use its default agent.' },
+    ],
     maintenance: { methods: [
       { id: 'native', label: 'OpenCode updater (detects installation method)', file: 'opencode', args: ['upgrade'] },
     ] },
@@ -98,6 +112,48 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     commonFlags: [],
   },
 };
+
+function readLaunchOptionEntry(entry: string, option: CliLaunchOption): { matches: boolean; split: boolean; value: string } {
+  const trimmed = entry.trim();
+  for (const flag of [option.flag, option.shortFlag].filter(Boolean) as string[]) {
+    if (trimmed === flag) return { matches: true, split: true, value: '' };
+    if (trimmed.startsWith(flag) && /^[=\s]$/.test(trimmed[flag.length] || '')) {
+      return { matches: true, split: false, value: trimmed.slice(flag.length + 1).trim() };
+    }
+  }
+  return { matches: false, split: false, value: '' };
+}
+
+export function readCliLaunchOption(flags: string[], option: CliLaunchOption): string {
+  let value = '';
+  for (let index = 0; index < flags.length; index++) {
+    const entry = readLaunchOptionEntry(flags[index], option);
+    if (!entry.matches) continue;
+    const candidate = unquoteLaunchValue(entry.split ? flags[index + 1] || '' : entry.value);
+    if (isSafeCliLaunchValue(candidate)) value = candidate;
+  }
+  return value;
+}
+
+/** Edit one native launch option without tokenizing or rewriting manual presets. */
+export function updateCliLaunchOption(flags: string[], option: CliLaunchOption, value: string): CliLaunchFlagsUpdate {
+  const next = value.trim();
+  if (next && !isSafeCliLaunchValue(next)) {
+    return { flags, conflict: `${option.label} must be a single model or agent identifier.` };
+  }
+  const kept: string[] = [];
+  for (let index = 0; index < flags.length; index++) {
+    const entry = readLaunchOptionEntry(flags[index], option);
+    if (!entry.matches) { kept.push(flags[index]); continue; }
+    const candidate = unquoteLaunchValue(entry.split ? flags[index + 1] || '' : entry.value);
+    if (!isSafeCliLaunchValue(candidate)) {
+      return { flags, conflict: `Edit the manual ${option.flag} preset before using this control; it contains an incomplete value or additional arguments.` };
+    }
+    if (entry.split) index++;
+  }
+  if (next) kept.push(`${option.flag} ${next}`);
+  return { flags: kept, conflict: null };
+}
 
 export function getCliBinary(cliTool: CliToolId, config: Record<string, unknown> = {}): string {
   if (cliTool === 'custom') {
@@ -161,16 +217,23 @@ export interface CodexLaunchSelection {
   reasoningEffort?: CodexReasoningEffort | '';
 }
 
-export interface CodexLaunchFlagsUpdate {
+export interface CliLaunchFlagsUpdate {
   flags: string[];
   conflict: string | null;
 }
 
+export type CodexLaunchFlagsUpdate = CliLaunchFlagsUpdate;
+
+const CLI_SAFE_VALUE_RE = /^[A-Za-z0-9._:@/+~[\]-]+$/;
 const CODEX_SAFE_VALUE_RE = /^[A-Za-z0-9._:@/+~-]+$/;
-const CODEX_MAX_LAUNCH_VALUE_LENGTH = 128;
+const CLI_MAX_LAUNCH_VALUE_LENGTH = 128;
+
+export function isSafeCliLaunchValue(value: string): boolean {
+  return value.length > 0 && !value.startsWith('-') && value.length <= CLI_MAX_LAUNCH_VALUE_LENGTH && CLI_SAFE_VALUE_RE.test(value);
+}
 
 export function isSafeCodexLaunchValue(value: string): boolean {
-  return value.length > 0 && !value.startsWith('-') && value.length <= CODEX_MAX_LAUNCH_VALUE_LENGTH && CODEX_SAFE_VALUE_RE.test(value);
+  return isSafeCliLaunchValue(value) && CODEX_SAFE_VALUE_RE.test(value);
 }
 
 function codexConfigKey(entry: string): string | null {
@@ -207,7 +270,7 @@ function hasMultipleCodexFlags(entry: string): boolean {
   return (flags?.length ?? 0) > 1;
 }
 
-function unquoteCodexValue(value: string): string {
+function unquoteLaunchValue(value: string): string {
   const trimmed = value.trim();
   if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
     return trimmed.slice(1, -1);
@@ -227,16 +290,16 @@ function readKnownCodexEntry(entry: string): { key: keyof CodexLaunchSelection; 
   const config = /^(?:-c|--config)(?:\s+|=)([^=\s]+)=(.+)$/.exec(trimmed);
 
   if (modelEquals || modelLong || modelShort) {
-    return { key: 'model', value: unquoteCodexValue((modelEquals || modelLong || modelShort)?.[1] || '') };
+    return { key: 'model', value: unquoteLaunchValue((modelEquals || modelLong || modelShort)?.[1] || '') };
   }
   if (profileEquals || profileLong || profileShort) {
-    return { key: 'profile', value: unquoteCodexValue((profileEquals || profileLong || profileShort)?.[1] || '') };
+    return { key: 'profile', value: unquoteLaunchValue((profileEquals || profileLong || profileShort)?.[1] || '') };
   }
   if (config?.[1] === 'model') {
-    return { key: 'model', value: unquoteCodexValue(config[2]) };
+    return { key: 'model', value: unquoteLaunchValue(config[2]) };
   }
   if (config?.[1] === 'model_reasoning_effort') {
-    return { key: 'reasoningEffort', value: unquoteCodexValue(config[2]) };
+    return { key: 'reasoningEffort', value: unquoteLaunchValue(config[2]) };
   }
   return { key: null, value: null, ambiguous: false };
 }
@@ -249,19 +312,19 @@ export function readCodexLaunchFlags(flags: string[]): CodexLaunchSelection {
     const trimmed = flag.trim();
     if (trimmed === '--model' || trimmed === '-m' || trimmed === '--profile' || trimmed === '-p') {
       const next = flags[index + 1]?.trim();
-      if (next && isSafeCodexLaunchValue(unquoteCodexValue(next))) {
-        selection[trimmed === '--model' || trimmed === '-m' ? 'model' : 'profile'] = unquoteCodexValue(next);
+      if (next && isSafeCodexLaunchValue(unquoteLaunchValue(next))) {
+        selection[trimmed === '--model' || trimmed === '-m' ? 'model' : 'profile'] = unquoteLaunchValue(next);
         index += 1;
       }
       continue;
     }
     if (trimmed === '-c' || trimmed === '--config') {
       const config = /^([^=\s]+)=(.+)$/.exec(flags[index + 1]?.trim() || '');
-      if (config?.[1] === 'model' && isSafeCodexLaunchValue(unquoteCodexValue(config[2]))) {
-        selection.model = unquoteCodexValue(config[2]);
+      if (config?.[1] === 'model' && isSafeCodexLaunchValue(unquoteLaunchValue(config[2]))) {
+        selection.model = unquoteLaunchValue(config[2]);
         index += 1;
-      } else if (config?.[1] === 'model_reasoning_effort' && isSafeCodexLaunchValue(unquoteCodexValue(config[2]))) {
-        selection.reasoningEffort = unquoteCodexValue(config[2]);
+      } else if (config?.[1] === 'model_reasoning_effort' && isSafeCodexLaunchValue(unquoteLaunchValue(config[2]))) {
+        selection.reasoningEffort = unquoteLaunchValue(config[2]);
         index += 1;
       }
       continue;
@@ -317,7 +380,7 @@ export function updateCodexLaunchFlags(flags: string[], selection: CodexLaunchSe
     }
     if (trimmed === '--model' || trimmed === '-m' || trimmed === '--profile' || trimmed === '-p') {
       const value = flags[index + 1]?.trim();
-      if (!value || !isSafeCodexLaunchValue(unquoteCodexValue(value))) {
+      if (!value || !isSafeCodexLaunchValue(unquoteLaunchValue(value))) {
         return {
           flags: [...flags],
           conflict: `Manual Codex launch entry kept: ${flag}. Remove it before using guided controls.`,
@@ -329,7 +392,7 @@ export function updateCodexLaunchFlags(flags: string[], selection: CodexLaunchSe
     if (trimmed === '-c' || trimmed === '--config') {
       const config = /^([^=\s]+)=(.+)$/.exec(flags[index + 1]?.trim() || '');
       if (config?.[1] === 'model' || config?.[1] === 'model_reasoning_effort') {
-        if (!isSafeCodexLaunchValue(unquoteCodexValue(config[2]))) {
+        if (!isSafeCodexLaunchValue(unquoteLaunchValue(config[2]))) {
           return {
             flags: [...flags],
             conflict: `Manual Codex launch entry kept: ${flag} ${flags[index + 1] || ''}. Remove it before using guided controls.`,

@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => {
     input?: (data: string) => void;
     key?: (event: { domEvent: KeyboardEvent }) => void;
     options: Record<string, unknown>;
-    parser = { registerOscHandler: vi.fn() };
+    parser = { registerOscHandler: vi.fn(), registerCsiHandler: vi.fn(), registerEscHandler: vi.fn() };
     loadAddon = vi.fn((addon: { activate?: (terminal: FakeTerminal) => void }) => addon.activate?.(this));
     attachCustomKeyEventHandler = vi.fn();
     selection = '';
@@ -484,6 +484,55 @@ describe('terminal clipboard', () => {
     const event = new KeyboardEvent(type, { cancelable: true, ctrlKey: true, ...init });
     return { result: handler(event), prevented: event.defaultPrevented };
   }
+
+  it('sends one modified Enter without consuming other modified Enter keys', () => {
+    api.getOrCreate('a');
+    api.setBroadcastTargets(['a', 'b']);
+    const handler = keyHandler('a');
+    expect(press(handler, 'keydown', { key: 'Enter', shiftKey: true, ctrlKey: false })).toEqual({ result: false, prevented: true });
+    expect(press(handler, 'keyup', { key: 'Enter', shiftKey: true, ctrlKey: false }).result).toBe(false);
+    const data = '\x1b[13;2u';
+    expect(mocks.sendInput.mock.calls).toEqual([['a', data], ['b', data]]);
+    for (const modifiers of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+      expect(press(handler, 'keydown', { key: 'Enter', shiftKey: true, ctrlKey: false, ...modifiers }).result).toBe(true);
+    }
+    expect(mocks.sendInput).toHaveBeenCalledTimes(2);
+  });
+
+  it('honors Win32 input negotiation per broadcast target, disable and terminal reset', () => {
+    for (const id of ['a', 'b']) api.getOrCreate(id);
+    type CsiHandler = [{ prefix: string; final: string }, (params: (number | number[])[]) => boolean];
+    const calls = terminal('a').parser.registerCsiHandler.mock.calls as CsiHandler[];
+    const enable = calls.find(([id]) => id.final === 'h')![1];
+    const disable = calls.find(([id]) => id.final === 'l')![1];
+    expect(enable([2004])).toBe(false);
+    expect(enable([9001, 2004])).toBe(false);
+    api.setBroadcastTargets(['a', 'b']);
+    const handler = keyHandler('a');
+    const pressEnter = () => press(handler, 'keydown', { key: 'Enter', shiftKey: true, ctrlKey: false });
+    pressEnter();
+    expect(mocks.sendInput.mock.calls).toEqual([
+      ['a', '\x1b[13;28;13;1;16;1_\x1b[13;28;13;0;16;1_'], ['b', '\x1b[13;2u'],
+    ]);
+    expect(press(handler, 'keyup', { key: 'Enter', shiftKey: true, ctrlKey: false }).result).toBe(false);
+    expect(mocks.sendInput).toHaveBeenCalledTimes(2);
+    expect(disable([9001])).toBe(false);
+    mocks.sendInput.mockClear();
+    pressEnter();
+    expect(mocks.sendInput).toHaveBeenCalledWith('a', '\x1b[13;2u');
+    enable([9001]);
+    const reset = terminal('a').parser.registerEscHandler.mock.calls[0][1];
+    expect(reset()).toBe(false);
+    mocks.sendInput.mockClear();
+    pressEnter();
+    expect(mocks.sendInput).toHaveBeenCalledWith('a', '\x1b[13;2u');
+    enable([9001]);
+    api.remove('a');
+    api.getOrCreate('a');
+    mocks.sendInput.mockClear();
+    press(keyHandler('a'), 'keydown', { key: 'Enter', shiftKey: true, ctrlKey: false });
+    expect(mocks.sendInput).toHaveBeenCalledWith('a', '\x1b[13;2u');
+  });
 
   it('copies the trimmed selection once per Ctrl+C press and cancels only the keydown', () => {
     api.getOrCreate('a');
