@@ -1,9 +1,10 @@
+import crypto from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import type { SessionTransport, TransportStartOptions, TransportExitInfo } from './types';
 import { createLogger } from '../logger';
 import { buildSshConnectConfig } from './ssh-connect-config';
 import { loadSsh2 } from './ssh2-loader';
-import { buildEnvAssignments, buildRemoteCliCommand, quoteRemotePath } from './posix-shell';
+import { buildEnvAssignments, buildRemoteCliCommand, quotePosixShellArg, quoteRemotePath } from './posix-shell';
 import { buildRemoteBootstrap } from './remote-bootstrap';
 import { withRootSandboxBypass } from './root-sandbox';
 
@@ -27,7 +28,7 @@ const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
 const lastNonEmptyLine = (text: string): string =>
   text.split('\n').filter(l => l.trim()).pop()?.trim() || '';
 
-type SetupState = 'waitShell' | 'waitPassword' | 'waitElevated' | 'waitBootstrap';
+type SetupState = 'waitShell' | 'waitSudo' | 'waitPassword' | 'waitElevated' | 'waitBootstrap';
 type SshClient = InstanceType<typeof import('ssh2').Client>;
 type SshConnectConfig = Parameters<SshClient['connect']>[0];
 
@@ -46,6 +47,9 @@ interface SshSessionSetupOptions {
  * Drives the post-connect handshake on an SSH PTY: optional `sudo -i`
  * elevation, then a noninteractive reader which disables echo before accepting
  * the launch payload. Secret values never enter an interactive history line.
+ * Sudo prompts are matched only after the shell prints the sudo marker: a
+ * banner line like `Swap usage: 43%` looks like a prompt, and the user's own
+ * prompt after it must not read as a NOPASSWD root shell.
  */
 class SshSessionSetup {
   private state: SetupState = 'waitShell';
@@ -53,6 +57,8 @@ class SshSessionSetup {
   private passwordSent = false;
   private settled = false;
   private readonly timer: NodeJS.Timeout;
+  private readonly sudoNonce = crypto.randomBytes(16).toString('hex');
+  private readonly sudoMarker = `\x1b]777;TETHER_SUDO=${this.sudoNonce}\x07`;
 
   constructor(private readonly opts: SshSessionSetupOptions) {
     this.timer = setTimeout(() => this.onTimeout(), SETUP_TIMEOUT_MS);
@@ -66,6 +72,7 @@ class SshSessionSetup {
 
     switch (this.state) {
       case 'waitShell': this.onShellPrompt(last); break;
+      case 'waitSudo': this.onSudoStarted(); break;
       case 'waitPassword': this.onPasswordPhase(last); break;
       case 'waitElevated': this.onElevatedPhase(last); break;
       case 'waitBootstrap': this.onBootstrapPhase(); break;
@@ -76,13 +83,22 @@ class SshSessionSetup {
     if (!PROMPT_RE.test(last)) return;
     if (this.opts.useSudo) {
       log.info('Shell prompt detected, sending sudo -i');
-      this.state = 'waitPassword';
+      this.state = 'waitSudo';
       this.buffer = '';
-      this.opts.stream.write(this.opts.replaceShell ? 'exec sudo -i\n' : 'sudo -i\n');
+      const script = `printf '\\033]777;TETHER_SUDO=${this.sudoNonce}\\007'; exec sudo -i`;
+      this.opts.stream.write(`${this.opts.replaceShell ? 'exec ' : ''}sh -c ${quotePosixShellArg(script)}\n`);
     } else {
       log.info('Shell prompt detected, disabling echo before launch');
       this.startEchoOff();
     }
+  }
+
+  private onSudoStarted(): void {
+    const at = this.buffer.indexOf(this.sudoMarker);
+    if (at < 0) return;
+    this.state = 'waitPassword';
+    this.buffer = this.buffer.slice(at + this.sudoMarker.length);
+    this.onPasswordPhase(lastNonEmptyLine(stripAnsi(this.buffer)));
   }
 
   private onPasswordPhase(last: string): void {
@@ -147,7 +163,7 @@ class SshSessionSetup {
     if (this.settled) return;
     this.settled = true;
     log.error('Session setup timed out', { host: this.opts.host, state: this.state });
-    const message = this.state === 'waitPassword' || this.state === 'waitElevated'
+    const message = this.state === 'waitSudo' || this.state === 'waitPassword' || this.state === 'waitElevated'
       ? 'Sudo elevation timed out after 15s'
       : 'Session setup timed out after 15s — shell prompt not detected';
     this.opts.reject(new Error(message));
