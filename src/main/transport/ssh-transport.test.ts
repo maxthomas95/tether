@@ -80,6 +80,12 @@ function driveSetupToCompletion(stream: InstanceType<typeof ssh2Harness.FakeStre
   stream.emitData('user@host:~$ ');
 }
 
+/** The marker the remote shell prints once it is actually running sudo. */
+function sudoMarker(stream: InstanceType<typeof ssh2Harness.FakeStream>): string {
+  const nonce = stream.write.mock.calls.map(c => c[0]).join('').match(/TETHER_SUDO=([a-f0-9]{32})/)![1];
+  return `\x1b]777;TETHER_SUDO=${nonce}\x07`;
+}
+
 async function startConnected(
   t: SSHTransport,
   options: TransportStartOptions = baseOptions(),
@@ -127,9 +133,9 @@ describe('SSHTransport', () => {
     const start = t.start(baseOptions({ command: { file: 'claude', args: ['update'] }, exitAfterCommand: true }));
     const client = ssh2Harness.current!; client.emit('ready');
     const stream = new ssh2Harness.FakeStream(); client.lastShellCb!(undefined, stream);
-    stream.emitData('me@host:~$ '); stream.emitData('root@host:~# '); stream.emitData('root@host:~# ');
+    stream.emitData('me@host:~$ '); stream.emitData(sudoMarker(stream) + 'root@host:~# ');
     await start;
-    expect(stream.write).toHaveBeenCalledWith('exec sudo -i\n');
+    expect(stream.write.mock.calls[0][0]).toMatch(/^exec sh -c '.*exec sudo -i'\n$/);
     expect(decodeLaunchPayload(stream.write.mock.calls)).toContain('exit "$tether_status"');
     t.dispose();
   });
@@ -297,13 +303,57 @@ describe('SSHTransport', () => {
     client.emit('ready');
     const stream = new ssh2Harness.FakeStream();
     client.lastShellCb!(undefined, stream);
-    stream.emitData('me@host:~$ ');    // shell prompt → sends `sudo -i`
-    stream.emitData('root@host:~# ');  // NOPASSWD root shell → sends `stty -echo`
-    stream.emitData('root@host:~# ');  // echo disabled → writes launch cmd + resolves
+    stream.emitData('me@host:~$ ');                          // shell prompt → sends `sudo -i`
+    stream.emitData(sudoMarker(stream) + 'root@host:~# ');   // NOPASSWD root shell → bootstrap
     await start;
 
     const writes = decodeLaunchPayload(stream.write.mock.calls);
     expect(writes).toContain("env 'IS_SANDBOX=1'");
+  });
+
+  it('sends the sudo password only after the shell is running sudo', async () => {
+    const t = new SSHTransport(baseConfig({ useSudo: true, password: 'pw' }));
+    const start = t.start(baseOptions());
+    const client = ssh2Harness.current!; client.emit('ready');
+    const stream = new ssh2Harness.FakeStream(); client.lastShellCb!(undefined, stream);
+    stream.emitData('me@host:~$ ');
+    stream.emitData('[sudo] password for me: ');
+    expect(stream.write).toHaveBeenCalledOnce();
+    stream.emitData(sudoMarker(stream) + '[sudo] password for me: ');
+    expect(stream.write).toHaveBeenLastCalledWith('pw\n');
+    stream.emitData('\r\nroot@host:~# ');
+    await start;
+    t.dispose();
+  });
+
+  it('does not mistake a banner line and the login prompt for a NOPASSWD root shell', async () => {
+    const t = new SSHTransport(baseConfig({ useSudo: true, password: 'pw' }));
+    const start = t.start(baseOptions());
+    const client = ssh2Harness.current!; client.emit('ready');
+    const stream = new ssh2Harness.FakeStream(); client.lastShellCb!(undefined, stream);
+    stream.emitData('Welcome to Ubuntu 24.04.5 LTS\r\n  Memory usage: 54%   IPv4 address: 10.0.0.1\r\n  Swap usage:   43%\r\n');
+    expect(stream.write).toHaveBeenCalledOnce();
+    stream.emitData('\r\n*** System restart required ***\r\nme@host:~$ ');
+    expect(stream.write).toHaveBeenCalledOnce();
+    stream.emitData(sudoMarker(stream) + '[sudo] password for me: ');
+    expect(stream.write).toHaveBeenLastCalledWith('pw\n');
+    stream.emitData('\r\nroot@host:~# ');
+    await start;
+    expect(stream.write.mock.calls.map(c => c[0])).not.toContain('pw\nexec sh -c');
+    t.dispose();
+  });
+
+  it('reports a sudo timeout when the shell never starts sudo', async () => {
+    vi.useFakeTimers();
+    const t = new SSHTransport(baseConfig({ useSudo: true }));
+    const start = t.start(baseOptions());
+    const client = ssh2Harness.current!; client.emit('ready');
+    const stream = new ssh2Harness.FakeStream(); client.lastShellCb!(undefined, stream);
+    stream.emitData('me@host:~$ ');
+    const rejected = expect(start).rejects.toThrow('Sudo elevation timed out after 15s');
+    await vi.advanceTimersByTimeAsync(15_000);
+    await rejected;
+    t.dispose();
   });
 
   it('does not inject IS_SANDBOX for a non-root login', async () => {
