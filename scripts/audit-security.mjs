@@ -20,13 +20,27 @@ function isReviewedAdvisory(name, via, issue, lock) {
     && via.severity === 'high' && issue.nodes.every(path => lock.packages[path]?.version === '3.0.3');
 }
 
+function isBelowAuditThreshold(name, issues, lock, seen) {
+  const issue = issues[name];
+  if (seen.has(name) || !['info', 'low', 'moderate'].includes(issue?.severity)
+    || !issue.via?.length || !issue.nodes?.length
+    || issue.nodes.some(path => lock.packages[path]?.dev !== true)) return false;
+  const next = new Set([...seen, name]);
+  // Inspect the whole path: a malformed moderate entry must not hide a new
+  // high/critical advisory, missing dependency, or dependency cycle.
+  return issue.via.every(via => typeof via === 'string'
+    ? isBelowAuditThreshold(via, issues, lock, next)
+    : ['info', 'low', 'moderate'].includes(via.severity));
+}
+
 function isCoveredBuildIssue(name, issues, lock, seen = new Set()) {
   const issue = issues[name];
-  if (seen.has(name) || !affectedBuildPackages.has(name) || !issue?.via?.length
+  if (seen.has(name) || !affectedBuildPackages.has(name) || issue?.severity !== 'high' || !issue.via?.length
     || !issue.nodes?.length || issue.nodes.some(path => lock.packages[path]?.dev !== true)) return false;
   const next = new Set([...seen, name]);
   return issue.via.every(via => typeof via === 'string'
-    ? isCoveredBuildIssue(via, issues, lock, next) : isReviewedAdvisory(name, via, issue, lock));
+    ? isBelowAuditThreshold(via, issues, lock, next) || isCoveredBuildIssue(via, issues, lock, next)
+    : isReviewedAdvisory(name, via, issue, lock));
 }
 
 export function verifyBracesPatch({ repoRoot = root, integrity } = {}) {
