@@ -56,13 +56,24 @@ function inside(file) {
   const rel = path.relative(root, file);
   return rel !== '' && !rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel) && file.endsWith('.jsonl');
 }
+// Claude appends a hash we cannot recompute to project names over 200
+// characters, so fall back to the one transcript carrying this session id.
+function findClaudeTranscript(name) {
+  let dirs;
+  try { dirs = fs.readdirSync(root); } catch { return null; }
+  const found = dirs.map(dir => path.join(root, dir, name)).filter(f => {
+    try { return fs.statSync(f).isFile(); } catch { return false; }
+  });
+  return found.length === 1 ? found[0] : null;
+}
 function resolveSource() {
   let file;
   let nativeId = request.nativeSessionId;
   if (request.cli === 'claude' && nativeId && /^[a-zA-Z0-9-]+$/.test(nativeId)) {
     let realCwd = cwd;
     try { realCwd = fs.realpathSync(cwd); } catch {}
-    file = path.join(root, realCwd.replace(/[\\/:]/g, '-'), nativeId + '.jsonl');
+    file = path.join(root, realCwd.replace(/[^a-zA-Z0-9]/g, '-'), nativeId + '.jsonl');
+    if (!fs.existsSync(file)) file = findClaudeTranscript(nativeId + '.jsonl') || file;
   } else if (request.cli === 'codex') {
     if (process.platform !== 'linux') throw new Error('unsupported-platform');
     // The CLI and its children inherit a non-secret Tether marker. On Linux,

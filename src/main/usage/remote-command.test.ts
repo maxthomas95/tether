@@ -74,7 +74,7 @@ describe('remote usage command boundary', () => {
     if (!fs.existsSync(shell)) return;
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tether-usage-quote'-$-"));
     try {
-      const file = path.join(dir, 'projects', fs.realpathSync(dir).replace(/[\\/:]/g, '-'), 'native.jsonl');
+      const file = path.join(dir, 'projects', fs.realpathSync(dir).replace(/[^a-zA-Z0-9]/g, '-'), 'native.jsonl');
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, '{"type":"user","message":"private"}\n');
       const command = buildProbeCommand({ cli: 'claude', marker: 'pane', workingDir: dir, claudeHome: dir, nativeSessionId: 'native' });
