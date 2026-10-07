@@ -24,6 +24,11 @@ cycles, normal globs, quoting and escaping. Other high/critical advisories,
 runtime exposure, changed versions, missing patches, incomplete audit reports
 and an expired review all fail the check.
 
+An inherited build finding can also contain separate moderate, low or
+informational dependency paths. Those remain below the high/critical threshold;
+the check follows each path and rejects higher or unknown severities, missing
+dependencies and cycles. They do not receive a new advisory exception.
+
 This review expires **2026-11-04 UTC**. Replace the backport with a fixed
 published dependency as soon as one is available, then remove the exception,
 patch and integrity manifest. Do not extend the deadline without reviewing

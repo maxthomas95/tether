@@ -25,6 +25,36 @@ test('blocks a second advisory inherited through the same dependency', () => {
   assert.deepEqual(evaluateAudit(audit, policy()).blocked, ['braces', 'micromatch']);
 });
 
+test('allows below-threshold dependency paths alongside the reviewed backport', () => {
+  const audit = report();
+  const review = policy();
+  audit.vulnerabilities['@electron-forge/core'] = issue('@electron-forge/core', ['micromatch', '@electron/get']);
+  audit.vulnerabilities['@electron/get'] = {
+    ...issue('@electron/get', ['sprintf-js']), severity: 'moderate',
+  };
+  audit.vulnerabilities['sprintf-js'] = {
+    ...issue('sprintf-js', [{ url: 'https://github.com/advisories/GHSA-other', severity: 'moderate' }]),
+    severity: 'moderate',
+  };
+  for (const name of ['@electron-forge/core', '@electron/get', 'sprintf-js']) {
+    review.lock.packages[`node_modules/${name}`] = { dev: true };
+  }
+  assert.deepEqual(evaluateAudit(audit, review).blocked, []);
+
+  for (const severity of ['high', 'critical', 'unknown']) {
+    audit.vulnerabilities['sprintf-js'].via[0].severity = severity;
+    assert.ok(evaluateAudit(audit, review).blocked.includes('@electron-forge/core'));
+  }
+  audit.vulnerabilities['sprintf-js'].via[0].severity = 'moderate';
+  audit.vulnerabilities['sprintf-js'].severity = 'high';
+  assert.deepEqual(evaluateAudit(audit, review).blocked, ['@electron-forge/core', 'sprintf-js']);
+  audit.vulnerabilities['sprintf-js'].severity = 'moderate';
+  audit.vulnerabilities['sprintf-js'].via = ['@electron/get'];
+  assert.ok(evaluateAudit(audit, review).blocked.includes('@electron-forge/core'));
+  delete audit.vulnerabilities['sprintf-js'];
+  assert.ok(evaluateAudit(audit, review).blocked.includes('@electron-forge/core'));
+});
+
 test('blocks critical severity, runtime exposure, version drift and expired review', () => {
   const critical = report();
   critical.vulnerabilities.braces.severity = 'critical';
