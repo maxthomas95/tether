@@ -49,6 +49,9 @@ Requirements and limits:
   prompt. The pane shows **Waiting for remote usage** until it is found. A Codex
   process that exits before discovery may have no collected usage. Ambiguous
   matches stay pending.
+- Claude transcript discovery supports working directories containing dots,
+  spaces or underscores. Remote collection also finds long project directory
+  names by the saved conversation ID when exactly one transcript matches.
 - Connection or reader failures retry automatically. **Last collected** means
   the displayed totals may be stale; hover for details. History retains the last
   successfully collected totals after disconnection or exit.

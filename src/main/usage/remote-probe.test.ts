@@ -14,7 +14,7 @@ function fixture(cli: 'claude' | 'codex', text: string) {
   dirs.push(dir);
   const root = path.join(dir, cli === 'claude' ? 'projects' : 'sessions');
   const file = cli === 'claude'
-    ? path.join(root, fs.realpathSync(dir).replace(/[\\/:]/g, '-'), 'native-id.jsonl')
+    ? path.join(root, fs.realpathSync(dir).replace(/[^a-zA-Z0-9]/g, '-'), 'native-id.jsonl')
     : path.join(root, '2026', '09', '07', 'rollout.jsonl');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, text);
@@ -131,6 +131,39 @@ describe('remote usage probe', () => {
     const next = probe({ ...f.request, source: first.source, cursor: { offset: first.offset!, identity: first.source!.identity } });
     expect(next.reset).toBe(true);
     expect(JSON.parse(next.text!).message.usage.input_tokens).toBe(1);
+  });
+
+  it('finds Claude transcripts under Claude\'s own project name, falling back to the session id', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-remote-usage-'));
+    dirs.push(home);
+    const transcript = (dir: string, id = 'native-id') => {
+      const file = path.join(home, 'projects', dir, id + '.jsonl');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, claude(10) + '\n');
+      return file;
+    };
+    const workDir = (name: string) => {
+      const dir = path.join(home, name);
+      fs.mkdirSync(dir, { recursive: true });
+      return { dir, encoded: fs.realpathSync(dir).replace(/[^a-zA-Z0-9]/g, '-') };
+    };
+    const request = (workingDir: string, nativeSessionId = 'native-id'): RemoteUsageRequest =>
+      ({ cli: 'claude', marker: 'pane-a', workingDir, claudeHome: home, nativeSessionId });
+
+    expect(probe(request(home)).status).toBe('pending');
+
+    const dotted = workDir('nkp-v2.17.1_cli');
+    transcript(fs.realpathSync(dotted.dir).replace(/[\\/:]/g, '-'));
+    const dottedFile = transcript(dotted.encoded);
+    expect(probe(request(dotted.dir)).source?.path).toBe(dottedFile);
+
+    const long = workDir('a'.repeat(240));
+    const longFile = transcript(long.encoded.slice(0, 200) + '-1x2y3z', 'long-id');
+    expect(probe(request(long.dir, 'long-id')).source?.path).toBe(longFile);
+
+    transcript('one', 'shared-id');
+    transcript('two', 'shared-id');
+    expect(probe(request(home, 'shared-id')).status).toBe('pending');
   });
 
   it('matches Codex by marked process, isolating concurrent panes and excluding subagents', () => {

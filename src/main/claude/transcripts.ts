@@ -8,13 +8,15 @@ import type { TranscriptInfo } from '../../shared/types';
  *   <claude-home>/projects/<encoded-cwd>/<sessionId>.jsonl
  *
  * `<claude-home>` is `$CLAUDE_CONFIG_DIR` when set, otherwise `~/.claude`.
- * The encoded-cwd is the working directory with `\`, `/`, and `:` replaced
- * with `-`. The filename stem is the Claude session UUID.
+ * The encoded-cwd is the working directory with every character other than an
+ * ASCII letter or digit replaced with `-`. The filename stem is the Claude
+ * session UUID.
  */
 
 export function encodeCwdForClaude(cwd: string): string {
-  // Match the encoding Claude itself uses (verified against the on-disk layout)
-  return cwd.replace(/[\\/:]/g, '-');
+  // Match the encoding Claude itself uses (verified against the on-disk layout).
+  // Claude also hash-suffixes names over 200 chars, which is not reproduced here.
+  return cwd.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
 export function getClaudeHome(): string {
@@ -28,8 +30,8 @@ export function getClaudeProjectsRoot(): string {
 export function getProjectDir(cwd: string): string {
   if (typeof cwd !== 'string' || /[\0\r\n]/.test(cwd)) throw new Error('Invalid transcript working directory');
   const encoded = encodeCwdForClaude(cwd);
-  // Separators are encoded above, but dot segments would still escape projects.
-  if (!encoded || encoded === '.' || encoded === '..') throw new Error('Invalid transcript working directory');
+  // A bare dot segment is never a real working directory.
+  if (!encoded || cwd === '.' || cwd === '..') throw new Error('Invalid transcript working directory');
   return path.join(getClaudeProjectsRoot(), encoded);
 }
 

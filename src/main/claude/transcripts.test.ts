@@ -10,6 +10,7 @@ vi.mock('electron', () => ({
 }));
 
 import {
+  encodeCwdForClaude,
   getClaudeHome,
   getClaudeProjectsRoot,
   getProjectDir,
@@ -90,6 +91,11 @@ describe('Claude transcript path boundaries', () => {
       expect(transcriptExists('/repo', sessionId)).toBe(false);
     },
   );
+
+  it('encodes every character other than a letter or digit, as Claude names project folders', () => {
+    expect(encodeCwdForClaude('/opt/nkp/nkp-v2.17.1/cli')).toBe('-opt-nkp-nkp-v2-17-1-cli');
+    expect(encodeCwdForClaude('C:\\Users\\max.thomas\\my_repo')).toBe('C--Users-max-thomas-my-repo');
+  });
 
   it('keeps encoded Windows and POSIX working directories inside projects', () => {
     for (const cwd of ['C:\\work\\repo with spaces', '/home/user/日本語', '../repo', '/']) {
