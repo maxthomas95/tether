@@ -177,6 +177,7 @@ export function App() {
     terminalCursorStyle,
     terminalCursorBlink,
     terminalScrollback,
+    sessions,
   );
   const { layoutState, layoutDispatch, splitLayoutState, splitDispatch,
     canvasState, canvasDispatch, canvasEnabled, setCanvasEnabled, openCreatedSession } = useWorkspaceLayout(enablePaneSplitting);

@@ -18,6 +18,8 @@ export interface CliToolDef {
   commonFlags: Array<{ flag: string; label: string }>;
   launchOptions?: CliLaunchOption[];
   maintenance?: { methods: CliMaintenanceMethod[] };
+  /** Newline key sequence for CLIs that submit modified Windows Enter. */
+  win32ShiftEnterSequence?: string;
 }
 
 export interface CliLaunchOption {
@@ -33,6 +35,7 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     id: 'claude',
     displayName: 'Claude Code',
     binaryName: 'claude',
+    win32ShiftEnterSequence: '\n',
     launchOptions: [{ flag: '--model', label: 'Model', placeholder: 'CLI default', hint: 'Enter a model name or alias supported by your Claude installation. Leave empty to use Claude’s default.' }],
     maintenance: { methods: [
       { id: 'native', label: 'Claude updater (native / npm)', file: 'claude', args: ['update'] },
