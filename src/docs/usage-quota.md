@@ -52,10 +52,13 @@ Requirements and limits:
 - Claude transcript discovery supports working directories containing dots,
   spaces or underscores. Remote collection also finds long project directory
   names by the saved conversation ID when exactly one transcript matches.
-- If the host refuses the login or the **sudo** password, Tether tries once and
-  sends nothing further, so a wrong password costs a single failed attempt.
-  It does not try again until you edit that environment or open a session on
-  it that connects; usage shows as unavailable until then.
+- If the host refuses the login or the **sudo** password, or a reader that was
+  sent the password gives no ready response within 30 seconds, Tether tries
+  once and sends nothing further, so a wrong password costs a single failed
+  attempt. It does not try again until you edit that environment or open a
+  session on it that connects; usage shows as unavailable until then. The
+  usage and subagent readers start one at a time per environment, so they
+  cannot both send the password before the first answer is known.
 - Other connection or reader failures retry automatically. **Last collected** means
   the displayed totals may be stale; hover for details. History retains the last
   successfully collected totals after disconnection or exit.

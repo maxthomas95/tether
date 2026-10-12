@@ -6,7 +6,7 @@ import { getEnvironment } from '../db/environment-repo';
 import { resolveSshConfig } from '../ssh/resolve-ssh-config';
 import { connectSshControl } from '../cli-config/remote/ssh-control-connection';
 import { REMOTE_USAGE_PROBE } from './remote-probe';
-import { RemoteAuthError, isRemoteAuthFailed, markRemoteAuthFailed } from './remote-auth-state';
+import { RemoteAuthError, authGeneration, isRemoteAuthFailed, markRemoteAuthFailed, serialiseElevatedConnect } from './remote-auth-state';
 import {
   validateSubagentReply,
   type RemoteSubagentReply,
@@ -181,10 +181,10 @@ function awaitReady(probe: ResidentProcess, token: string, passwordSent: boolean
       if (error) { try { probe.kill(); } catch { /* already gone */ } reject(error); } else resolve();
     };
     const timer = setTimeout(() => done(passwordSent ? new RemoteAuthError() : new Error('Remote usage reader did not start')), READY_TIMEOUT_MS);
-    probe.onLine(line => {
-      if (!line.startsWith(PROBE_MARKER)) return;
-      try { if ((JSON.parse(line.slice(PROBE_MARKER.length)) as { ready?: unknown }).ready === token) done(); } catch { /* not ours */ }
-    });
+    // Anywhere in the line: a login script that prints without a trailing
+    // newline glues its text onto the front of ours. The token is 128 random bits.
+    const readyLine = PROBE_MARKER + JSON.stringify({ ready: token });
+    probe.onLine(line => { if (line.includes(readyLine)) done(); });
     probe.onAuthFailure?.(() => done(new RemoteAuthError()));
     probe.onExit(() => done(new Error('Remote usage reader did not start')));
   });
@@ -316,31 +316,41 @@ export async function connectRemoteUsage(environmentId: string, workspace: strin
   }
   // A host that refused the credentials is not asked again until they change.
   if (isRemoteAuthFailed(environmentId)) throw new RemoteAuthError();
+  // Read before anything else: a refusal is held against the credentials this
+  // attempt started with, not against ones edited while it was in flight.
+  const generation = authGeneration(environmentId);
+  const refused = (): never => {
+    if (authGeneration(environmentId) !== generation) throw new Error('Remote credentials changed while connecting');
+    markRemoteAuthFailed(environmentId);
+    throw new RemoteAuthError();
+  };
   const ssh = await resolveSshConfig(config);
-  let connection: Awaited<ReturnType<typeof connectSshControl>>;
-  try {
-    connection = await connectSshControl(ssh, signal);
-  } catch (error) {
-    if (error instanceof Error && SSH_AUTH_REFUSED.test(error.message)) {
-      markRemoteAuthFailed(environmentId);
-      throw new RemoteAuthError();
+  const attempt = async (): Promise<RemoteUsageConnection> => {
+    let connection: Awaited<ReturnType<typeof connectSshControl>>;
+    try {
+      connection = await connectSshControl(ssh, signal);
+    } catch (error) {
+      if (error instanceof Error && SSH_AUTH_REFUSED.test(error.message)) refused();
+      throw error;
     }
-    throw error;
-  }
-  const token = crypto.randomBytes(16).toString('hex');
-  const passwordSent = !!ssh.useSudo && !!ssh.password;
-  try {
-    const probe = await connection.spawn(buildProbeCommand(undefined, ssh.useSudo, !!ssh.password, token), { maxLineBytes: MAX_LINE_BYTES });
-    // sudo -S takes exactly one line for the password; nothing else is written
-    // until the reader reports ready, so a refusal consumes one attempt.
-    if (passwordSent) probe.write(`${ssh.password}\n`);
-    await awaitReady(probe, token, passwordSent);
-    return residentConnection(probe, () => connection.end());
-  } catch (error) {
-    connection.end();
-    if (error instanceof RemoteAuthError) markRemoteAuthFailed(environmentId);
-    throw error;
-  }
+    const token = crypto.randomBytes(16).toString('hex');
+    const passwordSent = !!ssh.useSudo && !!ssh.password;
+    try {
+      const probe = await connection.spawn(buildProbeCommand(undefined, ssh.useSudo, !!ssh.password, token), { maxLineBytes: MAX_LINE_BYTES });
+      // sudo -S takes exactly one line for the password; nothing else is written
+      // until the reader reports ready, so a refusal consumes one attempt.
+      if (passwordSent) probe.write(`${ssh.password}\n`);
+      await awaitReady(probe, token, passwordSent);
+      return residentConnection(probe, () => connection.end());
+    } catch (error) {
+      connection.end();
+      if (error instanceof RemoteAuthError) refused();
+      throw error;
+    }
+  };
+  // One elevated connect at a time per environment, so the usage reader and the
+  // subagent pool cannot both send the password before the first refusal is known.
+  return ssh.useSudo ? serialiseElevatedConnect(environmentId, attempt) : attempt();
 }
 
 /** Recover the id from a reply the validator rejected, so its caller fails fast. */

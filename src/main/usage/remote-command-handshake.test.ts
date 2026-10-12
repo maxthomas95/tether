@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { READY_TIMEOUT_MS, connectRemoteUsage } from './remote-command';
-import { RemoteAuthError, isRemoteAuthFailed, resetRemoteAuthState } from './remote-auth-state';
+import { RemoteAuthError, clearRemoteAuthFailure, isRemoteAuthFailed, resetRemoteAuthState } from './remote-auth-state';
 import { getEnvironment } from '../db/environment-repo';
 import { resolveSshConfig } from '../ssh/resolve-ssh-config';
 import { connectSshControl } from '../cli-config/remote/ssh-control-connection';
@@ -39,7 +39,7 @@ class FakeSudo {
   private authCbs: Array<() => void> = [];
   readonly token: string;
 
-  constructor(command: string, private readonly password: string | null, private readonly speaksEnglish = true) {
+  constructor(command: string, private readonly password: string | null, private readonly speaksEnglish = true, private readonly manual = false) {
     this.token = /TETHER_PROBE_READY=([0-9a-f]+)/.exec(command)?.[1] ?? '';
     // `sudo -n` (no password supplied) with a password policy refuses at once.
     if (password === null && /^sudo -n /.test(command)) defer(() => this.refuse(true));
@@ -69,21 +69,22 @@ class FakeSudo {
 
   private tryPassword(line: string) {
     this.attempts++;
+    if (this.manual) return;
     if (line === this.password) { this.start(); return; }
     this.refuse(this.attempts >= 3);
   }
 
-  private refuse(fatal: boolean) {
+  refuse(fatal: boolean) {
     if (this.speaksEnglish) this.authCbs.forEach(cb => cb());
     if (fatal) this.exitCbs.forEach(cb => cb());
   }
 }
 
-function sshHost(sudo: { useSudo: boolean; password?: string }, typed: string | null, speaksEnglish = true) {
+function sshHost(sudo: { useSudo: boolean; password?: string }, typed: string | null, speaksEnglish = true, manual = false) {
   const fake: { current?: FakeSudo } = {};
   const end = vi.fn();
   const spawn = vi.fn(async (command: string) => {
-    fake.current = new FakeSudo(command, typed, speaksEnglish);
+    fake.current = new FakeSudo(command, typed, speaksEnglish, manual);
     return fake.current.process();
   });
   vi.mocked(getEnvironment).mockReturnValue({ type: 'ssh', config: '{}' } as never);
@@ -154,6 +155,63 @@ describe('resident reader handshake with sudo -S', () => {
     for (let i = 0; i < 10; i++) await expect(connectRemoteUsage('env', '')).rejects.toBeInstanceOf(RemoteAuthError);
     expect(h.spawn).toHaveBeenCalledOnce();
     expect(vi.mocked(connectSshControl)).toHaveBeenCalledOnce();
+  });
+
+  it('two readers connecting to one environment at once send the password once between them', async () => {
+    const h = sshHost({ useSudo: true, password: 'wrong' }, 'right');
+    const usage = connectRemoteUsage('env', '');
+    const subagents = connectRemoteUsage('env', '', undefined, { resident: true });
+    const both = Promise.allSettled([usage, subagents]);
+    const results = await both;
+    expect(results.map(r => r.status === 'rejected' && r.reason instanceof RemoteAuthError)).toEqual([true, true]);
+    // One sudo, one password line, one login in total: the second caller saw the refusal and never tried.
+    expect(h.spawn).toHaveBeenCalledOnce();
+    expect(vi.mocked(connectSshControl)).toHaveBeenCalledOnce();
+    expect(h.fake.current!.stdin).toEqual(['wrong']);
+  });
+
+  it('serialises two readers whose password is right, one after the other', async () => {
+    const order: string[] = [];
+    const h = sshHost({ useSudo: true, password: 'good' }, 'good');
+    const first = connectRemoteUsage('env', '').then(c => { order.push('usage'); return c; });
+    const second = connectRemoteUsage('env', '', undefined, { resident: true }).then(c => { order.push('subagents'); return c; });
+    await Promise.all([first, second]);
+    expect(order).toEqual(['usage', 'subagents']);
+    expect(h.spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not hold a refusal against credentials that were edited while the attempt was in flight', async () => {
+    const h = sshHost({ useSudo: true, password: 'old' }, 'new', true, true);
+    const connecting = connectRemoteUsage('env', '');
+    const settled = connecting.then(() => 'connected', error => error as Error);
+    while (!h.fake.current?.stdin.length) await tick();
+    // The environment is edited while sudo is still deciding about the old password.
+    clearRemoteAuthFailure('env');
+    h.fake.current.refuse(true);
+    const outcome = await settled;
+    expect(outcome).toBeInstanceOf(Error);
+    expect(outcome).not.toBeInstanceOf(RemoteAuthError);
+    expect((outcome as Error).message).toContain('changed');
+    expect(isRemoteAuthFailed('env')).toBe(false);
+
+    // A refusal of an attempt that began after the edit does count.
+    h.spawn.mockImplementationOnce(async (command: string) => { h.fake.current = new FakeSudo(command, 'right'); return h.fake.current.process(); });
+    await expect(connectRemoteUsage('env', '')).rejects.toBeInstanceOf(RemoteAuthError);
+    expect(isRemoteAuthFailed('env')).toBe(true);
+  });
+
+  it('finds the ready line when a login script printed text without a newline in front of it', async () => {
+    const h = sshHost({ useSudo: true, password: 'good' }, 'good');
+    h.spawn.mockImplementationOnce(async (command: string) => {
+      const fake = new FakeSudo(command, 'good');
+      h.fake.current = fake;
+      // `start` normally emits the bare ready line; here an rc file left a prompt on the same line.
+      Object.defineProperty(fake, 'start', { value: () => { fake.started = true; fake.emit('Welcome back!' + MARK + JSON.stringify({ ready: fake.token })); } });
+      return fake.process();
+    });
+    const connection = await connectRemoteUsage('env', '');
+    expect(isRemoteAuthFailed('env')).toBe(false);
+    connection.close();
   });
 
   it('treats silence after the password as a refusal when sudo answers in another language', async () => {
