@@ -453,6 +453,12 @@ export interface SessionLifecycleObserver {
   onBell?(session: Session): void;
   /** Fired when a Claude subagent starts or stops, as reported by hooks. */
   onSubagentEvent?(session: Session): void;
+  /**
+   * Fired for a Codex lifecycle hook tagged with a Claude session: a `codex
+   * exec` run its Bash tool started inherited the pane's Tether env. The
+   * event never touches the Claude session's own status.
+   */
+  onCodexExecEvent?(session: Session, event: HookEvent): void;
   onRemoved?(sessionId: string): void;
 }
 
@@ -602,6 +608,10 @@ export class SessionManager {
   }
 
   private handleCodexStatusEvent(session: Session, event: HookEvent): boolean {
+    if (session.cliTool === 'claude') {
+      this.notifyLifecycle(o => o.onCodexExecEvent?.(session, event));
+      return true;
+    }
     if (!this.handleCodexLifecycleEvent(session, event)) return true;
     switch (event.type) {
       case 'session_start':

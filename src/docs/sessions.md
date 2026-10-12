@@ -200,6 +200,25 @@ Tether reads the files Claude Code writes for each subagent; it does not look at
 
 Subagent rows are not shown for SSH or Coder sessions, or for other CLIs. Turn them off in [Settings → Appearance](settings.md#show-subagents-in-sidebar).
 
+### Codex exec runs
+
+When a **local Claude Code** session delegates work by running `codex exec ...` through its Bash tool, each run appears in the same list as a child of that session:
+
+`↳ codex exec · Review the module and list risks` on the first line, then `gpt-5.5/high · running 2m · 8.1k tok` below it.
+
+The row works like a subagent row: green dot while the run is going, gray when it has finished, model and reasoning effort from the run, and the token total. The first line of the prompt is shown after `codex exec`. Click the row to read the run: its prompt, a compact list of the agent's messages and shell, patch or tool calls (tool output is not shown), and its final message. When a run has no rollout file (for example `codex exec --ephemeral`) there is no prompt or token count, and the viewer says so; the row still shows the model Codex's hooks reported.
+
+These runs never change the Claude session's own status. A run finishing does not mark the Claude session as waiting, and its activity does not mark it as working.
+
+**What it needs.** The rows come only from Codex's [lifecycle hooks](settings.md#lifecycle-visibility). A command started from a Claude pane inherits the pane's Tether environment, so Codex reports the run's start, activity and end as belonging to that session. Two things must both be true:
+
+- **Settings → Codex → Track Codex lifecycle hooks** is on (and **CLI status hooks** in Sessions), and Tether has been restarted since.
+- Tether's hooks are **trusted in Codex**. Open `/hooks` in a Codex session once and approve them. `codex exec` skips hooks it has not been told to trust, without saying so.
+
+If either is missing, nothing is shown: Tether does not guess which Codex runs a Claude session started. Codex runs started by hand in another terminal are never shown. Codex's own subagents inside a run are not listed as separate rows.
+
+Codex runs are local only: Codex lifecycle hooks are not installed on SSH or Coder hosts, so those sessions show none. They count toward the 50-row limit and the same **Show subagents in sidebar** setting. A run counts as running while its hooks report activity and, on a hook-only run with no rollout, for up to 15 minutes after the last hook. The run's rollout file is found by its exact thread id under `$CODEX_HOME/sessions`.
+
 ## Finding a Session
 
 Press **Ctrl+P** (or **Session → Find Session…**) to open the quick switcher — a VS Code-style finder for jumping straight to any session without scrolling the sidebar. Start typing to fuzzy-match across the session label, working directory, environment name, and CLI tool. Matching is forgiving: the characters you type just have to appear in order, so `apsv` finds *api-server*. Results rank label hits above directory hits, contiguous matches above scattered ones, and start-of-word matches above mid-word ones.

@@ -782,6 +782,70 @@ describe('SessionManager', () => {
       expect(cb.onStateChange).not.toHaveBeenCalled();
     });
 
+    describe('codex exec runs started from a Claude session', () => {
+      async function createClaude() {
+        const cb = callbacks();
+        const session = await manager.createSession({ workingDir: 'C:\\repo\\exec-parent', cliTool: 'claude' }, cb);
+        cb.onStateChange.mockClear();
+        cb.onUpdate.mockClear();
+        return { session, cb };
+      }
+      const codexEvent = (sessionId: string, type: string, payload: Record<string, unknown> = { toolSessionId: 'codex-thread-1' }) =>
+        ({ tetherSessionId: sessionId, source: 'codex' as const, type: type as 'session_start', payload });
+
+      it('hands the event to lifecycle observers and leaves the Claude session status alone', async () => {
+        const { session, cb } = await createClaude();
+        const onCodexExecEvent = vi.fn();
+        manager.addLifecycleObserver({ onCodexExecEvent });
+        statusDetector.markTurnStarted(session.id);
+        cb.onStateChange.mockClear();
+        const before = session.state;
+        for (const type of ['session_start', 'turn_start', 'tool_complete', 'turn_complete', 'turn_interrupted', 'session_end']) {
+          manager.handleHookEvent(codexEvent(session.id, type));
+        }
+        expect(onCodexExecEvent).toHaveBeenCalledTimes(6);
+        expect(onCodexExecEvent).toHaveBeenCalledWith(session, expect.objectContaining({ source: 'codex', type: 'turn_complete' }));
+        expect(session.state).toBe(before);
+        expect(session.activity).toBeNull();
+        expect(cb.onStateChange).not.toHaveBeenCalled();
+        expect(cb.onUpdate).not.toHaveBeenCalled();
+      });
+
+      it('does not let a finished exec run complete a Claude turn that is still running', async () => {
+        const { session } = await createClaude();
+        statusDetector.markTurnStarted(session.id);
+        expect(session.state).toBe('running');
+        manager.handleHookEvent(codexEvent(session.id, 'turn_complete'));
+        manager.handleHookEvent(codexEvent(session.id, 'session_end'));
+        expect(session.state).toBe('running');
+      });
+
+      it('does not tell observers about a Codex event sent to a Codex session', async () => {
+        const cb = callbacks();
+        const codex = await manager.createSession({ workingDir: 'C:\\repo\\codex-own', cliTool: 'codex' }, cb);
+        codex.toolSessionId = 'native-codex-1';
+        const onCodexExecEvent = vi.fn();
+        manager.addLifecycleObserver({ onCodexExecEvent });
+        manager.handleHookEvent(codexEvent(codex.id, 'session_start', { toolSessionId: 'native-codex-1' }));
+        expect(onCodexExecEvent).not.toHaveBeenCalled();
+        expect(codex.waitingReason).toBe('idle');
+      });
+
+      it('does not tell observers about Claude-sourced events', async () => {
+        const { session } = await createClaude();
+        const onCodexExecEvent = vi.fn();
+        manager.addLifecycleObserver({ onCodexExecEvent });
+        manager.handleHookEvent({ tetherSessionId: session.id, source: 'claude', type: 'turn_start' });
+        expect(onCodexExecEvent).not.toHaveBeenCalled();
+      });
+
+      it('keeps working when an observer throws', async () => {
+        const { session } = await createClaude();
+        manager.addLifecycleObserver({ onCodexExecEvent: () => { throw new Error('boom'); } });
+        expect(() => manager.handleHookEvent(codexEvent(session.id, 'turn_start'))).not.toThrow();
+      });
+    });
+
     it('rejects stale Codex lifecycle events before status mutation', async () => {
       const { session, cb } = await createCodexSession();
 

@@ -192,6 +192,8 @@ src/
     claude/subagent-tracker.ts        # Per-session subagent refresh: hook events + stat poll, push to renderer
     codex/
       transcripts.ts                  # Codex transcript reader
+      exec-rollouts.ts                # Codex rollout parse (pure) + incremental reader -> codex exec child rows
+      exec-tracker.ts                 # Per-session codex exec children: Codex hook events + rollout reads
       session-watcher.ts              # Codex session id capture at spawn
     copilot/
       transcripts.ts                  # Copilot CLI transcript reader

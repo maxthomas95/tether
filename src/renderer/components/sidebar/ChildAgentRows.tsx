@@ -3,7 +3,9 @@ import type { ChildAgentInfo, ChildAgentList } from '../../../shared/child-agent
 import { onKeyActivate } from '../../utils/a11y';
 import {
   CHILD_AGENT_ROW_LIMIT,
+  childAgentKind,
   childAgentSummary,
+  childAgentsHeading,
   describeChildAgentTokens,
   formatChildAgentModel,
   formatChildAgentTiming,
@@ -41,7 +43,7 @@ export function ChildAgentRows({ sessionLabel, list, expanded, onToggle, onOpen 
   if (list.agents.length === 0) return null;
 
   return (
-    <div className="child-agents" role="group" aria-label={`Subagents of ${sessionLabel}`}>
+    <div className="child-agents" role="group" aria-label={`${list.agents.some(a => a.source === 'codex-exec') ? 'Child agents' : 'Subagents'} of ${sessionLabel}`}>
       <div
         className="child-agents-toggle"
         role="button"
@@ -51,7 +53,7 @@ export function ChildAgentRows({ sessionLabel, list, expanded, onToggle, onOpen 
         onKeyDown={onKeyActivate(onToggle)}
       >
         <span className="child-agents-chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-        <span>{list.total} {list.total === 1 ? 'subagent' : 'subagents'}</span>
+        <span>{childAgentsHeading(list)}</span>
         {running > 0 && <span className="child-agents-running">{running} running</span>}
       </div>
       {expanded && visible.map(agent => {
@@ -64,7 +66,7 @@ export function ChildAgentRows({ sessionLabel, list, expanded, onToggle, onOpen 
             role="button"
             tabIndex={0}
             style={{ paddingLeft: `calc(var(--child-agent-indent) + ${Math.max(0, agent.depth - 1) * 12}px)` }}
-            aria-label={`Subagent ${childAgentSummary(agent, now)}. Open transcript`}
+            aria-label={`${childAgentKind(agent)} ${childAgentSummary(agent, now)}. Open transcript`}
             title={describeChildAgentTokens(agent.tokens)}
             onClick={() => onOpen(agent)}
             onKeyDown={onKeyActivate(() => onOpen(agent))}
