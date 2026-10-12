@@ -37,7 +37,7 @@ export function registerSubagentHandlers(ctx: HandlerContext): void {
 
   sessionManager.addLifecycleObserver({
     onStateChanged: session => subagentTracker.notify(session.id),
-    onSubagentEvent: session => subagentTracker.notify(session.id),
+    onSubagentEvent: session => subagentTracker.notify(session.id, { subagentEvent: true }),
     onRemoved: id => subagentTracker.untrack(id),
   });
 
@@ -50,6 +50,15 @@ export function registerSubagentHandlers(ctx: HandlerContext): void {
     if (typeof sessionId !== 'string' || typeof agentId !== 'string') return null;
     return subagentTracker.getTranscript(sessionId, agentId);
   });
+
+  ipc.on(IPC.SUBAGENTS_RELEASE_TRANSCRIPT, (_event, sessionId: unknown, agentId: unknown) => {
+    if (typeof sessionId !== 'string' || typeof agentId !== 'string') return;
+    subagentTracker.releaseTranscript(sessionId, agentId);
+  });
+
+  // A reloaded or crashed renderer starts with every list collapsed and no viewer open.
+  ctx.mainWindow.webContents.on('render-process-gone', () => subagentTracker.resetExpanded());
+  ctx.mainWindow.webContents.on('did-start-loading', () => subagentTracker.resetExpanded());
 
   ipc.on(IPC.SUBAGENTS_SET_EXPANDED, (_event, sessionId: unknown, expanded: unknown) => {
     if (typeof sessionId !== 'string') return;

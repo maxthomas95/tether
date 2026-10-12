@@ -18,6 +18,7 @@ const transcript = (over: Partial<ChildAgentTranscript> = {}): ChildAgentTranscr
 
 let view: ReturnType<typeof createView>;
 let fetchTranscript: ReturnType<typeof vi.fn>;
+let release: ReturnType<typeof vi.fn>;
 let close: ReturnType<typeof vi.fn>;
 const text = () => document.body.textContent ?? '';
 
@@ -29,7 +30,8 @@ beforeEach(() => {
   view = createView();
   close = vi.fn();
   fetchTranscript = vi.fn().mockResolvedValue(transcript());
-  window.electronAPI = { subagents: { transcript: fetchTranscript } } as unknown as typeof window.electronAPI;
+  release = vi.fn();
+  window.electronAPI = { subagents: { transcript: fetchTranscript, releaseTranscript: release } } as unknown as typeof window.electronAPI;
 });
 afterEach(async () => { await view.dispose(); vi.useRealTimers(); });
 
@@ -45,6 +47,15 @@ describe('ChildAgentViewer', () => {
     expect(text()).toContain('There are 3.');
     expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Subagent tester');
     expect(document.querySelectorAll('input, textarea, [contenteditable]').length).toBe(0);
+  });
+
+  it('says exactly what a long transcript shows, and releases main\'s cache when it closes', async () => {
+    fetchTranscript.mockResolvedValue(transcript({ truncated: true }));
+    await render();
+    expect(text()).toContain('Showing the task from the start and only the most recent activity. Earlier activity is not shown.');
+    expect(release).not.toHaveBeenCalled();
+    await view.render(null);
+    expect(release).toHaveBeenCalledWith('s1', 'a1');
   });
 
   it('renders transcript text as text, never as markup', async () => {

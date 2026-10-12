@@ -39,6 +39,7 @@ export const IPC = {
   SUBAGENTS_LIST: 'subagents:list',
   SUBAGENTS_TRANSCRIPT: 'subagents:transcript',
   SUBAGENTS_SET_EXPANDED: 'subagents:set-expanded',
+  SUBAGENTS_RELEASE_TRANSCRIPT: 'subagents:release-transcript',
   DIALOG_OPEN_DIRECTORY: 'dialog:open-directory',
   SCAN_REPOS_DIR: 'scan:repos-dir',
   CONFIG_GET: 'config:get',

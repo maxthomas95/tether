@@ -156,6 +156,7 @@ const api: TetherAPI = {
   subagents: {
     list: sessionId => ipcRenderer.invoke(IPC.SUBAGENTS_LIST, sessionId),
     transcript: (sessionId, agentId) => ipcRenderer.invoke(IPC.SUBAGENTS_TRANSCRIPT, sessionId, agentId),
+    releaseTranscript: (sessionId, agentId) => { ipcRenderer.send(IPC.SUBAGENTS_RELEASE_TRANSCRIPT, sessionId, agentId); },
     setExpanded: (sessionId, expanded) => { ipcRenderer.send(IPC.SUBAGENTS_SET_EXPANDED, sessionId, expanded); },
     onUpdate(cb) {
       const h = (_e: Electron.IpcRendererEvent, sessionId: string, list: import('../shared/child-agents').ChildAgentList) => cb(sessionId, list);

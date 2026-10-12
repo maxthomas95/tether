@@ -35,7 +35,11 @@ export function ChildAgentViewer({ sessionId, agent, onClose }: Readonly<ChildAg
       if (next?.agent.state === 'running') timer = setTimeout(load, REFRESH_MS);
     };
     void load();
-    return () => { active = false; if (timer) clearTimeout(timer); };
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      window.electronAPI.subagents.releaseTranscript(sessionId, agent.id);
+    };
   }, [sessionId, agent.id]);
 
   const model = formatChildAgentModel(current);
@@ -72,7 +76,7 @@ export function ChildAgentViewer({ sessionId, agent, onClose }: Readonly<ChildAg
               </section>
               <section>
                 <h3 className="child-agent-heading">Activity</h3>
-                {transcript.truncated && <p className="form-hint">Showing the most recent activity only.</p>}
+                {transcript.truncated && <p className="form-hint">Showing the task from the start and only the most recent activity. Earlier activity is not shown.</p>}
                 {transcript.entries.length === 0
                   ? <p className="form-hint">{running ? 'Nothing yet.' : 'No tool calls or messages.'}</p>
                   : (

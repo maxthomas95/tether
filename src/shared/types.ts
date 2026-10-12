@@ -692,6 +692,8 @@ export interface TetherAPI {
   subagents: {
     list(sessionId: string): Promise<import('./child-agents').ChildAgentList>;
     transcript(sessionId: string, agentId: string): Promise<import('./child-agents').ChildAgentTranscript | null>;
+    /** Drop main's cached read of a transcript once its viewer has closed. */
+    releaseTranscript(sessionId: string, agentId: string): void;
     /** Tell main whether the sidebar list for this session is open, so it polls only then. */
     setExpanded(sessionId: string, expanded: boolean): void;
     onUpdate(callback: (sessionId: string, list: import('./child-agents').ChildAgentList) => void): () => void;

@@ -3,11 +3,13 @@ import { EMPTY_CHILD_AGENT_LIST } from '../../shared/child-agents';
 import type { CliToolId } from '../../shared/types';
 import {
   SubagentDirReader,
+  SubagentTranscriptReader,
   buildChildAgentList,
   buildChildAgentTranscript,
-  findSubagentsDir,
+  findSubagentsDirByScan,
+  findSubagentsDirDirect,
   isValidAgentId,
-  readSubagentTranscriptText,
+  subagentTranscriptPath,
 } from './subagents';
 
 /** Without hooks, a subagent counts as running if its transcript moved this recently. */
@@ -15,7 +17,19 @@ export const RUNNING_WINDOW_MS = 30_000;
 const FAST_POLL_MS = 2_500;
 const DISCOVERY_POLL_MS = 10_000;
 const DEBOUNCE_MS = 750;
-const DIR_RETRY_MS = 10_000;
+/**
+ * The project-folder scan is a readdir plus a stat per project. After a miss it
+ * waits this long, doubling to the cap, so a session that never spawns a
+ * subagent stops paying for it. A subagent hook event starts over.
+ */
+const SCAN_BACKOFF_MIN_MS = 2_500;
+const SCAN_BACKOFF_MAX_MS = 180_000;
+const MAX_TRANSCRIPT_READERS = 8;
+/**
+ * How long a hook-announced subagent with no file of its own keeps the fast
+ * poll going. A lost SubagentStop would otherwise hold it for the whole session.
+ */
+const UNMATCHED_POLL_WINDOW_MS = 60_000;
 
 /** What the tracker needs to know about a session; supplied by the session layer. */
 export interface TrackedSession {
@@ -43,7 +57,10 @@ interface Entry {
   nativeId: string | null;
   dir: string | null;
   reader: SubagentDirReader | null;
-  dirCheckedAt: number;
+  /** Hook-active ids with no listed file yet, and when each was first seen. */
+  unmatchedSince: Map<string, number>;
+  nextScanAt: number;
+  scanBackoffMs: number;
   list: ChildAgentList;
   signature: string;
   expanded: boolean;
@@ -63,6 +80,8 @@ export class SubagentTracker {
   private deps: SubagentTrackerDeps | null = null;
   private readonly entries = new Map<string, Entry>();
   private readonly listeners = new Set<Listener>();
+  /** One incremental viewer reader per open agent; dropped when its viewer closes. */
+  private readonly transcripts = new Map<string, SubagentTranscriptReader>();
 
   configure(deps: SubagentTrackerDeps): void {
     this.deps = deps;
@@ -81,12 +100,16 @@ export class SubagentTracker {
     return entry.list;
   }
 
-  /** A hook or state event touched this session; refresh soon. */
-  notify(sessionId: string): void {
+  /**
+   * A hook or state event touched this session; refresh soon. Only a real
+   * subagent event (`subagentEvent`) re-arms the folder scan; a state flip says
+   * nothing about whether subagent files exist.
+   */
+  notify(sessionId: string, opts: { subagentEvent?: boolean } = {}): void {
     const ref = this.deps?.resolve(sessionId);
     if (!ref || !this.isEligible(ref)) return;
     const entry = this.entryFor(sessionId);
-    entry.dirCheckedAt = 0;
+    if (opts.subagentEvent) this.resetScanBackoff(entry);
     if (entry.debounce) return;
     entry.debounce = setTimeout(() => {
       entry.debounce = null;
@@ -104,7 +127,22 @@ export class SubagentTracker {
     void this.refresh(sessionId, entry);
   }
 
+  /** The renderer went away or reloaded, so nothing it had open is open any more. */
+  resetExpanded(): void {
+    this.transcripts.clear();
+    for (const [sessionId, entry] of this.entries) {
+      if (!entry.expanded) continue;
+      entry.expanded = false;
+      void this.refresh(sessionId, entry);
+    }
+  }
+
+  releaseTranscript(sessionId: string, agentId: string): void {
+    this.transcripts.delete(`${sessionId}:${agentId}`);
+  }
+
   untrack(sessionId: string): void {
+    for (const key of [...this.transcripts.keys()]) if (key.startsWith(`${sessionId}:`)) this.transcripts.delete(key);
     const entry = this.entries.get(sessionId);
     if (!entry) return;
     if (entry.timer) clearTimeout(entry.timer);
@@ -115,14 +153,39 @@ export class SubagentTracker {
   async getTranscript(sessionId: string, agentId: string): Promise<ChildAgentTranscript | null> {
     if (!isValidAgentId(agentId) || !this.deps?.resolve(sessionId)) return null;
     const entry = this.entryFor(sessionId);
+    // Claimed before awaiting so a release that arrives meanwhile is not undone.
+    const reader = this.readerFor(`${sessionId}:${agentId}`);
     await this.refresh(sessionId, entry);
     const agent = entry.list.agents.find(a => a.id === agentId);
-    if (!agent || !entry.dir) return null;
-    const raw = await readSubagentTranscriptText(entry.dir, agentId);
-    return raw ? buildChildAgentTranscript(agent, raw.text, raw.truncated) : null;
+    const file = entry.dir ? subagentTranscriptPath(entry.dir, agentId) : null;
+    if (!agent || !file) return null;
+    reader.attach(file);
+    const parsed = await reader.refresh();
+    return parsed ? buildChildAgentTranscript(agent, parsed) : null;
+  }
+
+  private readerFor(key: string): SubagentTranscriptReader {
+    let reader = this.transcripts.get(key);
+    if (!reader) {
+      reader = new SubagentTranscriptReader();
+      this.transcripts.set(key, reader);
+      // A viewer that never released (renderer crash) must not pin memory.
+      while (this.transcripts.size > MAX_TRANSCRIPT_READERS) {
+        const oldest = this.transcripts.keys().next().value;
+        if (oldest === undefined) break;
+        this.transcripts.delete(oldest);
+      }
+    }
+    return reader;
+  }
+
+  private resetScanBackoff(entry: Entry): void {
+    entry.nextScanAt = 0;
+    entry.scanBackoffMs = SCAN_BACKOFF_MIN_MS;
   }
 
   dispose(): void {
+    this.transcripts.clear();
     for (const id of [...this.entries.keys()]) this.untrack(id);
     this.listeners.clear();
   }
@@ -135,7 +198,7 @@ export class SubagentTracker {
     let entry = this.entries.get(sessionId);
     if (!entry) {
       entry = {
-        nativeId: null, dir: null, reader: null, dirCheckedAt: 0,
+        nativeId: null, dir: null, reader: null, unmatchedSince: new Map(), nextScanAt: 0, scanBackoffMs: SCAN_BACKOFF_MIN_MS,
         list: EMPTY_CHILD_AGENT_LIST, signature: JSON.stringify(EMPTY_CHILD_AGENT_LIST), expanded: false,
         timer: null, debounce: null, inFlight: null, rerun: false,
       };
@@ -166,6 +229,7 @@ export class SubagentTracker {
     if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
     const ref = deps.resolve(sessionId);
     if (!ref) { this.untrack(sessionId); return; }
+    const now = (deps.now ?? Date.now)();
 
     try {
       if (!this.isEligible(ref)) {
@@ -174,16 +238,21 @@ export class SubagentTracker {
         this.publish(sessionId, entry, EMPTY_CHILD_AGENT_LIST);
         return;
       }
-      const now = (deps.now ?? Date.now)();
       if (ref.nativeSessionId !== entry.nativeId) {
         entry.nativeId = ref.nativeSessionId;
         entry.dir = null;
         entry.reader = null;
-        entry.dirCheckedAt = 0;
+        this.resetScanBackoff(entry);
       }
-      if (!entry.reader && now - entry.dirCheckedAt >= DIR_RETRY_MS) {
-        entry.dirCheckedAt = now;
-        entry.dir = findSubagentsDir(ref.nativeSessionId!, ref.workingDir);
+      if (!entry.reader) {
+        entry.dir = findSubagentsDirDirect(ref.nativeSessionId!, ref.workingDir);
+        if (!entry.dir && now >= entry.nextScanAt) {
+          entry.dir = findSubagentsDirByScan(ref.nativeSessionId!);
+          if (!entry.dir) {
+            entry.nextScanAt = now + entry.scanBackoffMs;
+            entry.scanBackoffMs = Math.min(entry.scanBackoffMs * 2, SCAN_BACKOFF_MAX_MS);
+          }
+        }
         entry.reader = entry.dir ? new SubagentDirReader(entry.dir) : null;
       }
       if (!entry.reader) {
@@ -198,18 +267,25 @@ export class SubagentTracker {
         );
         this.publish(sessionId, entry, list);
       }
-      this.schedule(sessionId, entry, ref);
+      this.schedule(sessionId, entry, ref, now);
     } catch {
       // The files are Claude's and can change under us; the next tick retries.
-      this.schedule(sessionId, entry, ref);
+      this.schedule(sessionId, entry, ref, now);
     }
   }
 
-  private schedule(sessionId: string, entry: Entry, ref: TrackedSession): void {
+  private schedule(sessionId: string, entry: Entry, ref: TrackedSession, now: number): void {
     if (!ref.alive || !this.deps?.isEnabled() || this.entries.get(sessionId) !== entry) return;
     const anyRunning = entry.list.agents.some(a => a.state === 'running');
     let delay: number | null = null;
-    if (anyRunning || entry.expanded) delay = FAST_POLL_MS;
+    // A hook can announce a subagent before its first file exists, so an active
+    // id with no listed file keeps the poll going, for a minute at most.
+    const listed = new Set(entry.list.agents.map(a => a.id));
+    const unmatched = ref.activeAgentIds.filter(id => !listed.has(id));
+    for (const id of [...entry.unmatchedSince.keys()]) if (!unmatched.includes(id)) entry.unmatchedSince.delete(id);
+    for (const id of unmatched) if (!entry.unmatchedSince.has(id)) entry.unmatchedSince.set(id, now);
+    const awaitingFile = unmatched.some(id => now - entry.unmatchedSince.get(id)! < UNMATCHED_POLL_WINDOW_MS);
+    if (anyRunning || entry.expanded || awaitingFile) delay = FAST_POLL_MS;
     else if (!ref.hookDriven) delay = DISCOVERY_POLL_MS;
     if (delay === null) return;
     entry.timer = setTimeout(() => {

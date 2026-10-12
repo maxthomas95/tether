@@ -30,6 +30,8 @@ const trackerMock = vi.hoisted(() => ({
   setExpanded: vi.fn(),
   notify: vi.fn(),
   untrack: vi.fn(),
+  resetExpanded: vi.fn(),
+  releaseTranscript: vi.fn(),
 }));
 vi.mock('../claude/subagent-tracker', () => ({ subagentTracker: trackerMock }));
 
@@ -106,7 +108,7 @@ describe('subagent-handlers', () => {
     observer.onSubagentEvent({ id: 's2' });
     observer.onRemoved('s3');
     expect(trackerMock.notify).toHaveBeenCalledWith('s1');
-    expect(trackerMock.notify).toHaveBeenCalledWith('s2');
+    expect(trackerMock.notify).toHaveBeenCalledWith('s2', { subagentEvent: true });
     expect(trackerMock.untrack).toHaveBeenCalledWith('s3');
   });
 
@@ -133,6 +135,21 @@ describe('subagent-handlers', () => {
     harness.emit(IPC.SUBAGENTS_SET_EXPANDED, 's1', 'yes');
     expect(trackerMock.setExpanded).toHaveBeenNthCalledWith(1, 's1', true);
     expect(trackerMock.setExpanded).toHaveBeenNthCalledWith(2, 's1', false);
+  });
+
+  it('collapses every list when the renderer reloads or crashes', () => {
+    const on = harness.ctx.mainWindow.webContents.on as unknown as ReturnType<typeof vi.fn>;
+    const handlerFor = (name: string) => on.mock.calls.find(c => c[0] === name)![1] as () => void;
+    handlerFor('did-start-loading')();
+    handlerFor('render-process-gone')();
+    expect(trackerMock.resetExpanded).toHaveBeenCalledTimes(2);
+  });
+
+  it('releases a transcript cache on request and ignores malformed ids', () => {
+    harness.emit(IPC.SUBAGENTS_RELEASE_TRANSCRIPT, 's1', 'a1');
+    harness.emit(IPC.SUBAGENTS_RELEASE_TRANSCRIPT, 's1', 5);
+    expect(trackerMock.releaseTranscript).toHaveBeenCalledTimes(1);
+    expect(trackerMock.releaseTranscript).toHaveBeenCalledWith('s1', 'a1');
   });
 
   it('refuses calls that do not come from the Tether window', async () => {

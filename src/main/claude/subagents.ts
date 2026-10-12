@@ -29,9 +29,11 @@ export const MAX_TRACKED_SUBAGENTS = 50;
 const READ_CHUNK_BYTES = 1024 * 1024;
 /** A line this long with no newline is not a transcript record. */
 const MAX_PENDING_LINE_BYTES = 16 * 1024 * 1024;
-const MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
+/** Viewer reads the start of a long transcript (the task) and its tail (the latest work). */
+export const TRANSCRIPT_HEAD_BYTES = 256 * 1024;
+export const TRANSCRIPT_TAIL_BYTES = 8 * 1024 * 1024;
 const MAX_SPAWN_TOOL_IDS = 200;
-const MAX_VIEWER_ENTRIES = 400;
+export const MAX_VIEWER_ENTRIES = 400;
 const SPAWN_TOOL_NAMES = new Set(['Agent', 'Task']);
 
 export function isValidAgentId(id: unknown): id is string {
@@ -128,6 +130,10 @@ export interface SubagentScan {
   usage: Map<string, ChildAgentTokens>;
   /** Ids of Agent/Task tool calls this child made, to resolve nesting. */
   spawnToolIds: Set<string>;
+}
+
+function cloneScan(scan: SubagentScan): SubagentScan {
+  return { ...scan, usage: new Map(scan.usage), spawnToolIds: new Set(scan.spawnToolIds) };
 }
 
 export function createSubagentScan(): SubagentScan {
@@ -322,32 +328,48 @@ export interface ParsedSubagentTranscript {
   prompt: string | null;
   entries: ChildTranscriptEntry[];
   result: string | null;
+  /** Earlier activity is missing: skipped bytes of a long file or entries past the cap. */
   truncated: boolean;
 }
 
-/**
- * Reduce a subagent transcript to the task, a compact list of assistant text
- * and tool calls, and the final answer. Tool output is not kept.
- */
-export function parseSubagentTranscript(text: string, truncated = false): ParsedSubagentTranscript {
-  let prompt: string | null = null;
-  let entries: ChildTranscriptEntry[] = [];
-  const toolEntries = new Map<string, Extract<ChildTranscriptEntry, { kind: 'tool' }>>();
-  let dropped = false;
+type ToolEntry = Extract<ChildTranscriptEntry, { kind: 'tool' }>;
 
+/** Accumulates a transcript digest line by line, so a file can be read in pieces. */
+export interface TranscriptState {
+  prompt: string | null;
+  entries: ChildTranscriptEntry[];
+  toolEntries: Map<string, ToolEntry>;
+  dropped: boolean;
+  skippedMiddle: boolean;
+}
+
+function cloneTranscriptState(state: TranscriptState): TranscriptState {
+  const copies = new Map<ChildTranscriptEntry, ChildTranscriptEntry>();
+  const entries = state.entries.map(e => { const copy = { ...e }; copies.set(e, copy); return copy; });
+  const toolEntries = new Map<string, ToolEntry>();
+  for (const [id, tool] of state.toolEntries) toolEntries.set(id, (copies.get(tool) ?? { ...tool }) as ToolEntry);
+  return { ...state, entries, toolEntries };
+}
+
+export function createTranscriptState(): TranscriptState {
+  return { prompt: null, entries: [], toolEntries: new Map(), dropped: false, skippedMiddle: false };
+}
+
+/** Fold complete JSONL lines (as text) into `state`. Keeps only the newest entries. */
+export function foldTranscriptLines(state: TranscriptState, text: string): void {
   for (const line of text.split('\n')) {
     const entry = parseLine(line);
     if (!entry) continue;
     const message = asRecord(entry.message);
     if (entry.type === 'user' && message) {
       const content = blocks(message);
-      if (prompt === null && content.every(b => b.type !== 'tool_result')) {
+      if (state.prompt === null && content.every(b => b.type !== 'tool_result')) {
         const body = textOf(message).trim();
-        if (body) prompt = body.slice(0, 8000);
+        if (body) state.prompt = body.slice(0, 8000);
       }
       for (const block of content) {
         if (block.type === 'tool_result' && block.is_error === true && typeof block.tool_use_id === 'string') {
-          const tool = toolEntries.get(block.tool_use_id);
+          const tool = state.toolEntries.get(block.tool_use_id);
           if (tool) tool.failed = true;
         }
       }
@@ -356,65 +378,90 @@ export function parseSubagentTranscript(text: string, truncated = false): Parsed
     if (entry.type !== 'assistant' || !message) continue;
     for (const block of blocks(message)) {
       if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
-        entries.push({ kind: 'text', text: block.text.trim().slice(0, 4000) });
+        state.entries.push({ kind: 'text', text: block.text.trim().slice(0, 4000) });
       } else if (block.type === 'tool_use' && typeof block.name === 'string') {
-        const tool: Extract<ChildTranscriptEntry, { kind: 'tool' }> = {
-          kind: 'tool',
-          name: block.name.slice(0, 80),
-          summary: summarizeToolInput(block.input),
-        };
-        entries.push(tool);
-        if (typeof block.id === 'string') toolEntries.set(block.id, tool);
+        const tool: ToolEntry = { kind: 'tool', name: block.name.slice(0, 80), summary: summarizeToolInput(block.input) };
+        state.entries.push(tool);
+        if (typeof block.id === 'string') state.toolEntries.set(block.id, tool);
       }
     }
-    if (entries.length > MAX_VIEWER_ENTRIES * 2) {
-      entries = entries.slice(-MAX_VIEWER_ENTRIES);
-      dropped = true;
+    if (state.entries.length > MAX_VIEWER_ENTRIES * 2) {
+      state.entries = state.entries.slice(-MAX_VIEWER_ENTRIES);
+      state.dropped = true;
+      // A late result can only matter for a call that is still listed.
+      const listed = new Set(state.entries);
+      for (const [id, tool] of state.toolEntries) if (!listed.has(tool)) state.toolEntries.delete(id);
     }
   }
+}
+
+/** Snapshot of `state` for the viewer; does not change it, so reading can continue. */
+export function finishTranscript(state: TranscriptState): ParsedSubagentTranscript {
+  let entries = state.entries;
+  let truncated = state.dropped || state.skippedMiddle;
   if (entries.length > MAX_VIEWER_ENTRIES) {
     entries = entries.slice(-MAX_VIEWER_ENTRIES);
-    dropped = true;
+    truncated = true;
   }
-
   // The closing text is the answer; showing it twice would only add noise.
   let result: string | null = null;
   const last = entries.at(-1);
   if (last?.kind === 'text') {
     result = last.text;
-    entries.pop();
+    entries = entries.slice(0, -1);
+  } else {
+    entries = entries.slice();
   }
-  return { prompt, entries, result, truncated: truncated || dropped };
+  return { prompt: state.prompt, entries, result, truncated };
 }
 
-export function buildChildAgentTranscript(agent: ChildAgentInfo, text: string, truncated: boolean): ChildAgentTranscript {
-  return { agent, ...parseSubagentTranscript(text, truncated) };
+/**
+ * Reduce a subagent transcript to the task, a compact list of assistant text
+ * and tool calls, and the final answer. Tool output is not kept.
+ */
+export function parseSubagentTranscript(text: string, truncated = false): ParsedSubagentTranscript {
+  const state = createTranscriptState();
+  state.skippedMiddle = truncated;
+  foldTranscriptLines(state, text);
+  return finishTranscript(state);
+}
+
+export function buildChildAgentTranscript(agent: ChildAgentInfo, parsed: ParsedSubagentTranscript): ChildAgentTranscript {
+  return { agent, ...parsed };
 }
 
 // ---------------------------------------------------------------------------
 // Filesystem layer
 // ---------------------------------------------------------------------------
 
-/**
- * Locate `<sessionId>/subagents`. The folder derived from the working
- * directory wins; otherwise accept the one project folder that holds this
- * session id, because Claude hash-suffixes long folder names and we cannot
- * recompute that.
- */
-export function findSubagentsDir(sessionId: string, cwd?: string): string | null {
+const isDir = (p: string) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+
+/** One stat: the folder Claude names from the working directory. */
+export function findSubagentsDirDirect(sessionId: string, cwd: string): string | null {
   if (!SESSION_ID_RE.test(sessionId)) return null;
-  const isDir = (p: string) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
-  if (cwd) {
-    try {
-      const direct = path.join(getProjectDir(cwd), sessionId, 'subagents');
-      if (isDir(direct)) return direct;
-    } catch { /* invalid working directory; fall through to the scan */ }
-  }
+  try {
+    const direct = path.join(getProjectDir(cwd), sessionId, 'subagents');
+    return isDir(direct) ? direct : null;
+  } catch { return null; }
+}
+
+/**
+ * Scan every project folder for the one that holds this session. Claude
+ * hash-suffixes long folder names and we cannot recompute that, so this is the
+ * fallback; it costs a readdir plus a stat per project, so callers back off.
+ */
+export function findSubagentsDirByScan(sessionId: string): string | null {
+  if (!SESSION_ID_RE.test(sessionId)) return null;
   const root = getClaudeProjectsRoot();
   let names: string[];
   try { names = fs.readdirSync(root); } catch { return null; }
   const found = names.map(n => path.join(root, n, sessionId, 'subagents')).filter(isDir);
   return found.length === 1 ? found[0] : null;
+}
+
+/** Locate `<sessionId>/subagents`: the working-directory folder wins, else the scan. */
+export function findSubagentsDir(sessionId: string, cwd?: string): string | null {
+  return (cwd ? findSubagentsDirDirect(sessionId, cwd) : null) ?? findSubagentsDirByScan(sessionId);
 }
 
 interface FileState {
@@ -439,12 +486,16 @@ async function readMeta(file: string, state: FileState): Promise<void> {
   }
 }
 
-/** Fold bytes appended since `state.offset`, holding back a trailing partial line. */
-async function readAppended(file: string, state: FileState, size: number): Promise<void> {
-  let handle: fs.promises.FileHandle;
-  try { handle = await fs.promises.open(file, 'r'); } catch { return; }
+/**
+ * Feed the complete lines found in bytes [from, size) of `file` to `onText`,
+ * holding back a trailing partial line. Returns the offset after the last
+ * complete line, which is where the next read should start. Throws on any I/O
+ * error, so callers fold into a scratch copy and commit only on success.
+ */
+async function readCompleteLines(file: string, from: number, size: number, onText: (text: string) => void): Promise<number> {
+  const handle = await fs.promises.open(file, 'r');
   try {
-    let pos = state.offset;
+    let pos = from;
     let carry: Buffer = Buffer.alloc(0);
     while (pos + carry.length < size) {
       const want = Math.min(READ_CHUNK_BYTES, size - pos - carry.length);
@@ -461,11 +512,30 @@ async function readAppended(file: string, state: FileState, size: number): Promi
         }
         continue;
       }
-      foldSubagentLines(state.scan, data.subarray(0, newline + 1).toString('utf8'));
+      onText(data.subarray(0, newline + 1).toString('utf8'));
       pos += newline + 1;
       carry = Buffer.from(data.subarray(newline + 1));
     }
-    state.offset = pos;
+    return pos;
+  } finally {
+    await handle.close().catch(() => {});
+  }
+}
+
+/** Offset just after the first newline at or beyond `from`, or `size` if there is none. */
+async function nextLineStart(file: string, from: number, size: number): Promise<number> {
+  const handle = await fs.promises.open(file, 'r');
+  try {
+    const buf = Buffer.allocUnsafe(64 * 1024);
+    let pos = from;
+    while (pos < size) {
+      const { bytesRead } = await handle.read(buf, 0, Math.min(buf.length, size - pos), pos);
+      if (bytesRead === 0) break;
+      const newline = buf.subarray(0, bytesRead).indexOf(0x0a);
+      if (newline !== -1) return pos + newline + 1;
+      pos += bytesRead;
+    }
+    return size;
   } finally {
     await handle.close().catch(() => {});
   }
@@ -506,8 +576,16 @@ export class SubagentDirReader {
         this.files.set(file.id, state);
       }
       if (file.size !== state.size || state.offset < file.size) {
-        await readAppended(path.join(this.dir, `agent-${file.id}.jsonl`), state, file.size);
-        state.size = file.size;
+        // Fold into a copy and commit with the offset, so a read that fails
+        // part-way is retried from the same place instead of folded twice.
+        try {
+          const scan = cloneScan(state.scan);
+          const end = await readCompleteLines(path.join(this.dir, `agent-${file.id}.jsonl`), state.offset, file.size,
+            text => foldSubagentLines(scan, text));
+          state.scan = scan;
+          state.offset = end;
+          state.size = file.size;
+        } catch { /* leave size stale so the next refresh retries */ }
       }
       state.mtimeMs = file.mtimeMs;
       await readMeta(path.join(this.dir, `agent-${file.id}.meta.json`), state);
@@ -517,23 +595,80 @@ export class SubagentDirReader {
   }
 }
 
-/** Read one subagent's transcript for the viewer. Returns null when it is not on disk. */
-export async function readSubagentTranscriptText(dir: string, agentId: string): Promise<{ text: string; truncated: boolean } | null> {
+/** Path of one subagent's transcript, or null for an id that could leave the folder. */
+export function subagentTranscriptPath(dir: string, agentId: string): string | null {
   if (!isValidAgentId(agentId)) return null;
   const file = path.join(dir, `agent-${agentId}.jsonl`);
-  if (path.dirname(file) !== dir) return null;
-  let handle: fs.promises.FileHandle;
-  try { handle = await fs.promises.open(file, 'r'); } catch { return null; }
-  try {
-    const { size } = await handle.stat();
-    const length = Math.min(size, MAX_TRANSCRIPT_BYTES);
-    const buf = Buffer.allocUnsafe(length);
-    const { bytesRead } = await handle.read(buf, 0, length, 0);
-    let end = bytesRead;
-    // A capped read ends mid-line; drop the partial record.
-    if (size > MAX_TRANSCRIPT_BYTES) end = Math.max(0, buf.subarray(0, bytesRead).lastIndexOf(0x0a) + 1);
-    return { text: buf.subarray(0, end).toString('utf8'), truncated: size > MAX_TRANSCRIPT_BYTES };
-  } finally {
-    await handle.close().catch(() => {});
+  return path.dirname(file) === dir ? file : null;
+}
+
+/**
+ * Incremental reader behind the viewer. A long transcript is read as its first
+ * 256 KB (the task) plus its last 8 MB (the latest work); after that only
+ * appended bytes are parsed, and nothing is read while size and mtime hold.
+ */
+export class SubagentTranscriptReader {
+  private file: string | null = null;
+  private state = createTranscriptState();
+  private offset = 0;
+  private size = -1;
+  private mtimeMs = -1;
+  private started = false;
+  private inFlight: Promise<ParsedSubagentTranscript | null> | null = null;
+
+  attach(file: string): void {
+    if (this.file !== file) {
+      this.file = file;
+      this.reset();
+    }
+  }
+
+  refresh(): Promise<ParsedSubagentTranscript | null> {
+    // One read at a time: a second caller waits for the first and then sees no change.
+    const run = (this.inFlight ?? Promise.resolve(null)).then(() => this.load(), () => this.load());
+    this.inFlight = run;
+    void run.finally(() => { if (this.inFlight === run) this.inFlight = null; }).catch(() => {});
+    return run;
+  }
+
+  private reset(): void {
+    this.state = createTranscriptState();
+    this.offset = 0;
+    this.size = -1;
+    this.mtimeMs = -1;
+    this.started = false;
+  }
+
+  private async load(): Promise<ParsedSubagentTranscript | null> {
+    const file = this.file;
+    if (!file) return null;
+    let st: fs.Stats;
+    try { st = await fs.promises.stat(file); } catch { return null; }
+    if (st.size === this.size && st.mtimeMs === this.mtimeMs) return finishTranscript(this.state);
+
+    // Work on a copy and commit state and offset together, so a read that fails
+    // part-way is retried from the same place instead of folded twice.
+    const fresh = st.size < this.offset;
+    const work = fresh ? createTranscriptState() : cloneTranscriptState(this.state);
+    let offset = fresh ? 0 : this.offset;
+    try {
+      if (!(fresh ? false : this.started) && st.size > TRANSCRIPT_HEAD_BYTES + TRANSCRIPT_TAIL_BYTES) {
+        const head = createTranscriptState();
+        await readCompleteLines(file, 0, TRANSCRIPT_HEAD_BYTES, text => foldTranscriptLines(head, text));
+        work.prompt = head.prompt;
+        work.skippedMiddle = true;
+        // The tail window starts mid-line most of the time; begin at the next whole line.
+        offset = await nextLineStart(file, st.size - TRANSCRIPT_TAIL_BYTES, st.size);
+      }
+      offset = await readCompleteLines(file, offset, st.size, text => foldTranscriptLines(work, text));
+    } catch {
+      return finishTranscript(this.state);
+    }
+    this.state = work;
+    this.offset = offset;
+    this.started = true;
+    this.size = st.size;
+    this.mtimeMs = st.mtimeMs;
+    return finishTranscript(this.state);
   }
 }

@@ -16,7 +16,15 @@ import {
   foldSubagentLines,
   parseSubagentMeta,
   parseSubagentTranscript,
-  readSubagentTranscriptText,
+  SubagentTranscriptReader,
+  createTranscriptState,
+  finishTranscript,
+  foldTranscriptLines,
+  TRANSCRIPT_HEAD_BYTES,
+  TRANSCRIPT_TAIL_BYTES,
+  findSubagentsDirByScan,
+  findSubagentsDirDirect,
+  subagentTranscriptPath,
   scanTokens,
   summarizeToolInput,
   toChildAgentInfo,
@@ -53,6 +61,24 @@ afterEach(() => {
   delete process.env.CLAUDE_CONFIG_DIR;
   for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
+
+
+/** Make the nth read (1-based, across all files opened while active) reject once. */
+function failNthRead(n: number) {
+  let reads = 0;
+  const realOpen = fs.promises.open.bind(fs.promises);
+  const spy = vi.spyOn(fs.promises, 'open').mockImplementation(async (...args: Parameters<typeof fs.promises.open>) => {
+    const handle = await realOpen(...args);
+    const realRead = handle.read.bind(handle);
+    (handle as unknown as { read: unknown }).read = (async (...a: unknown[]) => {
+      if (++reads === n) throw new Error('injected read failure');
+      return (realRead as (...x: unknown[]) => unknown)(...a);
+    });
+    return handle;
+  });
+  return () => spy.mockRestore();
+}
+const bigToolLine = (i: number) => assistant(i, { id: `big${i}`, blocks: [{ type: 'tool_use', id: `bt${i}`, name: 'Bash', input: { command: 'y'.repeat(700_000) } }], usage: { output_tokens: 10 } });
 
 describe('parseSubagentMeta', () => {
   it('reads the fields it knows and ignores the rest', () => {
@@ -357,6 +383,26 @@ describe('SubagentDirReader', () => {
     expect(next.scan.firstPrompt).toBe('new');
   });
 
+  it('leaves a transcript untouched when a read fails part-way, then folds it once on retry', async () => {
+    const dir = tmp();
+    const file = path.join(dir, 'agent-a1.jsonl');
+    fs.writeFileSync(file, user(1, 'task') + assistant(2, { id: 'm1', blocks: [], usage: { output_tokens: 3 } }));
+    const reader = new SubagentDirReader(dir);
+    await reader.refresh();
+
+    fs.appendFileSync(file, bigToolLine(3) + bigToolLine(4) + bigToolLine(5));
+    const restore = failNthRead(2);
+    let during;
+    try { during = (await reader.refresh()).snapshots[0]; } finally { restore(); }
+    expect(scanTokens(during.scan).output).toBe(3);
+    expect(during.scan.lastActivityAt).toBe(at(2));
+    expect(during.scan.spawnToolIds.size).toBe(0);
+
+    const after = (await reader.refresh()).snapshots[0];
+    expect(scanTokens(after.scan).output).toBe(33);
+    expect(after.scan.lastActivityAt).toBe(at(5));
+  });
+
   it('picks up a meta file written after the transcript', async () => {
     const dir = tmp();
     fs.writeFileSync(path.join(dir, 'agent-a1.jsonl'), user(1, 'task'));
@@ -413,11 +459,157 @@ describe('findSubagentsDir and transcript reads', () => {
     expect(findSubagentsDir(SESSION, '/x')).toBeNull();
   });
 
-  it('refuses agent ids that could leave the folder, and reads a real transcript', async () => {
+  it('splits the lookup into a one-stat direct path and a project scan', () => {
+    const home = tmp();
+    process.env.CLAUDE_CONFIG_DIR = home;
+    const hashed = path.join(home, 'projects', 'long-name-hash', SESSION, 'subagents');
+    fs.mkdirSync(hashed, { recursive: true });
+    expect(findSubagentsDirDirect(SESSION, '/work/elsewhere')).toBeNull();
+    expect(findSubagentsDirByScan(SESSION)).toBe(hashed);
+    const direct = path.join(home, 'projects', '-work-elsewhere', SESSION, 'subagents');
+    fs.mkdirSync(direct, { recursive: true });
+    expect(findSubagentsDirDirect(SESSION, '/work/elsewhere')).toBe(direct);
+    expect(findSubagentsDirDirect('../x', '/work/elsewhere')).toBeNull();
+  });
+
+  it('refuses agent ids that could leave the folder', () => {
     const dir = tmp();
-    fs.writeFileSync(path.join(dir, 'agent-ok.jsonl'), user(1, 'task'));
-    expect(await readSubagentTranscriptText(dir, '../ok')).toBeNull();
-    expect(await readSubagentTranscriptText(dir, 'missing')).toBeNull();
-    expect((await readSubagentTranscriptText(dir, 'ok'))?.text).toContain('task');
+    expect(subagentTranscriptPath(dir, '../ok')).toBeNull();
+    expect(subagentTranscriptPath(dir, 'a/b')).toBeNull();
+    expect(subagentTranscriptPath(dir, 'ok')).toBe(path.join(dir, 'agent-ok.jsonl'));
+  });
+});
+
+describe('SubagentTranscriptReader', () => {
+  const toolLine = (i: number) => assistant(i, { id: `m${i}`, blocks: [{ type: 'tool_use', id: `t${i}`, name: 'Bash', input: { command: `cmd ${i} ${'x'.repeat(900)}` } }] });
+
+  function bigTranscript(file: string) {
+    // Larger than the head plus tail windows, so the middle must be skipped.
+    const fd = fs.openSync(file, 'w');
+    fs.writeSync(fd, user(1, 'The original task'));
+    let i = 2;
+    let bytes = 0;
+    while (bytes < TRANSCRIPT_HEAD_BYTES + TRANSCRIPT_TAIL_BYTES + 2 * 1024 * 1024) {
+      const l = toolLine(i++);
+      bytes += fs.writeSync(fd, l);
+    }
+    fs.writeSync(fd, assistant(i, { id: 'final', blocks: [{ type: 'text', text: 'The final answer.' }] }));
+    fs.closeSync(fd);
+    return i - 1;
+  }
+
+  it('shows the task and the newest work of a transcript bigger than the read windows', async () => {
+    const dir = tmp();
+    const file = path.join(dir, 'agent-big.jsonl');
+    const lastTool = bigTranscript(file);
+    expect(fs.statSync(file).size).toBeGreaterThan(TRANSCRIPT_HEAD_BYTES + TRANSCRIPT_TAIL_BYTES);
+    const reader = new SubagentTranscriptReader();
+    reader.attach(file);
+    const parsed = (await reader.refresh())!;
+    expect(parsed.prompt).toBe('The original task');
+    expect(parsed.result).toBe('The final answer.');
+    expect(parsed.truncated).toBe(true);
+    // 400 kept, one of which is the closing answer reported separately.
+    expect(parsed.entries).toHaveLength(399);
+    expect(parsed.entries.at(-1)).toMatchObject({ kind: 'tool', summary: expect.stringContaining(`cmd ${lastTool} `) });
+  });
+
+  it('does not duplicate entries when a read fails part-way and is retried', async () => {
+    const dir = tmp();
+    const file = path.join(dir, 'agent-a.jsonl');
+    const first = user(1, 'task') + toolLine(2);
+    fs.writeFileSync(file, first);
+    const reader = new SubagentTranscriptReader();
+    reader.attach(file);
+    await reader.refresh();
+
+    // ~2.1 MB appended is read in 1 MB pieces; the second piece fails.
+    fs.appendFileSync(file, bigToolLine(3) + bigToolLine(4) + bigToolLine(5));
+    const restore = failNthRead(2);
+    try {
+      const during = (await reader.refresh())!;
+      expect(during.entries).toHaveLength(1);
+    } finally {
+      restore();
+    }
+    const after = (await reader.refresh())!;
+    expect(after.entries).toHaveLength(4);
+    expect(after.entries.map(e => (e as { summary: string }).summary.slice(0, 5))).toEqual(['cmd 2', 'yyyyy', 'yyyyy', 'yyyyy']);
+  });
+
+  it('keeps a small transcript whole and not truncated', async () => {
+    const dir = tmp();
+    const file = path.join(dir, 'agent-a.jsonl');
+    fs.writeFileSync(file, user(1, 'task') + toolLine(2) + assistant(3, { id: 'f', blocks: [{ type: 'text', text: 'done' }] }));
+    const reader = new SubagentTranscriptReader();
+    reader.attach(file);
+    expect(await reader.refresh()).toMatchObject({ prompt: 'task', result: 'done', truncated: false, entries: [{ kind: 'tool' }] });
+  });
+
+  it('reads only appended bytes on later refreshes and nothing while the file is unchanged', async () => {
+    const dir = tmp();
+    const file = path.join(dir, 'agent-a.jsonl');
+    const first = user(1, 'task') + toolLine(2);
+    fs.writeFileSync(file, first);
+    const reader = new SubagentTranscriptReader();
+    reader.attach(file);
+    await reader.refresh();
+
+    const reads: number[] = [];
+    let opens = 0;
+    const realOpen = fs.promises.open.bind(fs.promises);
+    const spy = vi.spyOn(fs.promises, 'open').mockImplementation(async (...args: Parameters<typeof fs.promises.open>) => {
+      opens++;
+      const handle = await realOpen(...args);
+      const realRead = handle.read.bind(handle);
+      (handle as unknown as { read: unknown }).read = (async (...a: unknown[]) => { reads.push(a[3] as number); return (realRead as (...x: unknown[]) => unknown)(...a); });
+      return handle;
+    });
+    try {
+      await reader.refresh();
+      expect(opens).toBe(0);
+
+      fs.appendFileSync(file, toolLine(3) + assistant(4, { id: 'f', blocks: [{ type: 'text', text: 'all done' }] }));
+      const next = (await reader.refresh())!;
+      expect(reads).toEqual([Buffer.byteLength(first)]);
+      expect(next.entries).toHaveLength(2);
+      expect(next.result).toBe('all done');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('marks a failed call when its result arrives in a later read', async () => {
+    const dir = tmp();
+    const file = path.join(dir, 'agent-a.jsonl');
+    fs.writeFileSync(file, user(1, 'task') + toolLine(2));
+    const reader = new SubagentTranscriptReader();
+    reader.attach(file);
+    expect((await reader.refresh())!.entries[0]).not.toHaveProperty('failed');
+    fs.appendFileSync(file, user(3, [{ type: 'tool_result', tool_use_id: 't2', content: 'x', is_error: true }]));
+    expect((await reader.refresh())!.entries[0]).toMatchObject({ failed: true });
+  });
+
+  it('starts over when the file shrinks or a different file is attached, and returns null when it is gone', async () => {
+    const dir = tmp();
+    const file = path.join(dir, 'agent-a.jsonl');
+    fs.writeFileSync(file, user(1, 'a long first task description') + toolLine(2));
+    const reader = new SubagentTranscriptReader();
+    reader.attach(file);
+    await reader.refresh();
+    fs.writeFileSync(file, user(1, 'new'));
+    expect((await reader.refresh())!).toMatchObject({ prompt: 'new', entries: [] });
+    fs.rmSync(file);
+    expect(await reader.refresh()).toBeNull();
+  });
+
+  it('gives the same digest whether a transcript is folded whole or in pieces, past the entry cap', () => {
+    const lines = Array.from({ length: 1000 }, (_, i) => toolLine(i + 2));
+    const whole = parseSubagentTranscript(lines.join(''));
+    const state = createTranscriptState();
+    for (let i = 0; i < lines.length; i += 137) foldTranscriptLines(state, lines.slice(i, i + 137).join(''));
+    expect(finishTranscript(state)).toEqual(whole);
+    expect(whole.truncated).toBe(true);
+    expect(whole.entries).toHaveLength(400);
   });
 });
