@@ -26,12 +26,20 @@ describe('subagent requests over the resident reader', () => {
     const writes: string[] = [];
     let emit: (line: string) => void = () => {};
     let exit: () => void = () => {};
-    const spawn = vi.fn(async () => ({
-      write: (data: string) => { writes.push(data); },
-      onLine: (cb: (line: string) => void) => { emit = cb; },
-      onExit: (cb: () => void) => { exit = cb; },
-      kill: vi.fn(),
-    }));
+    const spawn = vi.fn(async (cmd: string) => {
+      const token = /TETHER_PROBE_READY=([0-9a-f]+)/.exec(cmd)?.[1];
+      const callbacks: Array<(line: string) => void> = [];
+      emit = line => callbacks.forEach(cb => cb(line));
+      return {
+        write: (data: string) => { writes.push(data); },
+        onLine: (cb: (line: string) => void) => {
+          if (!callbacks.length) queueMicrotask(() => emit(MARK + JSON.stringify({ ready: token })));
+          callbacks.push(cb);
+        },
+        onExit: (cb: () => void) => { exit = cb; },
+        kill: vi.fn(),
+      };
+    });
     vi.mocked(getEnvironment).mockReturnValue({ type: 'ssh', config: '{}' } as never);
     vi.mocked(resolveSshConfig).mockResolvedValue(config as never);
     vi.mocked(connectSshControl).mockResolvedValue({ spawn, end: vi.fn() } as never);
@@ -49,7 +57,8 @@ describe('subagent requests over the resident reader', () => {
     await expect(Promise.all(answered)).resolves.toHaveLength(40);
     // One spawn (one `sudo -i`), one password line, forty requests, nothing else.
     expect(host.spawn).toHaveBeenCalledOnce();
-    expect(host.spawn.mock.calls[0]).toEqual([buildProbeCommand(undefined, true, true), expect.objectContaining({ maxLineBytes: expect.any(Number) })]);
+    const token = /TETHER_PROBE_READY=([0-9a-f]{32}) exec/.exec(host.spawn.mock.calls[0][0] as string)![1];
+    expect(host.spawn.mock.calls[0]).toEqual([buildProbeCommand(undefined, true, true, token), expect.objectContaining({ maxLineBytes: expect.any(Number) })]);
     expect(host.writes).toHaveLength(41);
     expect(host.writes[0]).toBe('pw\n');
     expect(host.writes.slice(1).map(w => decode(w).op)).toEqual(Array(40).fill('subagents'));
@@ -77,11 +86,15 @@ describe('subagent requests over the resident reader', () => {
     expect(connection.isDead?.()).toBe(false);
   });
 
-  function coderChild() {
+  function coderChild(announceReady = true) {
     const child = Object.assign(new EventEmitter(), {
       stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough(), kill: vi.fn(),
     });
-    spawnMock.mockReturnValueOnce(child);
+    spawnMock.mockImplementationOnce((_bin: string, args: string[]) => {
+      const token = /TETHER_PROBE_READY=([0-9a-f]+)/.exec(args.at(-1) ?? '')?.[1];
+      if (announceReady) setImmediate(() => child.stdout.write(MARK + JSON.stringify({ ready: token }) + '\n'));
+      return child;
+    });
     const written: string[] = [];
     child.stdin.on('data', (d: Buffer) => written.push(d.toString()));
     return { child, written };
@@ -92,7 +105,9 @@ describe('subagent requests over the resident reader', () => {
     const { child, written } = coderChild();
     const connection = await connectRemoteUsage('env', 'owner/ws', undefined, { resident: true });
     expect(spawnMock).toHaveBeenCalledOnce();
-    expect(spawnMock).toHaveBeenCalledWith('coder-bin', ['ssh', '--disable-autostart', 'owner/ws', '--', buildProbeCommand()], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const command = spawnMock.mock.calls[0][1].at(-1) as string;
+    const token = /TETHER_PROBE_READY=([0-9a-f]{32}) exec/.exec(command)![1];
+    expect(spawnMock).toHaveBeenCalledWith('coder-bin', ['ssh', '--disable-autostart', 'owner/ws', '--', buildProbeCommand(undefined, false, false, token)], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
 
     for (let i = 0; i < 12; i++) {
       const pending = connection.poll(request);
@@ -123,7 +138,7 @@ describe('subagent requests over the resident reader', () => {
 
   it('leaves usage polling for Coder exactly as it was unless a resident reader is requested', async () => {
     vi.mocked(getEnvironment).mockReturnValue({ type: 'coder', config: '{}' } as never);
-    const child = coderChild().child;
+    const child = coderChild(false).child;
     const connection = await connectRemoteUsage('env', 'ws');
     expect(spawnMock).not.toHaveBeenCalled();
     const pending = connection.poll({ cli: 'claude', marker: 'm', workingDir: '.' });

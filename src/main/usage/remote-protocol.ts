@@ -54,7 +54,8 @@ export interface RemoteProbeTarget {
 }
 
 /**
- * Subagent requests ride the same resident reader as usage. They carry `op`,
+ * Subagent requests go to the same reader program as usage, in a separate
+ * resident process of their own (a second `sudo -i` on an elevated host). They carry `op`,
  * which usage requests never do, so the two cannot be confused.
  */
 export interface RemoteSubagentRequest {

@@ -28,6 +28,7 @@ import { envForRemoteSession, detachRemoteSession } from '../cli-config/remote/r
 import { usageService } from '../usage/usage-service';
 import { remoteUsageService } from '../usage/remote-usage-service';
 import { remoteProbeChannels } from '../usage/remote-probe-channels';
+import { clearRemoteAuthFailure } from '../usage/remote-auth-state';
 import type { RemoteProbeTarget } from '../usage/remote-protocol';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { createLogger } from '../logger';
@@ -1054,6 +1055,10 @@ export class SessionManager {
       this.callbacksMap.delete(id);
       throw err;
     }
+
+    // The session got in (an SSH session with sudo only starts once sudo accepted
+    // the password), so credentials a side-channel reader was refused with work again.
+    if (opts.environmentId && !(transport instanceof LocalTransport)) clearRemoteAuthFailure(opts.environmentId);
 
     if (remoteUsage && session.transport && this.sessions.has(id) && opts.environmentId) {
       const coder = transport instanceof CoderTransport;

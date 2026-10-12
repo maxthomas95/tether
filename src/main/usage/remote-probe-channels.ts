@@ -1,4 +1,5 @@
-import { connectRemoteUsage, type RemoteUsageConnection } from './remote-command';
+import { RemoteProbeRequestError, connectRemoteUsage, type RemoteUsageConnection } from './remote-command';
+import { RemoteAuthError, isRemoteAuthFailed } from './remote-auth-state';
 import type { RemoteProbeTarget, RemoteSubagentReply, RemoteSubagentRequest } from './remote-protocol';
 import { createLogger } from '../logger';
 
@@ -6,8 +7,15 @@ const log = createLogger('remote-probe-channels');
 
 /** Wait before trying a host again after its reader could not be started or kept failing. */
 export const BACKOFF_MS = [30_000, 60_000, 120_000, 300_000, 600_000] as const;
-/** Requests that fail on a live reader before it is replaced. */
-const MAX_CONSECUTIVE_FAILURES = 3;
+/**
+ * Requests in a row that got no reply at all before the reader counts as
+ * unresponsive. An error reply or a successful one proves it is alive and
+ * resets the count, so one session's always-failing request cannot churn a
+ * reader that other sessions are using.
+ */
+const MAX_CONSECUTIVE_TIMEOUTS = 3;
+/** A reader must stay up this long before its host's backoff is forgiven. */
+export const HEALTHY_MS = 10 * 60_000;
 /**
  * Sessions hold the reader while they are alive, however idle. Once the last one
  * lets go it is kept this long, so a restarted session does not log in again.
@@ -16,16 +24,22 @@ const IDLE_CLOSE_MS = 60_000;
 
 type Connect = (environmentId: string, workspace: string, signal?: AbortSignal, options?: { resident?: boolean }) => Promise<RemoteUsageConnection>;
 
+/** Survives the host entry (and its reader) being dropped, so idle gaps do not reset the backoff. */
+interface HostHealth {
+  /** Replacements and failed starts since the reader last stayed healthy; picks the backoff step. */
+  retryCount: number;
+  retryAt: number;
+}
+
 interface Host {
   key: string;
   target: RemoteProbeTarget;
   leases: number;
+  health: HostHealth;
   connection?: RemoteUsageConnection;
   connecting?: Promise<RemoteUsageConnection>;
-  failures: number;
-  /** Failed starts in a row; picks the next backoff step. */
-  retryCount: number;
-  retryAt: number;
+  connectedAt: number;
+  timeouts: number;
   idleTimer?: ReturnType<typeof setTimeout>;
   abort: AbortController;
 }
@@ -44,6 +58,7 @@ export interface RemoteProbeLease {
  */
 export class RemoteProbeChannels {
   private readonly hosts = new Map<string, Host>();
+  private readonly health = new Map<string, HostHealth>();
 
   constructor(
     private readonly connect: Connect = connectRemoteUsage,
@@ -54,7 +69,9 @@ export class RemoteProbeChannels {
     const key = JSON.stringify([target.environmentId, target.workspace]);
     let host = this.hosts.get(key);
     if (!host) {
-      host = { key, target, leases: 0, failures: 0, retryCount: 0, retryAt: 0, abort: new AbortController() };
+      let health = this.health.get(key);
+      if (!health) { health = { retryCount: 0, retryAt: 0 }; this.health.set(key, health); }
+      host = { key, target, leases: 0, health, connectedAt: 0, timeouts: 0, abort: new AbortController() };
       this.hosts.set(key, host);
     }
     if (host.idleTimer) { clearTimeout(host.idleTimer); host.idleTimer = undefined; }
@@ -82,34 +99,45 @@ export class RemoteProbeChannels {
 
   private async call(host: Host, request: RemoteSubagentRequest): Promise<RemoteSubagentReply> {
     if (this.hosts.get(host.key) !== host) throw new Error('Remote usage reader unavailable');
+    if (isRemoteAuthFailed(host.target.environmentId)) throw new RemoteAuthError();
     const connection = await this.open(host);
     try {
       const reply = await connection.poll(request);
-      host.failures = 0;
-      host.retryCount = 0;
+      host.timeouts = 0;
+      if (this.now() - host.connectedAt >= HEALTHY_MS) host.health.retryCount = 0;
       return reply;
     } catch (error) {
-      // A reply that failed validation or timed out leaves the reader healthy
-      // enough to try again; one that keeps failing is replaced, behind the
-      // same backoff as a reader that never started.
-      if (connection.isDead?.() || ++host.failures >= MAX_CONSECUTIVE_FAILURES) this.fail(host, connection);
+      // Only a reader that is gone, or that has answered nothing at all for
+      // several requests, is replaced (a new login, so behind the backoff).
+      // An error reply or one slow request leaves it alone.
+      const kind = error instanceof RemoteProbeRequestError ? error.kind : undefined;
+      if (kind === 'timeout') {
+        if (++host.timeouts >= MAX_CONSECUTIVE_TIMEOUTS) this.fail(host, connection);
+      } else {
+        host.timeouts = 0;
+        if (kind === 'dead' || connection.isDead?.()) this.fail(host, connection);
+      }
       throw error;
     }
   }
 
   private async open(host: Host): Promise<RemoteUsageConnection> {
     if (host.connection) return host.connection;
-    if (this.now() < host.retryAt) throw new Error('Remote usage reader unavailable');
+    if (this.now() < host.health.retryAt) throw new Error('Remote usage reader unavailable');
     host.connecting ??= this.connect(host.target.environmentId, host.target.workspace, host.abort.signal, { resident: true })
       .then(connection => {
         if (this.hosts.get(host.key) !== host) { connection.close(); throw new Error('Remote usage reader unavailable'); }
         host.connection = connection;
+        host.connectedAt = this.now();
+        host.timeouts = 0;
         return connection;
       })
       .catch(error => {
         // Never log the error text: it can carry remote shell output.
         log.debug('Remote reader did not start', { environmentId: host.target.environmentId });
-        this.backoff(host);
+        // A refused password is not retried at all (see remote-auth-state), so
+        // it needs no timer.
+        if (!(error instanceof RemoteAuthError)) this.backoff(host);
         throw error;
       })
       .finally(() => { host.connecting = undefined; });
@@ -117,15 +145,17 @@ export class RemoteProbeChannels {
   }
 
   private fail(host: Host, connection: RemoteUsageConnection): void {
+    // A reader that ran long enough before dying starts a fresh backoff.
+    if (this.now() - host.connectedAt >= HEALTHY_MS) host.health.retryCount = 0;
     if (host.connection === connection) host.connection = undefined;
     connection.close();
     this.backoff(host);
   }
 
   private backoff(host: Host): void {
-    host.failures = 0;
-    host.retryAt = this.now() + BACKOFF_MS[Math.min(host.retryCount, BACKOFF_MS.length - 1)];
-    host.retryCount++;
+    host.timeouts = 0;
+    host.health.retryAt = this.now() + BACKOFF_MS[Math.min(host.health.retryCount, BACKOFF_MS.length - 1)];
+    host.health.retryCount++;
   }
 
   private release(host: Host): void {

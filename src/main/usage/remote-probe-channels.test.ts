@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BACKOFF_MS, RemoteProbeChannels } from './remote-probe-channels';
+import { BACKOFF_MS, HEALTHY_MS, RemoteProbeChannels } from './remote-probe-channels';
+import { RemoteProbeRequestError } from './remote-command';
+import { RemoteAuthError, clearRemoteAuthFailure, markRemoteAuthFailed, resetRemoteAuthState } from './remote-auth-state';
 import type { RemoteProbeTarget, RemoteSubagentRequest } from './remote-protocol';
 import type { RemoteUsageConnection } from './remote-command';
 
@@ -18,7 +20,7 @@ function fakeConnection() {
 }
 
 let clock: number;
-beforeEach(() => { vi.useFakeTimers(); clock = 1_000_000; });
+beforeEach(() => { vi.useFakeTimers(); clock = 1_000_000; resetRemoteAuthState(); });
 afterEach(() => vi.useRealTimers());
 const channels = (connect: ReturnType<typeof vi.fn>) => new RemoteProbeChannels(connect as never, () => clock);
 
@@ -97,22 +99,103 @@ describe('RemoteProbeChannels', () => {
     expect(connect).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps a live reader through isolated request failures but replaces one that keeps failing', async () => {
-    const flaky = fakeConnection();
-    flaky.poll.mockRejectedValueOnce(new Error('Invalid remote usage reply')).mockResolvedValue(reply);
-    const connect = vi.fn(async () => flaky.connection);
+  it('keeps a live reader through error replies and slow requests, however often, while other sessions are served', async () => {
+    const reader = fakeConnection();
+    // Session A's request always errors; session B's always works; A is also sometimes slow.
+    reader.poll.mockImplementation(async (r: unknown) => {
+      if ((r as { sessionId: string }).sessionId === 'bad') throw new RemoteProbeRequestError('Invalid remote subagent reply', 'reply');
+      return reply;
+    });
+    const connect = vi.fn(async () => reader.connection);
+    const pool = channels(connect);
+    const [good, bad] = [pool.acquire(ssh), pool.acquire(ssh)];
+    for (let i = 0; i < 60; i++) {
+      await expect(bad.call({ ...request, sessionId: 'bad' })).rejects.toThrow();
+      await good.call(request);
+      clock += 30_000;
+    }
+    reader.poll.mockRejectedValueOnce(new RemoteProbeRequestError('Remote usage command timed out', 'timeout'));
+    await expect(good.call(request)).rejects.toThrow('timed out');
+    await good.call(request);
+    expect(connect).toHaveBeenCalledOnce();
+    expect(reader.close).not.toHaveBeenCalled();
+  });
+
+  it('replaces a reader that answers nothing for several requests in a row, once, behind the backoff', async () => {
+    const hung = fakeConnection();
+    hung.poll.mockRejectedValue(new RemoteProbeRequestError('Remote usage command timed out', 'timeout'));
+    const fresh = fakeConnection();
+    const connect = vi.fn().mockResolvedValueOnce(hung.connection).mockResolvedValue(fresh.connection);
+    const lease = channels(connect).acquire(ssh);
+    for (let i = 0; i < 3; i++) await expect(lease.call(request)).rejects.toThrow('timed out');
+    expect(hung.close).toHaveBeenCalledOnce();
+    await expect(lease.call(request)).rejects.toThrow('unavailable');
+    expect(connect).toHaveBeenCalledOnce();
+  });
+
+  it('forgives the backoff only after the reader has stayed healthy for a long time, not on one success', async () => {
+    const readers = Array.from({ length: 4 }, () => fakeConnection());
+    const connect = vi.fn();
+    readers.forEach(r => connect.mockResolvedValueOnce(r.connection));
+    connect.mockResolvedValue(fakeConnection().connection);
     const pool = channels(connect);
     const lease = pool.acquire(ssh);
-    await expect(lease.call(request)).rejects.toThrow();
-    await expect(lease.call(request)).resolves.toBeDefined();
-    expect(flaky.close).not.toHaveBeenCalled();
+    const dieAfterOneGoodCall = async (reader: ReturnType<typeof fakeConnection>) => {
+      await lease.call(request);                       // one success must not reset anything
+      reader.poll.mockRejectedValueOnce(new RemoteProbeRequestError('Remote usage reader unavailable', 'dead'));
+      await expect(lease.call(request)).rejects.toThrow();
+    };
+    await dieAfterOneGoodCall(readers[0]);
+    clock += BACKOFF_MS[0];
+    await dieAfterOneGoodCall(readers[1]);
+    // Second death: the wait is the second step, not the first.
+    clock += BACKOFF_MS[0];
+    await expect(lease.call(request)).rejects.toThrow('unavailable');
+    clock += BACKOFF_MS[1];
+    await dieAfterOneGoodCall(readers[2]);
+    expect(connect).toHaveBeenCalledTimes(3);
 
-    const broken = fakeConnection();
-    broken.poll.mockRejectedValue(new Error('Remote usage command timed out'));
-    const pool2 = channels(vi.fn(async () => broken.connection));
-    const lease2 = pool2.acquire(ssh);
-    for (let i = 0; i < 3; i++) await expect(lease2.call(request)).rejects.toThrow();
-    expect(broken.close).toHaveBeenCalledOnce();
+    // A reader that then runs for a long time starts over from the first step.
+    clock += BACKOFF_MS[2];
+    await lease.call(request);
+    clock += HEALTHY_MS;
+    await lease.call(request);
+    readers[3].poll.mockRejectedValueOnce(new RemoteProbeRequestError('Remote usage reader unavailable', 'dead'));
+    await expect(lease.call(request)).rejects.toThrow();
+    clock += BACKOFF_MS[0];
+    await expect(lease.call(request)).resolves.toBeDefined();
+  });
+
+  it('keeps the backoff across the host being dropped and picked up again', async () => {
+    const connect = vi.fn().mockRejectedValue(new Error('connect failed'));
+    const pool = channels(connect);
+    const first = pool.acquire(ssh);
+    await expect(first.call(request)).rejects.toThrow('connect failed');
+    first.release();
+    await vi.advanceTimersByTimeAsync(61_000);       // the idle grace drops the host entry
+    const again = pool.acquire(ssh);
+    await expect(again.call(request)).rejects.toThrow('unavailable');
+    expect(connect).toHaveBeenCalledOnce();
+    clock += BACKOFF_MS[0];
+    await expect(again.call(request)).rejects.toThrow('connect failed');
+    expect(connect).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not touch the network for a host whose credentials were refused, and tries again once they are cleared', async () => {
+    const connect = vi.fn(async () => { markRemoteAuthFailed('ssh-env'); throw new RemoteAuthError(); });
+    const pool = channels(connect);
+    const lease = pool.acquire(ssh);
+    await expect(lease.call(request)).rejects.toBeInstanceOf(RemoteAuthError);
+    for (let i = 0; i < 50; i++) { clock += 600_000; await expect(lease.call(request)).rejects.toBeInstanceOf(RemoteAuthError); }
+    lease.release();
+    await vi.advanceTimersByTimeAsync(61_000);
+    await expect(pool.acquire(ssh).call(request)).rejects.toBeInstanceOf(RemoteAuthError);
+    expect(connect).toHaveBeenCalledOnce();
+
+    clearRemoteAuthFailure('ssh-env');
+    connect.mockResolvedValue(fakeConnection().connection as never);
+    await expect(pool.acquire(ssh).call(request)).resolves.toBeDefined();
+    expect(connect).toHaveBeenCalledTimes(2);
   });
 
   it('closes a reader nobody holds after a grace period, but not if a session returns first', async () => {

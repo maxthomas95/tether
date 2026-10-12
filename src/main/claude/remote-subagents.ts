@@ -141,7 +141,15 @@ export class RemoteSubagentReader implements RemoteSubagentSource {
     // The folder lookup is a direct hit or the project hint (cheap); only the
     // all-projects search backs off after a miss.
     const scan = this.now() >= this.nextLookupAt;
-    const reply = await this.call({ ...this.base('subagents'), known, ...(scan ? {} : { scan: false }) });
+    let reply: RemoteSubagentReply;
+    try {
+      reply = await this.call({ ...this.base('subagents'), known, ...(scan ? {} : { scan: false }) });
+    } catch (error) {
+      // Nothing is waiting to be read if the request itself failed; leaving the
+      // flag up would have the tracker re-ask every 250 ms through the retry wait.
+      this.backlog = false;
+      throw error;
+    }
     if (this.closed) return { snapshots: [], total: 0 };
     if (reply.op !== 'subagents') throw new Error('Unexpected remote subagent reply');
     if (reply.found) this.resetLookup();
@@ -162,6 +170,11 @@ export class RemoteSubagentReader implements RemoteSubagentSource {
     // File ages are measured on the remote clock, then moved onto ours so the
     // tracker's "changed in the last 30s" rule is not skewed by clock drift.
     const skew = this.now() - reply.now;
+    const shift = (iso: string | null) => {
+      if (!iso || skew === 0) return iso;
+      const at = Date.parse(iso);
+      return Number.isNaN(at) ? iso : new Date(at + skew).toISOString();
+    };
     const keep = new Set<string>();
     const snapshots: SubagentSnapshot[] = [];
     for (const file of reply.agents.slice(0, REMOTE_SUBAGENT_MAX_AGENTS)) {
@@ -179,7 +192,11 @@ export class RemoteSubagentReader implements RemoteSubagentSource {
       state.metaMtimeMs = file.metaMtimeMs;
       state.mtimeMs = file.mtimeMs + skew;
       state.birthMs = file.birthMs + skew;
-      snapshots.push({ id: file.id, meta: state.meta, scan: state.scan, mtimeMs: state.mtimeMs, birthMs: state.birthMs });
+      // The transcript's own timestamps (start, last activity) are remote clock
+      // too; shift them the same way, on a copy so the held scan stays as received.
+      const scan = skew === 0 ? state.scan
+        : { ...state.scan, startedAt: shift(state.scan.startedAt), lastActivityAt: shift(state.scan.lastActivityAt) };
+      snapshots.push({ id: file.id, meta: state.meta, scan, mtimeMs: state.mtimeMs, birthMs: state.birthMs });
     }
     for (const id of this.files.keys()) if (!keep.has(id)) this.files.delete(id);
     return { snapshots, total: reply.total };

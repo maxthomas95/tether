@@ -86,6 +86,8 @@ interface Entry {
   dir: string | null;
   reader: SubagentDirReader | null;
   remote: RemoteSubagentSource | null;
+  /** The last remote refresh failed, so its `backlog` says nothing about what is waiting. */
+  remoteFailed: boolean;
   /** Hook-active ids with no listed file yet, and when each was first seen. */
   unmatchedSince: Map<string, number>;
   nextScanAt: number;
@@ -245,7 +247,7 @@ export class SubagentTracker {
     let entry = this.entries.get(sessionId);
     if (!entry) {
       entry = {
-        nativeId: null, dir: null, reader: null, remote: null, unmatchedSince: new Map(), nextScanAt: 0, scanBackoffMs: SCAN_BACKOFF_MIN_MS,
+        nativeId: null, dir: null, reader: null, remote: null, remoteFailed: false, unmatchedSince: new Map(), nextScanAt: 0, scanBackoffMs: SCAN_BACKOFF_MIN_MS,
         list: EMPTY_CHILD_AGENT_LIST, signature: JSON.stringify(EMPTY_CHILD_AGENT_LIST), expanded: false,
         timer: null, debounce: null, inFlight: null, rerun: false,
       };
@@ -296,7 +298,15 @@ export class SubagentTracker {
       if (ref.remote) {
         entry.remote ??= this.deps?.openRemote?.(ref.remote, ref.nativeSessionId!) ?? null;
         entry.remote?.setAlive(ref.alive);
-        const { snapshots, total } = entry.remote ? await entry.remote.refresh() : { snapshots: [], total: 0 };
+        let result: { snapshots: SubagentSnapshot[]; total: number } = { snapshots: [], total: 0 };
+        try {
+          if (entry.remote) result = await entry.remote.refresh();
+          entry.remoteFailed = false;
+        } catch (error) {
+          entry.remoteFailed = true;
+          throw error;
+        }
+        const { snapshots, total } = result;
         this.publish(sessionId, entry, this.buildList(snapshots, total, ref, now));
         this.schedule(sessionId, entry, ref, now);
         return;
@@ -345,7 +355,7 @@ export class SubagentTracker {
     for (const id of [...entry.unmatchedSince.keys()]) if (!unmatched.includes(id)) entry.unmatchedSince.delete(id);
     for (const id of unmatched) if (!entry.unmatchedSince.has(id)) entry.unmatchedSince.set(id, now);
     const awaitingFile = unmatched.some(id => now - entry.unmatchedSince.get(id)! < UNMATCHED_POLL_WINDOW_MS);
-    if (entry.remote?.backlog) delay = BACKLOG_POLL_MS;
+    if (entry.remote?.backlog && !entry.remoteFailed) delay = BACKLOG_POLL_MS;
     else if (anyRunning || entry.expanded || awaitingFile) delay = FAST_POLL_MS;
     else if (!ref.hookDriven) delay = DISCOVERY_POLL_MS;
     if (delay === null) return;

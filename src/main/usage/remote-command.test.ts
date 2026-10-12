@@ -85,6 +85,38 @@ describe('remote usage command boundary', () => {
   });
 });
 
+describe('resident probe on a real shell', () => {
+  it('announces the caller\'s token before reading anything, then answers requests and exits when stdin closes', async () => {
+    const { spawn: realSpawn } = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+    if (process.platform === 'win32' || !fs.existsSync('/bin/sh')) return;
+    const token = 'ab12cd34ef56ab12cd34ef56ab12cd34';
+    const child = realSpawn('/bin/sh', ['-c', buildProbeCommand(undefined, false, false, token)], { stdio: ['pipe', 'pipe', 'ignore'] });
+    const lines: string[] = [];
+    let waiting: (() => void) | undefined;
+    let buffered = '';
+    child.stdout!.setEncoding('utf8');
+    child.stdout!.on('data', (chunk: string) => {
+      buffered += chunk;
+      let cut: number;
+      while ((cut = buffered.indexOf('\n')) >= 0) { lines.push(buffered.slice(0, cut)); buffered = buffered.slice(cut + 1); waiting?.(); }
+    });
+    const next = async () => { while (!lines.length) await new Promise<void>(resolve => { waiting = resolve; }); return lines.shift()!; };
+    const exited = new Promise<number | null>(resolve => child.on('close', resolve));
+    try {
+      expect(await next()).toBe('__TETHER_USAGE__' + JSON.stringify({ ready: token }));
+      child.stdin!.write(Buffer.from(JSON.stringify({ id: 7, cli: 'claude', marker: 'm', workingDir: '/', claudeHome: os.tmpdir(), nativeSessionId: 'missing-native-id' })).toString('base64') + '\n');
+      expect(JSON.parse((await next()).slice('__TETHER_USAGE__'.length))).toMatchObject({ id: 7, status: 'pending' });
+    } finally {
+      child.stdin!.end();
+    }
+    expect(await exited).toBe(0);
+  });
+
+  it('refuses a ready token that is not plain hex, so it cannot carry shell syntax', () => {
+    expect(() => buildProbeCommand(undefined, false, false, 'x; rm -rf /')).toThrow('Invalid ready token');
+  });
+});
+
 describe('resident ssh usage probe', () => {
   /** A ControlConnection whose spawn hands the test the probe's stdin/stdout. */
   function host(sshConfig: Record<string, unknown> = { useSudo: true, password: 'pw' }) {
@@ -93,12 +125,21 @@ describe('resident ssh usage probe', () => {
     let exit: () => void = () => {};
     const kill = vi.fn();
     const end = vi.fn();
-    const spawn = vi.fn(async () => ({
-      write: (data: string) => { writes.push(data); },
-      onLine: (cb: (line: string) => void) => { emit = cb; },
-      onExit: (cb: () => void) => { exit = cb; },
-      kill,
-    }));
+    const spawn = vi.fn(async (cmd: string) => {
+      const token = /TETHER_PROBE_READY=([0-9a-f]+)/.exec(cmd)?.[1];
+      const lineCallbacks: Array<(line: string) => void> = [];
+      emit = line => lineCallbacks.forEach(cb => cb(line));
+      return {
+        write: (data: string) => { writes.push(data); },
+        onLine: (cb: (line: string) => void) => {
+          // The reader says it is up once, as soon as someone is listening.
+          if (!lineCallbacks.length) queueMicrotask(() => emit('__TETHER_USAGE__' + JSON.stringify({ ready: token })));
+          lineCallbacks.push(cb);
+        },
+        onExit: (cb: () => void) => { exit = cb; },
+        kill,
+      };
+    });
     vi.mocked(getEnvironment).mockReturnValue({ type: 'ssh', config: '{}' } as never);
     vi.mocked(resolveSshConfig).mockResolvedValue(sshConfig as never);
     vi.mocked(connectSshControl).mockResolvedValue({ spawn, end } as never);
@@ -117,9 +158,10 @@ describe('resident ssh usage probe', () => {
     expect(command).toMatch(/^sudo -S -p '' -i -- sh -lc /);
     // Resident form: the bundled program with no request argument after it, so
     // the probe reads requests from stdin instead of being respawned per poll.
-    expect(command).toBe(buildProbeCommand(undefined, true, true));
+    const token = /TETHER_PROBE_READY=([0-9a-f]{32}) exec/.exec(command)![1];
+    expect(command).toBe(buildProbeCommand(undefined, true, true, token));
     expect(command).not.toContain(Buffer.from(JSON.stringify(request)).toString('base64'));
-    expect(command.length).toBeLessThan(buildProbeCommand(request, true, true).length);
+    expect(command.length).toBeLessThan(buildProbeCommand(request, true, true).length + 64);
     expect(h.writes).toEqual(['pw\n']);
 
     const first = connection.poll(request);

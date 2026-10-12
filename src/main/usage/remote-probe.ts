@@ -437,6 +437,10 @@ if (process.argv[1]) {
   if (reply.error) process.exitCode = 1;
 } else {
   // Resident mode. A bad line answers and keeps serving; only stdin closing ends us.
+  // The caller's token proves we started (so sudo accepted the password) before it
+  // sends any request; without one there is nothing to prove.
+  const readyToken = process.env.TETHER_PROBE_READY;
+  if (readyToken) process.stdout.write('__TETHER_USAGE__' + JSON.stringify({ ready: readyToken }) + '\n');
   let buffered = '';
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', chunk => {

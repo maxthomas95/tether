@@ -21,6 +21,9 @@ type SshClient = InstanceType<typeof import('ssh2').Client>;
 /** SFTP status code 2 — SSH_FX_NO_SUCH_FILE. */
 const SFTP_NO_SUCH_FILE = 2;
 
+/** sudo (and PAM) refusals, in the wording sudo prints; checked on stderr and then forgotten. */
+const AUTH_REFUSED_RE = /Sorry, try again|incorrect password|a password is required|Authentication failure|no tty present|not in the sudoers|is not allowed to run sudo/i;
+
 function isNoSuchFile(err: unknown): boolean {
   return (err as { code?: number })?.code === SFTP_NO_SUCH_FILE;
 }
@@ -210,6 +213,8 @@ export async function connectSshControl(sshConfig: SSHConfig, signal?: AbortSign
           if (err) { reject(err); return; }
           const lineCbs: Array<(line: string) => void> = [];
           const exitCbs: Array<() => void> = [];
+          const authCbs: Array<() => void> = [];
+          let authRefused = false;
           // Holds a multi-byte character back until the chunk carrying its rest arrives.
           const decoder = new StringDecoder('utf8');
           let buffered = '';
@@ -231,7 +236,11 @@ export async function connectSshControl(sshConfig: SSHConfig, signal?: AbortSign
             if (buffered.length > (options?.maxLineBytes ?? 4 * 1024 * 1024)) { buffered = ''; stream.destroy(); exit(); }
           });
           // Never retain or log remote stderr; drain it so the channel cannot stall.
-          stream.stderr.on('data', () => { /* discarded by design */ });
+          stream.stderr.on('data', (d: Buffer) => {
+            if (authRefused || !AUTH_REFUSED_RE.test(d.toString('latin1', 0, 4096))) return;
+            authRefused = true;
+            for (const cb of authCbs) { try { cb(); } catch { /* observers never throw upward */ } }
+          });
           stream.on('close', exit);
           stream.on('error', exit);
           closeCallbacks.push(exit);
@@ -239,6 +248,7 @@ export async function connectSshControl(sshConfig: SSHConfig, signal?: AbortSign
             write: data => { try { stream.write(data); } catch { exit(); } },
             onLine: cb => { lineCbs.push(cb); },
             onExit: cb => { if (done) cb(); else exitCbs.push(cb); },
+            onAuthFailure: cb => { if (authRefused) cb(); else authCbs.push(cb); },
             kill: () => { try { stream.destroy(); } finally { exit(); } },
           });
         });

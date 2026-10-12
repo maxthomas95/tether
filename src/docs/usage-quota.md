@@ -106,7 +106,7 @@ Set **Codex quota warning** in [Settings → CLI tools → Codex CLI](settings.m
 Local transcript files are read locally. For SSH and Coder sessions, prompts and
 responses stay on the remote host: the usage reader sends only model names, reasoning
 effort, token counts, context capacity, timestamps, and source/cursor metadata over the authenticated connection.
-The [sidebar subagent list](sessions.md#subagents) adds two reads over the same connection.
+The [sidebar subagent list](sessions.md#subagents) adds two reads, made by a second reader process on the host that is separate from the usage reader (on an SSH host that uses **sudo**, a second sudo login per Tether run).
 The list itself carries only metadata: each subagent's small meta file (type and
 description), and from its transcript the record types, timestamps, model and effort,
 token counts, message IDs, the IDs of nested-subagent calls, and the first 400

@@ -97,7 +97,8 @@ describe('RemoteSubagentReader offsets', () => {
     f.append('a1', whole.slice(40));
     const second = await reader.refresh();
     expect(tokens(only(second.snapshots))).toMatchObject({ output: 10 });
-    expect(only(second.snapshots).scan.lastActivityAt).toBe(at(3));
+    // Shifted by the (few ms) difference between this clock and the rig's remote one.
+    expect(Math.abs(Date.parse(only(second.snapshots).scan.lastActivityAt!) - Date.parse(at(3)))).toBeLessThan(1000);
   });
 
   it('drains a large transcript across capped responses, flagging a backlog until it is all in', async () => {
@@ -136,11 +137,11 @@ describe('RemoteSubagentReader offsets', () => {
 
   it('reports files on the local clock even when the remote clock is an hour ahead', async () => {
     const t0 = Date.now();
+    const HOUR = 3_600_000;
     const { f, reader, tamper } = rig(() => t0);
     f.append('a1', prompt(1, 'task'));
     const mtime = new Date(t0 - 10_000);
     fs.utimesSync(path.join(f.dir, 'agent-a1.jsonl'), mtime, mtime);
-    const HOUR = 3_600_000;
     tamper.reply = r => r.op === 'subagents'
       ? { ...r, now: r.now + HOUR, agents: r.agents.map(a => ({ ...a, mtimeMs: a.mtimeMs + HOUR, birthMs: a.birthMs + HOUR })) }
       : r;
@@ -148,6 +149,19 @@ describe('RemoteSubagentReader offsets', () => {
     // Ten seconds old by the remote's own clock, so inside the 30s "running" window here too.
     expect(t0 - snapshot.mtimeMs).toBeGreaterThanOrEqual(9_000);
     expect(t0 - snapshot.mtimeMs).toBeLessThan(11_000);
+    // The transcript's own timestamps are remote-clock too, so "running Xm" is not off by the skew.
+    expect(Math.abs(Date.parse(snapshot.scan.lastActivityAt!) - (Date.parse(at(1)) - HOUR))).toBeLessThan(1000);
+    expect(Math.abs(Date.parse(snapshot.scan.startedAt!) - (Date.parse(at(1)) - HOUR))).toBeLessThan(1000);
+  });
+
+  it('clears the backlog flag when a request fails, so the tracker does not re-ask every 250 ms through the retry wait', async () => {
+    const { f, reader, failNext } = rig();
+    for (const id of ['a1', 'a2', 'a3']) f.append(id, prompt(1, 'task') + Array.from({ length: 3000 }, (_, i) => answer(2, `${id}-m${i}`, 1, 1200)).join(''));
+    await reader.refresh();
+    expect(reader.backlog).toBe(true);
+    failNext();
+    await expect(reader.refresh()).rejects.toThrow();
+    expect(reader.backlog).toBe(false);
   });
 
   it('shows nothing and holds no state when the session has no subagent folder', async () => {

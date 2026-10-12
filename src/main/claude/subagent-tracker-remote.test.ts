@@ -103,6 +103,21 @@ describe('SubagentTracker remote sessions', () => {
     expect(vi.getTimerCount()).toBe(1);
   });
 
+  it('does not poll every 250 ms through a failing remote even if the source still claims a backlog', async () => {
+    session.hookDriven = true;
+    source.snapshots = [snapshot('a1', 10 * 60_000)];
+    source.backlog = true;
+    await tracker.list('s1');
+    expect(vi.getTimerCount()).toBe(1);   // the 250 ms backlog poll
+    source.refresh.mockRejectedValue(new Error('Remote usage reader unavailable'));
+    await tracker.list('s1');
+    const before = source.refresh.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(30_000);
+    // Idle and hook-driven: a failed refresh leaves nothing to poll for, not a 250 ms loop.
+    expect(source.refresh.mock.calls.length).toBe(before);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('keeps the fast poll for a hook-announced subagent with no file for a minute at most', async () => {
     session.hookDriven = true;
     session.activeAgentIds = ['ghost'];
