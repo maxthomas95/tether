@@ -198,8 +198,228 @@ function read(source) {
       more: end > 0 && start + end < stat.size, text: records.length ? records.join('\n') + '\n' : '' };
   } finally { fs.closeSync(fd); }
 }
+// Subagent requests. Same process, same read-only stance: this lists one
+// session's subagents folder and returns bytes after a caller-held offset.
+// The listing sends slimmed lines (only what the summary needs: see slimLine);
+// full lines leave only for the transcript viewer. All bounds live here so a
+// runaway folder cannot make a response unbounded.
+const SUB_AGENTS = 50;
+const SUB_SCAN = 1000;
+// Raw bytes read per file window, per response, and the longest line carried.
+const SUB_WINDOW = 2 * 1024 * 1024;
+const SUB_READ = 8 * 1024 * 1024;
+const SUB_LINE = 4 * 1024 * 1024;
+// Slimmed text returned per response (listing), and raw text per viewer chunk.
+const SUB_OUT = 1024 * 1024;
+const SUB_VIEW = 1024 * 1024;
+const SUB_META = 16 * 1024;
+const SUB_SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SUB_FILE = /^agent-([A-Za-z0-9_-]{1,64})\.jsonl$/;
+const SUB_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const SUB_SPAWN = new Set(['Agent', 'Task']);
+const isDir = p => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+const count = v => Number.isSafeInteger(v) && v >= 0 ? v : 0;
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+const clip = (v, n) => typeof v === 'string' && v.length ? v.slice(0, n) : undefined;
+// Claude hash-suffixes long project folder names, so a folder derived from the
+// working directory is only a first guess; otherwise take the one project
+// folder that holds this session id.
+function subagentsDir() {
+  const sid = request.sessionId;
+  if (typeof sid !== 'string' || !SUB_SESSION.test(sid)) throw new Error('bad-session');
+  const at = project => path.join(root, project, sid, 'subagents');
+  const hint = typeof request.project === 'string' && request.project && path.basename(request.project) === request.project ? request.project : null;
+  if (hint && isDir(at(hint))) return { dir: at(hint), project: hint };
+  let realCwd = cwd;
+  try { realCwd = fs.realpathSync(cwd); } catch {}
+  const direct = realCwd.replace(/[^a-zA-Z0-9]/g, '-');
+  if (isDir(at(direct))) return { dir: at(direct), project: direct };
+  if (request.scan === false) return null;
+  let names;
+  try { names = fs.readdirSync(root); } catch { return null; }
+  const found = names.filter(name => isDir(at(name)));
+  return found.length === 1 ? { dir: at(found[0]), project: found[0] } : null;
+}
+// Complete lines from offset, at most about "want" bytes. A line with no newline
+// inside the window is read once more at the larger line limit; beyond that it
+// is skipped (the caller sees the offset move past it and parses the stub as
+// the garbage it is). A partial line at the end of the file waits for its newline;
+// "eof" says the window reached the end of the file, so nothing more is readable yet.
+function readLines(fd, size, offset, want) {
+  const slice = n => {
+    const buf = Buffer.alloc(n);
+    const got = fs.readSync(fd, buf, 0, n, offset);
+    return buf.subarray(0, got);
+  };
+  let buf = slice(Math.min(want, size - offset));
+  let end = buf.lastIndexOf(10) + 1;
+  if (!end && offset + buf.length < size) {
+    buf = slice(Math.min(SUB_LINE, size - offset));
+    end = buf.lastIndexOf(10) + 1;
+    if (!end && offset + buf.length < size) return { buf: Buffer.alloc(0), next: offset + buf.length, eof: false };
+  }
+  return { buf: buf.subarray(0, end), next: offset + end, eof: offset + buf.length >= size };
+}
+// The listing's summary reads, per line: type, timestamp; for a user line whether
+// it carries a tool result, and, on the first plain user line of the file only,
+// its prompt text (first 400 chars); for an assistant
+// line model, effort, request/response ids, usage counters and the ids of Agent
+// and Task calls (to place nested subagents). Nothing else is forwarded: no
+// message content, tool inputs or tool results. This must track what
+// foldSubagentLines in claude/subagents.ts reads; its test compares both.
+// "prompt" is false once the caller already holds the task prompt, and flips to
+// true here when a line carries it, so only the first plain user line sends text.
+function slimLine(line, prompt) {
+  const text = line.trim();
+  if (!text.startsWith('{')) return null;
+  let e;
+  try { e = JSON.parse(text); } catch { return null; }
+  if (!isObj(e) || e.type === 'fork-context-ref') return null;
+  const out = {};
+  if (typeof e.type === 'string' && e.type.length <= 40) out.type = e.type;
+  if (typeof e.timestamp === 'string' && e.timestamp.length <= 64) out.timestamp = e.timestamp;
+  const m = isObj(e.message) ? e.message : null;
+  if (out.type === 'user' && m) {
+    if (typeof m.content === 'string') {
+      const body = prompt.taken ? '' : m.content.trimStart().slice(0, 400);
+      if (body.trim()) prompt.taken = true;
+      out.message = { content: body };
+    } else if (Array.isArray(m.content)) {
+      const blocks = [];
+      let chars = 0;
+      let results = false;
+      for (const b of m.content) {
+        if (!isObj(b)) continue;
+        if (b.type === 'tool_result') results = true;
+        else if (b.type === 'text' && typeof b.text === 'string' && chars < 400 && !prompt.taken) { blocks.push({ type: 'text', text: b.text.slice(0, 400) }); chars += b.text.length; }
+      }
+      // A user line with a tool result is never the prompt, whatever text it also holds.
+      if (!results && blocks.some(b => b.text.trim())) prompt.taken = true;
+      out.message = { content: (results ? [{ type: 'tool_result' }] : []).concat(results ? [] : blocks) };
+    }
+  } else if (out.type === 'assistant' && m) {
+    const message = {};
+    const model = clip(m.model, 100);
+    const id = clip(m.id, 128);
+    if (model) message.model = model;
+    if (id) message.id = id;
+    if (isObj(m.usage)) {
+      message.usage = {};
+      for (const k of ['input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens']) {
+        if (typeof m.usage[k] === 'number' && Number.isFinite(m.usage[k])) message.usage[k] = m.usage[k];
+      }
+    }
+    if (Array.isArray(m.content)) {
+      message.content = m.content.filter(b => isObj(b) && b.type === 'tool_use' && SUB_SPAWN.has(b.name) && typeof b.id === 'string' && b.id.length <= 256)
+        .map(b => ({ type: 'tool_use', name: b.name, id: b.id }));
+    }
+    out.message = message;
+    const effort = clip(e.effort, 40);
+    if (effort) out.effort = effort;
+    for (const k of ['requestId', 'uuid']) { const v = clip(e[k], 128); if (v) out[k] = v; }
+  }
+  return JSON.stringify(out);
+}
+// Slim whole lines from buf until about "cap" characters are produced; the rest
+// is left for the next request. "consumed" is the raw bytes handled.
+function slimLines(buf, cap, prompt) {
+  let out = '';
+  let pos = 0;
+  while (pos < buf.length) {
+    const nl = buf.indexOf(10, pos);
+    const taken = prompt.taken;
+    const slim = slimLine(buf.toString('utf8', pos, nl), prompt);
+    // A line left for the next request must not have used up the prompt.
+    if (slim && out && out.length + slim.length + 1 > cap) { prompt.taken = taken; break; }
+    if (slim) out += slim + '\n';
+    pos = nl + 1;
+  }
+  return { text: out, consumed: pos };
+}
+function metaOf(dir, id, heldMtime) {
+  let mtimeMs = 0;
+  let text;
+  try {
+    const file = path.join(dir, 'agent-' + id + '.meta.json');
+    const st = fs.statSync(file);
+    mtimeMs = st.mtimeMs;
+    if (mtimeMs !== heldMtime) text = st.size <= SUB_META ? fs.readFileSync(file, 'utf8') : '';
+  } catch { if (heldMtime !== 0) text = ''; }
+  return { metaMtimeMs: mtimeMs, ...(text === undefined ? {} : { meta: text }) };
+}
+function listSubagents() {
+  const base = { op: 'subagents', status: 'ready', total: 0, more: false, agents: [], now: Date.now() };
+  const located = subagentsDir();
+  let names;
+  try { names = located ? fs.readdirSync(located.dir) : []; } catch { names = []; }
+  if (!located || !names.length) return { ...base, found: !!located, project: located ? located.project : undefined };
+  const present = [];
+  let seen = 0;
+  for (const name of names) {
+    const match = SUB_FILE.exec(name);
+    if (!match) continue;
+    if (++seen > SUB_SCAN) break;
+    try {
+      const st = fs.statSync(path.join(located.dir, name));
+      if (st.isFile()) present.push({ id: match[1], size: st.size, mtimeMs: st.mtimeMs, birthMs: st.birthtimeMs });
+    } catch {}
+  }
+  present.sort((a, b) => b.mtimeMs - a.mtimeMs || (a.id < b.id ? -1 : 1));
+  const held = new Map(Object.entries(request.known && typeof request.known === 'object' ? request.known : {}));
+  let rawBudget = SUB_READ;
+  let outBudget = SUB_OUT;
+  let more = false;
+  const agents = [];
+  for (const f of present.slice(0, SUB_AGENTS)) {
+    const mine = held.get(f.id) || {};
+    let offset = count(mine.offset);
+    const reset = offset > f.size;
+    if (reset) offset = 0;
+    let text = '';
+    if (offset < f.size && rawBudget >= 4096 && outBudget >= 8192) {
+      let fd;
+      try {
+        fd = fs.openSync(path.join(located.dir, 'agent-' + f.id + '.jsonl'), 'r');
+        const read = readLines(fd, f.size, offset, Math.min(SUB_WINDOW, rawBudget));
+        const slim = read.buf.length ? slimLines(read.buf, outBudget, { taken: !reset && mine.prompt === true }) : { text: '', consumed: 0 };
+        const next = read.buf.length ? offset + slim.consumed : read.next;
+        text = slim.text;
+        rawBudget -= next - offset;
+        outBudget -= text.length;
+        // A file whose only unread bytes are a partial last line is not "more".
+        if (next !== offset && (slim.consumed < read.buf.length || !read.eof)) more = true;
+        offset = next;
+      } catch {} finally { if (fd !== undefined) fs.closeSync(fd); }
+    } else if (offset < f.size) more = true;
+    agents.push({ ...f, offset, ...(reset ? { reset: true } : {}), text, ...metaOf(located.dir, f.id, mine.metaMtimeMs === undefined ? -1 : mine.metaMtimeMs) });
+  }
+  return { ...base, found: true, project: located.project, agents, total: present.length, more };
+}
+function readTranscript() {
+  const base = { op: 'subagent-transcript', status: 'ready', text: '', offset: 0, size: 0, more: false };
+  if (typeof request.agentId !== 'string' || !SUB_ID.test(request.agentId)) throw new Error('bad-agent');
+  const located = subagentsDir();
+  if (!located) return { ...base, found: false };
+  const fd = (() => { try { return fs.openSync(path.join(located.dir, 'agent-' + request.agentId + '.jsonl'), 'r'); } catch { return undefined; } })();
+  if (fd === undefined) return { ...base, found: false, project: located.project };
+  try {
+    const size = fs.fstatSync(fd).size;
+    let offset = count(request.offset);
+    const reset = offset > size;
+    if (reset) offset = 0;
+    const read = readLines(fd, size, offset, SUB_VIEW);
+    return { ...base, found: true, project: located.project, text: read.buf.toString('utf8'), offset: read.next, size,
+      ...(reset ? { reset: true } : {}), more: !read.eof && read.next > offset };
+  } finally { fs.closeSync(fd); }
+}
+function handleSubagents(next) {
+  if (next.cli !== 'claude') throw new Error('bad-cli');
+  setRequest(next);
+  return next.op === 'subagents' ? listSubagents() : readTranscript();
+}
 function handle(next) {
   try {
+    if (next.op === 'subagents' || next.op === 'subagent-transcript') return handleSubagents(next);
     setRequest(next);
     const source = request.source || resolveSource();
     return !source ? { status: 'pending' } : request.cursor ? read(source) : { status: 'ready', source };

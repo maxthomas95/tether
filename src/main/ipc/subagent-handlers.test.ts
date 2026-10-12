@@ -35,6 +35,9 @@ const trackerMock = vi.hoisted(() => ({
 }));
 vi.mock('../claude/subagent-tracker', () => ({ subagentTracker: trackerMock }));
 
+const openRemoteMock = vi.hoisted(() => vi.fn());
+vi.mock('../claude/remote-subagents', () => ({ openRemoteSubagentSource: openRemoteMock }));
+
 import { IPC } from '../../shared/constants';
 import { registerSubagentHandlers } from './subagent-handlers';
 
@@ -44,6 +47,7 @@ function resolver() {
   return trackerMock.configure.mock.calls[0][0] as {
     resolve: (id: string) => unknown;
     isEnabled: () => boolean;
+    openRemote: (target: unknown, sessionId: string) => unknown;
   };
 }
 
@@ -91,6 +95,25 @@ describe('subagent-handlers', () => {
     expect(resolver().resolve('s1')).toMatchObject({ local: false, alive: false, nativeSessionId: 'tool-id' });
     envRepoMock.getEnvironment.mockReturnValue({ type: 'local' });
     expect(resolver().resolve('s1')).toMatchObject({ local: true });
+  });
+
+  it.each(['ssh', 'coder'])('hands a %s session its remote reader target, and never a local session', type => {
+    const remoteProbe = { environmentId: 'env-1', workspace: type === 'coder' ? 'owner/ws' : '', workingDir: '/repo' };
+    envRepoMock.getEnvironment.mockReturnValue({ type });
+    sessionManagerMock.getSession.mockReturnValue({
+      cliTool: 'claude', workingDir: '/repo', environmentId: 'env-1', claudeSessionId: 'claude-id', toolSessionId: null, state: 'running', remoteProbe,
+    });
+    expect(resolver().resolve('s1')).toMatchObject({ local: false, remote: remoteProbe });
+    envRepoMock.getEnvironment.mockReturnValue({ type: 'local' });
+    expect((resolver().resolve('s1') as { remote?: unknown }).remote).toBeUndefined();
+  });
+
+  it('opens remote sources through the shared resident-reader module', () => {
+    const source = {};
+    openRemoteMock.mockReturnValue(source);
+    const target = { environmentId: 'env-1', workspace: '', workingDir: '/repo' };
+    expect(resolver().openRemote(target, 'claude-id')).toBe(source);
+    expect(openRemoteMock).toHaveBeenCalledWith({ target, sessionId: 'claude-id' });
   });
 
   it('returns null for an unknown session', () => {

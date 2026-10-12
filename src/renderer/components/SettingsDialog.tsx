@@ -754,7 +754,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
                   Show subagents in sidebar
                 </label>
                 <p className="form-hint">
-                  Lists the subagents a local Claude Code session has started under that session, with their status and token use. Click one to read its transcript.
+                  Lists the subagents a Claude Code session (local, SSH or Coder) has started under that session, with their status and token use. Click one to read its transcript.
                 </p>
               </div>
             </>

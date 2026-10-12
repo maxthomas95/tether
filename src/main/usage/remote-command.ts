@@ -1,16 +1,28 @@
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { quotePosixShellArg as q } from '../../shared/shell-quote';
 import { getEnvironment } from '../db/environment-repo';
 import { resolveSshConfig } from '../ssh/resolve-ssh-config';
 import { connectSshControl } from '../cli-config/remote/ssh-control-connection';
 import { REMOTE_USAGE_PROBE } from './remote-probe';
-import type { RemoteUsageReply, RemoteUsageRequest } from './remote-protocol';
+import {
+  validateSubagentReply,
+  type RemoteSubagentReply,
+  type RemoteSubagentRequest,
+  type RemoteUsageReply,
+  type RemoteUsageRequest,
+} from './remote-protocol';
 
 const MAX_BYTES = 4 * 1024 * 1024;
+/** One reply line from the resident reader; subagent replies carry raw transcript bytes. */
+const MAX_LINE_BYTES = 16 * 1024 * 1024;
 const TIMEOUT_MS = 30_000;
 
 export interface RemoteUsageConnection {
   poll(request: RemoteUsageRequest): Promise<RemoteUsageReply>;
+  poll(request: RemoteSubagentRequest): Promise<RemoteSubagentReply>;
+  /** Set once the resident reader has exited; a dead connection never recovers. */
+  isDead?(): boolean;
   close(): void;
 }
 
@@ -59,8 +71,7 @@ export function parseProbeReply(stdout: string): RemoteUsageReply {
 export function coderUsageConnection(binary: string, workspace: string): RemoteUsageConnection {
   const children = new Set<ReturnType<typeof spawn>>();
   let closed = false;
-  return {
-    poll: request => new Promise((resolve, reject) => {
+  const poll = (request: RemoteUsageRequest) => new Promise<RemoteUsageReply>((resolve, reject) => {
       if (closed) { reject(new Error('Usage connection closed')); return; }
       const child = spawn(binary, ['ssh', '--disable-autostart', workspace, '--', buildProbeCommand(request)], {
         windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
@@ -93,7 +104,9 @@ export function coderUsageConnection(binary: string, workspace: string): RemoteU
       child.on('close', code => finish(code === 0 ? undefined : new Error('Coder usage command failed')));
       child.stdin.on('error', () => { /* exit/error handles a closed pipe */ });
       child.stdin.end();
-    }),
+    });
+  return {
+    poll: poll as RemoteUsageConnection['poll'],
     close: () => {
       closed = true;
       for (const child of children) child.kill();
@@ -102,24 +115,34 @@ export function coderUsageConnection(binary: string, workspace: string): RemoteU
   };
 }
 
-export async function connectRemoteUsage(environmentId: string, workspace: string, signal?: AbortSignal): Promise<RemoteUsageConnection> {
-  const env = getEnvironment(environmentId);
-  if (!env || (env.type !== 'ssh' && env.type !== 'coder')) throw new Error('Remote environment unavailable');
-  const config = JSON.parse(env.config) as Record<string, unknown>;
-  if (env.type === 'coder') {
-    return coderUsageConnection(typeof config.binaryPath === 'string' && config.binaryPath.trim() ? config.binaryPath.trim() : 'coder', workspace);
-  }
-  const ssh = await resolveSshConfig(config);
-  const connection = await connectSshControl(ssh, signal);
-  const probe = await connection.spawn(buildProbeCommand(undefined, ssh.useSudo, !!ssh.password), { maxLineBytes: MAX_BYTES });
-  // sudo -S takes exactly one line for the password; everything after it is the
-  // probe's own request stream, so this is written once per connection.
-  if (ssh.useSudo && ssh.password) probe.write(`${ssh.password}\n`);
+type ProbeReply = RemoteUsageReply | RemoteSubagentReply;
 
-  const pending = new Map<number, { resolve: (reply: RemoteUsageReply) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+/** A reply is a subagent reply when it names an `op`; usage replies never do. */
+function parseResidentLine(line: string): ProbeReply {
+  const parsed = JSON.parse(line.slice(PROBE_MARKER.length)) as { op?: unknown };
+  return parsed.op === undefined ? parseProbeLine(line) : validateSubagentReply(parsed);
+}
+
+/** What a resident reader looks like to the request multiplexer, whatever carries it. */
+interface ResidentProcess {
+  write(data: string): void;
+  onLine(cb: (line: string) => void): void;
+  onExit(cb: () => void): void;
+  kill(): void;
+}
+
+/**
+ * Multiplexes requests over one resident reader: one newline-delimited base64
+ * request per line out, one marker-prefixed JSON line back, matched by id.
+ * Nothing here starts a process, so a poll costs a line of stdin and never a
+ * login (or a `sudo`).
+ */
+function residentConnection(probe: ResidentProcess, onClose: () => void): RemoteUsageConnection {
+  type Waiter = { resolve: (reply: ProbeReply) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
+  const pending = new Map<number, Waiter>();
   let nextId = 0;
   let dead = false;
-  const settle = (id: number, apply: (entry: { resolve: (reply: RemoteUsageReply) => void; reject: (error: Error) => void }) => void) => {
+  const settle = (id: number, apply: (entry: Waiter) => void) => {
     const entry = pending.get(id);
     if (!entry) return;
     clearTimeout(entry.timer);
@@ -133,9 +156,9 @@ export async function connectRemoteUsage(environmentId: string, workspace: strin
 
   probe.onLine(line => {
     if (!line.startsWith(PROBE_MARKER)) return;
-    let reply: RemoteUsageReply | undefined;
+    let reply: ProbeReply | undefined;
     let error: Error | undefined;
-    try { reply = parseProbeLine(line); } catch (err) { error = err instanceof Error ? err : new Error('Invalid remote usage reply'); }
+    try { reply = parseResidentLine(line); } catch (err) { error = err instanceof Error ? err : new Error('Invalid remote usage reply'); }
     // An unroutable reply is left to the caller's timeout rather than guessed at.
     const id = reply?.id ?? tryReadId(line);
     if (id === undefined) return;
@@ -143,24 +166,97 @@ export async function connectRemoteUsage(environmentId: string, workspace: strin
   });
   probe.onExit(fail);
 
+  const poll = (request: RemoteUsageRequest | RemoteSubagentRequest) => new Promise<ProbeReply>((resolve, reject) => {
+    if (dead) { reject(new Error('Remote usage reader unavailable')); return; }
+    const id = nextId++;
+    const timer = setTimeout(() => settle(id, e => e.reject(new Error('Remote usage command timed out'))), TIMEOUT_MS);
+    pending.set(id, { resolve, reject, timer });
+    try {
+      probe.write(`${Buffer.from(JSON.stringify({ ...request, id })).toString('base64')}\n`);
+    } catch {
+      settle(id, e => e.reject(new Error('Remote usage reader unavailable')));
+    }
+  });
+
   return {
-    poll: request => new Promise<RemoteUsageReply>((resolve, reject) => {
-      if (dead) { reject(new Error('Remote usage reader unavailable')); return; }
-      const id = nextId++;
-      const timer = setTimeout(() => settle(id, e => e.reject(new Error('Remote usage command timed out'))), TIMEOUT_MS);
-      pending.set(id, { resolve, reject, timer });
-      try {
-        probe.write(`${Buffer.from(JSON.stringify({ ...request, id })).toString('base64')}\n`);
-      } catch {
-        settle(id, e => e.reject(new Error('Remote usage reader unavailable')));
-      }
-    }),
+    poll: poll as RemoteUsageConnection['poll'],
+    isDead: () => dead,
     close: () => {
       fail();
       probe.kill();
-      connection.end();
+      onClose();
     },
   };
+}
+
+/**
+ * One long-lived `coder ssh` carrying the resident reader. Coder owns the
+ * authenticated tunnel; this is still a separate, non-PTY command, started
+ * once and answering every request over its stdin/stdout.
+ */
+function coderResidentProcess(binary: string, workspace: string): ResidentProcess {
+  const child = spawn(binary, ['ssh', '--disable-autostart', workspace, '--', buildProbeCommand()], {
+    windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const lineCbs: Array<(line: string) => void> = [];
+  const exitCbs: Array<() => void> = [];
+  const decoder = new StringDecoder('utf8');
+  let buffered = '';
+  let done = false;
+  const exit = () => {
+    if (done) return;
+    done = true;
+    for (const cb of exitCbs) { try { cb(); } catch { /* observers never throw upward */ } }
+  };
+  child.stdout.on('data', (data: Buffer) => {
+    buffered += decoder.write(data);
+    let cut: number;
+    while ((cut = buffered.indexOf('\n')) >= 0) {
+      const line = buffered.slice(0, cut);
+      buffered = buffered.slice(cut + 1);
+      for (const cb of lineCbs) { try { cb(line); } catch { /* one bad reply never kills the stream */ } }
+    }
+    if (buffered.length > MAX_LINE_BYTES) { buffered = ''; child.kill(); exit(); }
+  });
+  // Never retain or log remote stderr; drain it so the process cannot stall.
+  child.stderr.on('data', () => { /* discarded by design */ });
+  child.on('error', exit);
+  child.on('close', exit);
+  child.stdin.on('error', () => { /* exit handles a closed pipe */ });
+  return {
+    write: data => { try { child.stdin.write(data); } catch { exit(); } },
+    onLine: cb => { lineCbs.push(cb); },
+    onExit: cb => { if (done) cb(); else exitCbs.push(cb); },
+    kill: () => { try { child.kill(); } finally { exit(); } },
+  };
+}
+
+export interface ConnectOptions {
+  /**
+   * Coder only. Keep one reader process for the whole connection instead of one
+   * `coder ssh` per poll. SSH is always resident. Usage keeps the per-poll form
+   * it has always had; subagent polling is frequent enough to need this one.
+   */
+  resident?: boolean;
+}
+
+export async function connectRemoteUsage(environmentId: string, workspace: string, signal?: AbortSignal, options: ConnectOptions = {}): Promise<RemoteUsageConnection> {
+  const env = getEnvironment(environmentId);
+  if (!env || (env.type !== 'ssh' && env.type !== 'coder')) throw new Error('Remote environment unavailable');
+  const config = JSON.parse(env.config) as Record<string, unknown>;
+  if (env.type === 'coder') {
+    const binary = typeof config.binaryPath === 'string' && config.binaryPath.trim() ? config.binaryPath.trim() : 'coder';
+    return options.resident
+      ? residentConnection(coderResidentProcess(binary, workspace), () => {})
+      : coderUsageConnection(binary, workspace);
+  }
+  const ssh = await resolveSshConfig(config);
+  const connection = await connectSshControl(ssh, signal);
+  const probe = await connection.spawn(buildProbeCommand(undefined, ssh.useSudo, !!ssh.password), { maxLineBytes: MAX_LINE_BYTES });
+  // sudo -S takes exactly one line for the password; everything after it is the
+  // probe's own request stream, so this is written once per connection.
+  if (ssh.useSudo && ssh.password) probe.write(`${ssh.password}\n`);
+  return residentConnection(probe, () => connection.end());
 }
 
 /** Recover the id from a reply the validator rejected, so its caller fails fast. */

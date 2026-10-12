@@ -190,6 +190,7 @@ src/
     claude/transcripts.ts             # Claude Code transcript reader
     claude/subagents.ts               # Claude subagent files -> child rows (parse + incremental read)
     claude/subagent-tracker.ts        # Per-session subagent refresh: hook events + stat poll, push to renderer
+    claude/remote-subagents.ts        # SSH/Coder subagent source: offsets + pure parsers over the resident remote reader
     codex/
       transcripts.ts                  # Codex transcript reader
       session-watcher.ts              # Codex session id capture at spawn
@@ -208,6 +209,8 @@ src/
       vault-types.ts                  # Vault types
     usage/
       usage-service.ts                # Aggregate per-session and global usage
+      remote-probe.ts                 # Resident remote reader program (usage + subagent requests)
+      remote-probe-channels.ts        # One shared resident reader per SSH host/Coder workspace, with backoff
       jsonl-parser.ts                 # Parse Claude JSONL transcripts
       codex-jsonl-parser.ts           # Parse Codex JSONL transcripts
       cli-tool-aggregator.ts          # Per-CLI-tool usage attribution

@@ -123,7 +123,7 @@ Pick the font used in the sidebar, dialogs, and menus:
 
 ### Show subagents in sidebar
 
-On by default. Lists the subagents a local Claude Code session has started under that session, with their status, model and token use; click one to read its transcript. Turn it off to hide the rows and stop Tether reading subagent files. Applies when you save. See [Subagents](sessions.md#subagents).
+On by default. Lists the subagents a Claude Code session (local, SSH or Coder) has started under that session, with their status, model and token use; click one to read its transcript. Turn it off to hide the rows and stop Tether reading subagent files, on this machine and on remote hosts. Applies when you save. See [Subagents](sessions.md#subagents).
 
 ### GIF panel
 

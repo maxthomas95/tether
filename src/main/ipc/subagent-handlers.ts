@@ -7,6 +7,7 @@ import { statusDetector } from '../status/status-detector';
 import { getEnvironment } from '../db/environment-repo';
 import { getDb } from '../db/database';
 import { subagentTracker } from '../claude/subagent-tracker';
+import { openRemoteSubagentSource } from '../claude/remote-subagents';
 import type { HandlerContext } from './helpers';
 
 /** Sidebar subagent rows default on; only the literal 'false' turns them off. */
@@ -17,6 +18,7 @@ export function registerSubagentHandlers(ctx: HandlerContext): void {
 
   subagentTracker.configure({
     isEnabled: () => getDb().config[SHOW_SUBAGENTS_CONFIG_KEY] !== 'false',
+    openRemote: (target, sessionId) => openRemoteSubagentSource({ target, sessionId }),
     resolve: sessionId => {
       const session = sessionManager.getSession(sessionId);
       if (!session) return null;
@@ -26,6 +28,7 @@ export function registerSubagentHandlers(ctx: HandlerContext): void {
         workingDir: session.workingDir,
         nativeSessionId: session.claudeSessionId ?? session.toolSessionId,
         local: !session.environmentId || env?.type === 'local',
+        remote: env?.type === 'ssh' || env?.type === 'coder' ? session.remoteProbe : undefined,
         alive: session.state !== 'stopped' && session.state !== 'dead',
         hookDriven: statusDetector.isHookDriven(sessionId),
         activeAgentIds: statusDetector.getActiveSubagentIds(sessionId),
