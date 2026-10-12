@@ -121,6 +121,10 @@ Pick the font used in the sidebar, dialogs, and menus:
 
 **Comfortable** provides a wider initial sidebar and roomier pane headers. **Compact** reduces sidebar spacing and header height. Density and UI font changes apply when you save; terminal text keeps its independent font size. You can still resize the sidebar manually.
 
+### Show subagents in sidebar
+
+On by default. Lists the subagents a local Claude Code session has started under that session, with their status, model and token use; click one to read its transcript. Turn it off to hide the rows and stop Tether reading subagent files. Applies when you save. See [Subagents](sessions.md#subagents).
+
 ### GIF panel
 
 Choose **View → GIF Panel** to show an optional animated-image viewer above the sidebar footers, then **Add GIF folder** to select local folders. This is Tether's native version of GIF Panel for VS Code; installing the VS Code extension is not required.

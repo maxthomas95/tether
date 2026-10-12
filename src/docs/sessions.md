@@ -182,6 +182,24 @@ Sessions are grouped by environment in the sidebar (Local, then each SSH host, t
 
 For **local** repo groups, the header also shows the current git branch and, if there are uncommitted changes, a dot with the count (e.g. `main ●2`). This refreshes when the window regains focus and periodically in the background. Not shown for SSH or Coder groups.
 
+## Subagents
+
+When a **local Claude Code** session starts subagents, a **subagents** line appears under it in the sidebar. Click the line (or press **Enter** or **Space** on it) to open or close the list. Each row is one subagent, indented under the subagent that started it:
+
+`↳ code-reviewer · Check the diff` on the first line, then `sonnet-5-5/medium · running 2m · 12.3k tok` below it.
+
+- **Status dot** — green while the subagent is running, gray once it has finished.
+- **Model and effort** — the model that actually answered, with the reasoning effort when Claude records one. If the subagent has not answered yet, the model the parent requested is shown instead. Nothing is shown when neither is known.
+- **Timing** — `running 2m` counts up from the start; `done 41s` is how long it worked.
+- **Tokens** — input, output and newly cached tokens the subagent used. Cache reads are left out of the total because they repeat every turn; hover a row for the full breakdown.
+- At most 20 rows show. Finished subagents drop off first, so a running one is never hidden. **+N more** shows the rest, and Tether keeps the 50 most recent subagents of a session.
+
+Click a row to read what the subagent did. The viewer is read-only, because subagents have no terminal of their own: it shows the task it was given, a compact list of its messages and tool calls (tool output is not shown), and its final answer. It refreshes while the subagent runs. **Escape** closes it.
+
+Tether reads the files Claude Code writes for each subagent; it does not look at the terminal. A subagent counts as running when [CLI hooks](settings.md#cli-hooks) report that it has started and not stopped. With hooks off, or before the first hook event arrives, it counts as running while its transcript has changed in the last 30 seconds, so a subagent that thinks quietly for longer can show as done. Tether checks for new subagents every few seconds while one is running or the list is open; with hooks off it also checks about every ten seconds.
+
+Subagent rows are not shown for SSH or Coder sessions, or for other CLIs. Turn them off in [Settings → Appearance](settings.md#show-subagents-in-sidebar).
+
 ## Finding a Session
 
 Press **Ctrl+P** (or **Session → Find Session…**) to open the quick switcher — a VS Code-style finder for jumping straight to any session without scrolling the sidebar. Start typing to fuzzy-match across the session label, working directory, environment name, and CLI tool. Matching is forgiving: the characters you type just have to appear in order, so `apsv` finds *api-server*. Results rank label hits above directory hits, contiguous matches above scattered ones, and start-of-word matches above mid-word ones.

@@ -147,7 +147,7 @@ src/
       handlers.ts                     # IPC handler registry (wires per-domain modules)
       helpers.ts                      # Shared handler utilities
       *-handlers.ts                   # Per-domain modules: session, env, config, profile, vault,
-                                      #   usage, git, ssh, coder, keybindings, notifications, dialog, system
+                                      #   usage, git, ssh, coder, keybindings, notifications, dialog, system, subagent
     session/
       session-manager.ts              # Session lifecycle + transport factory
       detect-new-session.ts           # New-session id detection for transcript attribution
@@ -188,6 +188,8 @@ src/
       host-verifier.ts                # Host key verification policy
       fingerprint.ts                  # SSH key fingerprint formatting
     claude/transcripts.ts             # Claude Code transcript reader
+    claude/subagents.ts               # Claude subagent files -> child rows (parse + incremental read)
+    claude/subagent-tracker.ts        # Per-session subagent refresh: hook events + stat poll, push to renderer
     codex/
       transcripts.ts                  # Codex transcript reader
       session-watcher.ts              # Codex session id capture at spawn
@@ -235,6 +237,7 @@ src/
     components/
       AboutDialog.tsx
       CliToolBadge.tsx
+      ChildAgentViewer.tsx            # Read-only subagent transcript dialog
       ConfirmDialog.tsx               # Tether-styled confirm replacement
       DropZoneOverlay.tsx
       EnvVarEditor.tsx
@@ -263,6 +266,7 @@ src/
         QuotaFooter.tsx               # Subscription quota status
         RepoGroup.tsx                 # Groups sessions by working directory
         ResumeChatDialog.tsx          # Pick a Claude/Codex transcript to resume
+        ChildAgentRows.tsx            # Collapsible subagent rows under a Claude session
         SessionItem.tsx               # Session row with context menu + inline rename
         SidebarResizeHandle.tsx
         VaultStatusPill.tsx           # Vault auth/expiry indicator
@@ -288,6 +292,7 @@ src/
     assets/logo.png
   shared/
     cli-tools.ts                      # CLI tool registry (Claude/Codex/Copilot/OpenCode/Custom)
+    child-agents.ts                   # Generic child-agent model (subagent rows) shared by main/renderer
     constants.ts                      # IPC channel name constants
     keybindings.ts                    # Keybinding actions, chords, defaults
     layout-types.ts                   # Pane split layout types

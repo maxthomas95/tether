@@ -153,6 +153,17 @@ const api: TetherAPI = {
     list: (workingDir: string, cliTool?: CliToolId): Promise<TranscriptInfo[]> => ipcRenderer.invoke(IPC.TRANSCRIPTS_LIST, workingDir, cliTool),
   },
 
+  subagents: {
+    list: sessionId => ipcRenderer.invoke(IPC.SUBAGENTS_LIST, sessionId),
+    transcript: (sessionId, agentId) => ipcRenderer.invoke(IPC.SUBAGENTS_TRANSCRIPT, sessionId, agentId),
+    setExpanded: (sessionId, expanded) => { ipcRenderer.send(IPC.SUBAGENTS_SET_EXPANDED, sessionId, expanded); },
+    onUpdate(cb) {
+      const h = (_e: Electron.IpcRendererEvent, sessionId: string, list: import('../shared/child-agents').ChildAgentList) => cb(sessionId, list);
+      ipcRenderer.on(IPC.SUBAGENTS_UPDATED, h);
+      return () => ipcRenderer.removeListener(IPC.SUBAGENTS_UPDATED, h);
+    },
+  },
+
   gitProvider: {
     list: (): Promise<GitProviderInfo[]> => ipcRenderer.invoke(IPC.GIT_PROVIDER_LIST),
     create: (opts: CreateGitProviderOptions): Promise<GitProviderInfo> => ipcRenderer.invoke(IPC.GIT_PROVIDER_CREATE, opts),

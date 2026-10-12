@@ -451,6 +451,8 @@ export interface SessionLifecycleObserver {
   onStateChanged?(session: Session): void;
   /** Fired after the status detector coalesces a terminal bell event. */
   onBell?(session: Session): void;
+  /** Fired when a Claude subagent starts or stops, as reported by hooks. */
+  onSubagentEvent?(session: Session): void;
   onRemoved?(sessionId: string): void;
 }
 
@@ -631,6 +633,7 @@ export class SessionManager {
       if (agentId) {
         if (event.type === 'subagent_start') statusDetector.markSubagentStarted(session.id, agentId);
         else statusDetector.markSubagentStopped(session.id, agentId);
+        this.notifyLifecycle(o => o.onSubagentEvent?.(session));
       }
       return true;
     }
@@ -640,6 +643,7 @@ export class SessionManager {
     switch (event.type) {
       case 'turn_complete':
         statusDetector.markSubagentStopped(session.id, agentId);
+        this.notifyLifecycle(o => o.onSubagentEvent?.(session));
         return true;
       case 'idle_prompt':
         return true;

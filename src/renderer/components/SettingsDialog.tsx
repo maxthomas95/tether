@@ -169,6 +169,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
   const [restoreOnLaunch, setRestoreOnLaunch] = useState(true);
   const [resumePreviousChats, setResumePreviousChats] = useState(true);
   const [showResumeBadge, setShowResumeBadge] = useState(false);
+  const [showSubagents, setShowSubagents] = useState(true);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
   const [maxPanes, setMaxPanes] = useState(4);
@@ -289,7 +290,8 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       window.electronAPI.config.get?.('codexLifecycleHooksEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('updateChannel')?.catch(() => null),
       window.electronAPI.config.get('uiDensity').catch(() => null),
-    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, codexQuotaWarning, usageStrip, globalUsage, cliBreakdown, dailyBudget, weeklyBudget, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, codexLifecycleHooks, updateCh, densityValue]) => {
+      window.electronAPI.config.get?.('showSubagentsInSidebar')?.catch(() => null),
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, codexQuotaWarning, usageStrip, globalUsage, cliBreakdown, dailyBudget, weeklyBudget, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, codexLifecycleHooks, updateCh, densityValue, subagentsSetting]) => {
       if (cancelled) return;
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
@@ -299,6 +301,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       setDefaultCustomCliBinary(typeof customCliBinarySetting === 'string' ? customCliBinarySetting.trim() : '');
       setResumePreviousChats(resumeChats !== 'false');
       setShowResumeBadge(badge === 'true');
+      setShowSubagents(subagentsSetting !== 'false');
       setEnableResumePicker(picker !== 'false');
       setEnablePaneSplitting(splitting === 'true');
       setMaxPanes(parseMaxPanes(maxPaneValue));
@@ -397,6 +400,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       await window.electronAPI.config.set?.('restoreOnLaunch', restoreOnLaunch ? 'true' : 'false');
       await window.electronAPI.config.set?.('resumePreviousChats', resumePreviousChats ? 'true' : 'false');
       await window.electronAPI.config.set?.('showResumeBadge', showResumeBadge ? 'true' : 'false');
+      await window.electronAPI.config.set?.('showSubagentsInSidebar', showSubagents ? 'true' : 'false');
       await window.electronAPI.config.set?.('enableResumePicker', enableResumePicker ? 'true' : 'false');
       await window.electronAPI.config.set?.('enablePaneSplitting', enablePaneSplitting ? 'true' : 'false');
       await window.electronAPI.config.set?.('maxPanes', String(maxPanes));
@@ -440,7 +444,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
     } finally {
       setSaving(false);
     }
-  }, [saving, loaded, currentTheme, uiDensity, envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, updateChannel, quotaEnabled, codexQuotaWarningPercent, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, dailyBudgetUsd, weeklyBudgetUsd, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, codexLifecycleHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsSettings, jobsDirty, jobsTesting, onClose]);
+  }, [saving, loaded, currentTheme, uiDensity, envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, showSubagents, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, updateChannel, quotaEnabled, codexQuotaWarningPercent, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, dailyBudgetUsd, weeklyBudgetUsd, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, codexLifecycleHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsSettings, jobsDirty, jobsTesting, onClose]);
 
   const handleJobsAction = async (action: 'save' | 'disable' | 'remove') => {
     if (jobsTesting || saving || (action === 'save' && !jobsSettings)) return;
@@ -616,7 +620,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
 
 
   const sectionTerms: Record<SettingsSection, string> = {
-    appearance: 'theme color dark light font interface density comfortable compact',
+    appearance: 'theme color dark light font interface density comfortable compact sidebar subagents',
     general: 'restore resume startup launch update folder logs',
     terminal: 'terminal cursor font size scrollback blink',
     sessions: 'profiles environment variables helm hooks splitting maximum panes advanced',
@@ -738,6 +742,20 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
                   <option value="compact">Compact</option>
                 </select>
                 <p className="form-hint">Adjusts sidebar spacing and pane headers. Terminal text keeps its own size.</p>
+              </div>
+
+              <div className="form-group">
+                <label className="form-radio-label">
+                  <input
+                    type="checkbox"
+                    checked={showSubagents}
+                    onChange={e => setShowSubagents(e.target.checked)}
+                  />
+                  Show subagents in sidebar
+                </label>
+                <p className="form-hint">
+                  Lists the subagents a local Claude Code session has started under that session, with their status and token use. Click one to read its transcript.
+                </p>
               </div>
             </>
           )}

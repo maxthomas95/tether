@@ -20,6 +20,7 @@ import { registerGifPanelHandlers } from './gif-panel-handlers';
 import { registerClipboardHandlers } from './clipboard-handlers';
 import { registerCliMaintenanceHandlers } from './cli-maintenance-handlers';
 import { registerWorkspaceRecipesHandlers } from './workspace-recipes-handlers';
+import { registerSubagentHandlers } from './subagent-handlers';
 
 /**
  * Wire up every IPC handler against the renderer window. The actual handler
@@ -55,4 +56,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerClipboardHandlers(ctx);
   registerCliMaintenanceHandlers(ctx);
   registerWorkspaceRecipesHandlers(ctx);
+  registerSubagentHandlers(ctx);
 }
