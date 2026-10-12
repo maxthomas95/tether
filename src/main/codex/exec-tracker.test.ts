@@ -7,6 +7,7 @@ vi.mock('electron', () => ({
   app: { getPath: () => os.tmpdir() },
 }));
 
+import { CoalescedRunner } from '../transcripts/child-tracker-support';
 import { CodexExecTracker, NO_ROLLOUT_NOTE, type ExecTrackedSession } from './exec-tracker';
 import type { ChildAgentList } from '../../shared/child-agents';
 import { THREAD, THREAD_2, at, jsonl, sampleRollout } from './exec-fixtures.test-helper';
@@ -267,14 +268,14 @@ describe('rollout detail for hook-reported runs', () => {
 });
 
 describe('viewer readers and polling bounds', () => {
-  const open = (): Map<string, unknown> => (tracker as unknown as { transcripts: Map<string, unknown> }).transcripts;
+  const open = (): { size: number; keys(): string[] } => (tracker as unknown as { transcripts: { size: number; keys(): string[] } }).transcripts;
 
   it('keeps one incremental reader per open run and drops it on release or untrack', async () => {
     tracker.ingest('s1', hook('session_start', 5));
     writeRollout();
     await tracker.getTranscript('s1', THREAD);
     await tracker.getTranscript('s1', THREAD);
-    expect([...open().keys()]).toEqual([`s1:${THREAD}`]);
+    expect(open().keys()).toEqual([`s1:${THREAD}`]);
     tracker.releaseTranscript('s1', THREAD);
     expect(open().size).toBe(0);
     await tracker.getTranscript('s1', THREAD);
@@ -321,7 +322,7 @@ describe('viewer readers and polling bounds', () => {
         now = sec(100);
     tracker.ingest('s1', hook('turn_start', 100));
     await tracker.list('s1');
-    const refresh = vi.spyOn(tracker as unknown as { refresh: () => Promise<void> }, 'refresh');
+    const refresh = vi.spyOn(CoalescedRunner.prototype, 'request');
     await vi.advanceTimersByTimeAsync(2600);
     expect(refresh).toHaveBeenCalled();
 

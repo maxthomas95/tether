@@ -54,11 +54,11 @@ export function registerSubagentHandlers(ctx: HandlerContext): void {
     resolve: sessionId => {
       const session = sessionManager.getSession(sessionId);
       if (!session) return null;
-      const env = session.environmentId ? getEnvironment(session.environmentId) : undefined;
+      const { cliTool, environmentId, state } = session;
       return {
-        cliTool: session.cliTool,
-        local: !session.environmentId || env?.type === 'local',
-        alive: session.state !== 'stopped' && session.state !== 'dead',
+        cliTool,
+        local: !environmentId || getEnvironment(environmentId)?.type === 'local',
+        alive: state !== 'stopped' && state !== 'dead',
       };
     },
   });

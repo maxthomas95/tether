@@ -11,6 +11,16 @@ import {
   type CodexRequestUsageCheckpoint,
   type CodexTokenUsageCounters,
 } from '../usage/codex-jsonl-parser';
+import { asRecord, oneLine, parseLine, str, validIso, type Json } from '../transcripts/json-lines';
+import {
+  HeadTailReader,
+  capDigestEntries,
+  createDigestState,
+  readCompleteLines,
+  visibleDigestEntries,
+  type DigestState,
+  type ToolEntry,
+} from '../transcripts/incremental-lines';
 
 /**
  * Reader for the rollout file Codex writes for each run:
@@ -31,12 +41,9 @@ export const CODEX_EXEC_AGENT_TYPE = 'codex exec';
 const THREAD_ID_RE = /^[A-Za-z0-9][A-Za-z0-9-]{7,127}$/;
 const ROLLOUT_FILE_RE = /^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-([A-Za-z0-9][A-Za-z0-9-]{7,127})\.jsonl$/;
 const LINE_TIMESTAMP_RE = /^\{"timestamp":"([^"]+)"/;
-const READ_CHUNK_BYTES = 1024 * 1024;
-const MAX_PENDING_LINE_BYTES = 16 * 1024 * 1024;
 /** `session_meta` carries the full base instructions, so the first line can be large. */
 const HEAD_BYTES_SMALL = 64 * 1024;
 const HEAD_BYTES = 256 * 1024;
-const MAX_VIEWER_ENTRIES = 400;
 const MAX_DAY_DIRS = 8;
 const DAY_MS = 86_400_000;
 
@@ -47,34 +54,6 @@ export const HOOK_STALE_MS = 15 * 60_000;
 
 export function isValidThreadId(id: unknown): id is string {
   return typeof id === 'string' && THREAD_ID_RE.test(id);
-}
-
-type Json = Record<string, unknown>;
-
-function asRecord(value: unknown): Json | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Json : null;
-}
-
-function parseLine(line: string): Json | null {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith('{')) return null;
-  try { return asRecord(JSON.parse(trimmed)); } catch { return null; }
-}
-
-function str(value: unknown, max: number): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, max) : undefined;
-}
-
-function validIso(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  return Number.isNaN(Date.parse(value)) ? null : value;
-}
-
-function oneLine(text: string, max: number): string {
-  const collapsed = text.replace(/\s+/g, ' ').trim();
-  return collapsed.length > max ? `${collapsed.slice(0, max - 1)}…` : collapsed;
 }
 
 function firstLine(text: string, max: number): string {
@@ -116,7 +95,7 @@ function isInjectedContext(text: string): boolean {
   return head.startsWith('<') || head.startsWith('# AGENTS.md');
 }
 
-function messageText(payload: Json, blockType: string): string {
+function messageText(payload: Record<string, unknown>, blockType: string): string {
   const content = payload.content;
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -131,7 +110,7 @@ function messageText(payload: Json, blockType: string): string {
  * The prompt of the run: the `user_message` event when present, otherwise the
  * first user-role response item that is not injected context.
  */
-function promptOf(entry: Json): string | null {
+function promptOf(entry: Record<string, unknown>): string | null {
   const payload = asRecord(entry.payload);
   if (!payload) return null;
   if (entry.type === 'event_msg' && payload.type === 'user_message' && typeof payload.message === 'string') {
@@ -360,28 +339,13 @@ export interface ParsedCodexExecTranscript {
   truncated: boolean;
 }
 
-type ToolEntry = Extract<ChildTranscriptEntry, { kind: 'tool' }>;
-
-/** Accumulates a rollout digest line by line, so a file can be read in pieces. */
-export interface CodexTranscriptState {
-  prompt: string | null;
+/** The shared digest state plus the run's completion message. */
+export interface CodexTranscriptState extends DigestState {
   finalMessage: string | null;
-  entries: ChildTranscriptEntry[];
-  toolEntries: Map<string, ToolEntry>;
-  dropped: boolean;
-  skippedMiddle: boolean;
 }
 
 export function createCodexTranscriptState(): CodexTranscriptState {
-  return { prompt: null, finalMessage: null, entries: [], toolEntries: new Map(), dropped: false, skippedMiddle: false };
-}
-
-function cloneTranscriptState(state: CodexTranscriptState): CodexTranscriptState {
-  const copies = new Map<ChildTranscriptEntry, ChildTranscriptEntry>();
-  const entries = state.entries.map(e => { const copy = { ...e }; copies.set(e, copy); return copy; });
-  const toolEntries = new Map<string, ToolEntry>();
-  for (const [id, tool] of state.toolEntries) toolEntries.set(id, (copies.get(tool) ?? { ...tool }) as ToolEntry);
-  return { ...state, entries, toolEntries };
+  return { ...createDigestState(), finalMessage: null };
 }
 
 /**
@@ -451,25 +415,13 @@ export function foldCodexTranscriptLines(state: CodexTranscriptState, text: stri
       default:
         break;
     }
-    if (state.entries.length > MAX_VIEWER_ENTRIES * 2) {
-      state.entries = state.entries.slice(-MAX_VIEWER_ENTRIES);
-      state.dropped = true;
-      // A late result can only matter for a call that is still listed.
-      const listed = new Set(state.entries);
-      for (const [id, tool] of state.toolEntries) if (!listed.has(tool)) state.toolEntries.delete(id);
-    }
+    capDigestEntries(state);
   }
 }
 
 /** Snapshot of `state` for the viewer; does not change it, so reading can continue. */
 export function finishCodexTranscript(state: CodexTranscriptState): ParsedCodexExecTranscript {
-  let entries = state.entries;
-  let truncated = state.dropped || state.skippedMiddle;
-  if (entries.length > MAX_VIEWER_ENTRIES) {
-    entries = entries.slice(-MAX_VIEWER_ENTRIES);
-    truncated = true;
-  }
-  entries = entries.slice();
+  const { entries, truncated } = visibleDigestEntries(state);
   // The closing message is the answer; showing it twice would only add noise.
   let result = state.finalMessage;
   const last = entries.at(-1);
@@ -576,65 +528,6 @@ export async function readRolloutHead(file: string): Promise<CodexRolloutMeta | 
 // Incremental readers
 // ---------------------------------------------------------------------------
 
-/** Mirrors the Claude subagent viewer: a long rollout is read as its head (the task) plus its tail. */
-const TRANSCRIPT_HEAD_BYTES = 256 * 1024;
-const TRANSCRIPT_TAIL_BYTES = 8 * 1024 * 1024;
-
-/**
- * Feed the complete lines found in bytes [from, size) of `file` to `onText`,
- * holding back a trailing partial line. Returns the offset after the last
- * complete line, where the next read should start. Throws on any I/O error,
- * so callers fold into a scratch copy and commit only on success.
- */
-async function readCompleteLines(file: string, from: number, size: number, onText: (text: string) => void): Promise<number> {
-  const handle = await fs.promises.open(file, 'r');
-  try {
-    let pos = from;
-    let carry: Buffer = Buffer.alloc(0);
-    while (pos + carry.length < size) {
-      const want = Math.min(READ_CHUNK_BYTES, size - pos - carry.length);
-      const buf = Buffer.allocUnsafe(want);
-      const { bytesRead } = await handle.read(buf, 0, want, pos + carry.length);
-      if (bytesRead === 0) break;
-      const data = carry.length ? Buffer.concat([carry, buf.subarray(0, bytesRead)]) : buf.subarray(0, bytesRead);
-      const newline = data.lastIndexOf(0x0a);
-      if (newline === -1) {
-        carry = Buffer.from(data);
-        if (carry.length > MAX_PENDING_LINE_BYTES) {
-          pos += carry.length;
-          carry = Buffer.alloc(0);
-        }
-        continue;
-      }
-      onText(data.subarray(0, newline + 1).toString('utf8'));
-      pos += newline + 1;
-      carry = Buffer.from(data.subarray(newline + 1));
-    }
-    return pos;
-  } finally {
-    await handle.close().catch(() => {});
-  }
-}
-
-/** Offset just after the first newline at or beyond `from`, or `size` if there is none. */
-async function nextLineStart(file: string, from: number, size: number): Promise<number> {
-  const handle = await fs.promises.open(file, 'r');
-  try {
-    const buf = Buffer.allocUnsafe(64 * 1024);
-    let pos = from;
-    while (pos < size) {
-      const { bytesRead } = await handle.read(buf, 0, Math.min(buf.length, size - pos), pos);
-      if (bytesRead === 0) break;
-      const newline = buf.subarray(0, bytesRead).indexOf(0x0a);
-      if (newline !== -1) return pos + newline + 1;
-      pos += bytesRead;
-    }
-    return size;
-  } finally {
-    await handle.close().catch(() => {});
-  }
-}
-
 /**
  * Tracks one rollout file for the row. Each refresh stats it and reads only
  * the bytes appended since the last one, folding into a copy that is committed
@@ -668,70 +561,11 @@ export class CodexRolloutReader {
 }
 
 /**
- * Incremental reader behind the viewer. A long rollout is read as its first
- * 256 KB (the task) plus its last 8 MB (the latest work); after that only
- * appended bytes are parsed, and nothing is read while size and mtime hold.
+ * Incremental reader behind the viewer: a long rollout is read as its head
+ * plus its tail, then only appended bytes (see `HeadTailReader`).
  */
-export class CodexTranscriptReader {
-  private file: string | null = null;
-  private state = createCodexTranscriptState();
-  private offset = 0;
-  private size = -1;
-  private mtimeMs = -1;
-  private started = false;
-  private inFlight: Promise<ParsedCodexExecTranscript | null> | null = null;
-
-  attach(file: string): void {
-    if (this.file !== file) {
-      this.file = file;
-      this.reset();
-    }
-  }
-
-  refresh(): Promise<ParsedCodexExecTranscript | null> {
-    // One read at a time: a second caller waits for the first and then sees no change.
-    const run = (this.inFlight ?? Promise.resolve(null)).then(() => this.load(), () => this.load());
-    this.inFlight = run;
-    void run.finally(() => { if (this.inFlight === run) this.inFlight = null; }).catch(() => {});
-    return run;
-  }
-
-  private reset(): void {
-    this.state = createCodexTranscriptState();
-    this.offset = 0;
-    this.size = -1;
-    this.mtimeMs = -1;
-    this.started = false;
-  }
-
-  private async load(): Promise<ParsedCodexExecTranscript | null> {
-    const file = this.file;
-    if (!file) return null;
-    let st: fs.Stats;
-    try { st = await fs.promises.stat(file); } catch { return null; }
-    if (st.size === this.size && st.mtimeMs === this.mtimeMs) return finishCodexTranscript(this.state);
-
-    const fresh = st.size < this.offset;
-    const work = fresh ? createCodexTranscriptState() : cloneTranscriptState(this.state);
-    let offset = fresh ? 0 : this.offset;
-    try {
-      if (!(fresh ? false : this.started) && st.size > TRANSCRIPT_HEAD_BYTES + TRANSCRIPT_TAIL_BYTES) {
-        const head = createCodexTranscriptState();
-        await readCompleteLines(file, 0, TRANSCRIPT_HEAD_BYTES, text => foldCodexTranscriptLines(head, text));
-        work.prompt = head.prompt;
-        work.skippedMiddle = true;
-        // The tail window starts mid-line most of the time; begin at the next whole line.
-        offset = await nextLineStart(file, st.size - TRANSCRIPT_TAIL_BYTES, st.size);
-      }
-      offset = await readCompleteLines(file, offset, st.size, text => foldCodexTranscriptLines(work, text));
-    } catch {
-      return finishCodexTranscript(this.state);
-    }
-    this.state = work;
-    this.offset = offset;
-    this.started = true;
-    this.size = st.size;
-    this.mtimeMs = st.mtimeMs;
-    return finishCodexTranscript(this.state);
+export class CodexTranscriptReader extends HeadTailReader<CodexTranscriptState, ParsedCodexExecTranscript> {
+  constructor() {
+    super({ create: createCodexTranscriptState, fold: foldCodexTranscriptLines, finish: finishCodexTranscript });
   }
 }

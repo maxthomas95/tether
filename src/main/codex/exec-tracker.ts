@@ -2,6 +2,13 @@ import type { ChildAgentInfo, ChildAgentList, ChildAgentTranscript } from '../..
 import { EMPTY_CHILD_AGENT_LIST } from '../../shared/child-agents';
 import type { CliToolId } from '../../shared/types';
 import {
+  ChangeBroadcaster,
+  CoalescedRunner,
+  Debounce,
+  ReaderPool,
+  SingleTimer,
+} from '../transcripts/child-tracker-support';
+import {
   CodexRolloutReader,
   CodexTranscriptReader,
   buildCodexExecTranscript,
@@ -55,8 +62,6 @@ export interface CodexExecHookEvent {
   payload?: Record<string, unknown>;
 }
 
-type Listener = (sessionId: string, list: ChildAgentList) => void;
-
 interface Child {
   threadId: string;
   firstSeenMs: number;
@@ -69,12 +74,10 @@ interface Child {
 interface Entry {
   children: Map<string, Child>;
   list: ChildAgentList;
-  signature: string;
   expanded: boolean;
-  timer: ReturnType<typeof setTimeout> | null;
-  debounce: ReturnType<typeof setTimeout> | null;
-  inFlight: Promise<void> | null;
-  rerun: boolean;
+  poll: SingleTimer;
+  debounce: Debounce;
+  refresh: CoalescedRunner;
 }
 
 function boundedString(value: unknown, max: number): string | undefined {
@@ -96,17 +99,16 @@ function boundedString(value: unknown, max: number): string | undefined {
 export class CodexExecTracker {
   private deps: CodexExecTrackerDeps | null = null;
   private readonly entries = new Map<string, Entry>();
-  private readonly listeners = new Set<Listener>();
+  private readonly updates = new ChangeBroadcaster<ChildAgentList>(EMPTY_CHILD_AGENT_LIST);
   /** One incremental viewer reader per open run; dropped when its viewer closes. */
-  private readonly transcripts = new Map<string, CodexTranscriptReader>();
+  private readonly transcripts = new ReaderPool(MAX_TRANSCRIPT_READERS, () => new CodexTranscriptReader());
 
   configure(deps: CodexExecTrackerDeps): void {
     this.deps = deps;
   }
 
-  onUpdate(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+  onUpdate(listener: (sessionId: string, list: ChildAgentList) => void): () => void {
+    return this.updates.subscribe(listener);
   }
 
   /** Refresh now and return the result. */
@@ -114,7 +116,7 @@ export class CodexExecTracker {
     const ref = this.deps?.resolve(sessionId);
     if (!ref || !this.isEligible(ref)) return EMPTY_CHILD_AGENT_LIST;
     const entry = this.entryFor(sessionId);
-    await this.refresh(sessionId, entry);
+    await entry.refresh.request();
     return entry.list;
   }
 
@@ -161,45 +163,40 @@ export class CodexExecTracker {
   /** The renderer went away or reloaded, so nothing it had open is open any more. */
   resetExpanded(): void {
     this.transcripts.clear();
-    for (const [sessionId, entry] of this.entries) {
+    for (const entry of this.entries.values()) {
       if (!entry.expanded) continue;
       entry.expanded = false;
-      void this.refresh(sessionId, entry);
+      void entry.refresh.request();
     }
   }
 
   releaseTranscript(sessionId: string, threadId: string): void {
-    this.transcripts.delete(`${sessionId}:${threadId}`);
+    this.transcripts.release(`${sessionId}:${threadId}`);
   }
 
   /** A state event touched this session; refresh soon. */
   notify(sessionId: string): void {
     const ref = this.deps?.resolve(sessionId);
     if (!ref || !this.isEligible(ref)) return;
-    const entry = this.entryFor(sessionId);
-    if (entry.debounce) return;
-    entry.debounce = setTimeout(() => {
-      entry.debounce = null;
-      void this.refresh(sessionId, entry);
-    }, DEBOUNCE_MS);
-    entry.debounce.unref?.();
+    const { debounce, refresh } = this.entryFor(sessionId);
+    debounce.trigger(() => { void refresh.request(); });
   }
 
   /** The sidebar list for this session was opened or closed. */
   setExpanded(sessionId: string, expanded: boolean): void {
-    if (!this.deps?.resolve(sessionId)) return;
-    const entry = this.entryFor(sessionId);
-    if (entry.expanded === expanded) return;
+    const entry = this.deps?.resolve(sessionId) ? this.entryFor(sessionId) : null;
+    if (!entry || entry.expanded === expanded) return;
     entry.expanded = expanded;
-    void this.refresh(sessionId, entry);
+    void entry.refresh.request();
   }
 
   untrack(sessionId: string): void {
-    for (const key of [...this.transcripts.keys()]) if (key.startsWith(`${sessionId}:`)) this.transcripts.delete(key);
+    this.transcripts.releasePrefix(`${sessionId}:`);
     const entry = this.entries.get(sessionId);
     if (!entry) return;
-    if (entry.timer) clearTimeout(entry.timer);
-    if (entry.debounce) clearTimeout(entry.debounce);
+    entry.poll.clear();
+    entry.debounce.cancel();
+    this.updates.forget(sessionId);
     this.entries.delete(sessionId);
   }
 
@@ -210,8 +207,8 @@ export class CodexExecTracker {
     if (!ref || !this.isEligible(ref)) return null;
     const entry = this.entryFor(sessionId);
     // Claimed before awaiting so a release that arrives meanwhile is not undone.
-    const reader = this.readerFor(`${sessionId}:${threadId}`);
-    await this.refresh(sessionId, entry);
+    const reader = this.transcripts.claim(`${sessionId}:${threadId}`);
+    await entry.refresh.request();
     const child = entry.children.get(threadId);
     const agent = entry.list.agents.find(a => a.id === threadId);
     if (!child || !agent) return null;
@@ -227,25 +224,10 @@ export class CodexExecTracker {
     return parsed ? buildCodexExecTranscript(agent, parsed) : buildCodexExecTranscript(agent, EMPTY_TRANSCRIPT, NO_ROLLOUT_NOTE);
   }
 
-  private readerFor(key: string): CodexTranscriptReader {
-    let reader = this.transcripts.get(key);
-    if (!reader) {
-      reader = new CodexTranscriptReader();
-      this.transcripts.set(key, reader);
-      // A viewer that never released (renderer crash) must not pin memory.
-      while (this.transcripts.size > MAX_TRANSCRIPT_READERS) {
-        const oldest = this.transcripts.keys().next().value;
-        if (oldest === undefined) break;
-        this.transcripts.delete(oldest);
-      }
-    }
-    return reader;
-  }
-
   dispose(): void {
     this.transcripts.clear();
     for (const id of [...this.entries.keys()]) this.untrack(id);
-    this.listeners.clear();
+    this.updates.clear();
   }
 
   private isEligible(ref: ExecTrackedSession): boolean {
@@ -255,12 +237,16 @@ export class CodexExecTracker {
   private entryFor(sessionId: string): Entry {
     let entry = this.entries.get(sessionId);
     if (!entry) {
-      entry = {
+      const created: Entry = {
         children: new Map(),
-        list: EMPTY_CHILD_AGENT_LIST, signature: JSON.stringify(EMPTY_CHILD_AGENT_LIST), expanded: false,
-        timer: null, debounce: null, inFlight: null, rerun: false,
+        list: EMPTY_CHILD_AGENT_LIST,
+        expanded: false,
+        poll: new SingleTimer(),
+        debounce: new Debounce(DEBOUNCE_MS),
+        refresh: new CoalescedRunner(() => this.doRefresh(sessionId, created), () => this.entries.get(sessionId) === created),
       };
-      this.entries.set(sessionId, entry);
+      this.entries.set(sessionId, created);
+      entry = created;
     }
     return entry;
   }
@@ -288,26 +274,10 @@ export class CodexExecTracker {
     entry.children.delete(oldest.threadId);
   }
 
-  private refresh(sessionId: string, entry: Entry): Promise<void> {
-    if (entry.inFlight) {
-      entry.rerun = true;
-      return entry.inFlight;
-    }
-    const run = this.doRefresh(sessionId, entry).finally(() => {
-      entry.inFlight = null;
-      if (entry.rerun && this.entries.get(sessionId) === entry) {
-        entry.rerun = false;
-        void this.refresh(sessionId, entry);
-      }
-    });
-    entry.inFlight = run;
-    return run;
-  }
-
   private async doRefresh(sessionId: string, entry: Entry): Promise<void> {
     const deps = this.deps;
     if (!deps) return;
-    if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
+    entry.poll.clear();
     const ref = deps.resolve(sessionId);
     if (!ref) { this.untrack(sessionId); return; }
 
@@ -366,21 +336,12 @@ export class CodexExecTracker {
     }
     const delay = fast ? FAST_POLL_MS : slow ? SLOW_POLL_MS : null;
     if (delay === null) return;
-    entry.timer = setTimeout(() => {
-      entry.timer = null;
-      void this.refresh(sessionId, entry);
-    }, delay);
-    entry.timer.unref?.();
+    entry.poll.arm(delay, () => { void entry.refresh.request(); });
   }
 
   private publish(sessionId: string, entry: Entry, list: ChildAgentList): void {
-    const signature = JSON.stringify(list);
     entry.list = list;
-    if (signature === entry.signature) return;
-    entry.signature = signature;
-    for (const listener of this.listeners) {
-      try { listener(sessionId, list); } catch { /* a bad listener must not stop polling */ }
-    }
+    this.updates.publish(sessionId, list);
   }
 }
 
