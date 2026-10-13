@@ -14,6 +14,8 @@ const withMutex = createOverlayMutex();
 
 export interface CodexLifecycleOverlayContext {
   helperPath: string;
+  /** Preflighted local Node executable. */
+  nodePath?: string;
   hooksPath?: string;
   store?: ConfigFileStore;
 }
@@ -40,8 +42,8 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function buildCommand(helperPath: string): string {
-  return ['node', helperPath, '--codex-hook'].map((part) => quoteShellArg(part)).join(' ');
+function buildCommand(helperPath: string, nodePath: string): string {
+  return [nodePath, helperPath, '--codex-hook'].map((part) => quoteShellArg(part)).join(' ');
 }
 
 function isTetherCodexLifecycleHook(value: unknown): boolean {
@@ -80,25 +82,26 @@ function scrubEventGroups(groups: unknown): { groups: unknown[]; changed: boolea
   return { groups: next, changed, valid: true };
 }
 
-function lifecycleHook(helperPath: string, event: string): Record<string, unknown> {
+function lifecycleHook(helperPath: string, event: string, nodePath: string): Record<string, unknown> {
   const timeout = event === 'SessionEnd' || event === 'Interrupt' ? 1 : 2;
   return {
     type: 'command',
-    command: buildCommand(helperPath),
+    command: buildCommand(helperPath, nodePath),
     async: true,
     timeout,
   };
 }
 
-function lifecycleGroup(helperPath: string, event: string): Record<string, unknown> {
+function lifecycleGroup(helperPath: string, event: string, nodePath: string): Record<string, unknown> {
   return {
-    hooks: [lifecycleHook(helperPath, event)],
+    hooks: [lifecycleHook(helperPath, event, nodePath)],
   };
 }
 
 export function mergeCodexLifecycleHooks(
   text: string | null,
   helperPath: string,
+  nodePath = 'node',
 ): { text: string; changed: boolean; valid: boolean } {
   const originalText = text ?? '';
   let root: Record<string, unknown>;
@@ -119,7 +122,7 @@ export function mergeCodexLifecycleHooks(
   for (const event of EVENTS) {
     const scrubbed = event in hooksRoot ? scrubEventGroups(hooksRoot[event]) : { groups: [], changed: false, valid: true };
     if (!scrubbed.valid) return { text: originalText, changed: false, valid: false };
-    hooksRoot[event] = [...scrubbed.groups, lifecycleGroup(helperPath, event)];
+    hooksRoot[event] = [...scrubbed.groups, lifecycleGroup(helperPath, event, nodePath)];
   }
 
   const next = { ...root, hooks: hooksRoot };
@@ -165,7 +168,7 @@ export async function installCodexLifecycleHooks(ctx: CodexLifecycleOverlayConte
   return withMutex(async () => {
     const store = ctx.store ?? localConfigFileStore;
     const filePath = resolveHooksPath(ctx);
-    const merged = mergeCodexLifecycleHooks(readExisting(store, filePath), ctx.helperPath);
+    const merged = mergeCodexLifecycleHooks(readExisting(store, filePath), ctx.helperPath, ctx.nodePath);
     if (!merged.valid) {
       log.warn('Codex hooks.json is malformed or non-object; lifecycle hooks not installed', { filePath });
       return false;

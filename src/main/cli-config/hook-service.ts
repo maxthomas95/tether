@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { app } from 'electron';
+import { app, dialog } from 'electron';
 import { createHookBridge, type HookBridgeHandle } from './hook-bridge';
 import { installClaudeHooks, uninstallClaudeHooks } from './claude-settings-overlay';
 import { installCodexHooks, uninstallCodexHooks } from './codex-config-overlay';
 import { installCodexLifecycleHooks, uninstallCodexLifecycleHooks } from './codex-lifecycle-overlay';
+import { resolveHookNodePath } from './node-runtime';
 import { sessionManager } from '../session/session-manager';
 import { getDb } from '../db/database';
 import { createLogger } from '../logger';
@@ -91,6 +92,19 @@ export async function startHookService(): Promise<void> {
     return;
   }
 
+  const nodePath = await resolveHookNodePath();
+  if (!nodePath) {
+    log.warn('Node.js unavailable — local CLI hooks not installed; using cadence detection');
+    void dialog.showMessageBox({
+      type: 'warning',
+      title: 'CLI hooks unavailable',
+      message: 'Tether needs Node.js to enable local CLI status hooks.',
+      detail: 'No working Node.js executable was found on PATH. Tether did not install new hooks. Sessions will use output-based status detection. Install Node.js and restart Tether to enable hooks, or turn off CLI hooks in Settings.',
+      buttons: ['OK'],
+    }).catch(() => {});
+    return;
+  }
+
   try {
     bridge = await createHookBridge((event) => {
       sessionManager.handleHookEvent(event);
@@ -105,7 +119,7 @@ export async function startHookService(): Promise<void> {
 
   let anyInstalled = false;
   try {
-    if (await installClaudeHooks({ helperPath: helper })) {
+    if (await installClaudeHooks({ helperPath: helper, nodePath })) {
       installedClis.add('claude');
       anyInstalled = true;
     }
@@ -115,7 +129,7 @@ export async function startHookService(): Promise<void> {
     });
   }
   try {
-    if (await installCodexHooks({ helperPath: helper })) {
+    if (await installCodexHooks({ helperPath: helper, nodePath })) {
       installedClis.add('codex');
       anyInstalled = true;
     }
@@ -126,7 +140,7 @@ export async function startHookService(): Promise<void> {
   }
   if (isCodexLifecycleEnabled()) {
     try {
-      if (await installCodexLifecycleHooks({ helperPath: helper })) {
+      if (await installCodexLifecycleHooks({ helperPath: helper, nodePath })) {
         installedClis.add('codex');
         anyInstalled = true;
       }

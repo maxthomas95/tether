@@ -4,6 +4,20 @@ import { installCodexLifecycleHooks, mergeCodexLifecycleHooks, scrubCodexLifecyc
 const HELPER = 'C:\\Program Files\\Tether\\resources\\tether-cli-hook\\index.js';
 
 describe('Codex lifecycle hooks overlay', () => {
+  it('uses the verified Node path for every lifecycle event', async () => {
+    let content = '';
+    const nodePath = 'C:\\Program Files\\nodejs\\node.exe';
+    await installCodexLifecycleHooks({
+      helperPath: HELPER, nodePath, hooksPath: 'test-hooks.json',
+      store: { read: () => null, exists: () => false, writeAtomic: (_file, text) => { content = text; } },
+    });
+    const parsed = JSON.parse(content) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
+    for (const groups of Object.values(parsed.hooks)) {
+      expect(groups[0].hooks[0].command).toContain(nodePath);
+      expect(groups[0].hooks[0].command).not.toMatch(/^["']?node["']? /);
+    }
+  });
+
   it('reports a malformed lifecycle install as unavailable without writing', async () => {
     const writeAtomic = vi.fn();
     const installed = await installCodexLifecycleHooks({

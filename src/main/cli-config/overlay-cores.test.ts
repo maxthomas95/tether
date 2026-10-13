@@ -12,6 +12,7 @@ import {
   mergeClaudeSettings,
   scrubClaudeSettings,
   installClaudeHooks,
+  helperCommand,
 } from './claude-settings-overlay';
 import {
   mergeCodexConfig,
@@ -165,6 +166,19 @@ function makeMockStore(seed: Record<string, string> = {}): ConfigFileStore & {
 }
 
 describe('overlays drive I/O through the ConfigFileStore', () => {
+  it('writes the verified absolute Node path in Claude commands and Codex notify argv', async () => {
+    const store = makeMockStore();
+    const nodePath = '/node home/node';
+    const helperPath = '/abs/tether-cli-hook/index.js';
+    await installClaudeHooks({ helperPath, nodePath, settingsPath: '/settings.json', store, platform: 'posix' });
+    const written = JSON.parse(store.files.get('/settings.json')!);
+    expect(written.hooks.Stop[0].hooks[0].command).toBe("'/node home/node' '/abs/tether-cli-hook/index.js' --claude");
+    expect(helperCommand('C:\\Tether\\tether-cli-hook\\index.js', '--claude', 'win32', 'C:\\Program Files\\nodejs\\node.exe'))
+      .toBe('"C:\\Program Files\\nodejs\\node.exe" "C:\\Tether\\tether-cli-hook\\index.js" --claude');
+    await installCodexHooks({ helperPath, nodePath, configPath: '/config.toml', store });
+    expect(store.files.get('/config.toml')).toContain('notify = ["/node home/node", "/abs/tether-cli-hook/index.js", "--codex"]');
+  });
+
   it('installClaudeHooks reads + atomic-writes via the injected store', async () => {
     const store = makeMockStore();
     const settingsPath = '/fake/settings.json';
