@@ -104,6 +104,13 @@ For documentation-only changes, check links, examples, and `git diff --check`.
 The [CI workflow](.github/workflows/ci.yml) is the source of truth for automated
 checks. State exactly which checks you ran and explain any skipped checks.
 
+[CodeQL](.github/workflows/codeql.yml) scans every pull request to `main`,
+including forks, without repository secrets or project build scripts. The
+repository uses this workflow (advanced setup), rather than CodeQL default
+setup, which skips fork pull requests. Keep the required `CodeQL` merge check
+enabled. First-time contributors may still need a maintainer to approve their
+Actions runs; their PRs do not need to be copied into this repository.
+
 ## Submit a pull request
 
 Use a conventional commit subject such as `fix(ssh): handle reconnect cleanup`,
