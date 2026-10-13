@@ -360,6 +360,19 @@ export class StatusDetector {
     this.setState(sessionId, 'waiting', 'idle');
   }
 
+  /** Subagents the hooks currently report as running for this session. */
+  getActiveSubagentIds(sessionId: string): string[] {
+    return [...(this.activeSubagents.get(sessionId) ?? [])];
+  }
+
+  /**
+   * True once a hook event has actually arrived. Hooks being wired is not
+   * enough: if Claude drops them, the active-subagent set never fills.
+   */
+  isHookDriven(sessionId: string): boolean {
+    return this.isHookCapable(sessionId) && this.hookStatusObserved.has(sessionId);
+  }
+
   markSubagentStarted(sessionId: string, agentId: string): void {
     if (!this.isLiveSession(sessionId) || !agentId) return;
     const agents = this.activeSubagents.get(sessionId) ?? new Set<string>();

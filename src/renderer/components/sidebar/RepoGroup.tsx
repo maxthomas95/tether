@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { Fragment, useState, useRef, useEffect } from 'react';
 import { SessionItem } from './SessionItem';
+import { ChildAgentRows } from './ChildAgentRows';
+import type { ChildAgentInfo, ChildAgentList } from '../../../shared/child-agents';
 import type { SessionInfo, EnvironmentType } from '../../../shared/types';
 import { onKeyActivate, stopPropagationOnKey } from '../../utils/a11y';
 import type { PaneLocation } from '../../lib/layout-tree';
@@ -63,6 +65,11 @@ interface RepoGroupProps {
    * Omitted entirely disables the preview.
    */
   getPreviewLines?: (sessionId: string) => string[];
+  /** Subagent lists by session id; sessions without one render no child rows. */
+  childAgents?: ReadonlyMap<string, ChildAgentList>;
+  expandedChildAgents?: ReadonlySet<string>;
+  onToggleChildAgents?: (sessionId: string) => void;
+  onOpenChildAgent?: (sessionId: string, agent: ChildAgentInfo) => void;
 }
 
 export function RepoGroup({
@@ -99,6 +106,10 @@ export function RepoGroup({
   onFocusPane,
   staggerIndex,
   getPreviewLines,
+  childAgents,
+  expandedChildAgents,
+  onToggleChildAgents,
+  onOpenChildAgent,
 }: RepoGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null);
@@ -317,38 +328,49 @@ export function RepoGroup({
       )}
       {!collapsed && sessions.map(session => {
         const location = paneLocations?.get(session.id);
+        const children = childAgents?.get(session.id);
         return (
-          <SessionItem
-            key={session.id}
-            session={session}
-            isActive={session.id === activeSessionId}
-            isVisibleInLayout={visibleSessionIds?.has(session.id) ?? false}
-            bangSuppressed={bangSuppressedIds?.has(session.id) ?? false}
-            onClick={() => onSelectSession(session.id)}
-            onStop={() => onStop(session.id)}
-            onRename={(label) => onRename(session.id, label)}
-            onRemove={() => onRemove(session.id)}
-            onDuplicate={() => onDuplicate(session.id)}
-            onResumePrevious={onResumePrevious && canResumePrevious?.(session) ? () => onResumePrevious(session.id) : undefined}
-            onCliMaintenance={onCliMaintenance ? () => onCliMaintenance(session.id) : undefined}
-            showResumeBadge={showResumeBadge}
-            allowHelm={allowHelm}
-            onToggleHelm={onToggleHelm ? (enabled) => onToggleHelm(session.id, enabled) : undefined}
-            onToggleNotificationsMuted={onToggleNotificationsMuted ? (muted) => onToggleNotificationsMuted(session.id, muted) : undefined}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onReorderDrop={
-              onReorderSession
-                ? (sourceId, targetId, position) =>
-                    onReorderSession(environmentId, repoPath, sourceId, targetId, position)
-                : undefined
-            }
-            paneLocation={location}
-            paneHidden={location ? hiddenPaneIds?.has(location.paneId) : false}
-            onFocusPane={onFocusPane}
-            getPreviewLines={getPreviewLines}
-            nested
-          />
+          <Fragment key={session.id}>
+            <SessionItem
+              session={session}
+              isActive={session.id === activeSessionId}
+              isVisibleInLayout={visibleSessionIds?.has(session.id) ?? false}
+              bangSuppressed={bangSuppressedIds?.has(session.id) ?? false}
+              onClick={() => onSelectSession(session.id)}
+              onStop={() => onStop(session.id)}
+              onRename={(label) => onRename(session.id, label)}
+              onRemove={() => onRemove(session.id)}
+              onDuplicate={() => onDuplicate(session.id)}
+              onResumePrevious={onResumePrevious && canResumePrevious?.(session) ? () => onResumePrevious(session.id) : undefined}
+              onCliMaintenance={onCliMaintenance ? () => onCliMaintenance(session.id) : undefined}
+              showResumeBadge={showResumeBadge}
+              allowHelm={allowHelm}
+              onToggleHelm={onToggleHelm ? (enabled) => onToggleHelm(session.id, enabled) : undefined}
+              onToggleNotificationsMuted={onToggleNotificationsMuted ? (muted) => onToggleNotificationsMuted(session.id, muted) : undefined}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onReorderDrop={
+                onReorderSession
+                  ? (sourceId, targetId, position) =>
+                      onReorderSession(environmentId, repoPath, sourceId, targetId, position)
+                  : undefined
+              }
+              paneLocation={location}
+              paneHidden={location ? hiddenPaneIds?.has(location.paneId) : false}
+              onFocusPane={onFocusPane}
+              getPreviewLines={getPreviewLines}
+              nested
+            />
+            {children && children.agents.length > 0 && onToggleChildAgents && onOpenChildAgent && (
+              <ChildAgentRows
+                sessionLabel={session.label}
+                list={children}
+                expanded={expandedChildAgents?.has(session.id) ?? false}
+                onToggle={() => onToggleChildAgents(session.id)}
+                onOpen={agent => onOpenChildAgent(session.id, agent)}
+              />
+            )}
+          </Fragment>
         );
       })}
     </div>

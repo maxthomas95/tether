@@ -634,6 +634,25 @@ describe('SessionManager', () => {
       expect(session.waitingReason).toBe('idle');
     });
 
+    it('tells lifecycle observers when a subagent starts or stops, but not on its routine activity', async () => {
+      const { session } = await createClaudeSession();
+      const onSubagentEvent = vi.fn();
+      manager.addLifecycleObserver({ onSubagentEvent });
+      const send = (type: string, agentId?: string) => manager.handleHookEvent({
+        tetherSessionId: session.id, source: 'claude', type: type as 'subagent_start',
+        payload: agentId ? { agent_id: agentId } : undefined,
+      });
+      send('subagent_start', 'agent-a');
+      send('tool_start', 'agent-a');
+      send('turn_complete');
+      expect(onSubagentEvent).toHaveBeenCalledTimes(1);
+      send('turn_complete', 'agent-a');
+      expect(onSubagentEvent).toHaveBeenCalledTimes(2);
+      send('subagent_stop', 'agent-a');
+      expect(onSubagentEvent).toHaveBeenCalledTimes(3);
+      expect(onSubagentEvent).toHaveBeenLastCalledWith(session);
+    });
+
     it('keeps hook completion through raw transport output without modifying the stream', async () => {
       vi.useFakeTimers();
       try {
