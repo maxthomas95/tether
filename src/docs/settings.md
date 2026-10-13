@@ -208,6 +208,8 @@ Unlocks the per-session "Enable Helm" toggle, which lets a designated Claude ses
 
 When on, Tether installs an additive entry in your `~/.claude/settings.json` and `~/.codex/config.toml` so Claude/Codex tell Tether directly when a turn finishes or input is needed. This produces more accurate waiting/idle status detection than passive output observation alone. Takes effect on the next Tether launch.
 
+Local CLI hooks require a separate Node.js installation on PATH. Tether checks it at launch and writes its absolute executable path into the hooks. If Node.js is missing or cannot run, Tether removes its old entries, skips installation, and shows one warning; sessions use output-based status detection. Install Node.js and restart Tether to enable hooks. Existing user hooks are preserved. SSH hosts check their own Node.js installation separately.
+
 Claude hooks also observe prompt submission, tool activity and subagent
 start/stop events so quiet work stays running. The status helper forwards only
 event names and identifiers, without prompts, tool arguments or results.
