@@ -27,6 +27,9 @@ import { envForSession as hookEnvForSession, revokeSessionToken as revokeHookSes
 import { envForRemoteSession, detachRemoteSession } from '../cli-config/remote/remote-hook-service';
 import { usageService } from '../usage/usage-service';
 import { remoteUsageService } from '../usage/remote-usage-service';
+import { remoteProbeChannels } from '../usage/remote-probe-channels';
+import { clearRemoteAuthFailure } from '../usage/remote-auth-state';
+import type { RemoteProbeTarget } from '../usage/remote-protocol';
 import { createCoderWorkspace, listCoderWorkspaces, listCoderTemplates, getCoderTemplateParams } from '../coder/workspace-service';
 import { createLogger } from '../logger';
 import { applyLaunchIntent, captureLaunchIntent, persistLaunchSnapshot, prepareLaunchSnapshot, readLaunchIntent } from './launch-snapshots';
@@ -293,6 +296,8 @@ export class Session {
   codexLaunch?: SessionInfo['codexLaunch'];
   usageSessionId?: string;
   remoteUsageStatus?: 'pending' | 'collecting' | 'unavailable';
+  /** Main-only: the remote host whose resident reader serves this session's side-channel reads. */
+  remoteProbe?: RemoteProbeTarget;
 
   constructor(id: string, label: string, workingDir: string, options: {
     environmentId?: string;
@@ -1061,16 +1066,24 @@ export class SessionManager {
       throw err;
     }
 
+    // The session got in (an SSH session with sudo only starts once sudo accepted
+    // the password), so credentials a side-channel reader was refused with work again.
+    if (opts.environmentId && !(transport instanceof LocalTransport)) clearRemoteAuthFailure(opts.environmentId);
+
     if (remoteUsage && session.transport && this.sessions.has(id) && opts.environmentId) {
       const coder = transport instanceof CoderTransport;
       const separator = opts.workingDir.indexOf('::');
-      remoteUsageService.start({
-        sessionId: id, environmentId: opts.environmentId, cli: cliTool as 'claude' | 'codex',
+      const target: RemoteProbeTarget = {
+        environmentId: opts.environmentId,
         workspace: coder ? (separator < 0 ? opts.workingDir : opts.workingDir.slice(0, separator)).trim() : '',
         workingDir: coder ? (separator < 0 ? '.' : opts.workingDir.slice(separator + 2) || '.') : opts.workingDir,
-        nativeSessionId: toolSessionId,
         home: resolvedEnv.HOME,
         claudeHome: resolvedEnv.CLAUDE_CONFIG_DIR,
+      };
+      session.remoteProbe = target;
+      remoteUsageService.start({
+        sessionId: id, cli: cliTool as 'claude' | 'codex', ...target,
+        nativeSessionId: toolSessionId,
         codexHome: resolvedEnv.CODEX_HOME,
         onSource: (key, nativeId) => {
           if (!this.sessions.has(id)) return;
@@ -1317,6 +1330,7 @@ export class SessionManager {
 
   dispose(): void {
     remoteUsageService.dispose();
+    remoteProbeChannels.dispose();
     statusDetector.dispose();
     for (const session of this.sessions.values()) {
       session.codexDetectCancel?.();

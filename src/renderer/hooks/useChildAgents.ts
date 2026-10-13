@@ -15,7 +15,7 @@ export interface ChildAgentsState {
 const NONE: ReadonlyMap<string, ChildAgentList> = new Map();
 
 /**
- * Subagent rows for local Claude sessions: one list fetch per session once its
+ * Subagent rows for Claude sessions (local, SSH, Coder): one list fetch per session once its
  * Claude id is known, then pushes from main as subagents come and go. Does
  * nothing while the "Show subagents in sidebar" setting is off.
  */

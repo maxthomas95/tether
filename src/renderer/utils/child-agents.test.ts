@@ -67,16 +67,18 @@ describe('supportsChildAgents', () => {
     ['coder-1', { id: 'coder-1', type: 'coder' } as EnvironmentInfo],
   ]);
 
-  it('accepts local Claude sessions with a known Claude id', () => {
+  it('accepts local, SSH and Coder Claude sessions with a known Claude id', () => {
     expect(supportsChildAgents(session(), envs)).toBe(true);
     expect(supportsChildAgents(session({ environmentId: 'local-1' }), envs)).toBe(true);
+    expect(supportsChildAgents(session({ environmentId: 'ssh-1' }), envs)).toBe(true);
+    expect(supportsChildAgents(session({ environmentId: 'coder-1' }), envs)).toBe(true);
     expect(supportsChildAgents(session({ claudeSessionId: undefined, toolSessionId: 't1' }), envs)).toBe(true);
   });
 
-  it('rejects remote sessions, other CLIs, and sessions with no id yet', () => {
-    expect(supportsChildAgents(session({ environmentId: 'ssh-1' }), envs)).toBe(false);
-    expect(supportsChildAgents(session({ environmentId: 'coder-1' }), envs)).toBe(false);
+  it('rejects unknown environments, other CLIs, and sessions with no id yet', () => {
     expect(supportsChildAgents(session({ environmentId: 'unknown' }), envs)).toBe(false);
+    expect(supportsChildAgents(session({ environmentId: 'ssh-1', cliTool: 'codex' }), envs)).toBe(false);
+    expect(supportsChildAgents(session({ environmentId: 'ssh-1', claudeSessionId: undefined }), envs)).toBe(false);
     expect(supportsChildAgents(session({ cliTool: 'codex' }), envs)).toBe(false);
     expect(supportsChildAgents(session({ claudeSessionId: undefined }), envs)).toBe(false);
   });

@@ -123,7 +123,7 @@ Pick the font used in the sidebar, dialogs, and menus:
 
 ### Show subagents in sidebar
 
-On by default. Lists the subagents a local Claude Code session has started under that session, and the `codex exec` runs it has launched (when Codex lifecycle hooks are tracked and trusted), with their status, model and token use; click one to read its transcript. Turn it off to hide the rows and stop Tether reading subagent and Codex rollout files. Applies when you save. See [Subagents](sessions.md#subagents) and [Codex exec runs](sessions.md#codex-exec-runs).
+On by default. Lists the subagents a Claude Code session (local, SSH or Coder) has started under that session, and the `codex exec` runs a local session has launched (when Codex lifecycle hooks are tracked and trusted), with their status, model and token use; click one to read its transcript. Turn it off to hide the rows and stop Tether reading subagent files on this machine and on remote hosts, and local Codex rollout files. Applies when you save. See [Subagents](sessions.md#subagents) and [Codex exec runs](sessions.md#codex-exec-runs).
 
 ### GIF panel
 

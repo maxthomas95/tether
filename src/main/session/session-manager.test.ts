@@ -153,6 +153,7 @@ vi.mock('../usage/usage-service', () => ({
   },
 }));
 vi.mock('../usage/remote-usage-service', () => ({ remoteUsageService: { start: vi.fn(), stop: vi.fn(), dispose: vi.fn() } }));
+vi.mock('../usage/remote-probe-channels', () => ({ remoteProbeChannels: { dispose: vi.fn() } }));
 vi.mock('../ssh/resolve-ssh-config', () => ({ resolveSshConfig: vi.fn(async () => ({ host: 'test', port: 22, username: 'user' })) }));
 
 vi.mock('../coder/workspace-service', () => ({
@@ -441,6 +442,9 @@ describe('SessionManager', () => {
     const options = vi.mocked(remoteUsageService.start).mock.calls[0][0];
     expect(options).toMatchObject({ cli, workingDir: '/work', workspace: transport === 'coder' ? 'workspace' : '',
       claudeHome: '/custom/claude', codexHome: '/custom/codex' });
+    // The subagent rows reach the same host through the same target.
+    expect(session.remoteProbe).toEqual({ environmentId: 'env', workingDir: '/work', workspace: transport === 'coder' ? 'workspace' : '',
+      home: undefined, claudeHome: '/custom/claude' });
     options.onSource('remote:scoped-id', 'actual-native-id');
     expect(session.toInfo().usageSessionId).toBe('remote:scoped-id');
     expect(session.toolSessionId).toBe('actual-native-id');

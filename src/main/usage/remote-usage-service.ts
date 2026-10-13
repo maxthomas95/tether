@@ -1,6 +1,7 @@
 import { connectRemoteUsage, type RemoteUsageConnection } from './remote-command';
 import { remoteUsageKey, type RemoteUsageCli, type RemoteUsageRequest, type RemoteUsageSource } from './remote-protocol';
 import { usageService } from './usage-service';
+import { RemoteAuthError, isRemoteAuthFailed, onRemoteAuthCleared } from './remote-auth-state';
 import { createLogger } from '../logger';
 
 const log = createLogger('remote-usage');
@@ -36,23 +37,35 @@ interface Group {
   timer?: ReturnType<typeof setTimeout>;
   running: boolean;
   closed: boolean;
+  /** The host refused the credentials; nothing retries until they change (remote-auth-state). */
+  authFailed: boolean;
   abort: AbortController;
 }
 
 export class RemoteUsageService {
   private groups = new Map<string, Group>();
+  private readonly stopListening: () => void;
 
   constructor(
     private readonly connect = connectRemoteUsage,
     private readonly usage = usageService,
-  ) {}
+  ) {
+    // Credentials that were refused have changed (or a session got in): read again.
+    this.stopListening = onRemoteAuthCleared(environmentId => {
+      for (const group of this.groups.values()) {
+        if (group.environmentId !== environmentId || !group.authFailed) continue;
+        group.authFailed = false;
+        if (!group.running && !group.closed) void this.poll(group);
+      }
+    });
+  }
 
   start(options: RemoteUsageSession): void {
     const key = JSON.stringify([options.environmentId, options.workspace]);
     let group = this.groups.get(key);
     if (!group) {
       group = { environmentId: options.environmentId, workspace: options.workspace,
-        entries: new Map(), running: false, closed: false, abort: new AbortController() };
+        entries: new Map(), running: false, closed: false, authFailed: false, abort: new AbortController() };
       this.groups.set(key, group);
     }
     group.entries.set(options.sessionId, { options, finishing: false });
@@ -96,9 +109,11 @@ export class RemoteUsageService {
     if (group.closed || group.running) return;
     group.running = true;
     let delay = POLL_MS;
+    let waitForCredentials = false;
     let failed = false;
     try {
       if (!group.connection) {
+        if (isRemoteAuthFailed(group.environmentId)) throw new RemoteAuthError();
         const connection = await this.connect(group.environmentId, group.workspace, group.abort.signal);
         if (group.closed) { connection.close(); return; }
         group.connection = connection;
@@ -125,10 +140,14 @@ export class RemoteUsageService {
         group.connection = undefined;
         delay = RETRY_MS;
       }
-    } catch {
+    } catch (error) {
       if (group.closed) return;
+      // A refused password is never retried on a timer: each try is another
+      // failed logon toward locking the account out. It resumes when the
+      // credentials change (the listener in the constructor).
+      group.authFailed = error instanceof RemoteAuthError;
       // Do not log remote stderr/commands or resolved credential values.
-      log.debug('Remote usage will retry', { environmentId: group.environmentId });
+      if (!group.authFailed) log.debug('Remote usage will retry', { environmentId: group.environmentId });
       for (const [id, entry] of group.entries) {
         entry.options.onStatus('unavailable');
         if (entry.finishing) group.entries.delete(id);
@@ -136,10 +155,11 @@ export class RemoteUsageService {
       group.connection?.close();
       group.connection = undefined;
       delay = RETRY_MS;
+      waitForCredentials = group.authFailed;
     } finally {
       group.running = false;
       if (!group.closed && group.entries.size) {
-        group.timer = setTimeout(() => void this.poll(group), delay);
+        if (!waitForCredentials) group.timer = setTimeout(() => void this.poll(group), delay);
       } else this.closeGroup(group);
     }
   }
@@ -154,6 +174,7 @@ export class RemoteUsageService {
   }
 
   dispose(): void {
+    this.stopListening();
     for (const group of this.groups.values()) this.closeGroup(group);
   }
 }

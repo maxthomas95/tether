@@ -6,8 +6,9 @@ import { formatTokens, shortenModel } from './session-inspector';
 export const CHILD_AGENT_ROW_LIMIT = 20;
 
 /**
- * Local Claude sessions are the only ones whose subagent files, and the Codex
- * runs they start, Tether can read; remote hosts have neither on this machine.
+ * Claude sessions whose subagent files Tether can read: local ones from disk,
+ * SSH and Coder ones through the resident remote reader. Codex exec child
+ * runs are supported only for local Claude sessions.
  */
 export function supportsChildAgents(
   session: SessionInfo,
@@ -15,7 +16,9 @@ export function supportsChildAgents(
 ): boolean {
   if ((session.cliTool ?? 'claude') !== 'claude') return false;
   if (!session.claudeSessionId && !session.toolSessionId) return false;
-  return !session.environmentId || environmentById.get(session.environmentId)?.type === 'local';
+  if (!session.environmentId) return true;
+  const type = environmentById.get(session.environmentId)?.type;
+  return type === 'local' || type === 'ssh' || type === 'coder';
 }
 
 export function formatElapsed(ms: number): string {

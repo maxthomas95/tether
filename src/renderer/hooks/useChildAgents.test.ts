@@ -47,8 +47,10 @@ describe('useChildAgents', () => {
     sessions = [session('s1'), session('s2', { environmentId: 'ssh-1' }), session('s3', { cliTool: 'codex' }), session('s4', { claudeSessionId: undefined })];
     await render();
     await render();
-    expect(listCall).toHaveBeenCalledTimes(1);
+    // Local and SSH sessions are eligible; Codex and id-less sessions are not.
+    expect(listCall).toHaveBeenCalledTimes(2);
     expect(listCall).toHaveBeenCalledWith('s1');
+    expect(listCall).toHaveBeenCalledWith('s2');
     expect(state.lists.get('s1')).toEqual(list(1));
     await act(async () => push('s1', list(5)));
     expect(state.lists.get('s1')?.total).toBe(5);
