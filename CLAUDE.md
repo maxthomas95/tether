@@ -147,7 +147,7 @@ src/
       handlers.ts                     # IPC handler registry (wires per-domain modules)
       helpers.ts                      # Shared handler utilities
       *-handlers.ts                   # Per-domain modules: session, env, config, profile, vault,
-                                      #   usage, git, ssh, coder, keybindings, notifications, dialog, system
+                                      #   usage, git, ssh, coder, keybindings, notifications, dialog, system, subagent
     session/
       session-manager.ts              # Session lifecycle + transport factory
       detect-new-session.ts           # New-session id detection for transcript attribution
@@ -188,8 +188,17 @@ src/
       host-verifier.ts                # Host key verification policy
       fingerprint.ts                  # SSH key fingerprint formatting
     claude/transcripts.ts             # Claude Code transcript reader
+    claude/subagents.ts               # Claude subagent files -> child rows (parse + incremental read)
+    claude/subagent-tracker.ts        # Per-session subagent refresh: hook events + stat poll, push to renderer
+    claude/remote-subagents.ts        # SSH/Coder subagent source: offsets + pure parsers over the resident remote reader
+    transcripts/
+      json-lines.ts                   # JSONL line helpers shared by the Claude and Codex child-row readers
+      incremental-lines.ts            # Offset-based line folding + head/tail viewer reader shared by both
+      child-tracker-support.ts        # Single-flight, debounce, change-only broadcast and reader pool for child trackers
     codex/
       transcripts.ts                  # Codex transcript reader
+      exec-rollouts.ts                # Codex rollout parse (pure) + incremental reader -> codex exec child rows
+      exec-tracker.ts                 # Per-session codex exec children: Codex hook events + rollout reads
       session-watcher.ts              # Codex session id capture at spawn
     copilot/
       transcripts.ts                  # Copilot CLI transcript reader
@@ -206,6 +215,8 @@ src/
       vault-types.ts                  # Vault types
     usage/
       usage-service.ts                # Aggregate per-session and global usage
+      remote-probe.ts                 # Resident remote reader program (usage + subagent requests)
+      remote-probe-channels.ts        # One shared resident reader per SSH host/Coder workspace, with backoff
       jsonl-parser.ts                 # Parse Claude JSONL transcripts
       codex-jsonl-parser.ts           # Parse Codex JSONL transcripts
       cli-tool-aggregator.ts          # Per-CLI-tool usage attribution
@@ -235,6 +246,7 @@ src/
     components/
       AboutDialog.tsx
       CliToolBadge.tsx
+      ChildAgentViewer.tsx            # Read-only subagent transcript dialog
       ConfirmDialog.tsx               # Tether-styled confirm replacement
       DropZoneOverlay.tsx
       EnvVarEditor.tsx
@@ -263,6 +275,7 @@ src/
         QuotaFooter.tsx               # Subscription quota status
         RepoGroup.tsx                 # Groups sessions by working directory
         ResumeChatDialog.tsx          # Pick a Claude/Codex transcript to resume
+        ChildAgentRows.tsx            # Collapsible subagent rows under a Claude session
         SessionItem.tsx               # Session row with context menu + inline rename
         SidebarResizeHandle.tsx
         VaultStatusPill.tsx           # Vault auth/expiry indicator
@@ -288,6 +301,7 @@ src/
     assets/logo.png
   shared/
     cli-tools.ts                      # CLI tool registry (Claude/Codex/Copilot/OpenCode/Custom)
+    child-agents.ts                   # Generic child-agent model (subagent rows) shared by main/renderer
     constants.ts                      # IPC channel name constants
     keybindings.ts                    # Keybinding actions, chords, defaults
     layout-types.ts                   # Pane split layout types

@@ -73,6 +73,9 @@ import type { MenuDef } from './components/MenuBar';
 import { WelcomePane } from './components/WelcomePane';
 import { Icon } from './components/Icon';
 import { useRecentProjects } from './hooks/useRecentProjects';
+import { useChildAgents } from './hooks/useChildAgents';
+import { ChildAgentViewer } from './components/ChildAgentViewer';
+import type { ChildAgentInfo } from '../shared/child-agents';
 import { OfficePane } from './components/OfficePane';
 import { JobsOfficePill } from './components/sidebar/JobsOfficePill';
 import { GifPanel } from './components/sidebar/GifPanel';
@@ -345,6 +348,8 @@ export function App() {
   const bangSuppressedIds = acknowledgedWaitingIds;
   const environmentById = useMemo(() => new Map(environments.map(env => [env.id, env])), [environments]);
   const { recentProjects, dismissProject, recordSession } = useRecentProjects(sessions, environments);
+  const childAgents = useChildAgents(sessions, environmentById);
+  const [viewedChildAgent, setViewedChildAgent] = useState<{ sessionId: string; agent: ChildAgentInfo } | null>(null);
 
   // Load profiles on mount
   useEffect(() => {
@@ -2055,6 +2060,10 @@ export function App() {
                         hiddenPaneIds={hiddenPaneIds}
                         onFocusPane={handleFocusPane}
                         getPreviewLines={handleGetPreviewLines}
+                        childAgents={childAgents.lists}
+                        expandedChildAgents={childAgents.expandedIds}
+                        onToggleChildAgents={childAgents.toggleExpanded}
+                        onOpenChildAgent={(sessionId, agent) => setViewedChildAgent({ sessionId, agent })}
                       />
                     ));
                   })()
@@ -2221,6 +2230,11 @@ export function App() {
         initialEnvironmentId={maintenanceTarget.environmentId}
         initialSessionId={maintenanceTarget.sessionId}
         onClose={() => setMaintenanceTarget(null)}
+      />}
+      {viewedChildAgent && <ChildAgentViewer
+        sessionId={viewedChildAgent.sessionId}
+        agent={viewedChildAgent.agent}
+        onClose={() => setViewedChildAgent(null)}
       />}
       <SessionSearchDialog
         isOpen={searchOpen}

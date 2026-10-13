@@ -182,6 +182,45 @@ Sessions are grouped by environment in the sidebar (Local, then each SSH host, t
 
 For **local** repo groups, the header also shows the current git branch and, if there are uncommitted changes, a dot with the count (e.g. `main ●2`). This refreshes when the window regains focus and periodically in the background. Not shown for SSH or Coder groups.
 
+## Subagents
+
+When a **Claude Code** session starts subagents (local, SSH or Coder), a **subagents** line appears under it in the sidebar. Click the line (or press **Enter** or **Space** on it) to open or close the list. Each row is one subagent, indented under the subagent that started it:
+
+`↳ code-reviewer · Check the diff` on the first line, then `sonnet-5-5/medium · running 2m · 12.3k tok` below it.
+
+- **Status dot** — green while the subagent is running, gray once it has finished.
+- **Model and effort** — the model that actually answered, with the reasoning effort when Claude records one. If the subagent has not answered yet, the model the parent requested is shown instead. Nothing is shown when neither is known.
+- **Timing** — `running 2m` counts up from the start; `done 41s` is how long it worked.
+- **Tokens** — input, output and newly cached tokens the subagent used. Cache reads are left out of the total because they repeat every turn; hover a row for the full breakdown.
+- At most 20 rows show. Finished subagents drop off first, so a running one is never hidden. **+N more** shows the rest, and Tether keeps the 50 most recent subagents of a session.
+
+Click a row to read what the subagent did. The viewer is read-only, because subagents have no terminal of their own: it shows the task it was given, a compact list of its messages and tool calls (tool output is not shown), and its final answer. For a very long run it shows the task from the start and only the most recent activity, and says so. It refreshes while the subagent runs, reading only what was added. **Escape** closes it.
+
+Tether reads the files Claude Code writes for each subagent; it does not look at the terminal. A subagent counts as running when [CLI hooks](settings.md#cli-hooks) report that it has started and not stopped. With hooks off, or before the first hook event arrives, it counts as running while its transcript has changed in the last 30 seconds, so a subagent that thinks quietly for longer can show as done. Tether checks for new subagents every few seconds while one is running or the list is open. With hooks off it also looks about every ten seconds, but only if Claude's folder for the session sits where Tether expects it; if Tether has to search for that folder (very long working-directory paths), it searches less and less often, up to about every three minutes, until a subagent hook event or a restart.
+
+**SSH and Coder sessions** work the same way, with the files read on the remote host. Remote hooks are available for SSH environments that opt in ([CLI status hooks on remote hosts](environments.md#cli-status-hooks-on-remote-hosts)); Coder sessions have no hooks yet, so their subagents use the 30-second rule. Remote reads use the same kind of background reader program as [remote usage collection](usage-quota.md#ssh-and-coder-sessions), but run it as a separate process: one per SSH host or Coder workspace, started once and shared by every session there. An elevated (**sudo**) SSH host therefore authenticates once more per Tether run, not once per check. On Coder the reader is one long-lived command, while usage collection there still starts a command per poll. Each check is a short request to that process, never a new login, and the process stays open for as long as any live session uses that host. Checks fetch only metadata (token counts, models, timing), not message text; the full transcript is fetched only when you open a subagent. The reader needs `node` on the remote login-shell PATH, and at most the 50 newest subagents of a session are read. If the reader cannot start, the rows stay empty and Tether waits progressively longer (up to 10 minutes) before trying again; the terminal is never affected. If the host refuses the login or the sudo password, or the reader gives no ready response within 30 seconds of the password being sent, Tether tries once, sends nothing further, and does not try again until you edit that environment or open a session on it that connects, so a wrong password cannot lock the account. Only one elevated reader starts at a time per environment, so the usage and subagent readers never both send the password before the first answer is known. Opening a subagent downloads its transcript the way a local one is read: a long one is fetched as its first lines (the task) plus its last 8 MB, then only what is appended. Searching the remote host for the session's folder backs off the same way as locally.
+
+Subagent rows are not shown for other CLIs. Turn them off in [Settings → Appearance](settings.md#show-subagents-in-sidebar).
+
+### Codex exec runs
+
+When a **local Claude Code** session delegates work by running `codex exec ...` through its Bash tool, each run appears in the same list as a child of that session:
+
+`↳ codex exec · Review the module and list risks` on the first line, then `gpt-5.5/high · running 2m · 8.1k tok` below it.
+
+The row works like a subagent row: green dot while the run is going, gray when it has finished, model and reasoning effort from the run, and the token total. The first line of the prompt is shown after `codex exec`. Click the row to read the run: its prompt, a compact list of the agent's messages and shell, patch or tool calls (tool output is not shown), and its final message. When a run has no rollout file (for example `codex exec --ephemeral`) there is no prompt or token count, and the viewer says so; the row still shows the model Codex's hooks reported.
+
+These runs never change the Claude session's own status. A run finishing does not mark the Claude session as waiting, and its activity does not mark it as working.
+
+**What it needs.** The rows come only from Codex's [lifecycle hooks](settings.md#lifecycle-visibility). A command started from a Claude pane inherits the pane's Tether environment, so Codex reports the run's start, activity and end as belonging to that session. Two things must both be true:
+
+- **Settings → Codex → Track Codex lifecycle hooks** is on (and **CLI status hooks** in Sessions), and Tether has been restarted since.
+- Tether's hooks are **trusted in Codex**. Open `/hooks` in a Codex session once and approve them. `codex exec` skips hooks it has not been told to trust, without saying so.
+
+If either is missing, nothing is shown: Tether does not guess which Codex runs a Claude session started. Codex runs started by hand in another terminal are never shown. Codex's own subagents inside a run are not listed as separate rows.
+
+Codex runs are local only: Codex lifecycle hooks are not installed on SSH or Coder hosts, so those sessions show none. They count toward the 50-row limit and the same **Show subagents in sidebar** setting. A run counts as running while its hooks report activity and, on a hook-only run with no rollout, for up to 15 minutes after the last hook. The run's rollout file is found by its exact thread id under `$CODEX_HOME/sessions`.
+
 ## Finding a Session
 
 Press **Ctrl+P** (or **Session → Find Session…**) to open the quick switcher — a VS Code-style finder for jumping straight to any session without scrolling the sidebar. Start typing to fuzzy-match across the session label, working directory, environment name, and CLI tool. Matching is forgiving: the characters you type just have to appear in order, so `apsv` finds *api-server*. Results rank label hits above directory hits, contiguous matches above scattered ones, and start-of-word matches above mid-word ones.

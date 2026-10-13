@@ -62,7 +62,7 @@ export function createHarness(registry: IpcRegistry): IpcHarness {
   const send = vi.fn();
   const fakeWindow = {
     isDestroyed: () => false,
-    webContents: { send: vi.fn(), mainFrame: {} },
+    webContents: { send: vi.fn(), mainFrame: {}, on: vi.fn() },
     setTitleBarOverlay: vi.fn(),
   } as unknown as BrowserWindow;
 

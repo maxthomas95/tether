@@ -4,6 +4,7 @@ import type { CreateEnvironmentOptions, EnvironmentInfo } from '../../shared/typ
 import { sessionManager } from '../session/session-manager';
 import * as envRepo from '../db/environment-repo';
 import { createLogger } from '../logger';
+import { clearRemoteAuthFailure } from '../usage/remote-auth-state';
 import { encryptConfigPassword, decryptConfigPassword, type HandlerContext } from './helpers';
 
 const log = createLogger('ipc:env');
@@ -52,10 +53,13 @@ export function registerEnvHandlers(_ctx: HandlerContext): void {
       config: encryptConfigPassword(opts.config),
       envVars: opts.envVars,
     });
+    // New credentials deserve a fresh attempt by the background readers.
+    clearRemoteAuthFailure(id);
   });
 
   ipc.handle(IPC.ENV_DELETE, async (_event, id: string) => {
     log.info('Deleting environment', { id });
     envRepo.deleteEnvironment(id);
+    clearRemoteAuthFailure(id);
   });
 }

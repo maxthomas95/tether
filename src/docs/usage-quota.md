@@ -52,12 +52,19 @@ Requirements and limits:
 - Claude transcript discovery supports working directories containing dots,
   spaces or underscores. Remote collection also finds long project directory
   names by the saved conversation ID when exactly one transcript matches.
-- Connection or reader failures retry automatically. **Last collected** means
+- If the host refuses the login or the **sudo** password, or a reader that was
+  sent the password gives no ready response within 30 seconds, Tether tries
+  once and sends nothing further, so a wrong password costs a single failed
+  attempt. It does not try again until you edit that environment or open a
+  session on it that connects; usage shows as unavailable until then. The
+  usage and subagent readers start one at a time per environment, so they
+  cannot both send the password before the first answer is known.
+- Other connection or reader failures retry automatically. **Last collected** means
   the displayed totals may be stale; hover for details. History retains the last
   successfully collected totals after disconnection or exit.
 - This collects conversations launched in Tether, not all historical sessions
-  on the remote host or separate subagent transcripts. Remote transcript browsing
-  and resume behavior are unchanged. Remote OpenCode usage is not yet supported.
+  on the remote host, and subagent transcripts do not count toward a session's
+  usage here. Remote transcript browsing and resume behavior are unchanged. Remote OpenCode usage is not yet supported.
 
 ## Per-Session Cost Strip
 
@@ -104,8 +111,17 @@ Set **Codex quota warning** in [Settings → CLI tools → Codex CLI](settings.m
 ## Privacy
 
 Local transcript files are read locally. For SSH and Coder sessions, prompts and
-responses stay on the remote host: the reader sends only model names, reasoning
+responses stay on the remote host: the usage reader sends only model names, reasoning
 effort, token counts, context capacity, timestamps, and source/cursor metadata over the authenticated connection.
+The [sidebar subagent list](sessions.md#subagents) adds two reads, made by a second reader process on the host that is separate from the usage reader (on an SSH host that uses **sudo**, a second sudo login per Tether run).
+The list itself carries only metadata: each subagent's small meta file (type and
+description), and from its transcript the record types, timestamps, model and effort,
+token counts, message IDs, the IDs of nested-subagent calls, and the first 400
+characters of any plain user message (normally just the task it was given).
+Assistant text, tool inputs and tool results stay on the host. Only when you open a
+subagent to read it does Tether fetch that one transcript's full lines (for a long one,
+its start and its last 8 MB), into memory only. Nothing is saved or logged, and turning off **Show subagents in
+sidebar** stops both reads.
 Tether persists summaries and read positions, never conversation text or resolved
 passwords. No usage data is uploaded to a third-party analytics service.
 
