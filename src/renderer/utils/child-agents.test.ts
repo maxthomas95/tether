@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { ChildAgentInfo } from '../../shared/child-agents';
+import type { ChildAgentInfo, ChildAgentList } from '../../shared/child-agents';
 import type { EnvironmentInfo, SessionInfo } from '../../shared/types';
 import {
+  childAgentKind,
   childAgentSummary,
+  childAgentsHeading,
   childAgentTokenTotal,
   formatChildAgentModel,
   formatChildAgentTiming,
@@ -108,5 +110,31 @@ describe('selectVisibleChildAgents', () => {
 
   it('shows all when asked', () => {
     expect(selectVisibleChildAgents(many(30), 20, true)).toMatchObject({ hidden: 0 });
+  });
+});
+
+describe('codex exec rows', () => {
+  const exec = (over: Partial<ChildAgentInfo> = {}) => agent({
+    source: 'codex-exec', id: 'thread-1', agentType: 'codex exec', description: 'Review the module', model: 'gpt-test', effort: 'high', ...over,
+  });
+  const list = (agents: ChildAgentInfo[], total = agents.length): ChildAgentList => ({ agents, total });
+
+  it('reads as "codex exec · prompt · model/effort · state · tokens"', () => {
+    expect(childAgentSummary(exec({ state: 'running' }), T0 + 125_000)).toBe('codex exec · Review the module · gpt-test/high · running 2m · 1.5k tok');
+    expect(childAgentSummary(exec({ description: '', model: undefined, effort: undefined }), T0 + 999_000)).toBe('codex exec · done 41s · 1.5k tok');
+  });
+
+  it('names the kind of row for screen readers', () => {
+    expect(childAgentKind(exec())).toBe('Codex exec run');
+    expect(childAgentKind(agent())).toBe('Subagent');
+  });
+
+  it('words the heading for subagents, exec runs, and a mix', () => {
+    expect(childAgentsHeading(list([agent()]))).toBe('1 subagent');
+    expect(childAgentsHeading(list([agent(), agent({ id: 'a2' })]))).toBe('2 subagents');
+    expect(childAgentsHeading(list([exec()]))).toBe('1 codex exec run');
+    expect(childAgentsHeading(list([exec(), exec({ id: 't2' })]))).toBe('2 codex exec runs');
+    expect(childAgentsHeading(list([agent(), exec()]))).toBe('2 child agents');
+    expect(childAgentsHeading(list([exec()], 3))).toBe('3 child agents');
   });
 });

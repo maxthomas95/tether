@@ -191,8 +191,14 @@ src/
     claude/subagents.ts               # Claude subagent files -> child rows (parse + incremental read)
     claude/subagent-tracker.ts        # Per-session subagent refresh: hook events + stat poll, push to renderer
     claude/remote-subagents.ts        # SSH/Coder subagent source: offsets + pure parsers over the resident remote reader
+    transcripts/
+      json-lines.ts                   # JSONL line helpers shared by the Claude and Codex child-row readers
+      incremental-lines.ts            # Offset-based line folding + head/tail viewer reader shared by both
+      child-tracker-support.ts        # Single-flight, debounce, change-only broadcast and reader pool for child trackers
     codex/
       transcripts.ts                  # Codex transcript reader
+      exec-rollouts.ts                # Codex rollout parse (pure) + incremental reader -> codex exec child rows
+      exec-tracker.ts                 # Per-session codex exec children: Codex hook events + rollout reads
       session-watcher.ts              # Codex session id capture at spawn
     copilot/
       transcripts.ts                  # Copilot CLI transcript reader

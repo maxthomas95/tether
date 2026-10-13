@@ -123,7 +123,7 @@ Pick the font used in the sidebar, dialogs, and menus:
 
 ### Show subagents in sidebar
 
-On by default. Lists the subagents a Claude Code session (local, SSH or Coder) has started under that session, with their status, model and token use; click one to read its transcript. Turn it off to hide the rows and stop Tether reading subagent files, on this machine and on remote hosts. Applies when you save. See [Subagents](sessions.md#subagents).
+On by default. Lists the subagents a Claude Code session (local, SSH or Coder) has started under that session, and the `codex exec` runs a local session has launched (when Codex lifecycle hooks are tracked and trusted), with their status, model and token use; click one to read its transcript. Turn it off to hide the rows and stop Tether reading subagent files on this machine and on remote hosts, and local Codex rollout files. Applies when you save. See [Subagents](sessions.md#subagents) and [Codex exec runs](sessions.md#codex-exec-runs).
 
 ### GIF panel
 
@@ -391,6 +391,8 @@ Only selected settings and integration names are displayed. Tether does not expo
 **Track Codex lifecycle hooks** is an experimental, explicit opt-in. It also requires **CLI status hooks** in Sessions and takes effect on the next Tether launch. Tether adds asynchronous observer hooks to the native Codex hooks file while preserving existing valid hooks. Malformed configuration is left untouched.
 
 Review and trust the installed commands using Codex's native `/hooks` flow when prompted. Tether does not bypass that review. Hook events provide session activity, permission waits, compaction and subagent metadata; they do not approve requests, alter tool results or modify terminal output. Missing or unsupported hooks leave their metadata unavailable. Local lifecycle installation does not install these additional hooks on remote hosts.
+
+The same hooks are what let Tether list `codex exec` runs that a local Claude Code session starts through its Bash tool as child rows of that session (see [Codex exec runs](sessions.md#codex-exec-runs)). That needs both this opt-in and Codex trusting Tether's hooks: approve them once through `/hooks` in a Codex session, because `codex exec` silently skips hooks that have not been trusted. Without both, no Codex exec rows are shown. Remote sessions get none either.
 
 #### Quota warning
 

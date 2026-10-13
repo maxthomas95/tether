@@ -1,4 +1,4 @@
-import type { ChildAgentInfo, ChildAgentTokens } from '../../shared/child-agents';
+import type { ChildAgentInfo, ChildAgentList, ChildAgentTokens } from '../../shared/child-agents';
 import type { EnvironmentInfo, SessionInfo } from '../../shared/types';
 import { formatTokens, shortenModel } from './session-inspector';
 
@@ -7,7 +7,8 @@ export const CHILD_AGENT_ROW_LIMIT = 20;
 
 /**
  * Claude sessions whose subagent files Tether can read: local ones from disk,
- * SSH and Coder ones through the resident remote reader.
+ * SSH and Coder ones through the resident remote reader. Codex exec child
+ * runs are supported only for local Claude sessions.
  */
 export function supportsChildAgents(
   session: SessionInfo,
@@ -64,6 +65,20 @@ export function formatChildAgentModel(agent: ChildAgentInfo): string {
   if (!model) return agent.effort ?? '';
   const short = shortenModel(model);
   return agent.effort ? `${short}/${agent.effort}` : short;
+}
+
+/** Name for one row in screen-reader labels and the viewer. */
+export function childAgentKind(agent: ChildAgentInfo): string {
+  return agent.source === 'codex-exec' ? 'Codex exec run' : 'Subagent';
+}
+
+/** "3 subagents", "1 codex exec run", or "4 child agents" when both kinds are present. */
+export function childAgentsHeading(list: ChildAgentList): string {
+  const total = list.total;
+  const execRuns = list.agents.filter(a => a.source === 'codex-exec').length;
+  if (execRuns === 0) return `${total} ${total === 1 ? 'subagent' : 'subagents'}`;
+  if (execRuns === list.agents.length && total === execRuns) return `${total} codex exec ${total === 1 ? 'run' : 'runs'}`;
+  return `${total} child ${total === 1 ? 'agent' : 'agents'}`;
 }
 
 export function childAgentSummary(agent: ChildAgentInfo, now: number): string {

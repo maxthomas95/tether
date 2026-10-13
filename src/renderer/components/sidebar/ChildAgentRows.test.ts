@@ -112,4 +112,19 @@ describe('ChildAgentRows', () => {
     await render({ agents: [agent()], total: 60 });
     expect(view.container.querySelector('.child-agents-note')?.textContent).toBe('59 older not shown');
   });
+
+  it('shows a codex exec run like a subagent row', async () => {
+    const run = agent({
+      source: 'codex-exec', id: 'thread-1', agentType: 'codex exec', description: 'Review the module', model: 'gpt-test', effort: 'high',
+      background: false, state: 'running',
+    });
+    await render({ agents: [run], total: 1 });
+    const [row] = rows();
+    expect(view.container.querySelector('.child-agents-toggle')!.textContent).toContain('1 codex exec run');
+    expect(row.querySelector('.child-agent-title')!.textContent).toContain('codex exec · Review the module');
+    expect(row.querySelector('.child-agent-meta')!.textContent).toContain('gpt-test/high · running 2m');
+    expect(row.getAttribute('aria-label')).toMatch(/^Codex exec run codex exec/);
+    await act(async () => row.click());
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ id: 'thread-1', source: 'codex-exec' }));
+  });
 });
