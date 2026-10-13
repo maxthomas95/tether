@@ -110,4 +110,12 @@ describe('ChildAgentViewer', () => {
     expect(fetchTranscript).toHaveBeenCalledTimes(3);
     expect(text()).toContain('There are 3.');
   });
+
+  it('labels a codex exec run and shows the note when only hook data exists', async () => {
+    const exec: ChildAgentInfo = { ...agent, source: 'codex-exec', id: 'thread-1', agentType: 'codex exec' };
+    fetchTranscript.mockResolvedValue(transcript({ agent: exec, prompt: null, entries: [], result: null, note: 'No rollout file was found.' }));
+    await view.render(React.createElement(ChildAgentViewer, { sessionId: 's1', agent: exec, onClose: close }));
+    expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Codex exec run codex exec');
+    expect(text()).toContain('No rollout file was found.');
+  });
 });

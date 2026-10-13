@@ -1,9 +1,10 @@
 /**
- * Agents a CLI session spawned that have no terminal of their own (today only
- * Claude Code subagents). The model is generic so another CLI's helpers can
- * join it later by adding a `source` rather than reshaping the rows.
+ * Agents a CLI session spawned that have no terminal of their own: Claude Code
+ * subagents, and `codex exec` runs a Claude session launched through its Bash
+ * tool. The model is generic so another CLI's helpers can join it later by
+ * adding a `source` rather than reshaping the rows.
  */
-export type ChildAgentSource = 'claude-subagent';
+export type ChildAgentSource = 'claude-subagent' | 'codex-exec';
 
 export interface ChildAgentTokens {
   input: number;
@@ -59,6 +60,8 @@ export interface ChildAgentTranscript {
   result: string | null;
   /** True when the file was too large to read in full or entries were dropped. */
   truncated: boolean;
+  /** Why there is little to show, e.g. a run that wrote no rollout file. */
+  note?: string;
 }
 
 export const EMPTY_CHILD_AGENT_LIST: ChildAgentList = Object.freeze({ agents: [], total: 0 }) as ChildAgentList;

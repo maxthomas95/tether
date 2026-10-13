@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { ChildAgentInfo, ChildAgentTranscript } from '../../shared/child-agents';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { describeChildAgentTokens, formatChildAgentModel, formatChildAgentTiming, formatChildAgentTokens } from '../utils/child-agents';
+import { childAgentKind, describeChildAgentTokens, formatChildAgentModel, formatChildAgentTiming, formatChildAgentTokens } from '../utils/child-agents';
 
 interface ChildAgentViewerProps {
   sessionId: string;
@@ -50,7 +50,7 @@ export function ChildAgentViewer({ sessionId, agent, onClose }: Readonly<ChildAg
         className="dialog child-agent-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={`Subagent ${current.agentType}`}
+        aria-label={`${childAgentKind(current)} ${current.agentType}`}
         tabIndex={-1}
         onMouseDown={event => event.stopPropagation()}
       >
@@ -68,6 +68,7 @@ export function ChildAgentViewer({ sessionId, agent, onClose }: Readonly<ChildAg
           {status === 'unavailable' && <p className="form-hint" role="status">This subagent&apos;s transcript is no longer available.</p>}
           {transcript && (
             <>
+              {transcript.note && <p className="form-hint">{transcript.note}</p>}
               <section>
                 <h3 className="child-agent-heading">Task</h3>
                 {transcript.prompt
