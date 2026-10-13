@@ -141,6 +141,28 @@ describe('SSH control resident process', () => {
     connection.end();
   });
 
+  it('reports a sudo refusal on stderr as a bare signal, once, and only for refusals', async () => {
+    const host = await residentHost();
+    const connection = await connectSshControl(host.config);
+    try {
+      const probe = await connection.spawn('resident');
+      let refusals = 0;
+      probe.onAuthFailure?.(() => { refusals++; });
+      const stream = await host.ready();
+      stream.stderr.write('Last login: Mon Jan  1 00:00:00 2026\nwelcome banner\n');
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(refusals).toBe(0);
+      stream.stderr.write('Sorry, try again.\n');
+      stream.stderr.write('Sorry, try again.\n');
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(refusals).toBe(1);
+      // A subscriber that arrives after the fact is told at once.
+      let late = 0;
+      probe.onAuthFailure?.(() => { late++; });
+      expect(late).toBe(1);
+    } finally { connection.end(); }
+  });
+
   it('gives up on a remote that streams without ever ending a line', async () => {
     const host = await residentHost();
     const connection = await connectSshControl(host.config);

@@ -331,6 +331,26 @@ describe('StatusDetector', () => {
       expect(detector.getWaitingReason('s1')).toBe('idle');
     });
 
+    it('reports the subagents hooks say are running, and only trusts hooks once one has arrived', () => {
+      detector.register('s1', 'claude');
+      expect(detector.isHookDriven('s1')).toBe(false);
+      detector.markSubagentStarted('s1', 'a');
+      detector.markSubagentStarted('s1', 'b');
+      expect(detector.isHookDriven('s1')).toBe(true);
+      expect(detector.getActiveSubagentIds('s1').sort()).toEqual(['a', 'b']);
+      detector.markSubagentStopped('s1', 'a');
+      expect(detector.getActiveSubagentIds('s1')).toEqual(['b']);
+      detector.markExited('s1', 0);
+      expect(detector.getActiveSubagentIds('s1')).toEqual([]);
+      expect(detector.isHookDriven('s1')).toBe(false);
+    });
+
+    it('is never hook driven for a session whose hooks are not wired', () => {
+      detector.register('s1', 'claude', { hookCapable: false });
+      detector.markSubagentStarted('s1', 'a');
+      expect(detector.isHookDriven('s1')).toBe(false);
+    });
+
     it.each(['claude', 'codex'] as const)('detects the initial %s prompt before any turn is submitted', (cli) => {
       detector.register('s1', cli);
       feed('s1', 'initial prompt');

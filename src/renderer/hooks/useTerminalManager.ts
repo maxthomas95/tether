@@ -8,6 +8,7 @@ import { decodeOsc52Write } from '../utils/osc52';
 import { DEFAULT_TERMINAL_FONT, loadTerminalFont } from '../styles/terminal-fonts';
 import { reportPipActivity } from '../lib/pip-activity';
 import { encodeShiftEnter } from '../utils/terminal-input';
+import type { SessionInfo } from '../../shared/types';
 
 interface ManagedTerminal {
   terminal: Terminal;
@@ -140,12 +141,15 @@ export function useTerminalManager(
   cursorStyle: TerminalCursorStyle = 'block',
   cursorBlink: boolean = true,
   scrollback?: number,
+  sessions: readonly Pick<SessionInfo, 'id' | 'cliTool'>[] = [],
 ): TerminalManagerAPI {
   const panes = useRef(new Map<PaneId, PaneEntry>());
   const backgroundTerminals = useRef(new Map<string, ManagedTerminal>());
   const searchResultListeners = useRef(new Map<PaneId, Set<(event: ISearchResultChangeEvent) => void>>());
   const broadcastTargets = useRef(new Set<string>());
   const win32InputModes = useRef(new Map<string, boolean>());
+  const sessionCliTools = useRef(new Map<string, SessionInfo['cliTool']>());
+  sessionCliTools.current = new Map(sessions.map(session => [session.id, session.cliTool ?? 'claude']));
   const themeRef = useRef<ITheme | undefined>(xtermTheme);
   const cursorStyleRef = useRef<TerminalCursorStyle>(cursorStyle);
   const cursorBlinkRef = useRef<boolean>(cursorBlink);
@@ -235,7 +239,10 @@ export function useTerminalManager(
     const targets = broadcastTargets.current;
     const destinationIds = targets.size > 1 && targets.has(sessionId) ? targets : [sessionId];
     for (const targetId of destinationIds) {
-      window.electronAPI.session.sendInput(targetId, encodeShiftEnter(win32InputModes.current.get(targetId) === true));
+      window.electronAPI.session.sendInput(targetId, encodeShiftEnter(
+        win32InputModes.current.get(targetId) === true,
+        sessionCliTools.current.get(targetId),
+      ));
     }
   }, []);
 

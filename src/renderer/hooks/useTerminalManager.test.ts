@@ -83,6 +83,7 @@ vi.mock('@xterm/addon-search', () => ({ SearchAddon: mocks.FakeSearchAddon }));
 vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: mocks.FakeWebLinksAddon }));
 
 import { useTerminalManager, type TerminalManagerAPI, type TerminalCursorStyle } from './useTerminalManager';
+import type { SessionInfo } from '../../shared/types';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -91,10 +92,11 @@ let host: HTMLDivElement;
 let api: TerminalManagerAPI;
 let frames: FrameRequestCallback[];
 
-function Harness({ color = '#000000', theme, cursor = 'block', scrollback = 10000, fontFamily = '' }: {
+function Harness({ color = '#000000', theme, cursor = 'block', scrollback = 10000, fontFamily = '', sessions = [] }: {
   color?: string; theme?: Record<string, string>; cursor?: TerminalCursorStyle; scrollback?: number; fontFamily?: string;
+  sessions?: Pick<SessionInfo, 'id' | 'cliTool'>[];
 }) {
-  api = useTerminalManager(theme ?? { background: color }, fontFamily, cursor, true, scrollback);
+  api = useTerminalManager(theme ?? { background: color }, fontFamily, cursor, true, scrollback, sessions);
   return null;
 }
 
@@ -540,6 +542,54 @@ describe('terminal clipboard', () => {
     mocks.sendInput.mockClear();
     press(keyHandler('a'), 'keydown', { key: 'Enter', shiftKey: true, ctrlKey: false });
     expect(mocks.sendInput).toHaveBeenCalledWith('a', '\x1b[13;2u');
+  });
+
+  it('uses Claude Ctrl+J and each broadcast target\'s requested input protocol', () => {
+    render({ sessions: [
+      { id: 'claude', cliTool: 'claude' }, { id: 'codex', cliTool: 'codex' }, { id: 'remote', cliTool: 'claude' },
+    ] });
+    for (const id of ['claude', 'codex', 'remote']) api.getOrCreate(id);
+    for (const id of ['claude', 'codex']) {
+      const enable = terminal(id).parser.registerCsiHandler.mock.calls.find(([identifier]) => identifier.final === 'h')![1];
+      enable([9001]);
+    }
+    api.setBroadcastTargets(['claude', 'codex', 'remote']);
+    const handler = keyHandler('claude');
+    expect(press(handler, 'keydown', { key: 'Enter', shiftKey: true, ctrlKey: false })).toEqual({ result: false, prevented: true });
+    press(handler, 'keyup', { key: 'Enter', shiftKey: true, ctrlKey: false });
+    expect(mocks.sendInput.mock.calls).toEqual([
+      ['claude', '\n'],
+      ['codex', '\x1b[13;28;13;1;16;1_\x1b[13;28;13;0;16;1_'],
+      ['remote', '\x1b[13;2u'],
+    ]);
+  });
+
+  it('uses current CLI metadata for an existing terminal, including legacy Claude sessions', () => {
+    render({ sessions: [{ id: 'a', cliTool: 'codex' }] });
+    api.getOrCreate('a');
+    const enable = terminal('a').parser.registerCsiHandler.mock.calls.find(([identifier]) => identifier.final === 'h')![1];
+    enable([9001]);
+    render({ sessions: [{ id: 'a' }] });
+    const handler = keyHandler('a');
+    press(handler, 'keydown', { key: 'Enter', shiftKey: true, ctrlKey: false });
+    expect(mocks.sendInput).toHaveBeenCalledExactlyOnceWith('a', '\n');
+    mocks.sendInput.mockClear();
+    render({ sessions: [{ id: 'a', cliTool: 'custom' }] });
+    press(handler, 'keydown', { key: 'Enter', shiftKey: true, ctrlKey: false });
+    expect(mocks.sendInput).toHaveBeenCalledExactlyOnceWith('a', '\x1b[13;28;13;1;16;1_\x1b[13;28;13;0;16;1_');
+  });
+
+  it('passes Escape and ordinary typing through after a Claude Windows newline', () => {
+    render({ sessions: [{ id: 'a', cliTool: 'claude' }] });
+    api.getOrCreate('a');
+    const enable = terminal('a').parser.registerCsiHandler.mock.calls.find(([identifier]) => identifier.final === 'h')![1];
+    enable([9001]);
+    const handler = keyHandler('a');
+    press(handler, 'keydown', { key: 'Enter', shiftKey: true, ctrlKey: false });
+    expect(press(handler, 'keydown', { key: 'Escape', ctrlKey: false })).toEqual({ result: true, prevented: false });
+    terminal('a').input?.('\x1b');
+    terminal('a').input?.('hello');
+    expect(mocks.sendInput.mock.calls).toEqual([['a', '\n'], ['a', '\x1b'], ['a', 'hello']]);
   });
 
   it('copies the trimmed selection once per Ctrl+C press and cancels only the keydown', () => {

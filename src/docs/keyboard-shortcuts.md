@@ -72,4 +72,4 @@ This matters most over **SSH and Coder**, where the remote CLI can't reach your 
 
 ### Multiline CLI prompts
 
-In a terminal pane, **Shift+Enter** inserts a newline in supported agent CLIs. Tether honors the Windows input protocol requested by native Codex, avoiding visible `[13;2u` text. Other CLIs keep modified Enter. **Enter** still submits normally; additional Ctrl/Alt/Meta modifiers follow the CLI's own bindings. Customized CLI keymaps can change how these keys behave.
+In a terminal pane, **Shift+Enter** inserts a newline in supported agent CLIs. For Claude Code using Windows console input, Tether sends its **Ctrl+J** newline binding because native Claude treats modified Windows Enter as submission. Native Codex keeps its requested Windows key events, avoiding visible `[13;2u` text. Other terminal input modes keep modified Enter. **Enter** still submits normally; additional Ctrl/Alt/Meta modifiers follow the CLI's own bindings. Customized CLI keymaps can change how these keys behave. **Ctrl+J** is also a direct newline alternative in Claude Code.

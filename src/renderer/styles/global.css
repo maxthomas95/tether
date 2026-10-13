@@ -1405,6 +1405,162 @@ textarea:focus-visible,
   padding-left: 26px;
 }
 
+/* Subagent child rows under a Claude session */
+.child-agents {
+  --child-agent-indent: 40px;
+}
+
+.child-agents-toggle,
+.child-agent-row,
+.child-agents-more {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--child-agent-indent);
+  cursor: pointer;
+  transition: var(--hover-transition);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.child-agents-toggle:hover,
+.child-agent-row:hover,
+.child-agents-more:hover {
+  background: var(--bg-hover);
+}
+
+.child-agents-toggle:focus-visible,
+.child-agent-row:focus-visible,
+.child-agents-more:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-inset);
+}
+
+.child-agents-chevron {
+  width: 8px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.child-agents-running {
+  color: var(--status-running);
+}
+
+.child-agents-running::before {
+  content: '\00b7';
+  margin: 0 var(--space-1);
+  color: var(--text-muted);
+}
+
+.child-agent-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.child-agent-title,
+.child-agent-meta {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.child-agent-title {
+  color: var(--text-primary);
+}
+
+.child-agent-meta {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+.child-agents-note {
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--child-agent-indent);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+/* Read-only subagent transcript viewer */
+.child-agent-overlay {
+  z-index: 20;
+}
+
+.child-agent-dialog {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.child-agent-body {
+  max-height: min(72vh, 640px);
+}
+
+.child-agent-heading {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.child-agent-text-block {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.child-agent-activity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-xs);
+}
+
+.child-agent-tool {
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.child-agent-tool-name {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.child-agent-tool-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-family: var(--font-mono-terminal, monospace);
+}
+
+.child-agent-tool-failed {
+  flex-shrink: 0;
+  color: var(--status-dead);
+}
+
+.child-agent-note-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  padding: var(--space-1) 0;
+}
+
 /* Nested active rows no longer adjust padding — the knot indicator
  * (positioned absolutely in the gutter) doesn't push content the way
  * the old 2px left border did. */

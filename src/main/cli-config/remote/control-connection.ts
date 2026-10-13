@@ -41,6 +41,11 @@ export interface RemoteProcess {
   onLine(cb: (line: string) => void): void;
   /** Fired once when the process or its channel goes away. */
   onExit(cb: () => void): void;
+  /**
+   * Fired once if stderr carries a sudo/login refusal ("Sorry, try again" and
+   * kin). Only that fact leaves the channel: stderr itself is never kept.
+   */
+  onAuthFailure?(cb: () => void): void;
   kill(): void;
 }
 
