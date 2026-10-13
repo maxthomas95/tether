@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.6.10-beta.9] - 2026-10-12
+
+Beta release for testing the session and terminal changes since `0.6.9-beta.8`, available on the Beta update channel.
+
+### New Features
+- **Claude subagent visibility** - show collapsible child rows with status, model, timing and tokens for local, SSH and Coder sessions. Click a row for a read-only transcript viewer (#266, #269).
+- **Local Codex exec visibility** - show `codex exec` runs launched by a local Claude session alongside its subagents, without changing the parent's status. Requires opted-in Codex lifecycle hooks and native Codex hook trust (#268).
+
+### Bug Fixes
+- **Remote Claude recovery** - when a saved SSH or Coder conversation ID has no history, open a fresh conversation under that ID instead of stopping on a resume error; existing conversations still resume (#264).
+- **Claude transcript discovery** - find usage and transcripts for directories containing punctuation or very long paths, including on remote hosts (#265).
+- **Windows Claude multiline input** - Shift+Enter inserts a draft line using Claude's Ctrl+J binding; mixed Claude/Codex broadcast targets keep their own input encoding (#272).
+- **Terminal hyperlinks** - Ctrl+click opens OSC 8 links, including Claude login links, in the system browser using the same HTTP(S) checks as plain URLs (#271).
+- **Local CLI hook setup** - verify standalone Node.js before installing hooks and record its absolute path. When unavailable, remove stale Tether entries, warn once and retain output-based status detection and user hooks (#273).
+
+### Security and Internal
+- Update app build dependencies and the Helm MCP SDK to resolve newly reported advisories; retain the verified build-only `braces` backport (#264, #265).
+- Run the required CodeQL workflow directly on fork pull requests (#275).
+- Refresh the bundled pricing snapshot used for offline API-cost estimates.
+
+### Beta Test Focus
+- In Windows Claude and Codex panes, use Shift+Enter to compose a multiline prompt and Enter to submit; repeat with mixed broadcast targets.
+- Ctrl+click plain URLs and Claude's clickable login link; verify an ordinary click leaves the terminal focused.
+- Restart SSH and Coder Claude panes with existing history and with no first message; verify resume and fresh-start behavior respectively. Check usage for a project path containing punctuation.
+- Run Claude subagents locally and remotely; expand their rows, inspect a running transcript and final answer, then disable **Show subagents in sidebar**. For local Codex exec rows, enable and trust the lifecycle hooks first.
+- Check local Claude/Codex status hooks with Node.js available, and in a separate test environment without it; verify the fallback warning and that sessions still work.
+
+### Beta Notes
+- **Show subagents in sidebar** is on by default and adds one preference to the existing JSON settings. Disabling it stops local and remote child-transcript reads. Remote readers require Node.js; Coder subagent status uses transcript activity because Coder hooks are unavailable.
+- Codex exec rows are local-only. Existing lifecycle-hook opt-in and native trust requirements remain in effect.
+- Runtime and Helm dependency audits remain strict; see [dependency security checks](docs/DEPENDENCY_SECURITY.md) for the build-only audit disposition.
+- Terminal bytes continue through the raw PTY path; child rows and usage read separate metadata and transcript files. Windows installer and portable builds remain unsigned.
+
+---
+
 ## [0.6.9-beta.8] - 2026-10-05
 
 Beta fixes found during daily use, available on the Beta update channel.
