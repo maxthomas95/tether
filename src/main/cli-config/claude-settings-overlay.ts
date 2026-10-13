@@ -33,6 +33,8 @@ const log = createLogger('claude-overlay');
 export interface ClaudeOverlayContext {
   /** Absolute path to `cli-tools/tether-cli-hook/index.js`. */
   helperPath: string;
+  /** Preflighted local Node executable; remote overlays retain their host's PATH lookup. */
+  nodePath?: string;
   /** Override target file (tests only). Defaults to `<claude-home>/settings.json`. */
   settingsPath?: string;
   /**
@@ -188,8 +190,10 @@ export function helperCommand(
   helperPath: string,
   cliFlag: '--claude' | '--codex',
   platform?: ShellPlatform,
+  nodePath?: string,
 ): string {
-  return `node ${quoteShellArg(helperPath, platform)} ${cliFlag}`;
+  const executable = nodePath ? quoteShellArg(nodePath, platform) : 'node';
+  return `${executable} ${quoteShellArg(helperPath, platform)} ${cliFlag}`;
 }
 
 // Both Notification and Stop entries take the same wrapper shape:
@@ -280,7 +284,7 @@ export async function installClaudeHooks(ctx: ClaudeOverlayContext): Promise<boo
   return withMutex(() => {
     const store = ctx.store ?? localConfigFileStore;
     const filePath = resolveSettingsPath(ctx);
-    const helperCmd = helperCommand(ctx.helperPath, '--claude', ctx.platform);
+    const helperCmd = helperCommand(ctx.helperPath, '--claude', ctx.platform, ctx.nodePath);
     const merged = mergeClaudeSettings(store.read(filePath), helperCmd);
     store.writeAtomic(filePath, merged);
     const installed = hasTetherClaudeHooks(merged);

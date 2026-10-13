@@ -56,6 +56,8 @@ const log = createLogger('codex-overlay');
 export interface CodexOverlayContext {
   /** Absolute path to `cli-tools/tether-cli-hook/index.js`. */
   helperPath: string;
+  /** Preflighted local Node executable. */
+  nodePath?: string;
   /** Override target file (tests only). Defaults to `<codex-home>/config.toml`. */
   configPath?: string;
   /**
@@ -183,12 +185,12 @@ function tomlStringArray(values: string[]): string {
   return `[${escaped.join(', ')}]`;
 }
 
-function buildNotifyLine(helperPath: string): string {
+function buildNotifyLine(helperPath: string, nodePath: string): string {
   // Argv layout the helper expects in --codex mode:
   //   node <helperPath> --codex '<json>'
   // Codex auto-appends the JSON payload as the final argv element, so we
   // only need to provide the prefix.
-  return `notify = ${tomlStringArray(['node', helperPath, '--codex'])}`;
+  return `notify = ${tomlStringArray([nodePath, helperPath, '--codex'])}`;
 }
 
 /**
@@ -241,7 +243,7 @@ function joinLines(lines: string[], hadTrailingNewline: boolean): string {
  * @param text       Current file content, or null/'' for a missing file.
  * @param helperPath Absolute path to the hook helper (`…/tether-cli-hook/index.js`).
  */
-export function mergeCodexConfig(text: string | null, helperPath: string): { text: string; changed: boolean } {
+export function mergeCodexConfig(text: string | null, helperPath: string, nodePath = 'node'): { text: string; changed: boolean } {
   const original = text ?? '';
   const hadTrailingNewline = original.endsWith('\n');
   let lines = splitLines(original.endsWith('\n') ? original.slice(0, -1) : original);
@@ -258,7 +260,7 @@ export function mergeCodexConfig(text: string | null, helperPath: string): { tex
     return { text: joinLines(lines, hadTrailingNewline || lines.length > 0), changed: true };
   }
 
-  lines = appendNotifyToTopLevel(lines, buildNotifyLine(helperPath));
+  lines = appendNotifyToTopLevel(lines, buildNotifyLine(helperPath, nodePath));
   return { text: joinLines(lines, true), changed: true };
 }
 
@@ -305,7 +307,7 @@ export async function installCodexHooks(ctx: CodexOverlayContext): Promise<boole
   return withMutex(() => {
     const store = ctx.store ?? localConfigFileStore;
     const filePath = resolveConfigPath(ctx);
-    const merged = mergeCodexConfig(readOrEmpty(store, filePath), ctx.helperPath);
+    const merged = mergeCodexConfig(readOrEmpty(store, filePath), ctx.helperPath, ctx.nodePath);
     if (merged.changed) store.writeAtomic(filePath, merged.text);
     const installed = hasTetherCodexNotify(merged.text);
     log.info(installed ? 'Codex notify installed' : 'User-owned Codex notify preserved; using cadence detection', { filePath });
