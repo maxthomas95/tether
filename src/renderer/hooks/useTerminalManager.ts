@@ -84,6 +84,16 @@ function writeClipboard(text: string): void {
   void window.electronAPI.clipboard.writeText(text).catch(() => {});
 }
 
+/**
+ * Opens a terminal link in the system browser, gated on Ctrl/Cmd. Shared by the
+ * regex matcher (WebLinksAddon) and xterm's OSC 8 hyperlink path so a link obeys
+ * the same policy however it was written into the pane.
+ */
+function activateLink(event: MouseEvent, uri: string): void {
+  if (!event.ctrlKey && !event.metaKey) return;
+  void window.electronAPI.shell.openExternal(uri);
+}
+
 function copySelection(terminal: Terminal, e: KeyboardEvent): false {
   if (e.type === 'keydown') {
     e.preventDefault();
@@ -240,6 +250,17 @@ export function useTerminalManager(
     const family = fontFamilyRef.current;
     const terminal = new Terminal({
       ...BASE_TERMINAL_OPTIONS,
+      // OSC 8 hyperlinks — emitted by Claude Code's login flow and many other
+      // TUIs — never reach WebLinksAddon; xterm resolves them through its own
+      // OSC link provider. With no linkHandler that provider falls back to
+      // xterm's default, which opens a blank `window.open()` so it can clear
+      // the opener before assigning `location.href`. Tether's
+      // setWindowOpenHandler denies every window open, so that call returns
+      // null and the link silently never opens. Handling them here fixes that
+      // and applies the same Ctrl/Cmd gate the regex matcher uses — xterm's
+      // default prompts on a bare click, which would let remote output raise a
+      // navigation dialog without a modifier.
+      linkHandler: { activate: (event, uri) => activateLink(event, uri) },
       cursorStyle: cursorStyleRef.current,
       cursorBlink: cursorBlinkRef.current,
       // A pending font effect will apply the chosen face once loaded. Start
@@ -255,10 +276,7 @@ export function useTerminalManager(
     const searchAddon = new SearchAddon();
     terminal.loadAddon(searchAddon);
 
-    const linksAddon = new WebLinksAddon((event, uri) => {
-      if (!event.ctrlKey && !event.metaKey) return;
-      void window.electronAPI.shell.openExternal(uri);
-    });
+    const linksAddon = new WebLinksAddon((event, uri) => activateLink(event, uri));
     terminal.loadAddon(linksAddon);
 
     // OSC 52 clipboard bridge. Claude Code's fullscreen rendering (and many

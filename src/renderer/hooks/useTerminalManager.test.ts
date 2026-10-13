@@ -55,10 +55,15 @@ const mocks = vi.hoisted(() => {
       for (const listener of this.listeners) listener(event);
     }
   }
+  class FakeWebLinksAddon {
+    constructor(public handler: (event: MouseEvent, uri: string) => void) {}
+    activate() {}
+  }
   return {
     FakeTerminal,
     FakeFitAddon,
     FakeSearchAddon,
+    FakeWebLinksAddon,
     resize: vi.fn(),
     sendInput: vi.fn(),
     setOutputMode: vi.fn().mockResolvedValue(undefined),
@@ -66,13 +71,16 @@ const mocks = vi.hoisted(() => {
       writeText: vi.fn().mockResolvedValue(undefined),
       readText: vi.fn(() => 'from clipboard'),
     },
+    shell: {
+      openExternal: vi.fn().mockResolvedValue(undefined),
+    },
   };
 });
 
 vi.mock('@xterm/xterm', () => ({ Terminal: mocks.FakeTerminal }));
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: mocks.FakeFitAddon }));
 vi.mock('@xterm/addon-search', () => ({ SearchAddon: mocks.FakeSearchAddon }));
-vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }));
+vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: mocks.FakeWebLinksAddon }));
 
 import { useTerminalManager, type TerminalManagerAPI, type TerminalCursorStyle } from './useTerminalManager';
 import type { SessionInfo } from '../../shared/types';
@@ -127,7 +135,7 @@ beforeEach(() => {
   frames = [];
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback));
   mocks.clipboard.writeText.mockResolvedValue(undefined);
-  vi.stubGlobal('electronAPI', { session: mocks, clipboard: mocks.clipboard });
+  vi.stubGlobal('electronAPI', { session: mocks, clipboard: mocks.clipboard, shell: mocks.shell });
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -659,5 +667,51 @@ describe('terminal clipboard', () => {
     } finally {
       process.off('unhandledRejection', unhandled);
     }
+  });
+});
+
+describe('terminal links', () => {
+  type LinkActivate = (event: MouseEvent, uri: string) => void;
+
+  /** The handler WebLinksAddon was constructed with — the regex-matched path. */
+  function regexLink(sessionId: string): LinkActivate {
+    const addon = terminal(sessionId).loadAddon.mock.calls
+      .map(([addon]) => addon)
+      .find(addon => addon instanceof mocks.FakeWebLinksAddon) as InstanceType<typeof mocks.FakeWebLinksAddon>;
+    return addon.handler;
+  }
+
+  /** The `linkHandler` Terminal option — the OSC 8 hyperlink path. */
+  function osc8Link(sessionId: string): LinkActivate {
+    const { linkHandler } = terminal(sessionId).options as { linkHandler?: { activate: LinkActivate } };
+    if (!linkHandler) throw new Error('no linkHandler: OSC 8 links fall back to xterm, which cannot open them');
+    return linkHandler.activate;
+  }
+
+  const click = (init: MouseEventInit = {}) => new MouseEvent('click', init);
+
+  it('opens an OSC 8 hyperlink in the system browser on Ctrl+click', () => {
+    api.getOrCreate('a');
+    osc8Link('a')(click({ ctrlKey: true }), 'https://example.com/');
+    expect(mocks.shell.openExternal).toHaveBeenCalledExactlyOnceWith('https://example.com/');
+  });
+
+  it('opens an OSC 8 hyperlink on Cmd+click', () => {
+    api.getOrCreate('a');
+    osc8Link('a')(click({ metaKey: true }), 'https://example.com/');
+    expect(mocks.shell.openExternal).toHaveBeenCalledExactlyOnceWith('https://example.com/');
+  });
+
+  it('ignores a bare click on either link kind, so remote output cannot navigate unprompted', () => {
+    api.getOrCreate('a');
+    osc8Link('a')(click(), 'https://example.com/');
+    regexLink('a')(click(), 'https://example.com/');
+    expect(mocks.shell.openExternal).not.toHaveBeenCalled();
+  });
+
+  it('gates regex-matched URLs the same way', () => {
+    api.getOrCreate('a');
+    regexLink('a')(click({ ctrlKey: true }), 'https://example.com/');
+    expect(mocks.shell.openExternal).toHaveBeenCalledExactlyOnceWith('https://example.com/');
   });
 });

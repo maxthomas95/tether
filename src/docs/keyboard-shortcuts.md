@@ -60,7 +60,7 @@ Most keyboard input is passed straight to the active session — Tether does not
 | **Ctrl+C** | Copy the selection if there is one; otherwise passes through as **SIGINT** |
 | **Ctrl+Shift+C** | Copy the selection; with no selection, leave the clipboard unchanged |
 | **Ctrl+V** | Paste. Uses bracketed paste when the app requests it, so a multi-line paste into Claude Code's input arrives as one block instead of a burst of submits |
-| **Ctrl+click** a printed URL | Open it in your browser (via `shell.openExternal`) |
+| **Ctrl+click** a printed URL | Open it in your browser (via `shell.openExternal`). Works both for plain URLs in the output and for OSC 8 hyperlinks, where a CLI prints clickable label text instead of the raw address — Claude Code's login flow uses one. A bare click never opens a link |
 
 Terminal search uses the terminal's scrollback buffer and does not send input to the CLI. Press **Enter** / **Shift+Enter** in the search bar for next / previous match, and **Esc** to close it and return focus to the same terminal.
 
