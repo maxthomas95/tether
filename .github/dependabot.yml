@@ -4,9 +4,14 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "daily"
-    open-pull-requests-limit: 0
+      interval: "weekly"
+    open-pull-requests-limit: 2
     groups:
+      npm-version-nonmajors:
+        applies-to: "version-updates"
+        update-types:
+          - "patch"
+          - "minor"
       npm-security-nonmajors:
         applies-to: "security-updates"
         update-types:
@@ -20,9 +25,14 @@ updates:
   - package-ecosystem: "npm"
     directory: "/mcp-servers/tether-helm"
     schedule:
-      interval: "daily"
-    open-pull-requests-limit: 0
+      interval: "weekly"
+    open-pull-requests-limit: 2
     groups:
+      tether-helm-version-nonmajors:
+        applies-to: "version-updates"
+        update-types:
+          - "patch"
+          - "minor"
       tether-helm-security-nonmajors:
         applies-to: "security-updates"
         update-types:
@@ -36,9 +46,14 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
-    open-pull-requests-limit: 0
+      interval: "weekly"
+    open-pull-requests-limit: 2
     groups:
+      github-actions-version-nonmajors:
+        applies-to: "version-updates"
+        update-types:
+          - "patch"
+          - "minor"
       github-actions-security-nonmajors:
         applies-to: "security-updates"
         update-types:

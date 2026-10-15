@@ -4,6 +4,12 @@ Run `npm run audit:security`, `npm audit --omit=dev --audit-level=high`, and
 `npm --prefix mcp-servers/tether-helm audit --audit-level=high` before release.
 The runtime and Helm checks reject all high or critical findings.
 
+PR dependency review separately rejects newly introduced high/critical
+vulnerabilities from GitHub's dependency graph, including fork PRs. It does not
+replace the installed-file integrity gate below or automatically waive its
+build-only backport. If an update reintroduces that advisory, review and fix the
+dependency change rather than adding a broad advisory exclusion.
+
 ## Temporary braces backport
 
 As of 2026-10-04, npm has no fixed release for
