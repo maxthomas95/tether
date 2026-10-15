@@ -40,8 +40,8 @@ function isSessionRow(value: unknown): value is OpencodeSessionRow {
  *
  * Optional CLI failures degrade to "no transcripts" without exposing output.
  */
-async function runSessionList(): Promise<OpencodeSessionRow[]> {
-  const result = await runCliMetadata('opencode', ['session', 'list', '--format', 'json']);
+async function runSessionList(cwd: string, env?: NodeJS.ProcessEnv): Promise<OpencodeSessionRow[]> {
+  const result = await runCliMetadata('opencode', ['session', 'list', '--format', 'json'], { cwd, env });
   if (!result.ok) return [];
   try {
     const parsed: unknown = JSON.parse(result.stdout);
@@ -73,8 +73,8 @@ function rowToTranscript(row: OpencodeSessionRow): TranscriptInfo | null {
  * first. Returns at most `limit` results. Returns `[]` on any spawn / parse
  * failure — opencode is optional, missing it shouldn't break the picker.
  */
-export async function listOpencodeTranscripts(cwd: string, limit = 50): Promise<TranscriptInfo[]> {
-  const rows = await runSessionList();
+export async function listOpencodeTranscripts(cwd: string, limit = 50, env?: NodeJS.ProcessEnv): Promise<TranscriptInfo[]> {
+  const rows = await runSessionList(cwd, env);
   const target = normalizeCwd(cwd);
   const matches: TranscriptInfo[] = [];
   for (const row of rows) {
@@ -87,8 +87,8 @@ export async function listOpencodeTranscripts(cwd: string, limit = 50): Promise<
   return matches.slice(0, limit);
 }
 
-export async function opencodeTranscriptExists(cwd: string, sessionId: string): Promise<boolean> {
-  const rows = await runSessionList();
+export async function opencodeTranscriptExists(cwd: string, sessionId: string, env?: NodeJS.ProcessEnv): Promise<boolean> {
+  const rows = await runSessionList(cwd, env);
   const target = normalizeCwd(cwd);
   return rows.some(r => r.id === sessionId && r.directory && normalizeCwd(r.directory) === target);
 }

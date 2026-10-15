@@ -6,6 +6,7 @@ import type { SessionUsage } from '../../shared/types';
 import type { DbData } from '../db/database';
 
 vi.mock('electron', () => ({ app: { getPath: () => '' } }));
+vi.mock('../cli/metadata-command', () => ({ runCliMetadata: async () => ({ ok: false, reason: 'unavailable' }) }));
 
 const mocks = vi.hoisted(() => ({
   db: {

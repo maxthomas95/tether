@@ -1004,7 +1004,7 @@ export class SessionManager {
       // OpenCode's local history check shells out to `opencode session list`.
       // Verify the saved conversation before resuming; the CLI's handling of
       // missing ids can vary between versions.
-      if (cliTool === 'opencode' && requestedResumeId && await opencodeTranscriptExists(opts.workingDir, requestedResumeId)) {
+      if (cliTool === 'opencode' && requestedResumeId && await opencodeTranscriptExists(opts.workingDir, requestedResumeId, resolvedEnv)) {
         resumeId = requestedResumeId;
         toolSessionId = requestedResumeId;
         session.resumed = true;
@@ -1146,15 +1146,14 @@ export class SessionManager {
     // OpenCode also assigns its `ses_…` id at first turn. Poll its CLI to
     // capture the new id so we can attach to it next launch.
     if (cliTool === 'opencode' && transport instanceof LocalTransport && !resumeId) {
-      const handle = detectNewOpencodeSession({ workingDir: opts.workingDir });
+      const handle = detectNewOpencodeSession({ workingDir: opts.workingDir, env: resolvedEnv });
       session.opencodeDetectCancel = handle.cancel;
       handle.promise.then((detectedId) => {
         session.opencodeDetectCancel = null;
         if (!detectedId || !this.sessions.has(session.id)) return;
         session.toolSessionId = detectedId;
-        // OpenCode usage is sourced from crush.db. Track here so a freshly
-        // created (non-resumed) session is attributed to its environment.
-        usageService.trackSession(detectedId, opts.workingDir, 'opencode', opts.environmentId ?? undefined);
+        // Match the native database to this launch's source-location overrides.
+        usageService.trackSession(detectedId, opts.workingDir, 'opencode', opts.environmentId ?? undefined, { env: resolvedEnv });
         callbacks.onUpdate?.(session.id, session.toInfo());
       }).catch(() => {
         session.opencodeDetectCancel = null;
@@ -1164,6 +1163,9 @@ export class SessionManager {
 
     this.notifyLifecycle(o => o.onCreated?.(session));
 
+    if (cliTool === 'opencode' && transport instanceof LocalTransport && resumeId) {
+      usageService.trackSession(resumeId, opts.workingDir, 'opencode', opts.environmentId ?? undefined, { env: resolvedEnv });
+    }
     return session;
   }
 

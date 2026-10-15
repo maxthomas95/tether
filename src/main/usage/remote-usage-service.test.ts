@@ -5,6 +5,7 @@ import { getDb } from '../db/database';
 import type { RemoteUsageReply, RemoteUsageSource } from './remote-protocol';
 
 vi.mock('electron', () => ({ app: { getPath: () => '' } }));
+vi.mock('../cli/metadata-command', () => ({ runCliMetadata: async () => ({ ok: false, reason: 'unavailable' }) }));
 vi.mock('../db/database');
 vi.mock('../logger', () => ({ createLogger: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn() }) }));
 vi.mock('./remote-command', () => ({ connectRemoteUsage: vi.fn() }));

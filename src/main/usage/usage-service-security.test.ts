@@ -4,6 +4,7 @@ import os from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ app: { getPath: () => '' } }));
+vi.mock('../cli/metadata-command', () => ({ runCliMetadata: async () => ({ ok: false, reason: 'unavailable' }) }));
 vi.mock('../db/database', () => ({ getDb: vi.fn(() => ({ usageSummaries: [] })), saveDb: vi.fn() }));
 vi.mock('./jsonl-parser', () => ({ parseJsonlFile: vi.fn(() => ({ messages: [], newByteOffset: 0 })) }));
 vi.mock('node:fs', async (importOriginal) => ({

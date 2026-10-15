@@ -20,7 +20,15 @@ describe('OpenCode transcript discovery', () => {
   it('uses the shared metadata command with the existing session-list arguments', async () => {
     respond([row()]);
     expect(await listOpencodeTranscripts(cwd)).toHaveLength(1);
-    expect(mocks.run).toHaveBeenCalledWith('opencode', ['session', 'list', '--format', 'json']);
+    expect(mocks.run).toHaveBeenCalledWith('opencode', ['session', 'list', '--format', 'json'], { cwd, env: undefined });
+  });
+
+  it('uses the effective launch environment for history and resume validation', async () => {
+    const env = { OPENCODE_DB: 'custom.db' };
+    respond([row()]);
+    await listOpencodeTranscripts(cwd, 50, env);
+    await expect(opencodeTranscriptExists(cwd, 'ses_one', env)).resolves.toBe(true);
+    expect(mocks.run).toHaveBeenNthCalledWith(2, 'opencode', ['session', 'list', '--format', 'json'], { cwd, env });
   });
 
   it.each(['unavailable', 'failed', 'timeout', 'too-large'])('returns no history and false existence on a %s metadata result', async reason => {

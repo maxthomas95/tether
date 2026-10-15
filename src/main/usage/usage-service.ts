@@ -1,10 +1,13 @@
 import * as fs from 'node:fs';
+import path from 'node:path';
 import { createLogger } from '../logger';
 import { transcriptPath, scanAllTranscripts } from '../claude/transcripts';
 import { scanAllCodexTranscripts } from '../codex/transcripts';
 import { parseJsonlFile, parseClaudeUsageText, type ParsedMessage } from './jsonl-parser';
 import { parseCodexJsonl, parseCodexUsageText, type CodexTokenUsageCounters, type CodexRequestUsageCheckpoint } from './codex-jsonl-parser';
 import { readCrushSessions } from '../opencode/usage-reader';
+import { readNativeOpenCodeUsage } from '../opencode/native-usage-reader';
+import { NativeOpenCodeUsageSource, openCodeUsageContext, type OpenCodeUsageContext } from '../opencode/native-usage-source';
 import { getDb, saveDb, type PersistedSessionUsage } from '../db/database';
 import { aggregateByEnvironment } from './env-aggregator';
 import { aggregateByCliTool } from './cli-tool-aggregator';
@@ -91,6 +94,9 @@ function hydrateUsage(summary: PersistedSessionUsage, cliTool: CliToolId, enviro
   return {
     sessionId: summary.sessionId,
     cliTool,
+    costSource: summary.costSource ?? (cliTool === 'opencode' ? 'reported' : undefined),
+    usageSource: summary.usageSource ?? (cliTool === 'opencode' ? 'crush' : undefined),
+    collectionStatus: summary.usageSource === 'native-opencode' ? 'unavailable' : undefined,
     environmentId: summary.environmentId ?? environmentId,
     inputTokens: summary.inputTokens,
     outputTokens: summary.outputTokens,
@@ -273,16 +279,34 @@ function claudeUsagePath(workingDir: string, sessionId: string): string {
   }
 }
 
+function sameNativeMeasurement(a: SessionUsage, b: SessionUsage): boolean {
+  const measurement = (usage: SessionUsage) => {
+    const { observedAt: _observedAt, collectionStatus: _status, environmentId: _env, workingDir: _cwd, ...values } = usage;
+    return JSON.stringify(values);
+  };
+  return measurement(a) === measurement(b);
+}
+
 export class UsageService {
   private tracked = new Map<string, TrackedSession>();
   private callback: ((info: UsageInfo) => void) | null = null;
   private rescanTimer: ReturnType<typeof setInterval> | null = null;
+  private nativeSource = new NativeOpenCodeUsageSource();
+  private nativeContexts = new Map<string, OpenCodeUsageContext>();
+  private nativePoll: ReturnType<typeof setInterval> | null = null;
+  private nativeRefresh: Promise<void> | null = null;
+  private nativeGeneration = 0;
+  private nativeRevision = 0;
+  private stopped = false;
+  private backfillTask: ReturnType<typeof setImmediate> | null = null;
 
   onUpdate(cb: (info: UsageInfo) => void): void {
     this.callback = cb;
   }
 
   start(): void {
+    this.stopped = false;
+    this.nativeGeneration++;
     log.info('Usage service started');
     // Load persisted summaries into memory
     const db = getDb();
@@ -318,7 +342,10 @@ export class UsageService {
     // event loop keeps the UI responsive while we chew through historical
     // JSONLs. Afterwards, a periodic rescan catches appends to historical
     // files from out-of-band claude runs.
-    setImmediate(() => this.backfillFromDisk());
+    this.backfillTask = setImmediate(() => {
+      this.backfillTask = null;
+      if (!this.stopped) this.backfillFromDisk();
+    });
     this.rescanTimer = setInterval(() => this.backfillFromDisk(), RESCAN_INTERVAL_MS);
   }
 
@@ -331,13 +358,14 @@ export class UsageService {
    * Also scans Crush (OpenCode) SQLite database for historical sessions.
    */
   private backfillFromDisk(): void {
+    if (this.stopped) return;
     // 1. Backfill Claude Code transcripts (JSONL)
-    let discovered;
+    let discovered: ReturnType<typeof scanAllTranscripts>;
     try {
       discovered = scanAllTranscripts();
     } catch (err) {
       log.warn('Transcript scan failed', { error: err instanceof Error ? err.message : String(err) });
-      return;
+      discovered = [];
     }
 
     let newSessions = 0;
@@ -457,6 +485,9 @@ export class UsageService {
           usage: {
             sessionId: cs.id,
             cliTool: 'opencode',
+            usageSource: 'crush',
+            costSource: 'reported',
+            collectionStatus: 'available',
             inputTokens: cs.promptTokens,
             outputTokens: cs.completionTokens,
             reasoningTokens: 0,
@@ -502,9 +533,10 @@ export class UsageService {
       });
       this.notifyUpdate();
     }
+    void this.refreshNativeOpenCode();
   }
 
-  trackSession(sessionId: string, workingDir: string, cliTool: CliToolId = 'claude', environmentId?: string): void {
+  trackSession(sessionId: string, workingDir: string, cliTool: CliToolId = 'claude', environmentId?: string, context?: OpenCodeUsageContext): void {
     const existing = this.tracked.get(sessionId);
     if (existing) {
       let changed = false;
@@ -535,6 +567,7 @@ export class UsageService {
         this.persistSession(existing);
         this.notifyUpdate();
       }
+      if (cliTool === 'opencode' && !existing.remote) this.activateOpenCode(existing, context);
       return;
     }
 
@@ -589,9 +622,7 @@ export class UsageService {
       // No file path yet — the backfill rescan picks it up once Codex
       // writes session_meta.
     } else if (cliTool === 'opencode') {
-      // For OpenCode, pull from crush.db on track and on untrack.
-      // No file watching — the DB is the source of truth.
-      this.refreshCrushSession(session);
+      this.activateOpenCode(session, context);
     }
   }
 
@@ -665,6 +696,16 @@ export class UsageService {
       if (session.filePath) this.parseSession(session);
     } else if (session.cliTool === 'opencode') {
       this.refreshCrushSession(session);
+      const context = this.nativeContexts.get(sessionId);
+      void this.refreshNativeOpenCode().finally(() => {
+        // A new launch may have reactivated this ID while the final read ran.
+        if (this.nativeContexts.get(sessionId) !== context) return;
+        if (this.nativeContexts.delete(sessionId)) this.nativeRevision++;
+        if (this.nativeContexts.size === 0 && this.nativePoll) {
+          clearInterval(this.nativePoll);
+          this.nativePoll = null;
+        }
+      });
     }
 
     // Close watcher (Claude / Codex)
@@ -680,7 +721,7 @@ export class UsageService {
   /** Main-process side channels only; remote transcript paths are never local files. */
   getLocalTranscriptPath(sessionId: string): string | null {
     const tracked = this.tracked.get(sessionId);
-    return tracked && !tracked.remote && tracked.filePath ? tracked.filePath : null;
+    return tracked && !tracked.remote && (tracked.cliTool === 'claude' || tracked.cliTool === 'codex') && tracked.filePath ? tracked.filePath : null;
   }
 
   getAll(): UsageInfo {
@@ -691,6 +732,7 @@ export class UsageService {
     for (const [id, tracked] of this.tracked) {
       const usage = { ...tracked.usage, workingDir: tracked.workingDir };
       sessions[id] = usage;
+      if (usage.collectionStatus === 'unavailable' && !usage.observedAt) continue;
       allUsage.push(usage);
       totalCost += tracked.usage.totalCost;
     }
@@ -713,6 +755,7 @@ export class UsageService {
   getEnrichedSessions(): Array<SessionUsage & { workingDir: string }> {
     const out: Array<SessionUsage & { workingDir: string }> = [];
     for (const tracked of this.tracked.values()) {
+      if (tracked.usage.collectionStatus === 'unavailable' && !tracked.usage.observedAt) continue;
       out.push({ ...tracked.usage, workingDir: tracked.workingDir });
     }
     return out;
@@ -733,6 +776,7 @@ export class UsageService {
     } else {
       for (const session of this.tracked.values()) refreshOne(session);
     }
+    if (!sessionId || this.tracked.get(sessionId)?.cliTool === 'opencode') await this.refreshNativeOpenCode();
     return this.getAll();
   }
 
@@ -809,11 +853,145 @@ export class UsageService {
     }
   }
 
+  private activateOpenCode(session: TrackedSession, context?: OpenCodeUsageContext): void {
+    if (this.stopped) return;
+    this.refreshCrushSession(session);
+    if (session.usage.usageSource === 'crush') return;
+    const previous = this.nativeContexts.get(session.sessionId);
+    const next = context
+      ? openCodeUsageContext(session.workingDir, context.env)
+      : previous ?? openCodeUsageContext(session.workingDir);
+    if (JSON.stringify(previous) !== JSON.stringify(next)) {
+      this.nativeRevision++;
+      if (this.markNativeUnavailable(session.sessionId)) this.notifyUpdate();
+    }
+    this.nativeContexts.set(session.sessionId, { ...next });
+    if (!this.nativePoll) {
+      this.nativePoll = setInterval(() => { void this.refreshNativeOpenCode(); }, 10_000);
+      this.nativePoll.unref?.();
+    }
+    void this.refreshNativeOpenCode();
+  }
+
+  private refreshNativeOpenCode(): Promise<void> {
+    if (this.stopped) return Promise.resolve();
+    if (this.nativeRefresh) return this.nativeRefresh;
+    const generation = this.nativeGeneration;
+    const request = this.collectCurrentNativeOpenCode(generation).catch(() => {
+      if (generation !== this.nativeGeneration) return;
+      log.warn('Native OpenCode usage collection unavailable');
+      for (const id of this.nativeContexts.keys()) this.markNativeUnavailable(id);
+      this.notifyUpdate();
+    }).finally(() => {
+      if (this.nativeRefresh === request) this.nativeRefresh = null;
+    });
+    this.nativeRefresh = request;
+    return request;
+  }
+
+  private async collectCurrentNativeOpenCode(generation: number): Promise<void> {
+    let revision: number;
+    do {
+      revision = this.nativeRevision;
+      await this.collectNativeOpenCode(generation, revision);
+    } while (generation === this.nativeGeneration && revision !== this.nativeRevision);
+  }
+
+  private markNativeUnavailable(id: string): boolean {
+    const session = this.tracked.get(id);
+    if (!session || session.remote || session.cliTool !== 'opencode' || session.usage.usageSource === 'crush') return false;
+    const changed = session.usage.collectionStatus !== 'unavailable';
+    session.usage.collectionStatus = 'unavailable';
+    return changed;
+  }
+
+  private async collectNativeOpenCode(generation: number, revision: number): Promise<void> {
+    const active = [...this.nativeContexts.entries()];
+    const paths = await Promise.all([
+      this.nativeSource.resolvePath(),
+      ...active.map(([, context]) => this.nativeSource.resolvePath(context)),
+    ]);
+    if (generation !== this.nativeGeneration || revision !== this.nativeRevision) return;
+    const expected = new Map<string, string | null>();
+    const sources = new Map<string, string>();
+    const normalize = (value: string) => process.platform === 'win32' ? path.normalize(value).toLowerCase() : path.normalize(value);
+    const addSource = (value: string | null) => { if (value) sources.set(normalize(value), value); };
+    paths.forEach(addSource);
+    active.forEach(([id], index) => expected.set(id, paths[index + 1] ? normalize(paths[index + 1]!) : null));
+    for (const session of this.tracked.values()) {
+      if (session.remote || session.usage.usageSource !== 'native-opencode' || !session.filePath) continue;
+      addSource(session.filePath);
+    }
+    const failed = new Set<string>([...expected].filter(([, value]) => value === null).map(([id]) => id));
+    const candidates = new Map<string, { snapshot: SessionUsage; dbPath: string }[]>();
+    for (const [sourceKey, dbPath] of sources) {
+      const result = readNativeOpenCodeUsage(dbPath);
+      if (result.status !== 'available') {
+        for (const [id, source] of expected) if (source === sourceKey) failed.add(id);
+        for (const session of this.tracked.values()) {
+          if (!expected.has(session.sessionId) && session.usage.usageSource === 'native-opencode'
+            && normalize(session.filePath) === sourceKey) failed.add(session.sessionId);
+        }
+        continue;
+      }
+      const returned = new Set(result.sessions.map(session => session.sessionId));
+      for (const [id, source] of expected) if (source === sourceKey && !returned.has(id)) failed.add(id);
+      for (const session of this.tracked.values()) {
+        if (!expected.has(session.sessionId) && session.usage.usageSource === 'native-opencode'
+          && normalize(session.filePath) === sourceKey && !returned.has(session.sessionId)) failed.add(session.sessionId);
+      }
+      for (const id of result.unavailableSessionIds) {
+        if (!expected.has(id) || expected.get(id) === sourceKey) failed.add(id);
+      }
+      for (const snapshot of result.sessions) {
+        if (expected.has(snapshot.sessionId) && expected.get(snapshot.sessionId) !== sourceKey) continue;
+        const entries = candidates.get(snapshot.sessionId) ?? [];
+        entries.push({ snapshot, dbPath });
+        candidates.set(snapshot.sessionId, entries);
+      }
+    }
+    let changed = false;
+    for (const [id, entries] of candidates) {
+      if (entries.length !== 1 || failed.has(id)) {
+        // An unowned ID shared by distinct databases has no authoritative
+        // source. Never persist a candidate and then silently prefer it later.
+        if (!this.tracked.has(id)) {
+          this.tracked.set(id, { sessionId: id, cliTool: 'opencode', workingDir: '', filePath: '',
+            watching: false, debounceTimer: null, usage: emptySessionUsage(id, 'opencode') });
+        }
+        failed.add(id);
+        continue;
+      }
+      changed = this.applyNativeSnapshot(entries[0].snapshot, entries[0].dbPath) || changed;
+    }
+    for (const id of failed) changed = this.markNativeUnavailable(id) || changed;
+    if (changed) this.notifyUpdate();
+  }
+
+  private applyNativeSnapshot(snapshot: SessionUsage, dbPath: string): boolean {
+    const existing = this.tracked.get(snapshot.sessionId);
+    if (existing && (existing.remote || existing.cliTool !== 'opencode' || existing.usage.usageSource === 'crush')) return false;
+    const session: TrackedSession = existing ?? {
+      sessionId: snapshot.sessionId, cliTool: 'opencode', workingDir: snapshot.workingDir ?? '',
+      filePath: dbPath, watching: false, debounceTimer: null, usage: snapshot,
+    };
+    const next = { ...snapshot, environmentId: existing?.usage.environmentId };
+    const needsSave = !existing || session.filePath !== dbPath || !sameNativeMeasurement(session.usage, next);
+    const changed = needsSave || session.usage.collectionStatus !== 'available';
+    session.usage = next;
+    session.filePath = dbPath;
+    if (!session.workingDir) session.workingDir = snapshot.workingDir ?? '';
+    this.tracked.set(snapshot.sessionId, session);
+    if (needsSave) this.persistSession(session);
+    return changed;
+  }
+
   /**
-   * Refresh a Crush/OpenCode session's usage data from the SQLite database.
+   * Refresh a legacy Crush session's usage data from the SQLite database.
    * This is a point-in-time read — Crush computes cost internally.
    */
   private refreshCrushSession(session: TrackedSession): void {
+    if (session.remote || session.usage.usageSource === 'native-opencode') return;
     const crushSessions = readCrushSessions();
     const found = crushSessions.find(cs => cs.id === session.sessionId);
     if (!found) return;
@@ -839,6 +1017,9 @@ export class UsageService {
     session.usage = {
       sessionId: found.id,
       cliTool: 'opencode',
+      usageSource: 'crush',
+      costSource: 'reported',
+      collectionStatus: 'available',
       environmentId: session.usage.environmentId,
       inputTokens: found.promptTokens,
       outputTokens: found.completionTokens,
@@ -880,6 +1061,8 @@ export class UsageService {
     const entry: PersistedSessionUsage = {
       sessionId: session.sessionId,
       cliTool: session.cliTool,
+      costSource: session.usage.costSource,
+      usageSource: session.usage.usageSource,
       workingDir: session.workingDir,
       filePath: session.filePath,
       remote: session.remote,
@@ -1117,6 +1300,14 @@ export class UsageService {
   }
 
   stop(): void {
+    this.stopped = true;
+    this.nativeGeneration++;
+    if (this.backfillTask) clearImmediate(this.backfillTask);
+    this.backfillTask = null;
+    if (this.nativePoll) clearInterval(this.nativePoll);
+    this.nativePoll = null;
+    this.nativeContexts.clear();
+    this.nativeRefresh = null;
     if (this.rescanTimer) {
       clearInterval(this.rescanTimer);
       this.rescanTimer = null;
