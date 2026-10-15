@@ -152,8 +152,10 @@ function buildUsage(session: NativeSession): SessionUsage {
  * Forks preserve message.time.created but assign copied parts fresh persistence
  * times. Excluding messages older than their session assumes a consistent host
  * clock; equal timestamps with usage have no reliable provenance and are withheld.
- * Imported parts after message completion use the original message day, flagged
- * as approximate. No transcript content is selected, returned, or logged.
+ * Parts after message completion, or without a completion boundary, use the
+ * original message day as approximate timing: imports regenerate persistence
+ * timestamps, including for unfinished messages. No transcript content is
+ * selected, returned, or logged.
  */
 export function readNativeOpenCodeUsage(dbPath: string, options: ReadOptions = {}): NativeOpenCodeUsageRead {
   if (!dbPath || dbPath === ':memory:' || !path.isAbsolute(dbPath)) return { status: 'unavailable', reason: 'unsupported' };
@@ -266,7 +268,7 @@ export function readNativeOpenCodeUsage(dbPath: string, options: ReadOptions = {
         continue;
       }
       let eventTime = row.time_created as number;
-      if (message.completed !== undefined && eventTime > message.completed) {
+      if (message.completed === undefined || eventTime > message.completed) {
         eventTime = message.created;
         session.usage.dayTiming = 'snapshot';
       }

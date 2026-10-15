@@ -192,15 +192,25 @@ describe.skipIf(!DatabaseSync)('readNativeOpenCodeUsage', () => {
       daily: [{ date: '2026-10-01', messageCount: 1 }] });
   });
 
-  it('uses part time for incomplete messages and exact completion boundaries', () => {
+  it('uses approximate original message timing for unfinished messages imported with new part timestamps', () => {
     const { db, dbPath } = fixture();
     session(db);
     message(db, 'incomplete', 'session', CREATED, { time: { created: CREATED } });
     part(db, 'later', 'incomplete', 'session', OBSERVED);
+    expect(available(dbPath).sessions[0]).toMatchObject({ dayTiming: 'snapshot',
+      firstMessageAt: '2026-10-01T12:00:00.000Z', lastMessageAt: '2026-10-01T12:00:00.000Z',
+      daily: [{ date: '2026-10-01', messageCount: 1 }],
+    });
+  });
+
+  it('uses exact part time at completed message boundaries', () => {
+    const { db, dbPath } = fixture();
+    session(db);
     message(db, 'complete');
     part(db, 'boundary', 'complete', 'session', CREATED + 10_000);
-    expect(available(dbPath).sessions[0]).toMatchObject({ dayTiming: 'event', daily: [
-      { date: '2026-10-01', messageCount: 1 }, { date: '2026-10-15', messageCount: 1 },
+    expect(available(dbPath).sessions[0]).toMatchObject({ dayTiming: 'event',
+      firstMessageAt: '2026-10-01T12:00:10.000Z', lastMessageAt: '2026-10-01T12:00:10.000Z', daily: [
+      { date: '2026-10-01', messageCount: 1 },
     ] });
   });
 
