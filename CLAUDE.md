@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provides a single unified interface to manage multiple agentic CLI sessions across local, SSH, and Coder workspace environments — preserving the exact native terminal experience via raw PTY piping into xterm.js.
+Tether is a desktop session multiplexer for Claude Code, Codex CLI, and OpenCode. It provides a single unified interface to manage multiple agentic CLI sessions across local, SSH, and Coder workspace environments — preserving the exact native terminal experience via raw PTY piping into xterm.js.
 
 **Status:** The `0.7.x` stable line graduates the soaked `0.6.x` beta train; Windows 1.0 polish continues. Local/SSH/Coder sessions, conversation recovery, split/Canvas layouts, workspace recipes, encrypted launch snapshots, local/remote Claude/Codex usage, child-agent viewers, CLI maintenance, optional Pip/GIF/J.O.B.S. integrations, and stable/beta update notifications are implemented. See `CHANGELOG.md` for release scope and `ROADMAP.md` for remaining work.
 
@@ -70,7 +70,12 @@ Each environment has preconfigured settings (host, auth, default directory, env 
 
 ### Multi-CLI support
 
-Tether is a dumb-pipe PTY multiplexer; it does not depend on any one CLI. Tools are registered in `src/shared/cli-tools.ts`:
+Tether is a dumb-pipe PTY multiplexer; it does not depend on any one CLI.
+
+Claude Code, Codex CLI, and OpenCode are first-class product targets. Review existing and planned features for equivalent outcomes across all three, including the supported local/SSH/Coder paths. Share common behavior, use native adapters for tool-specific interfaces, and document verified capability or version limitations. Do not treat the supported Crush database reader as complete native OpenCode usage coverage. Copilot and Custom support must continue to work when common paths change.
+
+Tools are registered in `src/shared/cli-tools.ts`:
+
 - **Claude Code** — full support including session resume (`--resume`, `--session-id`) and transcript browsing
 - **Codex CLI** — full support including session resume (`codex resume <id>`) and transcript browsing
 - **GitHub Copilot CLI** — local session resume (`copilot --resume <id>`) and transcript browsing; no cost reader

@@ -41,6 +41,20 @@ features, not terminal renderers.
 - JSON persistence under Electron `userData` is the current storage model;
   SQLite is deferred.
 
+## First-Class CLI Parity
+
+- Claude Code, Codex CLI, and OpenCode are equal product targets for existing
+  features and new work. Review each feature across all three and across its
+  supported local, SSH, and Coder environments.
+- Put shared behavior in common services and per-tool differences in the CLI
+  registry or dedicated adapters. Avoid making a shared feature depend on one
+  CLI when another exposes a usable native interface.
+- Parity means equivalent user outcomes using each tool's native capabilities.
+  Verify and document missing interfaces, permissions, and version requirements;
+  do not infer that a feature is impossible or complete from another CLI's behavior.
+- Include all three tools in relevant validation. Preserve support for Copilot
+  and Custom tools when changing common paths.
+
 ## Agent Routing
 
 `.codex/agents/` (local, untracked) defines three model-tiered Codex

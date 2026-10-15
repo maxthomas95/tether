@@ -54,7 +54,7 @@ describe('resolveCodexExecutable', () => {
     })).toEqual({
       kind: 'cmd',
       file: 'C:\\Windows\\System32\\cmd.exe',
-      args: ['/d', '/v:off', '/s', '/c', '""C:\\Program Files\\nodejs\\codex.CMD" app-server"'],
+      args: ['/d', '/v:off', '/s', '/c', '""C:\\Program Files\\nodejs\\codex.CMD" "app-server""'],
     });
   });
 
