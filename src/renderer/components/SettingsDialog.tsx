@@ -5,6 +5,8 @@ import { EnvVarEditor } from './EnvVarEditor';
 import { MigrateToVaultDialog } from './MigrateToVaultDialog';
 import { VaultPickerDialog } from './VaultPickerDialog';
 import { themeList } from '../styles/themes';
+import type { LocalThemeCatalog, TetherTheme } from '../../shared/theme-types';
+import { LocalThemeControls } from './LocalThemeControls';
 import { TerminalAppearancePreview } from './TerminalAppearancePreview';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../utils/vault-path';
 
@@ -151,6 +153,9 @@ interface SettingsDialogProps {
   onClose: () => void;
   currentTheme: string;
   onThemeChange: (name: string) => void;
+  availableThemes?: TetherTheme[];
+  localThemeCatalog?: LocalThemeCatalog;
+  onReloadThemes?: () => Promise<void>;
   onResetSessionFontSizes: () => void;
   keybindings: Record<KeybindingAction, Chord | null>;
   onKeybindingChange: (action: KeybindingAction, chord: Chord | null) => void;
@@ -158,7 +163,7 @@ interface SettingsDialogProps {
   onOpenCliMaintenance?: () => void;
 }
 
-export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, onThemeChange, onResetSessionFontSizes, keybindings, onKeybindingChange, onKeybindingsResetAll, onOpenCliMaintenance }: Readonly<SettingsDialogProps>) {
+export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, onThemeChange, availableThemes = themeList, localThemeCatalog, onReloadThemes, onResetSessionFontSizes, keybindings, onKeybindingChange, onKeybindingsResetAll, onOpenCliMaintenance }: Readonly<SettingsDialogProps>) {
   const settingsId = useId();
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [cliFlagsPerTool, setCliFlagsPerTool] = useState<Partial<Record<CliToolId, string[]>>>({});
@@ -703,17 +708,18 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
                 <legend className="form-label">Theme</legend>
                 <p className="form-hint">Preview a theme. Save keeps it; Cancel restores your previous theme.</p>
                 <div className="theme-grid">
-                  {themeList.map(theme => (
+                  {availableThemes.map(theme => (
                     <button key={theme.name} type="button" className={`theme-option ${currentTheme === theme.name ? 'theme-option--selected' : ''}`} aria-label={theme.label} aria-pressed={currentTheme === theme.name} disabled={saving} onClick={() => onThemeChange(theme.name)}>
                       <span className="theme-option-preview" style={{ background: theme.css['--bg-primary'], borderColor: theme.css['--border-color'] }} aria-hidden="true">
                         <span style={{ background: theme.css['--bg-sidebar'] }} />
                         <span style={{ color: theme.css['--text-primary'] }}>Aa <i style={{ background: theme.css['--accent'] }} /></span>
                       </span>
-                      <span>{theme.label}</span>
+                      <span>{theme.label}{theme.name.startsWith('local:') ? ' (Local)' : ''}</span>
                     </button>
                   ))}
                 </div>
               </fieldset>
+              {localThemeCatalog && onReloadThemes && <LocalThemeControls catalog={localThemeCatalog} onReload={onReloadThemes} disabled={saving} />}
           <div className="form-group">
             <label className="form-label" htmlFor="ui-font-family-select">
               UI font family

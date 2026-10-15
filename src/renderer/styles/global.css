@@ -3548,3 +3548,16 @@ body.tether-hide-cursor .xterm-cursor {
     scroll-behavior: auto !important;
   }
 }
+.local-theme-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.local-theme-path {
+  overflow-wrap: anywhere;
+}
+
+.local-theme-error {
+  color: var(--status-dead);
+}

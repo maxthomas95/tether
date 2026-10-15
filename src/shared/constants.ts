@@ -58,6 +58,9 @@ export const IPC = {
   SESSIONORDER_SET_PREF: 'sessionorder:set-pref',
 
   TITLEBAR_UPDATE: 'titlebar:update',
+  THEMES_LIST: 'themes:list',
+  THEMES_RELOAD: 'themes:reload',
+  THEMES_OPEN_FOLDER: 'themes:open-folder',
 
   // Git provider & clone
   GIT_PROVIDER_LIST: 'git:provider-list',

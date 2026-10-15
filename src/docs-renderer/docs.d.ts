@@ -4,7 +4,8 @@ interface DocsNavigateTarget {
 }
 
 interface DocsAPI {
-  onThemeChanged(cb: (themeName: string) => void): () => void;
+  listThemes(): Promise<import('../shared/theme-types').LocalThemeCatalog>;
+  onThemeChanged(cb: (themeName: string, localThemes: import('../shared/theme-types').TetherTheme[]) => void): () => void;
   onNavigate(cb: (target: DocsNavigateTarget) => void): () => void;
 }
 

@@ -3,44 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-DFxz62Ee6kQ61i4CJl7+SqbYdBialKmXghAz+rHA09s='; style-src 'self' 'sha256-geK75pRI1sVjoOCR7D66pNgQxUZK5oS07RN1dYN9cHQ='; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-6qdN/3tXDmoPyxhxo6tXxpao2pCLfKbuaydcJghJE7I='; style-src 'self' 'sha256-geK75pRI1sVjoOCR7D66pNgQxUZK5oS07RN1dYN9cHQ='; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" />
     <title>Tether</title>
     <script>
-      // Apply the saved theme before any CSS/JS runs. The main process
-      // passes the theme name via ?theme=<name> on the URL (see
-      // src/main/index.ts); the color values here mirror
-      // src/shared/loader-themes.ts.
-      //
-      // We set the real --bg-primary / --text-primary / etc. variables
-      // (not loader-specific ones) directly on document.documentElement.
-      // Inline element styles outrank :root rules in any stylesheet, so
-      // these values persist through global.css loading and remain in
-      // effect until useTheme replaces them with the full theme. This
-      // prevents a mocha flash for users on a non-default theme.
+      // Main supplies a validated palette for built-in and local themes alike.
       (function () {
-        var THEMES = {
-          mocha:          { bg:'#1e1e2e', sidebar:'#181825', text:'#cdd6f4', muted:'#a0a4ba', accent:'#b4befe', border:'#313244' },
-          macchiato:      { bg:'#24273a', sidebar:'#1e2030', text:'#cad3f5', muted:'#a0a6c0', accent:'#b7bdf8', border:'#363a4f' },
-          frappe:         { bg:'#303446', sidebar:'#292c3c', text:'#c6d0f5', muted:'#adb3cc', accent:'#babbf1', border:'#414559' },
-          latte:          { bg:'#eff1f5', sidebar:'#e6e9ef', text:'#4c4f69', muted:'#626579', accent:'#7287fd', border:'#ccd0da' },
-          tether:         { bg:'#1f1c18', sidebar:'#1a1714', text:'#ece4d4', muted:'#ad9f8b', accent:'#c68a5c', border:'#3a342d' },
-          'default-dark': { bg:'#171c22', sidebar:'#1e252d', text:'#e7eef5', muted:'#a7b5c4', accent:'#62d2eb', border:'#3d4a58' },
-          'tether-light': { bg:'#ffffff', sidebar:'#f3f3f3', text:'#1f1f1f', muted:'#646b78', accent:'#0078d4', border:'#d4d4d4' },
-          nord:           { bg:'#2e3440', sidebar:'#272d38', text:'#eceff4', muted:'#b3bdce', accent:'#88c0d0', border:'#4c566a' },
-          'gruvbox-dark': { bg:'#282828', sidebar:'#1d2021', text:'#ebdbb2', muted:'#bdae93', accent:'#fe8019', border:'#665c54' },
-          'gruvbox-light':{ bg:'#fbf1c7', sidebar:'#f2e5bc', text:'#3c3836', muted:'#665c54', accent:'#af3a03', border:'#bdae93' },
-          harbor:         { bg:'#15232d', sidebar:'#101b23', text:'#e7e3d5', muted:'#a4b9bb', accent:'#70c1b3', border:'#3e606b' },
-        };
-        var match = /[?&]theme=([^&]+)/.exec(location.search);
-        var name = match ? decodeURIComponent(match[1]) : 'mocha';
-        var t = THEMES[name] || THEMES.mocha;
-        var s = document.documentElement.style;
-        s.setProperty('--bg-primary', t.bg);
-        s.setProperty('--bg-sidebar', t.sidebar);
-        s.setProperty('--text-primary', t.text);
-        s.setProperty('--text-muted', t.muted);
-        s.setProperty('--accent', t.accent);
-        s.setProperty('--border-color', t.border);
+        try {
+          var params = new URLSearchParams(location.search);
+          var palette = JSON.parse(params.get('palette') || '{}');
+          var root = document.documentElement;
+          var allowed = ['--bg-primary', '--bg-sidebar', '--bg-header', '--bg-hover', '--bg-active', '--text-primary', '--text-secondary', '--text-muted', '--border-color', '--accent', '--status-running', '--status-waiting', '--status-idle', '--status-dead', '--btn-primary-text', '--surface-1', '--surface-2', '--surface-3', '--surface-4'];
+          allowed.forEach(function (key) {
+            if (typeof palette[key] === 'string' && /^#[\da-f]{6}([\da-f]{2})?$/i.test(palette[key])) root.style.setProperty(key, palette[key]);
+          });
+          if (/^(0(\.\d+)?|1(\.0+)?)$/.test(palette['--shadow-opacity'])) root.style.setProperty('--shadow-opacity', palette['--shadow-opacity']);
+          var dark = params.get('dark') !== 'false';
+          root.style.colorScheme = dark ? 'dark' : 'light';
+          root.style.setProperty('--inner-highlight', dark ? 'inset 0 1px 0 rgba(255, 255, 255, 0.04)' : '0 0 0 0 transparent');
+          root.dataset.theme = params.get('theme') || 'mocha';
+        } catch (_) { /* Keep the default palette if startup data is unavailable. */ }
       })();
     </script>
     <style>

@@ -1,5 +1,6 @@
 import { marked } from 'marked';
-import { getTheme } from '../renderer/styles/themes';
+import { getTheme, setLocalThemes } from '../shared/themes';
+import { applyDocumentTheme } from '../renderer/styles/apply-theme';
 
 import gettingStartedMd from '../docs/getting-started.md?raw';
 import sessionsMd from '../docs/sessions.md?raw';
@@ -67,10 +68,7 @@ let currentPage = pages[0];
 let pendingAnchor: string | null = null;
 
 function applyTheme(themeName: string): void {
-  const theme = getTheme(themeName);
-  for (const [property, value] of Object.entries(theme.css)) {
-    document.documentElement.style.setProperty(property, value);
-  }
+  applyDocumentTheme(getTheme(themeName));
 }
 
 function navigateTo(pageId: string, anchor?: string): void {
@@ -162,7 +160,15 @@ if (initialAnchor) pendingAnchor = initialAnchor;
 // boot script in docs-window.html was blocked (CSP hash drift) or
 // overridden by the docs.css :root defaults, the docs render correctly.
 const initialTheme = initialParams.get('theme');
-if (initialTheme) applyTheme(initialTheme);
+if (initialTheme && !initialTheme.startsWith('local:')) applyTheme(initialTheme);
+let selectedTheme = initialTheme || 'mocha';
+let themeChangeVersion = 0;
+window.docsAPI.listThemes().then(catalog => {
+  // A save/reload event may have arrived while the initial request was in flight.
+  if (themeChangeVersion !== 0) return;
+  setLocalThemes(catalog.themes);
+  applyTheme(selectedTheme);
+}).catch(() => {});
 
 // Initial render
 render();
@@ -170,7 +176,10 @@ render();
 // Theme sync + runtime navigate (when the docs window is already open
 // and another (?) icon is clicked in the main window).
 if (window.docsAPI) {
-  window.docsAPI.onThemeChanged((themeName: string) => {
+  window.docsAPI.onThemeChanged((themeName, localThemes) => {
+    themeChangeVersion++;
+    selectedTheme = themeName;
+    setLocalThemes(localThemes);
     applyTheme(themeName);
   });
   window.docsAPI.onNavigate((target) => {

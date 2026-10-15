@@ -24,6 +24,7 @@ const SAMPLE = [
 
 export function TerminalAppearancePreview({ themeName, fontFamily, fontSize }: Readonly<TerminalAppearancePreviewProps>) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const theme = getTheme(themeName);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -44,7 +45,7 @@ export function TerminalAppearancePreview({ themeName, fontFamily, fontSize }: R
         fontSize,
         rows: 8,
         cols: 30,
-        theme: getTheme(themeName).xterm,
+        theme: theme.xterm,
         disableStdin: true,
         scrollback: 0,
         cursorBlink: false,
@@ -67,7 +68,7 @@ export function TerminalAppearancePreview({ themeName, fontFamily, fontSize }: R
       observer?.disconnect();
       terminal?.dispose();
     };
-  }, [themeName, fontFamily, fontSize]);
+  }, [theme, fontFamily, fontSize]);
 
   return (
     <div className="form-group">
