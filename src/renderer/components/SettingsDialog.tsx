@@ -2058,7 +2058,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
               Show per-session cost strip below terminal
             </label>
             <p className="form-hint">
-              Display the session's model, message count, and API-equivalent cost below each terminal pane when supported local usage data is available.
+              Display the session's model, message count, and cost below each terminal pane when supported usage data is available. Costs are API estimates or CLI-reported amounts.
             </p>
             <label className="form-radio-label" style={{ marginTop: 8 }}>
               <input
@@ -2121,7 +2121,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
               <span>Export usage history</span>
             </div>
             <p className="form-hint" style={{ marginTop: 0 }}>
-              Save every tracked session's tokens and API-equivalent cost to a file. CSV is one row per session for spreadsheets; JSON includes the full per-model breakdown and daily rollups.
+              Save collected session tokens and costs to a file. Costs are API estimates or CLI-reported amounts. CSV is one row per session for spreadsheets; JSON includes the full per-model breakdown and daily rollups.
             </p>
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button
