@@ -2,8 +2,10 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import type { TranscriptInfo } from '../../shared/types';
 import { createLogger } from '../logger';
+import { resolveCliExecutable, resolveWindowsSystemExecutable } from '../cli/executable-resolver';
 
 const log = createLogger('opencode-transcripts');
+const MAX_SESSION_LIST_BYTES = 4 * 1024 * 1024;
 
 interface OpencodeSessionRow {
   id: string;
@@ -24,6 +26,33 @@ function truncatePreview(text: string): string {
   return trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed;
 }
 
+function isSessionRow(value: unknown): value is OpencodeSessionRow {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.id === 'string' && row.id.length > 0
+    && typeof row.directory === 'string' && row.directory.length > 0
+    && !row.directory.includes('\0');
+}
+
+function stopSessionList(proc: ReturnType<typeof spawn>): void {
+  if (process.platform === 'win32' && proc.pid) {
+    const taskkill = resolveWindowsSystemExecutable('taskkill.exe');
+    if (taskkill) {
+      try {
+        const cleanup = spawn(taskkill, ['/pid', String(proc.pid), '/t', '/f'], {
+          windowsHide: true, shell: false, stdio: 'ignore',
+        });
+        cleanup.on('error', () => { try { proc.kill(); } catch { /* already gone */ } });
+        cleanup.on('exit', code => {
+          if (code !== 0) { try { proc.kill(); } catch { /* already gone */ } }
+        });
+        return;
+      } catch { /* fall back to the direct child */ }
+    }
+  }
+  try { proc.kill(); } catch { /* already gone */ }
+}
+
 /**
  * Run `opencode session list --format json` and parse the array. We shell out
  * because opencode 1.x migrated session storage to SQLite (`opencode.db`) and
@@ -36,20 +65,23 @@ function truncatePreview(text: string): string {
 async function runSessionList(timeoutMs = 5000): Promise<OpencodeSessionRow[] | null> {
   return new Promise((resolve) => {
     let settled = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
     const finish = (value: OpencodeSessionRow[] | null) => {
       if (settled) return;
       settled = true;
+      clearTimeout(killTimer);
       resolve(value);
     };
 
     let proc: ReturnType<typeof spawn>;
     try {
-      // Spawning by binary name (PATH lookup) is the entire product purpose:
-      // Tether shells out to whichever `opencode`/`codex`/`claude` is on the
-      // user's PATH. Same pattern as src/main/git/git-service.ts.
-      proc = spawn('opencode', ['session', 'list', '--format', 'json'], { // NOSONAR(typescript:S4036)
+      const launch = resolveCliExecutable('opencode', { args: ['session', 'list', '--format', 'json'] });
+      if (!launch) { finish(null); return; }
+      proc = spawn(launch.file, launch.args, {
         windowsHide: true,
-        // Detach from any tty so we don't accidentally feed signals to the user's shell.
+        windowsVerbatimArguments: launch.kind === 'cmd',
+        shell: false,
+        // This metadata command is separate from every session's PTY.
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (err) {
@@ -58,37 +90,49 @@ async function runSessionList(timeoutMs = 5000): Promise<OpencodeSessionRow[] | 
       return;
     }
 
-    let stdout = '';
-    proc.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf-8'); });
+    const chunks: Buffer[] = [];
+    let stdoutBytes = 0;
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      if (settled) return;
+      stdoutBytes += chunk.length;
+      if (stdoutBytes > MAX_SESSION_LIST_BYTES) {
+        log.warn('opencode session list exceeded the response limit');
+        finish(null);
+        stopSessionList(proc);
+        return;
+      }
+      chunks.push(chunk);
+    });
     proc.stderr?.on('data', () => { /* ignore — opencode prints non-JSON banners */ });
 
-    const killTimer = setTimeout(() => {
-      try { proc.kill(); } catch { /* ignore */ }
+    killTimer = setTimeout(() => {
       log.warn('opencode session list timed out');
       finish(null);
+      stopSessionList(proc);
     }, timeoutMs);
 
     proc.on('error', (err) => {
-      clearTimeout(killTimer);
+      if (settled) return;
       log.warn('opencode session list errored', { error: err.message });
       finish(null);
     });
 
     proc.on('close', (code) => {
-      clearTimeout(killTimer);
+      if (settled) return;
       if (code !== 0) {
         finish([]);
         return;
       }
       try {
-        const parsed = JSON.parse(stdout);
+        const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
         if (!Array.isArray(parsed)) {
           finish([]);
           return;
         }
-        finish(parsed as OpencodeSessionRow[]);
-      } catch (err) {
-        log.warn('opencode session list returned unparseable JSON', { error: err instanceof Error ? err.message : String(err) });
+        finish(parsed.filter(isSessionRow));
+      } catch {
+        // Parse errors can include transcript excerpts; never log the payload.
+        log.warn('opencode session list returned unparseable JSON');
         finish([]);
       }
     });
@@ -98,13 +142,13 @@ async function runSessionList(timeoutMs = 5000): Promise<OpencodeSessionRow[] | 
 function rowToTranscript(row: OpencodeSessionRow): TranscriptInfo | null {
   if (!row.id) return null;
   const ts = row.updated ?? row.created;
-  const mtime = typeof ts === 'number' && Number.isFinite(ts)
+  const mtime = typeof ts === 'number' && Number.isFinite(new Date(ts).getTime())
     ? new Date(ts).toISOString()
     : new Date(0).toISOString();
   return {
     id: row.id,
     mtime,
-    preview: truncatePreview(row.title || ''),
+    preview: truncatePreview(typeof row.title === 'string' ? row.title : ''),
     cliTool: 'opencode',
     sourcePath: row.directory,
   };
