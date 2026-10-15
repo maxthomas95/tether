@@ -19,8 +19,8 @@ jobs:
     name: tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # Node 24 matches Electron 44's runtime and provides the built-in
           # node:sqlite the Crush usage reader uses.
@@ -43,7 +43,7 @@ jobs:
       - run: npm run lint
       - run: npm run test:coverage
       - name: Upload test coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage
           path: coverage/
@@ -64,15 +64,15 @@ jobs:
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: coverage
           path: coverage/
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
       - name: Read project release version
@@ -101,8 +101,8 @@ jobs:
     name: npm audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
       - run: npm i -g npm@10.9.4 --ignore-scripts
@@ -119,8 +119,8 @@ jobs:
       run:
         working-directory: mcp-servers/tether-helm
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: 'npm'
@@ -134,8 +134,8 @@ jobs:
     name: windows package + verify
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: 'npm'
@@ -148,3 +148,13 @@ jobs:
       # bare-required module, native binding, and extra resource is present.
       - run: npm run package
       - run: npm run verify:package
+      - name: Exercise the packaged Windows app
+        run: npm run smoke:windows
+      - name: Upload Windows smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-smoke-diagnostics
+          path: out/smoke-windows/
+          if-no-files-found: ignore
+          retention-days: 7

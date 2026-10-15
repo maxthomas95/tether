@@ -19,6 +19,40 @@ For the additional 1.0 hardening gate, see `docs/1.0_RELEASE_CHECKLIST.md`.
 
 Current Windows releases are unsigned. State that in notes and preserve the existing JSON migration, CLI permission, host-key and raw terminal boundaries. This promotion does not claim macOS/Linux support or completion of the future 1.0 checklist.
 
+## Verified CI release assets
+
+After the automation change reaches main, pushing a new release tag starts
+`Verified Windows release build`. It builds that exact tagged commit, runs the
+dependency gates, package verifier and Windows runtime smoke, and uploads the
+installer, portable ZIP, SHA-256 checksums and GitHub provenance bundle. It does
+not publish a release. Re-run manually against the tag if needed:
+
+```bash
+gh workflow run release-build.yml --ref v0.X.0
+```
+
+Use these CI-produced assets for the manual publication flow, after acceptance
+checks. Download the `windows-release-v0.X.0` workflow artifact and verify each
+binary's provenance, for example:
+
+```bash
+gh attestation verify Tether-0.X.0-Setup.exe --repo maxthomas95/tether
+gh attestation verify Tether-0.X.0-portable.zip --repo maxthomas95/tether
+```
+
+Publish those same binaries and `SHA256SUMS`; a local rebuild has different
+bytes and is not covered by the CI attestation. The existing release script
+still builds/publishes local assets and does not consume the CI artifacts.
+Use the manual publication path when publishing attested builds.
+
+The workflow accepts tags whose commits are ancestors of main and whose
+version matches package.json. Tag-based hotfix branches that have not reached
+main need their existing manual release process and a separate provenance
+design. Existing tags do not gain attestations retroactively. Provenance
+records the build's source and workflow; Windows Authenticode signing still
+requires a configured signing identity/service. Builds remain unsigned until
+that integration is configured and its output verified.
+
 ## Quick start
 
 Cut a stable release (always bumps minor, e.g. `0.5.2` → `0.6.0`):
@@ -54,7 +88,7 @@ npm run release -- stable --dry-run
 
 ## How it works
 
-`main` is ruleset-protected — direct pushes aren't allowed. The release script cuts a `release/v{version}-{prerelease}` branch, opens a PR, enables squash auto-merge, waits for the PR to land, and then tags the merged commit on `main`. Required checks (Sonar Quality Gate, CodeQL, CI) gate the release commit just like any other PR.
+`main` is ruleset-protected and requires pull requests. The release script cuts a `release/v{version}-{prerelease}` branch, opens a PR, enables squash auto-merge, waits for the PR to land, and then tags the merged commit on `main`. The configured CI/CodeQL checks gate the release commit just like any other PR. Sonar's quality gate is reported separately and must also be reviewed for release acceptance; it is not a required ruleset check.
 
 ## Release strategy — the train model
 

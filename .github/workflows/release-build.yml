@@ -1,0 +1,84 @@
+name: Verified Windows release build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Dispatch against the release tag, not main: the provenance source commit
+    # must be the exact commit used to build the binaries.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate the release source before running project code
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(-(alpha|beta|hotfix)\.\d+)?$') {
+            throw 'Expected a Tether release tag'
+          }
+          git merge-base --is-ancestor HEAD origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Release source must have reached main through review' }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if (($env:RELEASE_TAG -split '-')[0] -ne "v$version") { throw 'Tag and package versions differ' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm i -g npm@10.9.4 --ignore-scripts
+      - run: npm ci
+      - run: npm run audit:security
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run make
+      - run: npm run verify:package
+      - run: npm run smoke:windows
+      - name: Prepare release assets and checksums
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Path out/release -Force | Out-Null
+          Copy-Item -LiteralPath "out/make/squirrel.windows/x64/tether-$version Setup.exe" -Destination "out/release/Tether-$version-Setup.exe"
+          Copy-Item -LiteralPath "out/make/zip/win32/x64/tether-win32-x64-$version.zip" -Destination "out/release/Tether-$version-portable.zip"
+          Get-ChildItem out/release -File | Where-Object { $_.Extension -in '.exe', '.zip' } | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          } | Set-Content out/release/SHA256SUMS -Encoding ascii
+      - name: Attest the verified binaries
+        id: attest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-checksums: out/release/SHA256SUMS
+      - name: Upload assets for maintainer acceptance and publication
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-release-${{ github.ref_name }}
+          path: |
+            out/release/
+            ${{ steps.attest.outputs.bundle-path }}
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-smoke-diagnostics
+          path: out/smoke-windows/
+          if-no-files-found: ignore
+          retention-days: 7

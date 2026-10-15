@@ -34,11 +34,12 @@ see [usage privacy](src/docs/usage-quota.md#privacy) and
 
 ## Report a vulnerability privately
 
-Email **[max@thomashomecompany.com](mailto:max@thomashomecompany.com)** with the
+Use GitHub's **[private reporting form](https://github.com/maxthomas95/tether/security/advisories/new)**,
+or email **[max@thomashomecompany.com](mailto:max@thomashomecompany.com)** with the
 subject **Tether security report**.
 
 Do not disclose vulnerability details in public issues, discussions, or pull
-requests before a fix or coordinated disclosure. Use private email for the
+requests before a fix or coordinated disclosure. Use the private form or email for the
 initial report. For sensitive material, ask to arrange a suitable transfer
 method before sending it.
 

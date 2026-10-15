@@ -99,7 +99,14 @@ For packaging changes, also run:
 ```bash
 npm run package
 npm run verify:package
+npm run smoke:windows
 ```
+
+The Windows smoke launches the actual package with disposable user data and a
+local test CLI. It covers setup, settings persistence, ordinary terminal input,
+PTY output/resize/Stop, shutdown, and restart without CLI accounts or remote
+credentials. It uses loopback Chromium debugging only; packaged Electron
+security fuses stay enabled. CI uploads bounded test diagnostics on failure.
 
 When changing the Helm MCP server, install and validate its separate package:
 
@@ -126,6 +133,24 @@ repository uses this workflow (advanced setup), rather than CodeQL default
 setup, which skips fork pull requests. Keep the required `CodeQL` merge check
 enabled. First-time contributors may still need a maintainer to approve their
 Actions runs; their PRs do not need to be copied into this repository.
+
+## GitHub automation
+
+PRs run dependency review in addition to the app/Helm audits. New high or
+critical dependency vulnerabilities fail the check. Same-repository PRs receive
+an updated comment on failure; fork and Dependabot PRs use check summaries with
+read-only tokens. The review never executes PR code or uses repository secrets.
+
+Dependabot opens weekly grouped patch/minor updates, with at most two version
+PRs per ecosystem. Major upgrades remain separate; security-update groups
+remain enabled. Actions are pinned to reviewed full commit SHAs and maintained
+by Dependabot. Sonar intentionally skips fork/Dependabot PRs because they cannot
+access its token; do not introduce privileged PR checkouts to work around that.
+
+Changes to main require a PR and the configured checks. The maintainer can
+merge their own reviewed changes without a second-person approval requirement.
+New check contexts should become required only after their workflows are on
+main, so existing contributor branches are not stranded.
 
 ## Submit a pull request
 
