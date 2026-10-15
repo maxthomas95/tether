@@ -66,7 +66,7 @@ If the template-parameter API connection stops responding for ten seconds, Tethe
 Caveats:
 
 - Sessions launch in the workspace's default directory; there is no per-session subdirectory field
-- Resume-by-transcript (`--resume`) is not supported for Coder sessions because transcripts live inside the workspace
+- The local conversation picker is unavailable. Restart/restore can resume a saved Claude/Codex conversation ID when its workspace, user/home and history still exist; missing Claude history starts fresh under the saved ID. See [conversation recovery](sessions.md#resume-conversation).
 - Starting/stopping existing workspaces from Tether is not yet supported — only creation; manage lifecycle from the Coder web UI
 
 ## Creating an Environment

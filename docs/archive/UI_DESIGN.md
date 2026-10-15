@@ -1,6 +1,6 @@
 # UI Design — Tether
 
-> **Archived 2026-05-18.** This is the original UI design spec, kept for historical reference. The shipped UI has diverged in many places (session grouping, dialog-based Settings, Catppuccin + Tether themes, pane splitting, sidebar pills/footers, Setup Wizard, etc.). For current shipped behavior see `src/docs/` and live in the app. Inline diff annotations below are frozen and will not be updated.
+> **Archived 2026-05-18.** Original UI design spec, frozen for historical reference. The shipped sidebar, settings, themes, layouts and setup flow have changed. See the current [user guide](../../src/docs/getting-started.md) and [architecture](../ARCHITECTURE.md). The historical content below is not maintained.
 
 ## Layout
 

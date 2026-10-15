@@ -214,7 +214,7 @@ These runs never change the Claude session's own status. A run finishing does no
 
 **What it needs.** The rows come only from Codex's [lifecycle hooks](settings.md#lifecycle-visibility). A command started from a Claude pane inherits the pane's Tether environment, so Codex reports the run's start, activity and end as belonging to that session. Two things must both be true:
 
-- **Settings → Codex → Track Codex lifecycle hooks** is on (and **CLI status hooks** in Sessions), and Tether has been restarted since.
+- **Settings → CLI tools → Codex CLI → Track Codex lifecycle hooks** is on (and **CLI status hooks** in Sessions), and Tether has been restarted since.
 - Tether's hooks are **trusted in Codex**. Open `/hooks` in a Codex session once and approve them. `codex exec` skips hooks it has not been told to trust, without saying so.
 
 If either is missing, nothing is shown: Tether does not guess which Codex runs a Claude session started. Codex runs started by hand in another terminal are never shown. Codex's own subagents inside a run are not listed as separate rows.
@@ -256,7 +256,7 @@ Entries that fail to restore remain saved for the next launch, even while other 
 
 ### Workspace recipes
 
-Choose **File ? Workspaces?** to save the current set of sessions as a workspace recipe. A recipe stores the session labels, working directories or Coder workspace names, environment targets, CLI tools, Helm setting, and layout shape. It does not store terminal output, native conversation ids, or running process state.
+Choose **File → Workspaces…** to save the current set of sessions as a workspace recipe. A recipe stores the session labels, working directories or Coder workspace names, environment targets, CLI tools, Helm setting, and layout shape. It does not store terminal output, native conversation ids, or running process state.
 
 Opening a recipe starts fresh normal CLI sessions and keeps your current sessions running. Before opening, you can select which recipe slots to start, edit each working directory, and remap each slot to Local PC, a known SSH environment, or a known Coder environment. If a saved environment was deleted, Tether shows it as missing until you choose another target.
 

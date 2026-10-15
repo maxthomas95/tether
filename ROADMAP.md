@@ -1,101 +1,46 @@
-# Roadmap — Tether
+﻿# Roadmap — Tether
 
-This is a living document. The goal is to ship a polished **1.0 (Windows)** by tightening what already exists rather than chasing new surface area. Cross-platform, deeper persistence, and advanced workflows are deliberately deferred to post-1.0.
+The next milestone is a polished **1.0 for Windows**. Stable releases graduate a beta that has worked well in ordinary use; they do not need to wait for every 1.0 goal. Feature work, fixes, and dependency updates share `main`, with beta save points and protected release PRs. See [Releasing](RELEASE.md).
 
-Status legend: **[planned]** not started · **[in progress]** active · **[blocked]** waiting on something · **[review]** under evaluation, not committed · **[done]** shipped (kept here for context until next release).
+## 0.7.0 stable milestone
 
----
+This milestone brings the 0.6.x beta train to stable. The [changelog](CHANGELOG.md) records its release scope; the [user guide](src/docs/getting-started.md) describes current behavior.
 
-## Pre-1.0
+- **Workspaces:** single/split/Canvas layouts, keyboard navigation, broadcast input in splits, terminal search, session search, attention queue, recent projects, encrypted launch restore, and named workspace recipes.
+- **Remote work:** SSH/Coder conversation recovery, Claude/Codex usage collection, SSH status-hook opt-in, secure echo-off launch configuration, and remote Claude child-agent viewers.
+- **CLI integration:** shared per-tool settings, guided launch controls, native version/update terminals, Codex account/quota inspection, optional trusted local lifecycle hooks, and local `codex exec` child rows.
+- **Interface:** eleven themes, bundled fonts and previews, independent UI density, stable attention controls, optional GIF panel and Pip, and explicit J.O.B.S. connection/sharing controls.
+- **Reliability and security:** encrypted credential migration and launch snapshots, sandboxed preloads/Office view, authenticated hook/Helm bridges, hardened clipboard/link handling, packaged Windows ConPTY shutdown, and enforced CI/package/security checks.
+- **Documentation:** reconcile README, architecture, transport guidance, release/contributor docs, shipped help, and the public site's copy with the implemented release.
 
-### 1. Polish the experimental features
+## Before Windows 1.0
 
-#### Split panes
-- [done] Keyboard-driven pane focus and swap (no mouse required) — Alt+Arrow focuses the neighboring pane (un-maximizing first if needed); Alt+Shift+Arrow swaps the focused pane's session with its neighbor. Wired in `useKeyboardShortcuts.ts` over the existing `getAdjacentPane` / `swapLeafSessions` helpers; new `SWAP_PANES` reducer action keeps swap as a pure session-id exchange. Non-xterm editable targets are guarded so inline rename and dialog inputs keep native arrow behavior.
-- [done] Broadcast input to N panes — pane header broadcast buttons select live pane targets; when at least two selected panes are active, input from any selected pane fans out through the normal `session:input` path to every selected session. Non-selected panes remain local, dead/stopped panes are pruned, and the Session menu can clear all broadcast targets.
-- [done] Recover gracefully when a session inside a layout dies — defensive in-pane overlay on `state === 'dead'/'stopped'` offering "Restart in this pane" (re-spawn with the dead session's params and `REPLACE_SESSION` so the layout slot is preserved) and "Close pane". Paired with a sidebar pane-location badge so users can also tell at a glance which sessions are mounted, where, and whether their pane is hidden behind a maximize — click to focus + un-maximize.
-- [done] Persist scrollback per pane across re-layouts — `useTerminalManager.ts` parks the xterm.js Terminal in a `backgroundTerminals` Map on detach instead of disposing, then moves the same instance's DOM element into the new pane on re-attach. Buffer survives split/unsplit/swap/maximize/session-switch.
+### Validate daily workflows
 
-#### Usage tracking
-- [done] Codex CLI cost tracking — `src/main/usage/codex-jsonl-parser.ts` tracks the active model from `turn_context` lines and sums `last_token_usage` deltas (input, cached, output, reasoning) from `event_msg` `token_count` events; `usage-service.ts` walks `~/.codex/sessions/` on backfill and watches live files on append. Codex models all resolve under bare LiteLLM keys (`gpt-5-codex`, `gpt-5.5`, etc.) so no pricing-prefix fallback was needed.
-- [blocked] Copilot CLI cost tracking — Tether has no cost reader. Earlier investigation found token-usage events missing from persisted transcripts; tracking references are github/copilot-cli#1152 and github/copilot-cli#2947. Re-check the installed CLI's persisted format before implementing ingestion. Resume and transcript browsing already work.
-- [done] OpenCode / Crush cost tracking — `usage-service.ts` is now CLI-agnostic; OpenCode sessions read pre-computed cost from `crush.db` (`src/main/opencode/usage-reader.ts`)
-- [done] Cost pricing source — Claude/Codex estimates use a bundled LiteLLM table with a cached daily refresh and offline fallback. Release tooling refreshes the bundled snapshot. Unknown models use the existing pricing fallback.
-- [done] CSV / JSON export of usage history — Settings → Usage now has "Export as CSV…" and "Export as JSON…" buttons. CSV is one row per session with totals (RFC 4180 quoting); JSON includes the full per-model breakdown, daily rollups, and Tether version. `usageService.getEnrichedSessions()` carries `workingDir` through; serialization lives in `src/main/usage/usage-exporter.ts`.
-- [done] Per-environment cost attribution in the global footer — `environmentId` flows through `PersistedSessionUsage`, `SessionUsage`, and `TrackedSession`. Tracked at session create for Claude/OpenCode (handlers.ts) and at toolSessionId-detect time for Codex/OpenCode in `session-manager.ts`. New `aggregateByEnvironment` (`src/main/usage/env-aggregator.ts`) groups sessions into a sorted `byEnvironment[]` exposed on `UsageInfo`; the footer tooltip resolves env names client-side from the existing `environments` list. Backfilled / out-of-band sessions surface in an "Unattributed" bucket.
-- [done] Daily / weekly / monthly rollups — global usage footer is now a button that opens a "Usage history" dialog with Today / 7d / 30d / All-time tiles plus tabbed Daily (30) / Weekly (12) / Monthly (12) tables. Pure renderer-side rollup math (`src/renderer/utils/usage-rollups.ts`) over the existing `daily[]` array, ISO-week boundaries (Mon start), no schema change.
+- Continue exercising fresh setup, upgrades from the previous stable, workspace restore, recipes, session duplication, Stop/restart, and clean shutdown in packaged builds.
+- Validate ordinary typing, multiline input, clipboard, search, resize, focus, and mixed-CLI broadcast across the supported terminal modes. Do not treat a focused shortcut test as complete input coverage.
+- Exercise live SSH/Coder recovery with present/missing history, concurrent conversations, sudo, unavailable remote Node, and connection loss. Automated fixtures do not establish every live-host behavior.
+- Retain experimental labels for split/Canvas layouts and lifecycle visibility until their limits are deliberately reviewed. Helm stays optional and outside the 1.0 critical path.
 
-### 2. Bug: status indicator stuck on green/grey
+### Keep status and usage trustworthy
 
-- [done] **Status detection investigation** — waiting and exit states now use cadence, passive OSC/BEL signals, and optional Claude/Codex hooks. The detector remains in `src/main/status/status-detector.ts`; use live traces when investigating a new CLI/transport regression.
-- [done] **Smarter waiting signals via CLI hooks** — Claude `Notification`/`Stop` hook integration shipped in PR #109: `cli-config/` overlay subsystem merges Tether entries into the user's `~/.claude/settings.json` (additive, sentinel-scoped, scrubbed on shutdown and on next-boot crash recovery), bridged into the status detector via a token-authed local socket with a stdlib-only Node helper bundled as a Forge `extraResource`. Adds a `waitingReason: 'idle' | 'permission'` sub-state plumbed through to a focus-aware amber-with-bang sidebar dot (see-once-then-quiet semantics). Phase 1b polish:
-  - [done] Codex `notify` overlay — mirror of the Claude overlay for `~/.codex/config.toml`; hand-rolled TOML merger that only touches the top-level `notify =` line, refuses to displace a user-owned notify, scrubs orphans, and routes through the same `tether-cli-hook` binary (`--codex` mode).
-  - [done] Settings UI toggle for `cliHooksEnabled` — opt-in checkbox under Settings → Sessions; default-off; only literal `'true'` enables. Takes effect on next launch.
-  - [done] SSH remote installation — overlay installed on remote hosts where the CLI runs, enabling higher-fidelity status detection via local hooks.
-  - [planned — deferred to 1.x, not in 1.0] Coder workspace remote hook installation — remote workspace sessions fall back to cadence-based status detection until this ships.
-  - Known followup: bang re-fires after navigating away from an acked session — to investigate with live tracing.
+- Investigate new status/attention regressions using live traces across CLI, transport, and hook settings. Cadence-only status remains an estimate, especially for quiet model calls or child agents.
+- Keep event-day accounting, request/compaction deduplication, per-model/environment attribution, and unknown daily timing explicit in usage UI and exports.
+- **Copilot cost tracking remains blocked:** there is no supported cost reader. Inspect an installed CLI's persisted usage format before proposing ingestion; resume and transcript browsing already work.
+- OpenCode usage covers the supported local Crush database, not all OpenCode storage formats. Remote OpenCode usage and broader format coverage remain unimplemented.
 
-### 3. Notifications & error surfacing
+### Release and desktop quality
 
-- [done] Audit `src/renderer/components/Notifications.tsx` — wire up real error paths or remove
-- [done] Toast on session spawn failure, transport errors, Vault auth issues, update-check failures
-- [done] Keep CHANGELOG known-issues list honest (the "errors only in DevTools" note from 0.3.0 is stale either way)
-- [done] **Desktop notifications on session state change** — Electron `Notification` API surface in `src/main/notifications/notification-service.ts`, subscribed to detector transitions and exit codes. Defaults-on for waiting / idle / unexpected-exit / bell, with focus suppression (BrowserWindow.isFocused) and a per-session "Mute notifications" toggle in the sidebar context menu. Bell detection is a single-byte BEL scan inside the existing detector tap (no ANSI parsing), coalesced to once per 2s. Settings → Notifications surfaces all five toggles. Click → focuses the window and selects the session via a new `NOTIFICATION_SESSION_SELECT` IPC channel.
+- Resolve the temporary build-only `braces` mitigation before its **2026-11-04** expiry; keep [runtime/Helm audits strict](docs/DEPENDENCY_SECURITY.md).
+- Preserve packaged ASAR/resource verification, native PTY startup/stop smoke, credential migration failure recovery, and the required exact-head CI/CodeQL checks. Review Sonar's actual gate, not just scan-job completion.
+- Make an explicit signing decision for Windows 1.0. Current Windows installer/portable releases are unsigned. See the [1.0 release checklist](docs/1.0_RELEASE_CHECKLIST.md).
+- Continue keyboard, focus, screen-reader, responsive-layout, light/dark-theme, and reduced-motion review. Keep shipped help and GitHub documentation aligned with visible controls.
 
-### 4. Daily-driver UX
+## Deferred until after 1.0
 
-- [done] **Session search (Ctrl+P quick switcher)** — VS Code-style finder over all sessions, pulled forward from Post-1.0. Default **Ctrl+P** (remappable via the keybinding registry, shows under Settings → Shortcuts and in Session → Find Session…). Regex-free fuzzy subsequence matcher (`src/renderer/utils/session-search.ts`) ranks across label / dir / env / CLI with contiguity + word-boundary + density bonuses; `SessionSearchDialog.tsx` is a focus-trapped `role=listbox` with roving highlight (↑/↓, Enter, Esc, click). Activation reuses the sidebar's `handleSelectSession` path plus the pane-location-badge un-maximize behavior.
-- [done] **Reorder sessions** in a sidebar group (drag-to-reorder)
-- [done] **Bulk actions** on a group — kill all, restart all, clear all
-- [done] **Duplicate carries the source label** — duplicates preserve the label with `(copy)`, then `(copy 2)` and subsequent suffixes.
-- [done] **Ctrl+scroll** on a terminal pane → terminal font size
-- [done] **Ctrl+= / Ctrl+-** → whole-window zoom (UI + terminal together) via `webFrame.setZoomLevel`
-- [done] Settings panel for default terminal font size and **Reset all session font sizes**; Ctrl+0 resets whole-window zoom.
-- [done] **Clickable URLs in the terminal** — ctrl-click (or click) to open pasted/printed links in the system browser, like VS Code's terminal. Use `@xterm/addon-web-links` and route through `shell.openExternal` so the main process owns the open.
-- [done] **GitHub repo browse** in `NewSessionDialog` — parity with ADO and Gitea (GitHub is the source of truth per project conventions)
-- [done] **Themed scrollbars** — `::-webkit-scrollbar` rules in `global.css` bound to existing theme vars (`--bg-hover` thumb, `--bg-active` on hover, transparent track + corner). Replaces the white system scrollbar that bled through against Catppuccin Mocha; tracks every theme automatically including Latte.
+- **macOS and Linux desktop builds:** package, sign/notarize where appropriate, and validate install/update and native terminal behavior. Existing path/platform hygiene does not imply these builds are supported today.
+- **Coder remote status-hook installation:** currently deferred; Coder terminal status and child activity fall back to cadence/transcript estimates.
+- **Persistence changes:** consider a usage/transcript index through built-in `node:sqlite` only if history scale or query performance warrants it. App configuration remains atomic JSON.
+- **Pinned sessions:** a possible follow-up for keeping selected sessions at the top of their group.
 
-### 5. Foundation & quality
-
-- [done] **Atomic JSON writes** — `saveDb()` writes `data.json.tmp` → `fsync` → atomic rename, with EBUSY/EPERM/EACCES retry × 3 (50 ms backoff) for AV / OneDrive transient locks. Orphan `.tmp` is cleaned on startup. ~90% of SQLite's reliability benefit, no new dependency.
-- [done] **Test coverage** — transports, IPC handlers, and Vault resolver were largely uncovered. Went from 7 → ~25 test files across:
-  - [done] **Vault resolver** — 24 tests covering `parseRef` edge cases, `resolveRef` error paths (vault disabled, no token, missing key, non-string value), and `resolveAll` (mixed input, parallel resolution, partial-failure rejection).
-  - [done] **Transports** — local / coder / ssh, 44 tests. Extracted `pty-loader.ts` and `ssh2-loader.ts` for mockability (lazy `require()` inside the transports bypassed Vitest's `vi.mock`); behaviour preserved.
-  - [done] **IPC handlers structural refactor** — `handlers.ts` (969 lines, 79 handlers) split into 11 domain modules (`session-handlers`, `env-handlers`, `vault-handlers`, etc.) so each is testable in isolation. Top-level `handlers.ts` is now a 40-line dispatcher.
-  - [done] **Per-domain IPC handler tests** — one `*-handlers.test.ts` per domain module via a shared `ipc-test-harness` helper that stubs `ipcMain.handle`/`on` and provides a fake `HandlerContext`; covers arg forwarding, return shape, and side-effect targets (PR #89).
-- [done] **Crash / diagnostics export** — "Export diagnostics for support" button in About bundles a scrubbed `data.json` (SSH passwords, plaintext git tokens, sensitive env-var values, vault token redacted; vault refs preserved) plus rotated logs (with light scrubbing for known API key prefixes — `sk-ant-`, `ghp_`, `hvs.` etc.) plus a `manifest.json` of versions / OS / generated timestamp into a single zip.
-- [done] **Cross-platform hygiene rule** — codified in CLAUDE.md: no `\\` path literals, no Windows-only shells, no registry assumptions. Carves out the patterns already in use (defensive separator handling, platform-gated `cmd.exe` in transports, OpenSSH named-pipe fallback) so the rule reflects existing code rather than flagging it. Keeps post-1.0 cross-platform from becoming a rewrite.
-
-### 6. Repo & folder bootstrapping
-
-`NewSessionDialog` supports existing directories, cloning, and local folder/repository creation. The initial folder-creation gap is closed.
-
-- [done] **New folder for a new repo** — `NewSessionDialog` has a "New folder" tab (local envs only) that creates a folder under `reposRoot`, optionally `git init`s it, and uses it as the session cwd.
-- [done] **Create the remote repo too (GitHub/Gitea/ADO)** — "New folder" mode can optionally provision an empty repo on GitHub, Gitea, or ADO and wires `git remote add origin` locally. Remote-first ordering on failure, first push left to the user. ADO supports a per-provider `defaultProject` selectable from the loaded project list.
-
-### 7. Documentation & discoverability
-
-Keep README, in-app help, settings copy, and contributor docs aligned with the current UI and implementation. Historical release entries and archived specifications remain reference material.
-
-- [done] **README sweep** — refreshed feature list and framing for the 1.0 push: themed feature groups (Sessions, Environments, Repo bootstrapping, Cost & quota, Secrets, Interface, Operations), and an updated docs table that drops the historical `docs/MVP_SCOPE.md` link.
-- [done] **In-app docs refresh** (`src/docs/*.md`) — `getting-started`, `sessions`, `environments`, `settings`, and `keyboard-shortcuts` brought current; new dedicated pages for Vault, Git providers, Usage & Quota, and Helm. Covers zoom, clickable URLs, GitHub provider, new-folder + remote-create, drag-reorder, bulk group actions, multi-CLI, pane recovery, keybindings tab, diagnostics export, and Coder template create.
-- [review] **In-context `(i)` tooltips** — _leaning against, not now._ Idea was to replace the mini-description prose in dialogs (Settings, NewSession, NewEnvironment) with hoverable info-icon tooltips so layout breathes. The catch: a lot of the existing hint copy is consequence/warning text ("Disable if you hit layout bugs", "changes Tether's surface area", "Turn this off if you use plain shells, vim, or htop") that users shouldn't have to hover to see. Hover is also mouse-only and Settings is visited rarely, so there's little expert-speed payoff. If revisited, scope to label-clarifier hints only (e.g. Vault OIDC field captions), not the consequence text. Likely better solved by sectioning Settings (see below) than by hiding copy.
-- [done] **Searchable Settings sections** — eight groups: General · Appearance · Terminal · Sessions · Notifications · Shortcuts · Integrations · Usage. Appearance owns theme previews, UI fonts, and density; advanced session options are collapsed separately.
-- [done] **Per-section `(?)` help links** — every settings section, including Appearance, links to in-app help. New Session and New Environment also open contextual help. Cold-start and already-open docs windows support page/heading navigation.
-
-
----
-
-## Post-1.0
-
-These are deferred on purpose. We'll revisit when 1.0 has soaked.
-
-- **Cross-platform builds** — macOS first (signing infra is the lift), then Linux. node-pty / ssh2 / Coder REST are already platform-agnostic; the work is at the build / sign / install / auto-update layer.
-- **SQLite migration** — only if usage history scale or query performance starts to bite. Likely path is hybrid: config stays in JSON, usage/transcript index moves to SQLite through built-in `node:sqlite`, avoiding a native Electron ABI dependency.
-- **Pin sessions** — pin a session to the top of its group.
-
----
-
-## Done
-
-_Tracked here briefly until the next release; archived to `CHANGELOG.md` after that. Cleared on 2026-05-16 — all prior items are captured in CHANGELOG entries 0.2.x–0.5.0-beta.1._
+Historical plans live under [docs/archive](docs/archive/). They are frozen specifications, not a current feature contract. Completed release history belongs in [CHANGELOG.md](CHANGELOG.md).

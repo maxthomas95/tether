@@ -1115,28 +1115,28 @@
           <div class="feature-icon">&#x1F4CA;</div>
           <div class="feature-title">Cost Tracking</div>
         </div>
-        <div class="feature-body">Real-time usage across all sessions. Daily/weekly/monthly rollups, per-CLI and per-environment breakdowns, sparkline footer. CSV and JSON export.</div>
+        <div class="feature-body">Local and SSH/Coder Claude/Codex usage estimates, filtered history, daily trends, budgets, and CSV/JSON export. API-equivalent costs, separate from subscription quota. OpenCode covers supported local Crush databases; Copilot has no cost reader.</div>
       </div>
       <div class="feature stagger">
         <div class="feature-header">
           <div class="feature-icon">&#x2B1C;</div>
-          <div class="feature-title">Split Panes & Broadcast</div>
+          <div class="feature-title">Splits, Canvas & Recipes</div>
         </div>
-        <div class="feature-body">Split into multiple panes. Keyboard-driven focus and swap. Broadcast input fans keystrokes to every selected pane simultaneously.</div>
+        <div class="feature-body">Split up to four panes with keyboard focus, swap and broadcast, or arrange movable panels on an experimental Canvas. Save named workspace recipes and reopen selected sessions with edited paths or environments.</div>
       </div>
       <div class="feature stagger">
         <div class="feature-header">
           <div class="feature-icon">&#x1F514;</div>
           <div class="feature-title">Status Detection</div>
         </div>
-        <div class="feature-body">Hook-driven detection for "waiting for permission" and "idle" states. Desktop notifications surface what needs attention. Per-session mute.</div>
+        <div class="feature-body">Optional local and SSH Claude/Codex hooks improve attention detection; Coder uses cadence estimates. Desktop notifications, an attention queue and optional webhooks surface waiting sessions. Mute each session independently.</div>
       </div>
       <div class="feature stagger">
         <div class="feature-header">
           <div class="feature-icon">&#x1F512;</div>
           <div class="feature-title">Vault Integration</div>
         </div>
-        <div class="feature-body">Reference secrets from HashiCorp Vault with vault:// URIs. Token and OIDC auth. Expiry warnings. No plaintext secrets in config.</div>
+        <div class="feature-body">Reference Vault KV v2 secrets with vault:// URIs and browser OIDC login. Tokens, literal environment values and saved launch overrides use OS-backed encryption. Host-key verification and secure remote launch protect session setup.</div>
       </div>
       <div class="feature stagger">
         <div class="feature-header">
@@ -1150,14 +1150,28 @@
           <div class="feature-icon">&#x23EA;</div>
           <div class="feature-title">Session Resume</div>
         </div>
-        <div class="feature-body">Browse Claude and Codex transcripts and resume any past conversation, grouped by recency and working directory.</div>
+        <div class="feature-body">Browse local Claude, Codex, Copilot and OpenCode history. Restart saved SSH/Coder Claude/Codex conversations when IDs and history remain available. Recovery restores context rather than reattaching the original process.</div>
       </div>
       <div class="feature stagger">
         <div class="feature-header">
           <div class="feature-icon">&#x2328;&#xFE0F;</div>
           <div class="feature-title">Remappable Shortcuts</div>
         </div>
-        <div class="feature-body">Every keyboard shortcut is user-remappable with reserved-chord warnings. Focus, split, swap, zoom, broadcast &mdash; all rebindable.</div>
+        <div class="feature-body">Remap app shortcuts with reserved-chord warnings. Search sessions and terminal scrollback, focus or swap panes, and zoom the window. Clipboard shortcuts and mouse gestures retain their documented bindings.</div>
+      </div>
+      <div class="feature stagger">
+        <div class="feature-header">
+          <div class="feature-icon">&#x21B3;</div>
+          <div class="feature-title">Read-Only Child Viewers</div>
+        </div>
+        <div class="feature-body">Inspect Claude subagents locally, over SSH or in Coder with model, timing and token metadata. Open a child to read its transcript. Trusted local Codex lifecycle hooks also reveal Claude-launched codex exec runs.</div>
+      </div>
+      <div class="feature stagger">
+        <div class="feature-header">
+          <div class="feature-icon">&#x2699;</div>
+          <div class="feature-title">CLI Tools & Optional Extras</div>
+        </div>
+        <div class="feature-body">Manage per-tool defaults and native CLI updates. Opt into the local GIF panel, Pip companion or J.O.B.S. Office. Pip AI comments and submitted-prompt sharing have separate consent switches.</div>
       </div>
     </div>
   </section>
@@ -1227,7 +1241,7 @@
     <div class="stack" style="margin-top: 32px;">
       <div class="stack-item stagger">
         <div class="stack-layer grad-text">Shell</div>
-        <div class="stack-name">Electron 41</div>
+        <div class="stack-name">Electron 44</div>
         <div class="stack-note">Main process owns PTY lifecycle</div>
       </div>
       <div class="stack-item stagger">
@@ -1253,7 +1267,7 @@
       <div class="stack-item stagger">
         <div class="stack-layer grad-text">Secrets</div>
         <div class="stack-name">HashiCorp Vault</div>
-        <div class="stack-note">KV v2, token + OIDC auth</div>
+        <div class="stack-note">KV v2, browser OIDC, encrypted cache</div>
       </div>
     </div>
   </section>
@@ -1283,8 +1297,8 @@
       </div>
       <div class="cli-card stagger">
         <div class="cli-name">OpenCode</div>
-        <div class="cli-desc">PTY, cost via crush.db</div>
-        <div class="cli-level full">FULL</div>
+        <div class="cli-desc">Resume, local Crush usage only</div>
+        <div class="cli-level full">SUPPORTED</div>
       </div>
       <div class="cli-card stagger">
         <div class="cli-name">Custom</div>
@@ -1297,7 +1311,8 @@
   <!-- ═══ Themes ═══ -->
   <section class="section reveal">
     <div class="section-label grad-text">Themes</div>
-    <h2 class="section-title">7 palettes, full xterm support</h2>
+    <h2 class="section-title">11 palettes, full xterm support</h2>
+    <div class="section-desc">Catppuccin Mocha, Macchiato, Frapp&eacute; and Latte; Brass; Tether Dark and Light; Nord; Gruvbox Dark and Light; Harbor. A selection is shown below.</div>
     <div class="theme-row" style="margin-top: 32px;">
       <div class="theme-swatch stagger" style="background: #1e1e2e;">
         <div class="swatch-bar" style="background: #181825; border: 1px solid #585b70;">
@@ -1369,10 +1384,11 @@
   <section class="section download reveal" id="download">
     <img src="logo.png" alt="Tether logo" style="width: 72px; height: 72px; margin-bottom: 20px; filter: drop-shadow(0 0 24px rgba(13, 255, 255, 0.2));">
     <div class="download-title">Get <span class="grad-text">Tether</span></div>
-    <div class="download-version grad-text" id="version-badge">v0.6.1</div>
+    <div class="download-version grad-text" id="version-badge">Stable Windows release</div>
     <div class="download-note">
       Free and open source. Windows only for now &mdash; macOS and Linux are post-1.0.<br>
-      Requires Node.js 20+ and at least one supported CLI tool.
+      Install and sign in to your chosen CLI separately. Desktop runtime included; optional hooks and Helm need standalone Node.js.<br>
+      Windows builds are currently unsigned. Building from source uses Node.js 24 and npm 10.9.4.
     </div>
     <div class="download-buttons">
       <a href="https://github.com/maxthomas95/tether/releases/latest" class="btn btn-grad">Download for Windows</a>

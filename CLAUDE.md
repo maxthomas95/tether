@@ -4,7 +4,7 @@
 
 Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provides a single unified interface to manage multiple agentic CLI sessions across local, SSH, and Coder workspace environments — preserving the exact native terminal experience via raw PTY piping into xterm.js.
 
-**Status:** Active development — in the 1.0 polish push. Currently on the `0.6.x` stable line (stable/beta update channels live). Local, SSH, and Coder transports working; multi-CLI support (Claude/Codex/Copilot/OpenCode/Custom); Vault-backed env vars; usage tracking with daily/weekly/monthly rollups, per-CLI and per-environment attribution, and CSV/JSON export; pane splitting with keyboard-driven focus/swap and broadcast input; desktop notifications with per-session muting; auto-update; SSH host key verification; user-remappable keyboard shortcuts; Claude/Codex hook-driven waiting/idle detection; git worktree support.
+**Status:** The `0.7.x` stable line graduates the soaked `0.6.x` beta train; Windows 1.0 polish continues. Local/SSH/Coder sessions, conversation recovery, split/Canvas layouts, workspace recipes, encrypted launch snapshots, local/remote Claude/Codex usage, child-agent viewers, CLI maintenance, optional Pip/GIF/J.O.B.S. integrations, and stable/beta update notifications are implemented. See `CHANGELOG.md` for release scope and `ROADMAP.md` for remaining work.
 
 ## Core Principle
 
@@ -12,14 +12,14 @@ Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provid
 
 ## Tech Stack
 
-- **Shell:** Electron 41 (main process owns PTY lifecycle, renderer owns UI)
+- **Shell:** Electron 44 (sandboxed preloads; main owns PTY lifecycle, renderer owns UI)
 - **Frontend:** React 19 + TypeScript
 - **Terminal:** xterm.js 6.0 + xterm-addon-fit (same as VS Code)
 - **Local PTY:** node-pty
 - **SSH:** ssh2 (Node.js)
 - **Coder:** Coder REST API + SSH-style PTY exec into workspaces
 - **Secrets:** HashiCorp Vault integration (KV v2) for env var refs
-- **State:** JSON file persistence (`{userData}/data.json`) — SQLite planned but deferred due to native module ABI issues
+- **State:** Atomic JSON persistence (`{userData}/data.json`); secrets and saved launch overrides use safeStorage. SQLite app-state migration is deferred; the local Crush usage reader uses built-in `node:sqlite`.
 - **IPC:** Electron IPC (commands + event channels for PTY data streaming)
 - **Themes:** Catppuccin (Mocha, Macchiato, Frappé, Latte) + Brass + Tether (Default Dark) + Tether Light + Nord + Gruvbox (Dark, Light) + Harbor
 - **CLI tools registry:** Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, Custom — selected per session via `src/shared/cli-tools.ts`
@@ -27,7 +27,7 @@ Tether is a desktop session multiplexer for Claude Code and Codex CLI. It provid
 ## Architecture
 
 - **Main process:** Session Manager, Transport Adapters (Local/SSH/Coder), Session Registry (JSON), Status Detector, CLI Hook Bridge (Claude/Codex overlays), Notification Service, Vault client, Usage/Quota services, Update checker, Git providers (GitHub/ADO/Gitea), Claude/Codex/Copilot/OpenCode transcript readers, Helm MCP bridge, J.O.B.S. office integration (probe/launch + webhook bridge), Diagnostics export
-- **Renderer process:** React UI — Sidebar (sessions grouped by working dir, env, vault pill, quota/usage footers), Terminal Pane(s) with split layouts, dialogs (Settings, NewSession, NewEnvironment, About, ResumeChat, KeyboardShortcuts, HostKeyVerify, VaultPicker, etc.), Setup Wizard for first run
+- **Renderer process:** React UI — grouped sidebar and read-only child viewers, single/split/Canvas terminals, workspace recipes, terminal search, settings/launch dialogs, first-run wizard, optional GIF/Pip panels
 - **Transport interface:** All adapters implement `SessionTransport` — the UI is environment-agnostic
 - **Data flow:** Keystroke → xterm.js → IPC → transport.write() → PTY stdin → CLI → PTY stdout → status detector (copy) + IPC → xterm.js → screen
 
@@ -103,13 +103,13 @@ Tether ships Windows-only today; macOS and Linux are post-1.0 (see `ROADMAP.md`)
 
 ## Agent Routing
 
-The `codex-crew` plugin (`maxthomas95/codex-crew`, installed user-scope) defines three Codex-backed subagents: each is a thin forwarder that hands the task to OpenAI Codex CLI (`codex exec`) with pinned model/effort/sandbox and relays the report back verbatim. Route by task shape, not habit:
+Agent routing is governed by [AGENTS.md](AGENTS.md) and the tools available in the current session. Local, untracked agent definitions or a user-installed forwarding plugin are optional development tooling, not dependencies shipped with Tether. Route by task shape when delegation is explicitly requested:
 
-- `architect` (Codex `gpt-5.6-sol`, effort xhigh, read-only sandbox) — bounded deep problems: root-causing a specific behavior, design analysis with non-obvious tradeoffs. Returns analysis with file:line evidence; cannot write files.
-- `coder` (Codex `gpt-5.6-terra`, effort medium, workspace-write sandbox) — implementation with a clear spec, known files, and a defined done-state. Ambiguous specs bounce back rather than get improvised. Name the worktree path in the task when one is assigned — the forwarder targets `codex exec -C` at it.
-- `scout` (Codex `gpt-5.6-luna`, effort low, read-only sandbox) — fast lookups, log/transcript digging, quick verifications. Never edits files.
+- `architect` — bounded root-cause or design analysis, with file:line evidence; usually no production edits.
+- `coder` — implementation with a clear spec, known files, an assigned worktree, and a defined done-state; report ambiguity instead of improvising.
+- `scout` — read-only lookups, logs/transcripts, and quick verification.
 
-Delegated Codex runs read this repo's AGENTS.md and CLAUDE.md, so the conventions here bind them too. Model/effort pins live in the plugin repo, not here.
+Use custom subagents only when the user explicitly asks for subagents, parallel agents, delegation, or this routing behavior. Model/effort pins belong to the current agent definitions, not this public architecture guide. Delegated runs follow this repo's instructions too.
 
 Standing rules:
 
@@ -131,9 +131,9 @@ npm test             # Vitest tests
 npm run test:packaging # Packaging helper tests
 ```
 
-For packaging changes, also run `npm run package` and `npm run verify:package`. CI separately builds/audits the Helm package and audits root/runtime dependencies; see `.github/workflows/ci.yml`. In-app Settings has eight sections; theme and UI font/density are under Appearance. See `src/docs/settings.md` for current controls and save behavior.
+Also run `npm run test:security` and the documented dependency gates when relevant. For packaging changes, run `npm run package` and `npm run verify:package`; releases also require `npm run make` and packaged runtime smoke. CI separately builds/audits Helm and audits root/runtime dependencies; see `.github/workflows/ci.yml` and `docs/DEPENDENCY_SECURITY.md`. Settings has nine sections, including CLI tools. See `src/docs/settings.md` for controls and save behavior.
 
-**Note:** Native modules (node-pty) have ABI issues with VS 2025 + Electron 41. Workarounds: lazy node-pty import and JSON persistence for app state. Crush/OpenCode usage reads its local database through Node's built-in, experimental `node:sqlite`; JSON file storage is the current persistence layer.
+**Native packaging:** Forge uses pinned prebuilt node-pty binaries instead of rebuilding with unsupported Visual Studio toolchains. Windows local/Coder PTYs use bundled ConPTY DLL support so shutdown works with `RunAsNode` disabled. Keep the packaged verifier and real PTY startup/stop smoke green; app state remains JSON.
 
 ## File Structure
 
@@ -207,10 +207,13 @@ src/
       transcripts.ts                  # OpenCode transcript reader
       session-watcher.ts              # OpenCode session id capture at spawn
       usage-reader.ts                 # OpenCode cost from its local DB
-    coder/workspace-service.ts        # Coder workspace list/create via REST API
+    coder/workspace-service.ts        # Coder CLI workspace list/create + template API lookup
+    cli-maintenance/                  # Temporary native version/update terminals
+    workspace-recipes/                # Recipe persistence, validation and fresh launches
+    pip/                              # Optional bounded AI comments and consented prompt context
     vault/
       vault-client.ts                 # HashiCorp Vault REST client
-      vault-auth.ts                   # Token + OIDC auth flows
+      vault-auth.ts                   # Browser OIDC + encrypted token cache
       vault-resolver.ts               # Resolve vault:// refs at session start
       vault-types.ts                  # Vault types
     usage/
@@ -258,7 +261,8 @@ src/
       MigrateToVaultDialog.tsx
       Notifications.tsx
       PaneStatusStrip.tsx             # Per-session cost/token strip
-      SettingsDialog.tsx              # App-wide settings (theme, env vars, CLI flags, vault)
+      SettingsDialog.tsx              # Nine searchable settings sections
+      CanvasLayout.tsx                # Movable/resizable session panels
       SetupWizard.tsx                 # First-run wizard
       SplitDivider.tsx                # Split pane drag handle
       SplitLayout.tsx                 # Split pane container with snap zones

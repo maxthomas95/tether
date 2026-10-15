@@ -4,6 +4,8 @@ Tether is a desktop session multiplexer for Claude Code, Codex CLI, GitHub Copil
 
 ## First Launch
 
+Download the stable Windows installer or portable zip from [GitHub Releases](https://github.com/maxthomas95/tether/releases/latest). Extract a portable build before running `Tether.exe`. Builds are currently unsigned. Install and sign in to your chosen CLI separately; Tether includes its desktop runtime. Optional local hooks, Helm, and automatic J.O.B.S. launch also need standalone Node.js on PATH.
+
 The Setup Wizard runs on first launch and walks you through:
 
 1. **Welcome** — introduction and launch option.
@@ -46,7 +48,7 @@ Click the **×** beside a recent project to remove its shortcut. Removal is save
 
 The returning-project screen includes a slowly spinning ASCII Tether logo. Use the pause button beneath it to stop the animation. If your system prefers reduced motion, the logo stays still automatically.
 
-For repeatable multi-session setups, choose **File ? Workspaces?** after arranging your sessions. Save the current workspace as a recipe, then open it later to start fresh sessions with the same directories, environments, CLI tools, and layout. You can edit paths and remap environments before opening, and opening a recipe does not stop any sessions already running.
+For repeatable multi-session setups, choose **File → Workspaces…** after arranging your sessions. Save the current workspace as a recipe, then open it later to start fresh sessions with the same directories, environments, CLI tools, and layout. You can edit paths and remap environments before opening, and opening a recipe does not stop any sessions already running.
 
 ## The Interface
 
