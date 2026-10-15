@@ -13,7 +13,24 @@ vulnerabilities even if you cannot upgrade.
 | Older releases | No guaranteed backports; upgrade to the latest stable release |
 
 Available builds are listed on the
-[Releases page](https://github.com/maxthomas95/tether/releases).
+[Releases page](https://github.com/maxthomas95/tether/releases). The
+[latest stable](https://github.com/maxthomas95/tether/releases/latest) is the
+recommended track; beta builds require selecting the Beta channel. Update
+notifications link to a release page; users download and install the build.
+
+## Release artifacts and security boundaries
+
+Current Windows installer and portable builds are unsigned. Release notes state
+this explicitly. Packaging verifies ASAR contents, sandboxed preloads, native
+PTY resources, and the external hook/Helm resources; runtime smoke checks remain
+necessary. See [Releasing](RELEASE.md) and [dependency security](docs/DEPENDENCY_SECURITY.md)
+for gates and the time-limited build-only mitigation.
+
+App state is atomic JSON. Literal environment values, saved launch overrides,
+SSH passwords and provider/Vault tokens use OS-backed encryption. Remote usage,
+child transcript viewers and optional integrations have different data scopes;
+see [usage privacy](src/docs/usage-quota.md#privacy) and
+[integration consent](src/docs/settings.md#integrations).
 
 ## Report a vulnerability privately
 

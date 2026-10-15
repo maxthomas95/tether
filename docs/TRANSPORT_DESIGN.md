@@ -56,8 +56,10 @@ CLI flags concatenate: per-tool global defaults → per-tool profile flags → s
 [local-transport.ts](../src/main/transport/local-transport.ts) lazily loads `node-pty` through `pty-loader.ts`.
 
 - Native executables spawn directly. On Windows, [win-binary-resolver.ts](../src/main/transport/win-binary-resolver.ts) resolves executable names and uses `cmd.exe` only for batch shims or unresolved names that need PATH/PATHEXT lookup.
+- Windows PATH/PATHEXT lookup prefers a Windows shim such as `codex.cmd` over npm's extensionless Unix script. Explicit filenames retain their meaning.
 - The Windows shell fallback quotes arguments through the shared shell helpers and rejects embedded double quotes at that boundary.
 - PTYs use `xterm-256color` and `COLORTERM=truecolor`; resize calls reach `pty.resize`.
+- Windows local and Coder PTYs use `useConptyDll: true` with packaged `conpty.dll`/`OpenConsole.exe`, allowing clean shutdown with Electron's `RunAsNode` fuse disabled.
 - Both stop and kill use node-pty's process termination. Platform behavior differs; a Windows stop is not a promise of POSIX SIGTERM handling.
 - PTYs live in main and can survive a renderer reload. Renderer reattachment does not restore a buffer destroyed by a renderer crash.
 
@@ -70,9 +72,11 @@ Conversation resume is supported for local Claude Code, Codex CLI, Copilot CLI, 
 - Authentication uses the configured private-key path or password, with agent fallback when neither is supplied. [resolve-ssh-config.ts](../src/main/ssh/resolve-ssh-config.ts) handles stored password decryption and Vault references.
 - First contact requires host-key approval. A changed known key fails closed; it must be verified and the old entry revoked in Settings before a fresh prompt.
 - The connection uses SSH keepalives. The chosen CLI must already be installed and authenticated on the remote host.
-- The launch command changes directory and invokes the CLI with quoted env assignments and arguments. Optional sudo elevation is configured on the environment.
+- A POSIX `sh`/`stty` reader confirms echo is disabled before Tether sends the quoted launch configuration through stdin. Resolved env values stay out of bootstrap echo and interactive shell history; echo is restored before the CLI starts. A failed handshake sends no configuration. Optional sudo elevation is configured on the environment, and Tether answers sudo only after the expected command has started.
 - Stop sends Ctrl+C, waits, sends `exit`, then closes the SSH connection. Kill destroys the connection.
 - There is no automatic session reconnect or remote PTY reattachment. Restarting creates a new session.
+
+Restart/restore can pass a saved Claude/Codex conversation ID to the new CLI process. The same host, user/home and history are required. Missing Claude history starts fresh under the saved ID; Codex reports its native error. This recovery is separate from reattaching a process. See [Sessions](../src/docs/sessions.md#resume-conversation).
 
 The optional remote status-hook connection is separate from the terminal connection. It requires both the global CLI-hooks opt-in and the environment's **Install CLI status hooks on this host** setting. It installs additive user-config overlays and a Node helper, uses SSH channels without opening another public port, and does not support sudo environments. Its reconnect behavior does not reconnect the terminal session. See [in-app environment help](../src/docs/environments.md).
 
@@ -83,12 +87,17 @@ The optional remote status-hook connection is separate from the terminal connect
 [coder/workspace-service.ts](../src/main/coder/workspace-service.ts) lists workspaces/templates and creates workspaces through Coder CLI commands, with REST lookup for template parameters. The per-environment insecure-TLS opt-in applies to that API lookup.
 
 - The session working directory identifies a workspace, optionally `workspace::subdirectory`.
+- Remote launch uses the same echo-off stdin handshake and POSIX host requirements as SSH; the Coder CLI carries the connection.
 - An optional clone URL adds a guarded clone step before changing into the subdirectory and launching the CLI. An existing target directory skips the clone.
 - Stop and kill terminate the local Coder PTY process.
 - The UI supports workspace creation, not general start/stop management of existing workspaces.
 - Coder sessions use cadence-based status detection; remote hook installation is deferred.
 
 ## Lifecycle and Performance
+
+Input translation happens at the renderer's terminal boundary, before `session:input`. Shift+Enter respects each target's keyboard mode and CLI registry setting; Windows Claude uses Ctrl+J while Codex retains native Windows events. Split-layout broadcast translates each target independently. Clipboard/link handling uses main IPC; no output rewriting is introduced.
+
+Status hooks, remote usage readers, and child-agent readers use separate channels. SSH usage keeps a resident reader; Coder usage invokes command mode per poll. Child discovery has a separate resident reader for either transport, with authentication suspension/backoff. None reconnects or consumes the interactive PTY stream. See [Architecture](ARCHITECTURE.md#child-agent-discovery).
 
 The session manager registers output and exit callbacks, updates persisted metadata, and cleans up transports, watchers, timers, and optional integrations. A stop request allows a 3-second grace period before escalation; another stop during the grace period forces a kill. Exit code zero maps to `stopped`; errors map to `dead`.
 

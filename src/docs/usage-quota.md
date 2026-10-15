@@ -13,7 +13,7 @@ Tether reads local CLI metadata and sanitized Claude Code/Codex usage records co
 
 The Crush reader checks `%LOCALAPPDATA%/crush/crush.db` on Windows and `~/.local/share/crush/crush.db` elsewhere. `CRUSH_GLOBAL_DATA` can override the directory. Claude transcript discovery respects `CLAUDE_CONFIG_DIR`.
 
-Backfill runs at startup and filesystem watchers update local usage. Codex uses `CODEX_HOME` when set, otherwise `~/.codex`. Remote usage collection uses the existing authenticated connection; full transcripts stay on the host. The reader starts once per connection and stays resident, answering every session's polls over that one process, so an elevated host authenticates once rather than once per poll.
+Backfill runs at startup and filesystem watchers update local usage. Codex uses `CODEX_HOME` when set, otherwise `~/.codex`. Remote usage uses a separate authenticated command connection and returns usage fields rather than full messages. SSH keeps a resident reader per connection, so an elevated host authenticates when it starts rather than for every poll. Coder usage uses command mode per poll; its separate child-agent reader is resident.
 
 Codex uses per-request usage records when available, including compaction requests that may be absent from context token events. A separate request checkpoint prevents repeated records from being counted twice across app restarts. Older transcripts continue to use cumulative token events. A subagent's local rollout is counted separately from its parent's copied history. Reasoning tokens are part of output tokens; the reasoning breakdown is not added to output or billed again. Cached input and reported cache writes are separated from uncached input for cost calculations.
 
@@ -64,7 +64,7 @@ Requirements and limits:
   successfully collected totals after disconnection or exit.
 - This collects conversations launched in Tether, not all historical sessions
   on the remote host, and subagent transcripts do not count toward a session's
-  usage here. Remote transcript browsing and resume behavior are unchanged. Remote OpenCode usage is not yet supported.
+  usage here. Opening a child-agent viewer is a separate transcript read; saved-ID conversation recovery is described in [Sessions](sessions.md#resume-conversation). Remote OpenCode usage is not yet supported.
 
 ## Per-Session Cost Strip
 

@@ -108,3 +108,14 @@ and restore `.sonarcloud.properties` from the parent of the migration commit.
 References: [Sonar's JS/TS coverage setup](https://docs.sonarsource.com/sonarqube-cloud/enriching/test-coverage/javascript-typescript-test-coverage),
 [official scan action](https://github.com/SonarSource/sonarqube-scan-action),
 [Vitest coverage](https://vitest.dev/guide/coverage.html).
+
+## Release verification
+
+For a release, inspect both the scan job and the **SonarCloud Code Analysis**
+result on the exact release PR head. Scan completion means analysis was
+submitted; it does not mean the quality gate passed. Branch protection currently
+requires tests, CodeQL, root audit, Helm build/audit and Windows package
+verification; Sonar remains optional in that ruleset. The release process still
+reviews its actual gate before publication. Fork and Dependabot PRs do not receive
+the scan token; merged main code is scanned. Recheck live GitHub rules rather
+than treating this description as a permanent required-check list.

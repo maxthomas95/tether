@@ -107,9 +107,18 @@ npm test
 npm run lint
 npx tsc --noEmit
 npm audit --audit-level=high
+npm run test:security
+npm run audit:security
+npm audit --omit=dev --audit-level=high
 ```
 
 Additional checks:
+
+- Read `docs/DEPENDENCY_SECURITY.md` for the integrity-checked build-only audit
+  disposition. A raw root audit finding does not replace that gate; runtime and
+  Helm audits remain strict.
+- Follow `RELEASE.md` for stable cutoff, exact-head checks, packaged runtime
+  smoke, merged-tree comparison, tagging, and artifact verification.
 
 - Run `npm --prefix mcp-servers/tether-helm run build` when touching the Helm
   MCP server.

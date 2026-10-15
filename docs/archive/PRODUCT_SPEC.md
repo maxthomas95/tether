@@ -1,6 +1,6 @@
 # Product Spec — Tether
 
-> **Archived 2026-05-18.** This is the original pre-implementation product spec, kept for historical reference. For current behavior see `README.md`, `src/docs/`, and `docs/ARCHITECTURE.md`; for current scope see `ROADMAP.md`. Inline status annotations below are frozen at v0.5.x and will not be updated.
+> **Archived 2026-05-18.** Original pre-implementation spec, frozen at v0.5.x. For current behavior see the [README](../../README.md), [user guide](../../src/docs/getting-started.md), and [architecture](../ARCHITECTURE.md); for current scope see the [roadmap](../../ROADMAP.md). The historical content below is not maintained.
 
 ## Vision
 

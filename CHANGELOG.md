@@ -1,5 +1,40 @@
 # Changelog — Tether
 
+## [0.7.0] — 2026-10-15
+
+Stable release graduating the 0.6.x beta train, the first stable milestone since `0.6.1-hotfix.1`. Runtime code and bundled pricing match `0.6.10-beta.9`; this promotion updates release metadata and documentation.
+
+### Workspaces and Daily Use
+- **Workspace recipes and encrypted restore** — save named session groups/layouts, reopen selected slots with edited paths or environments, and preserve launch overrides when restoring or duplicating. Failed restores remain saved for retry.
+- **Canvas and terminal search** — arrange movable/resizable panels beyond the split-pane limit, search scrollback, and retain terminal buffers through layout changes. Splits retain keyboard focus/swap, recovery overlays and per-target broadcast input.
+- **Navigation and appearance** — session quick switcher, attention queue, branch/dirty badges, terminal previews, dismissible recent projects, eleven themes, bundled fonts/previews and interface density.
+- **Optional companions** — local GIF panel and Pip, with separate opt-ins for Codex-generated comments and submitted-prompt sharing. J.O.B.S. has explicit connection, remote-sharing, launch and removal controls.
+
+### CLI and Remote Work
+- **Shared CLI settings and maintenance** — independent launch defaults, guided Claude/OpenCode/Codex controls, and native version/update terminals across local, SSH and Coder targets.
+- **Conversation recovery** — restart saved SSH/Coder Claude/Codex conversations by native ID when history exists. Missing Claude history starts fresh under the same ID. Recovery restores context rather than reattaching a process.
+- **Child-agent visibility** — local/SSH/Coder Claude subagent rows with status, timing, models, tokens and read-only transcript viewers. Local Claude-launched `codex exec` rows require opted-in and natively trusted Codex lifecycle hooks.
+- **Terminal input and links** — repair Windows npm-shim launches and Claude/Codex multiline input, encode mixed broadcast targets independently, open OSC 8 hyperlinks with Ctrl+click, and support bracketed paste and write-only OSC 52 remote copying.
+- **Status and usage** — hook-aware turn/child activity, standalone Node preflight for local hooks, remote Claude/Codex usage, request/compaction accounting, UTC event-day totals, filtered history, exports, budgets and Codex quota/account inspection.
+
+### Security and Reliability
+- Encrypt legacy credentials, literal environment values and saved launch intent with the OS keychain; preserve the original database if migration fails.
+- Harden Vault origins/redirects and token invalidation, IPC, SSH host-key trust, Git command boundaries, diagnostics redaction, embedded Office navigation and authenticated hook/Helm bridges.
+- Use an echo-off stdin handshake for SSH/Coder launch configuration and bundled ConPTY DLL support for Windows PTY shutdown with hardened Electron fuses.
+- Upgrade to Electron 44/Vite 8 and enforce tests/coverage, typecheck, lint, dependency audits, CodeQL, Sonar analysis, Helm build and Windows package verification.
+- Reconcile README, architecture/transport guidance, roadmap, contributor/release docs, shipped help and public-site copy with the implementation.
+
+### Upgrade Notes and Limits
+- JSON state upgrades in place; saved launch snapshots use OS-keychain encryption. Back up user data before upgrading if you need rollback; older versions may not understand newer records.
+- Install/authenticate CLIs separately. Local hooks, Helm and automatic J.O.B.S. launch need standalone Node.js; remote usage/child readers need remote Node. SSH/Coder secure launch needs POSIX `sh` and `stty`.
+- Coder status hooks remain deferred. Cadence/transcript activity is an estimate. Copilot has no cost reader; OpenCode usage covers supported local Crush databases only.
+- Usage is an API-equivalent estimate, not a subscription bill. Child lists return task metadata; opening a viewer fetches that child's transcript into memory. Disable **Show subagents in sidebar** to stop child reads.
+- GIFs, Pip, AI quips, prompt sharing and Helm remain off by default. Saved preferences are retained. J.O.B.S. is off for new setups and preserves saved integration behavior.
+- Runtime/Helm audits remain strict. The integrity-checked build-only `braces` backport expires on 2026-11-04; see [dependency security](https://github.com/maxthomas95/tether/blob/main/docs/DEPENDENCY_SECURITY.md).
+- Windows installer/portable builds remain unsigned. macOS/Linux desktop builds and remaining Windows 1.0 goals are outside this release. Terminal output retains the unchanged raw PTY path.
+
+---
+
 All notable changes to this project will be documented in this file.
 
 ---

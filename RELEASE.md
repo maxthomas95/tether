@@ -1,8 +1,23 @@
 # Releasing Tether
 
-This document is the source of truth for how Tether releases are cut. All conventions here are also enforced by `scripts/release.mjs` — running the script is the recommended path; this doc explains what it does and why.
+This document is the source of truth for cutting Tether releases. `scripts/release.mjs` automates versioning, PRs, tags and assets, but it enables merge before building and does not run the complete acceptance checks. Use the staged stable flow below when preparing a stable milestone; automation does not substitute for a verified candidate.
 
 For the additional 1.0 hardening gate, see `docs/1.0_RELEASE_CHECKLIST.md`.
+
+## Stable release acceptance
+
+1. Fetch `github/main`, tags, releases and open PRs. Confirm the cutoff is the beta used successfully, and identify any changes since it. Daily use is meaningful soak evidence; no arbitrary extra waiting period is required.
+2. Create an isolated main-based worktree and `release/v{version}` branch. Preserve active/dirty checkouts. Stable bumps minor: the 0.6.x beta train graduates to `0.7.0`.
+3. Update package/lock versions and write release notes covering changes since the **previous stable**, including upgrade, persistence, transport and security impacts. Review README, architecture, roadmap, contributor/security guidance, shipped help, and site copy. Historical entries remain historical.
+4. Keep runtime changes at the beta cutoff unless a release blocker requires a fix. The bundled pricing refresh is best-effort; retaining the beta's snapshot is acceptable when intentionally preserving its runtime inputs.
+5. Run `npm run typecheck`, `npm run lint`, `npm run test:coverage`, `npm run test:packaging`, `npm run test:security`, `npm run audit:security`, `npm audit --omit=dev --audit-level=high`, and the Helm build/audit. Inspect the raw root audit too; the [documented build-only backport](docs/DEPENDENCY_SECURITY.md) is not a clean raw audit.
+6. Build with `npm run make`, then `npm run verify:package`. Use Node 24/npm 10.9.4 in a standard installation layout so Forge can locate npm. Verify ASAR, sandboxed preloads, native bindings, bundled ConPTY DLLs, Helm and hook resources.
+7. Run the packaged app with isolated user data: fresh setup, migration from the previous stable, saved preferences/launch settings, real native PTY input/output, resize, Stop, clean shutdown, and shipped documentation. Exercise changed UI behavior. A package verifier alone does not establish runtime correctness.
+8. Push the release branch and open a PR. Wait for exact-head CI, Windows package verification, CodeQL and Sonar results. Review the actual Sonar quality gate; a successful scan job alone is insufficient. Do not merge/tag/publish while a required gate or runtime check is incomplete.
+9. Squash-merge with an explicit subject/body. Fetch the resulting main commit and compare its tree with the verified candidate. Rebuild/retest if contents differ. Tag that exact merged commit and push the lightweight tag.
+10. Publish with `prerelease: false`, mark latest, and upload the verified installer/portable assets. Check tag target, non-draft/latest status, names, byte sizes and SHA-256 against the local files. Update checks link users to the release; installation remains manual.
+
+Current Windows releases are unsigned. State that in notes and preserve the existing JSON migration, CLI permission, host-key and raw terminal boundaries. This promotion does not claim macOS/Linux support or completion of the future 1.0 checklist.
 
 ## Quick start
 
@@ -117,8 +132,8 @@ The script auto-drafts the section with placeholders and embeds commits since th
 
 | Asset | Source | Approx size |
 |---|---|---|
-| `Tether-{version}-Setup.exe` | `out/make/squirrel.windows/x64/tether-{version} Setup.exe` | ~150 MB |
-| `Tether-{version}-portable.zip` | `out/make/zip/win32/x64/tether-win32-x64-{version}.zip` | ~158 MB |
+| `Tether-{version}-Setup.exe` | `out/make/squirrel.windows/x64/tether-{version} Setup.exe` | ~188 MB |
+| `Tether-{version}-portable.zip` | `out/make/zip/win32/x64/tether-win32-x64-{version}.zip` | ~194 MB |
 
 Asset names use the **package.json version** (e.g. `0.3.0`), not the tag suffix.
 
@@ -182,6 +197,8 @@ Two caveats:
 - `scripts/release.mjs` cannot do this yet — phase 2 hard-codes `main` as the branch base. Until the script grows a `--from <tag>` option, tag-based hotfixes are manual.
 
 ## Manual release (fallback)
+
+Complete the acceptance gates above before merge/tag/publish. The steps below describe Git and asset operations, not a shortcut around validation. Use an isolated worktree instead of switching an active checkout, and compare the merged tree with the packaged candidate before tagging.
 
 If the script breaks and you need to ship anyway:
 

@@ -71,6 +71,7 @@ npm run typecheck
 npm run lint
 npm test
 npm run test:packaging
+npm run test:security
 ```
 
 Use `npm run test:coverage` when checking coverage; CI runs it and publishes the
@@ -82,8 +83,16 @@ For dependency or security changes, also run:
 
 ```bash
 npm audit --audit-level=high
+npm run audit:security
 npm audit --omit=dev --audit-level=high
 ```
+
+The raw root audit reports the temporary build-only `braces` finding even with
+the backport installed. `audit:security` is CI's integrity-checked gate for that
+specific mitigation; all other high/critical findings fail. Runtime and Helm
+audits remain strict. Read [dependency security](docs/DEPENDENCY_SECURITY.md)
+for scope, expiry, and removal requirements; never use `audit fix --force` to
+silence a release gate.
 
 For packaging changes, also run:
 
@@ -101,6 +110,13 @@ npm --prefix mcp-servers/tether-helm audit --audit-level=high
 ```
 
 For documentation-only changes, check links, examples, and `git diff --check`.
+Check README, architecture/transport guidance, roadmap, and shipped help for
+related claims. `site/index.html` contains the public site's copy and deploys
+through GitHub Pages when its changes merge. Archived specs and historical
+changelog sections describe their original releases; update their navigation
+when needed without rewriting history. For a release, follow [RELEASE.md](RELEASE.md)
+and verify fresh-profile, previous-stable migration, native PTY input/stop, and
+shipped docs in the packaged application.
 The [CI workflow](.github/workflows/ci.yml) is the source of truth for automated
 checks. State exactly which checks you ran and explain any skipped checks.
 

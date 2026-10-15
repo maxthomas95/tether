@@ -53,7 +53,7 @@ Window zoom affects the whole app. **Ctrl+scroll** sets a font-size override for
 
 ## Terminal
 
-Most keyboard input is passed straight to the active session — Tether does not intercept or modify terminal keystrokes, so the CLI's own bindings all work. A handful of clipboard shortcuts are handled by Tether:
+Most keyboard input goes to the active CLI. Tether handles app shortcuts, clipboard actions and terminal-protocol key encoding; supported multiline input follows the target CLI as described below. The CLI retains its own editing and permission controls.
 
 | Shortcut | Action |
 |----------|--------|

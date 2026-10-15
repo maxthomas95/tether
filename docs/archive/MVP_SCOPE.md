@@ -1,6 +1,6 @@
 # MVP Scope — Tether
 
-> **Archived 2026-05-18.** This is the original MVP plan, kept for historical reference. All M1–M5 milestones shipped during 0.x. For current scope see `ROADMAP.md`; for release-mechanics gates see `docs/1.0_RELEASE_CHECKLIST.md`. Inline status annotations below are frozen at v0.5.x and will not be updated.
+> **Archived 2026-05-18.** Original MVP plan, frozen at v0.5.x; all M1–M5 milestones shipped during 0.x. See the current [roadmap](../../ROADMAP.md), [release process](../../RELEASE.md), and [1.0 checklist](../1.0_RELEASE_CHECKLIST.md). The historical content below is not maintained.
 
 ## MVP Definition
 
