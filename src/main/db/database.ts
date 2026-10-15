@@ -104,6 +104,8 @@ export interface DbData {
 }
 
 export interface PersistedSessionUsage {
+  costSource?: 'estimated' | 'reported';
+  usageSource?: 'native-opencode' | 'crush';
   /** Remote summaries never refer to a file on the Electron host. */
   remote?: import('../usage/remote-protocol').RemoteUsageSource;
   lastSeenModel?: string | null;
