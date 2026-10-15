@@ -12,6 +12,7 @@ import type {
 import { sessionManager, findVaultRefInSession, setHelmChildCallbacks } from '../session/session-manager';
 import { usageService } from '../usage/usage-service';
 import * as sessionRepo from '../db/session-repo';
+import { getEnvironment } from '../db/environment-repo';
 import { getStatus as getVaultStatus } from '../vault/vault-auth';
 import { createLogger } from '../logger';
 import type { HandlerContext } from './helpers';
@@ -45,7 +46,8 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
       if (s?.claudeSessionId && !s.usageSessionId) {
         usageService.untrackSession(s.claudeSessionId);
       }
-      if (s?.cliTool && s.cliTool !== 'claude' && s.toolSessionId && !s.usageSessionId) {
+      if (s?.cliTool && s.cliTool !== 'claude' && s.toolSessionId && !s.usageSessionId &&
+        (s.cliTool !== 'opencode' || isLocalEnvironment(s.environmentId))) {
         usageService.untrackSession(s.toolSessionId);
       }
     },
@@ -73,10 +75,9 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
       usageService.trackSession(session.claudeSessionId, session.workingDir, 'claude', session.environmentId ?? undefined);
     }
 
-    // Start tracking usage for OpenCode sessions (only when toolSessionId is
-    // already set — e.g. resume. New OpenCode sessions get tracked from the
-    // session-manager's detect callback once the id lands.)
-    if (session.cliTool === 'opencode' && session.toolSessionId) {
+    // The OpenCode usage reader is local-only. Fresh local sessions get
+    // tracked from the session-manager's detect callback once the id lands.
+    if (session.cliTool === 'opencode' && session.toolSessionId && isLocalEnvironment(session.environmentId)) {
       usageService.trackSession(session.toolSessionId, session.workingDir, 'opencode', session.environmentId ?? undefined);
     }
 
@@ -165,6 +166,10 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     const { listTranscripts } = await import('../claude/transcripts');
     return listTranscripts(workingDir);
   });
+}
+
+function isLocalEnvironment(environmentId: string | null | undefined): boolean {
+  return !environmentId || getEnvironment(environmentId)?.type === 'local';
 }
 
 function projectSavedSession(input: SavedSession): SavedSession {

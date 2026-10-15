@@ -1001,10 +1001,9 @@ export class SessionManager {
         toolSessionId = requestedResumeId;
         session.resumed = true;
       }
-      // OpenCode's existence check shells out to `opencode session list`, so
-      // it's noticeably more expensive than reading a local file. Still worth
-      // the check — passing an unknown id to `opencode --session` would create
-      // an unrelated conversation rather than fail loudly.
+      // OpenCode's local history check shells out to `opencode session list`.
+      // Verify the saved conversation before resuming; the CLI's handling of
+      // missing ids can vary between versions.
       if (cliTool === 'opencode' && requestedResumeId && await opencodeTranscriptExists(opts.workingDir, requestedResumeId)) {
         resumeId = requestedResumeId;
         toolSessionId = requestedResumeId;
@@ -1013,13 +1012,8 @@ export class SessionManager {
       session.toolSessionId = toolSessionId || null;
     }
 
-    const remoteUsage = !(transport instanceof LocalTransport) && (cliTool === 'claude' || cliTool === 'codex');
-    if (remoteUsage) {
-      // A non-secret process marker lets the side channel identify Codex's
-      // open rollout file. It is never read from or injected into PTY output.
-      resolvedEnv.TETHER_USAGE_SESSION_ID = id;
-      session.usageSessionId = `remote-pending:${id}`;
-      session.remoteUsageStatus = 'pending';
+    const remote = !(transport instanceof LocalTransport);
+    if (remote && (cliTool === 'claude' || cliTool === 'codex' || cliTool === 'opencode')) {
       // Remote history belongs to the remote CLI, not this machine. Pass the
       // exact saved id through and let the CLI report missing history rather
       // than silently opening an unrelated conversation.
@@ -1032,6 +1026,15 @@ export class SessionManager {
       }
       session.toolSessionId = toolSessionId || null;
       session.claudeSessionId = cliTool === 'claude' ? toolSessionId || null : null;
+    }
+
+    const remoteUsage = remote && (cliTool === 'claude' || cliTool === 'codex');
+    if (remoteUsage) {
+      // A non-secret process marker lets the side channel identify Codex's
+      // open rollout file. It is never read from or injected into PTY output.
+      resolvedEnv.TETHER_USAGE_SESSION_ID = id;
+      session.usageSessionId = `remote-pending:${id}`;
+      session.remoteUsageStatus = 'pending';
     }
 
     try {

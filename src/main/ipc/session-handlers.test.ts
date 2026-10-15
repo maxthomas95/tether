@@ -31,6 +31,9 @@ const sessionRepoMocks = vi.hoisted(() => ({
 }));
 vi.mock('../db/session-repo', () => sessionRepoMocks);
 
+const environmentRepoMocks = vi.hoisted(() => ({ getEnvironment: vi.fn() }));
+vi.mock('../db/environment-repo', () => environmentRepoMocks);
+
 const usageServiceMock = vi.hoisted(() => ({
   trackSession: vi.fn(),
   untrackSession: vi.fn(),
@@ -79,6 +82,7 @@ describe('session-handlers', () => {
     Object.values(sessionManagerMock).forEach((m) => 'mockReset' in m && m.mockReset());
     Object.values(sessionExtras).forEach((m) => m.mockReset());
     Object.values(sessionRepoMocks).forEach((m) => m.mockReset());
+    environmentRepoMocks.getEnvironment.mockReset();
     Object.values(usageServiceMock).forEach((m) => m.mockReset());
     vaultAuthMock.getStatus.mockReset();
     dbState.savedWorkspace = null;
@@ -113,10 +117,51 @@ describe('session-handlers', () => {
       expect(usageServiceMock.trackSession).toHaveBeenCalledWith('claude-uuid', '/repo', 'claude', 'env-1');
     });
 
-    it('tracks OpenCode usage when cliTool=opencode + toolSessionId set', async () => {
+    it('tracks local OpenCode usage when toolSessionId is set', async () => {
       sessionManagerMock.createSession.mockResolvedValue(fakeSession({ cliTool: 'opencode', toolSessionId: 'oc-id' }));
       await harness.invoke(IPC.SESSION_CREATE, { workingDir: '/repo', cliTool: 'opencode' });
       expect(usageServiceMock.trackSession).toHaveBeenCalledWith('oc-id', '/repo', 'opencode', undefined);
+    });
+
+    it('tracks OpenCode usage for a named local environment', async () => {
+      environmentRepoMocks.getEnvironment.mockReturnValue({ type: 'local' });
+      sessionManagerMock.createSession.mockResolvedValue(fakeSession({ cliTool: 'opencode', toolSessionId: 'oc-id', environmentId: 'local-env' }));
+      await harness.invoke(IPC.SESSION_CREATE, { workingDir: '/repo', cliTool: 'opencode', environmentId: 'local-env' });
+      expect(usageServiceMock.trackSession).toHaveBeenCalledWith('oc-id', '/repo', 'opencode', 'local-env');
+    });
+
+    it.each(['ssh', 'coder', 'missing'] as const)('does not use host-local OpenCode usage for a known id in a %s environment', async type => {
+      environmentRepoMocks.getEnvironment.mockReturnValue(type === 'missing' ? undefined : { type });
+      sessionManagerMock.createSession.mockResolvedValue(fakeSession({ cliTool: 'opencode', toolSessionId: 'oc-id', environmentId: 'remote-env' }));
+      await harness.invoke(IPC.SESSION_CREATE, { workingDir: '/repo', cliTool: 'opencode', environmentId: 'remote-env' });
+      expect(usageServiceMock.trackSession).not.toHaveBeenCalled();
+    });
+
+    it.each(['claude', 'codex'] as const)('leaves remote %s usage to its existing side channel', async cliTool => {
+      const session = fakeSession({ cliTool, toolSessionId: 'native-id', environmentId: 'remote-env',
+        claudeSessionId: cliTool === 'claude' ? 'native-id' : undefined, usageSessionId: 'remote:usage-id' });
+      sessionManagerMock.createSession.mockResolvedValue(session);
+      sessionManagerMock.getSession.mockReturnValue(session);
+      await harness.invoke(IPC.SESSION_CREATE, { workingDir: '/repo', cliTool, environmentId: 'remote-env' });
+      sessionExtras.setHelmChildCallbacks.mock.calls[0][0].onExit('s1', { exitCode: 0 });
+      expect(usageServiceMock.trackSession).not.toHaveBeenCalled();
+      expect(usageServiceMock.untrackSession).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('session exit usage cleanup', () => {
+    it.each([
+      [undefined, undefined, true],
+      ['local-env', 'local', true],
+      ['remote-env', 'ssh', false],
+      ['remote-env', 'coder', false],
+      ['missing-env', undefined, false],
+    ] as const)('only untracks local OpenCode usage (%s, %s)', (environmentId, type, local) => {
+      environmentRepoMocks.getEnvironment.mockReturnValue(type ? { type } : undefined);
+      sessionManagerMock.getSession.mockReturnValue(fakeSession({ cliTool: 'opencode', toolSessionId: 'oc-id', environmentId }));
+      sessionExtras.setHelmChildCallbacks.mock.calls[0][0].onExit('s1', { exitCode: 0 });
+      if (local) expect(usageServiceMock.untrackSession).toHaveBeenCalledWith('oc-id');
+      else expect(usageServiceMock.untrackSession).not.toHaveBeenCalled();
     });
   });
 

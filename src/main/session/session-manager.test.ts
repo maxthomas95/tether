@@ -130,7 +130,7 @@ vi.mock('../copilot/session-watcher', () => ({
 }));
 
 vi.mock('../opencode/transcripts', () => ({
-  opencodeTranscriptExists: () => false,
+  opencodeTranscriptExists: vi.fn(async () => false),
 }));
 
 vi.mock('../opencode/session-watcher', () => ({
@@ -167,6 +167,7 @@ import { SessionManager, findVaultRefInSession, setHelmChildCallbacks } from './
 import { detectNewCodexSession } from '../codex/session-watcher';
 import { detectNewCopilotSession } from '../copilot/session-watcher';
 import { detectNewOpencodeSession } from '../opencode/session-watcher';
+import { opencodeTranscriptExists } from '../opencode/transcripts';
 import { remoteUsageService } from '../usage/remote-usage-service';
 import { buildSessionRestartOptions } from '../../renderer/utils/session-restart';
 import { statusDetector } from '../status/status-detector';
@@ -187,6 +188,8 @@ describe('SessionManager', () => {
     envState.type = '';
     vi.mocked(remoteUsageService.start).mockClear();
     vi.mocked(remoteUsageService.stop).mockClear();
+    vi.mocked(opencodeTranscriptExists).mockClear();
+    vi.mocked(detectNewOpencodeSession).mockClear();
     transportHarness.state.instances.length = 0;
     transportHarness.state.startImpl.mockReset();
     transportHarness.state.startImpl.mockResolvedValue(undefined);
@@ -505,6 +508,51 @@ describe('SessionManager', () => {
     expect(start.resumeClaudeSessionId).toBe(cli === 'claude' ? nativeId : undefined);
     expect(restarted.toInfo()).toMatchObject({ toolSessionId: nativeId, resumed: true });
     expect(vi.mocked(remoteUsageService.start).mock.calls[2][0].nativeSessionId).toBe(nativeId);
+  });
+
+  it.each(['ssh', 'coder'] as const)('restarts and restores the exact known OpenCode conversation on %s without reading local history', async transport => {
+    envState.type = transport;
+    const workingDir = transport === 'coder' ? 'workspace::/work' : '/work';
+    const nativeId = 'ses_known_remote_conversation';
+    const original = await manager.createSession({ environmentId: 'env', cliTool: 'opencode', workingDir,
+      resumeToolSessionId: nativeId }, callbacks());
+    transportHarness.state.instances[0].onExit.mock.calls[0][0]({ exitCode: 1 });
+
+    // A fresh conversation in the same directory must not replace the saved id.
+    await manager.createSession({ environmentId: 'env', cliTool: 'opencode', workingDir }, callbacks());
+    const restarted = await manager.createSession(buildSessionRestartOptions(original.toInfo()), callbacks());
+    const restored = await manager.createSession({ environmentId: 'env', cliTool: 'opencode', workingDir,
+      launchSnapshotId: original.toInfo().launchSnapshotId, resumeToolSessionId: nativeId }, callbacks());
+
+    for (const index of [0, 2, 3]) {
+      const start = transportHarness.state.instances[index].start.mock.calls[0][0];
+      expect(start.toolSessionId).toBe(nativeId);
+      expect(start.resumeToolSessionId).toBe(nativeId);
+      expect(start.resumeClaudeSessionId).toBeUndefined();
+      expect(start.env.TETHER_USAGE_SESSION_ID).toBeUndefined();
+    }
+    for (const session of [original, restarted, restored]) {
+      expect(session.toInfo()).toMatchObject({ toolSessionId: nativeId, resumed: true });
+      expect(session.usageSessionId).toBeUndefined();
+      expect(session.remoteUsageStatus).toBeUndefined();
+    }
+    expect(opencodeTranscriptExists).not.toHaveBeenCalled();
+    expect(detectNewOpencodeSession).not.toHaveBeenCalled();
+    expect(remoteUsageService.start).not.toHaveBeenCalled();
+  });
+
+  it.each(['ssh', 'coder'] as const)('keeps a fresh remote OpenCode conversation id unknown on %s', async transport => {
+    envState.type = transport;
+    const session = await manager.createSession({ environmentId: 'env', cliTool: 'opencode',
+      workingDir: transport === 'coder' ? 'workspace::/work' : '/work' }, callbacks());
+    const start = transportHarness.state.instances[0].start.mock.calls[0][0];
+    expect(start.toolSessionId).toBeUndefined();
+    expect(start.resumeToolSessionId).toBeUndefined();
+    expect(session.toInfo().toolSessionId).toBeUndefined();
+    expect(session.toInfo().resumed).toBeUndefined();
+    expect(opencodeTranscriptExists).not.toHaveBeenCalled();
+    expect(detectNewOpencodeSession).not.toHaveBeenCalled();
+    expect(remoteUsageService.start).not.toHaveBeenCalled();
   });
 
   it.each(['ssh', 'coder'] as const)('restores a legacy Claude conversation id on %s', async transport => {
