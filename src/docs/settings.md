@@ -106,6 +106,33 @@ The theme applies to the entire app: title bar, sidebar, terminal, dialogs, and 
 
 Theme selection previews the main window immediately. **Save** keeps the preview and updates the documentation window; **Cancel**, **Escape**, or the close button restores the theme you started with. Theme changes from the View menu and setup wizard still save immediately.
 
+### Your own themes
+
+Local themes have the same palette controls as built-in themes: the title bar, sidebar, buttons, text, dialogs, menus, notifications, status indicators, startup screen, documentation window, and terminal background, selection, cursor, and sixteen ANSI colors.
+
+1. In **Appearance**, choose **Open themes folder**. Tether creates an `example/theme.json` in this folder the first time it is created.
+2. Copy the `example` folder and give your copy a name, such as `my-theme`.
+3. Edit your copy of `theme.json`. Change `id` to a unique value such as `my-theme`, change `label` to the name you want to see, and edit the colors.
+4. Choose **Reload themes**. Your theme appears with a **(Local)** label alongside the built-ins. Select it to preview, then **Save**.
+
+The folder lives under Tether's application data directory, outside the installation and source repository. Local theme files stay on this computer and survive app updates. Tether loads them at startup; use **Reload themes** after editing, adding, or removing a file. Reloading updates the catalog immediately; **Cancel** restores your opening selection using the currently loaded files.
+
+The example is a complete theme. Keep every field when editing it:
+
+| Field | What it controls |
+|---|---|
+| `schemaVersion` | Format version; keep this as `1` |
+| `id` | Stable identifier: 1–64 lowercase letters, numbers, or hyphens; start with a letter or number |
+| `label` | Display name, up to 80 characters |
+| `isDark` | `true` for dark themes or `false` for light themes; also sets native control appearance and surface highlights |
+| `css` | All app background, hover, active, text, accent, border, button, status, and surface colors; `--shadow-opacity` is a quoted number from `"0"` to `"1"` |
+| `titlebar` | Opaque background `color` and window-button `symbolColor` |
+| `xterm` | Terminal background, foreground, cursor, selection, and normal/bright ANSI palette |
+
+Use `#RRGGBB` colors, or `#RRGGBBAA` for transparency (for example, terminal selection). Titlebar colors require `#RRGGBB`. `--surface-1` is the base surface, `--surface-2` is used for cards, `--surface-3` for dialogs and menus, and `--surface-4` for toasts. Keep text and status indicators readable against their backgrounds. UI and terminal font choices remain separate settings, just as they are for built-in themes.
+
+Each theme can live in its own folder as `theme.json`, or directly in the themes folder as a `.json` file. Local ids are separate from built-in names. If a file is invalid, Tether reports the file and problem in Appearance and continues loading the other themes. If the selected theme is missing or invalid, Tether uses its default palette. Files are limited to 64 KiB, with up to 128 theme files or folders loaded. Themes contain palette data; scripts, arbitrary stylesheets, images, and remote resources are not loaded.
+
 ### UI font family
 
 Pick the font used in the sidebar, dialogs, and menus:

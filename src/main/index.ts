@@ -20,6 +20,8 @@ import { jobsBridge } from './jobs/jobs-bridge';
 import { createNotificationService, readPrefsFromConfig } from './notifications/notification-service';
 import { createOutboundWebhookService } from './notifications/outbound-webhook-service';
 import { getLoaderTheme, DEFAULT_LOADER_THEME } from '../shared/loader-themes';
+import { buildThemeQuery, getTheme } from '../shared/themes';
+import { loadLocalThemes } from './themes/local-themes';
 import { IPC } from '../shared/constants';
 import { createLogger, closeLogger } from './logger';
 
@@ -57,7 +59,7 @@ interface DocsOpenTarget {
 }
 
 function buildDocsQuery(themeName: string, target?: DocsOpenTarget): string {
-  const parts = [`theme=${encodeURIComponent(themeName)}`];
+  const parts = [buildThemeQuery(themeName)];
   if (target?.page) parts.push(`page=${encodeURIComponent(target.page)}`);
   if (target?.anchor) parts.push(`anchor=${encodeURIComponent(target.anchor)}`);
   return parts.join('&');
@@ -124,8 +126,7 @@ function createDocsWindow(target?: DocsOpenTarget): void {
     show: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: loaderTheme.sidebar,
-      symbolColor: loaderTheme.text,
+      ...getTheme(savedThemeName).titlebar,
       height: 36,
     },
     webPreferences: {
@@ -159,6 +160,7 @@ function createDocsWindow(target?: DocsOpenTarget): void {
 }
 
 const createWindow = () => {
+  loadLocalThemes();
   // Initialize persistence
   const db = getDb();
   markAllRunningAsStopped();
@@ -181,8 +183,7 @@ const createWindow = () => {
     show: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: loaderTheme.sidebar,
-      symbolColor: loaderTheme.text,
+      ...getTheme(savedThemeName).titlebar,
       height: 36,
     },
     webPreferences: {
@@ -260,7 +261,7 @@ const createWindow = () => {
     }, 5_000);
   });
 
-  registerIpcHandlers(mainWindow);
+  registerIpcHandlers(mainWindow, getDocsWindow);
 
   // Wire desktop notifications. Lives next to the IPC layer because the
   // click handler needs to push back to the renderer via webContents.send.
@@ -280,9 +281,8 @@ const createWindow = () => {
 
   createTrustedIpc(mainWindow).handle(IPC.DOCS_OPEN, (_e, target?: DocsOpenTarget) => createDocsWindow(target));
 
-  // Pass the saved theme name to the renderer via the URL so the inline
-  // boot loader can apply matching colors before any JS runs.
-  const themeQuery = `theme=${encodeURIComponent(savedThemeName)}`;
+  // Include the validated palette so local themes paint before React mounts.
+  const themeQuery = buildThemeQuery(savedThemeName);
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     const sep = MAIN_WINDOW_VITE_DEV_SERVER_URL.includes('?') ? '&' : '?';
     mainWindow.loadURL(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}${sep}${themeQuery}`);

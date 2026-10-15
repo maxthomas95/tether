@@ -31,6 +31,11 @@ import type {
 } from '../shared/types';
 
 const api: TetherAPI = {
+  themes: {
+    list: () => ipcRenderer.invoke(IPC.THEMES_LIST),
+    reload: () => ipcRenderer.invoke(IPC.THEMES_RELOAD),
+    openFolder: () => ipcRenderer.invoke(IPC.THEMES_OPEN_FOLDER),
+  },
   cliMaintenance: {
     start: request => ipcRenderer.invoke(IPC.CLI_MAINTENANCE_START, request),
     cancel: id => ipcRenderer.invoke(IPC.CLI_MAINTENANCE_CANCEL, id),

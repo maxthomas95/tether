@@ -3,36 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-kUof1Sv9acuHJIxOaYsXbStBybdIg1CDeqn4j2ZyFls='; style-src 'self' 'sha256-qtbaIyhrMEKWyPSvYgJJXmNg/iaIvdb5aF0p+/V6R+o='; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-6qdN/3tXDmoPyxhxo6tXxpao2pCLfKbuaydcJghJE7I='; style-src 'self' 'sha256-qtbaIyhrMEKWyPSvYgJJXmNg/iaIvdb5aF0p+/V6R+o='; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" />
     <title>Tether Documentation</title>
     <script>
-      // Apply the saved theme before any CSS/JS runs. The main process
-      // passes the theme name via ?theme=<name> on the URL (same pattern
-      // as index.html — see src/main/index.ts).
+      // Main supplies a validated palette for built-in and local themes alike.
       (function () {
-        var THEMES = {
-          mocha:          { bg:'#1e1e2e', sidebar:'#181825', text:'#cdd6f4', muted:'#a0a4ba', accent:'#b4befe', border:'#313244', hover:'#45475a', active:'#585b70', header:'#313244', textSecondary:'#bac2de' },
-          macchiato:      { bg:'#24273a', sidebar:'#1e2030', text:'#cad3f5', muted:'#a0a6c0', accent:'#b7bdf8', border:'#363a4f', hover:'#494d64', active:'#5b6078', header:'#363a4f', textSecondary:'#b8c0e0' },
-          frappe:         { bg:'#303446', sidebar:'#292c3c', text:'#c6d0f5', muted:'#adb3cc', accent:'#babbf1', border:'#414559', hover:'#51576d', active:'#626880', header:'#414559', textSecondary:'#b5bfe2' },
-          latte:          { bg:'#eff1f5', sidebar:'#e6e9ef', text:'#4c4f69', muted:'#626579', accent:'#7287fd', border:'#ccd0da', hover:'#bcc0cc', active:'#acb0be', header:'#ccd0da', textSecondary:'#5c5f77' },
-          tether:         { bg:'#1f1c18', sidebar:'#1a1714', text:'#ece4d4', muted:'#ad9f8b', accent:'#c68a5c', border:'#3a342d', hover:'#3a342d', active:'#4a4239', header:'#2c2723', textSecondary:'#c9bfae' },
-          'default-dark': { bg:'#171c22', sidebar:'#1e252d', text:'#e7eef5', muted:'#a7b5c4', accent:'#62d2eb', border:'#3d4a58', hover:'#303b47', active:'#344655', header:'#252e38', textSecondary:'#bdcbd8' },
-          'tether-light': { bg:'#ffffff', sidebar:'#f3f3f3', text:'#1f1f1f', muted:'#646b78', accent:'#0078d4', border:'#d4d4d4', hover:'#e8e8e8', active:'#d6d6d6', header:'#ececec', textSecondary:'#616161' },
-        };
-        var match = /[?&]theme=([^&]+)/.exec(location.search);
-        var name = match ? decodeURIComponent(match[1]) : 'mocha';
-        var t = THEMES[name] || THEMES.mocha;
-        var s = document.documentElement.style;
-        s.setProperty('--bg-primary', t.bg);
-        s.setProperty('--bg-sidebar', t.sidebar);
-        s.setProperty('--text-primary', t.text);
-        s.setProperty('--text-secondary', t.textSecondary);
-        s.setProperty('--text-muted', t.muted);
-        s.setProperty('--accent', t.accent);
-        s.setProperty('--border-color', t.border);
-        s.setProperty('--bg-hover', t.hover);
-        s.setProperty('--bg-active', t.active);
-        s.setProperty('--bg-header', t.header);
+        try {
+          var params = new URLSearchParams(location.search);
+          var palette = JSON.parse(params.get('palette') || '{}');
+          var root = document.documentElement;
+          var allowed = ['--bg-primary', '--bg-sidebar', '--bg-header', '--bg-hover', '--bg-active', '--text-primary', '--text-secondary', '--text-muted', '--border-color', '--accent', '--status-running', '--status-waiting', '--status-idle', '--status-dead', '--btn-primary-text', '--surface-1', '--surface-2', '--surface-3', '--surface-4'];
+          allowed.forEach(function (key) {
+            if (typeof palette[key] === 'string' && /^#[\da-f]{6}([\da-f]{2})?$/i.test(palette[key])) root.style.setProperty(key, palette[key]);
+          });
+          if (/^(0(\.\d+)?|1(\.0+)?)$/.test(palette['--shadow-opacity'])) root.style.setProperty('--shadow-opacity', palette['--shadow-opacity']);
+          var dark = params.get('dark') !== 'false';
+          root.style.colorScheme = dark ? 'dark' : 'light';
+          root.style.setProperty('--inner-highlight', dark ? 'inset 0 1px 0 rgba(255, 255, 255, 0.04)' : '0 0 0 0 transparent');
+          root.dataset.theme = params.get('theme') || 'mocha';
+        } catch (_) { /* Keep the default palette if startup data is unavailable. */ }
       })();
     </script>
     <style>

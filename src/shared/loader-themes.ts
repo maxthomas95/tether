@@ -1,98 +1,27 @@
-// Theme colors used by the boot loader (index.html) and the Electron
-// BrowserWindow chrome (backgroundColor + titleBarOverlay). Kept minimal
-// and shared so the main process can read the saved theme synchronously
-// and paint the window in the right palette before the renderer mounts.
-//
-// The full theme registry lives in src/renderer/styles/themes.ts — these
-// values must stay in sync with the corresponding entries there.
+import { builtInThemeList, DEFAULT_THEME, getTheme } from './themes';
+import type { TetherTheme } from './theme-types';
 
 export interface LoaderTheme {
-  bg: string;        // --bg-primary
-  sidebar: string;   // --bg-sidebar (also titlebar overlay color)
-  text: string;      // --text-primary (also titlebar symbol color)
-  muted: string;     // --text-muted (subtitle)
-  accent: string;    // --accent (spinner)
-  border: string;    // --border-color (spinner track)
+  bg: string;
+  sidebar: string;
+  text: string;
+  muted: string;
+  accent: string;
+  border: string;
 }
 
-export const LOADER_THEMES: Record<string, LoaderTheme> = {
-  mocha: {
-    bg: '#1e1e2e',
-    sidebar: '#181825',
-    text: '#cdd6f4',
-    muted: '#a0a4ba',
-    accent: '#b4befe',
-    border: '#313244',
-  },
-  macchiato: {
-    bg: '#24273a',
-    sidebar: '#1e2030',
-    text: '#cad3f5',
-    muted: '#a0a6c0',
-    accent: '#b7bdf8',
-    border: '#363a4f',
-  },
-  frappe: {
-    bg: '#303446',
-    sidebar: '#292c3c',
-    text: '#c6d0f5',
-    muted: '#adb3cc',
-    accent: '#babbf1',
-    border: '#414559',
-  },
-  latte: {
-    bg: '#eff1f5',
-    sidebar: '#e6e9ef',
-    text: '#4c4f69',
-    muted: '#626579',
-    accent: '#7287fd',
-    border: '#ccd0da',
-  },
-  tether: {
-    bg: '#1f1c18',
-    sidebar: '#1a1714',
-    text: '#ece4d4',
-    muted: '#ad9f8b',
-    accent: '#c68a5c',
-    border: '#3a342d',
-  },
-  'default-dark': {
-    bg: '#171c22',
-    sidebar: '#1e252d',
-    text: '#e7eef5',
-    muted: '#a7b5c4',
-    accent: '#62d2eb',
-    border: '#3d4a58',
-  },
-  'tether-light': {
-    bg: '#ffffff',
-    sidebar: '#f3f3f3',
-    text: '#1f1f1f',
-    muted: '#646b78',
-    accent: '#0078d4',
-    border: '#d4d4d4',
-  },
-  nord: {
-    bg: '#2e3440', sidebar: '#272d38', text: '#eceff4',
-    muted: '#b3bdce', accent: '#88c0d0', border: '#4c566a',
-  },
-  'gruvbox-dark': {
-    bg: '#282828', sidebar: '#1d2021', text: '#ebdbb2',
-    muted: '#bdae93', accent: '#fe8019', border: '#665c54',
-  },
-  'gruvbox-light': {
-    bg: '#fbf1c7', sidebar: '#f2e5bc', text: '#3c3836',
-    muted: '#665c54', accent: '#af3a03', border: '#bdae93',
-  },
-  harbor: {
-    bg: '#15232d', sidebar: '#101b23', text: '#e7e3d5',
-    muted: '#a4b9bb', accent: '#70c1b3', border: '#3e606b',
-  },
-};
+function loaderPalette(theme: TetherTheme): LoaderTheme {
+  return {
+    bg: theme.css['--bg-primary'], sidebar: theme.css['--bg-sidebar'],
+    text: theme.css['--text-primary'], muted: theme.css['--text-muted'],
+    accent: theme.css['--accent'], border: theme.css['--border-color'],
+  };
+}
 
-export const DEFAULT_LOADER_THEME = 'mocha';
-
+export const LOADER_THEMES: Record<string, LoaderTheme> = Object.fromEntries(
+  builtInThemeList.map(theme => [theme.name, loaderPalette(theme)]),
+);
+export const DEFAULT_LOADER_THEME = DEFAULT_THEME;
 export function getLoaderTheme(name: string | null | undefined): LoaderTheme {
-  if (name && LOADER_THEMES[name]) return LOADER_THEMES[name];
-  return LOADER_THEMES[DEFAULT_LOADER_THEME];
+  return loaderPalette(getTheme(name || DEFAULT_THEME));
 }

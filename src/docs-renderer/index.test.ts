@@ -4,7 +4,7 @@ import { getTheme, themeList } from '../renderer/styles/themes';
 
 type Target = { page?: string; anchor?: string };
 let navigate: (target: Target) => void;
-let changeTheme: (theme: string) => void;
+let changeTheme: (theme: string, localThemes: import('../shared/theme-types').TetherTheme[]) => void;
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
 
 beforeEach(() => {
@@ -14,6 +14,7 @@ beforeEach(() => {
   document.documentElement.removeAttribute('style');
   window.history.replaceState({}, '', '/');
   vi.stubGlobal('docsAPI', {
+    listThemes: vi.fn().mockResolvedValue({ themes: [] }),
     onNavigate: (callback: typeof navigate) => { navigate = callback; },
     onThemeChanged: (callback: typeof changeTheme) => { changeTheme = callback; },
   });
@@ -44,7 +45,7 @@ it.each(themeList)('opens documentation with the $label app palette', async them
 it('updates the entire palette when the saved theme changes', async () => {
   await import('./index');
   for (const theme of [...themeList, getTheme('unknown')]) {
-    changeTheme(theme.name);
+    changeTheme(theme.name, []);
     for (const [property, value] of Object.entries(theme.css)) {
       expect(document.documentElement.style.getPropertyValue(property), property).toBe(value);
     }
@@ -93,4 +94,30 @@ it.each(articlePages)('%s internal links use Markdown paths and open existing pa
       expect(document.getElementById(anchor)?.classList.contains('docs-anchor-flash'), `${page} → ${href}`).toBe(true);
     }
   }
+});
+
+
+it('loads local themes and follows saved palette edits, including light/dark controls', async () => {
+  const { parseThemeFile } = await import('../shared/theme-format');
+  const { default: example } = await import('../shared/example-theme.json');
+  const local = parseThemeFile({ ...example, id: 'private', isDark: false });
+  window.history.replaceState({}, '', '/?theme=local%3Aprivate');
+  window.docsAPI.listThemes = vi.fn().mockResolvedValue({ directory: '/themes', themes: [local], issues: [] });
+  await import('./index');
+  expect(document.documentElement.style.colorScheme).toBe('light');
+  for (const [key, value] of Object.entries(local.css)) expect(document.documentElement.style.getPropertyValue(key)).toBe(value);
+  const edited = { ...local, isDark: true, css: { ...local.css, '--surface-3': '#123456' } };
+  changeTheme(local.name, [edited]);
+  expect(document.documentElement.style.getPropertyValue('--surface-3')).toBe('#123456');
+  expect(document.documentElement.style.colorScheme).toBe('dark');
+});
+
+it('does not let a late initial catalog overwrite a newer saved palette', async () => {
+  let resolve!: (catalog: import('../shared/theme-types').LocalThemeCatalog) => void;
+  window.docsAPI.listThemes = vi.fn(() => new Promise(done => { resolve = done; }));
+  await import('./index');
+  changeTheme('tether-light', []);
+  resolve({ directory: '', themes: [], issues: [] });
+  await Promise.resolve();
+  expect(document.documentElement.dataset.theme).toBe('tether-light');
 });

@@ -4,6 +4,8 @@ import type { HandlerContext } from './helpers';
 import { cancelPipComments } from '../pip/comment-service';
 import { PIP_SETTINGS_KEY } from '../../shared/pip';
 import { decryptSecretFromStorage, encryptSecretForStorage } from '../db/secret-storage';
+import { getTheme } from '../../shared/themes';
+import { getLocalThemeCatalog } from '../themes/local-themes';
 
 export { SECRET_CONFIG_KEYS, isSecretConfigValue } from '../db/secret-storage';
 import { isSecretConfigValue } from '../db/secret-storage';
@@ -44,7 +46,9 @@ export function registerConfigHandlers(ctx: HandlerContext): void {
       const { getDocsWindow } = await import('../index');
       const dw = getDocsWindow();
       if (dw && !dw.isDestroyed()) {
-        dw.webContents.send(IPC.DOCS_THEME_CHANGED, value);
+        const theme = getTheme(value);
+        dw.setTitleBarOverlay({ ...theme.titlebar, height: 36 });
+        dw.webContents.send(IPC.DOCS_THEME_CHANGED, theme.name, getLocalThemeCatalog().themes);
       }
     }
   });

@@ -21,12 +21,13 @@ import { registerClipboardHandlers } from './clipboard-handlers';
 import { registerCliMaintenanceHandlers } from './cli-maintenance-handlers';
 import { registerWorkspaceRecipesHandlers } from './workspace-recipes-handlers';
 import { registerSubagentHandlers } from './subagent-handlers';
+import { registerThemeHandlers } from './theme-handlers';
 
 /**
  * Wire up every IPC handler against the renderer window. The actual handler
  * bodies live in domain modules — this file is a dispatcher.
  */
-export function registerIpcHandlers(mainWindow: BrowserWindow): void {
+export function registerIpcHandlers(mainWindow: BrowserWindow, getDocsWindow: () => BrowserWindow | null): void {
   const ctx: HandlerContext = {
     mainWindow,
     send(channel: string, ...args: unknown[]) {
@@ -57,4 +58,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerCliMaintenanceHandlers(ctx);
   registerWorkspaceRecipesHandlers(ctx);
   registerSubagentHandlers(ctx);
+  registerThemeHandlers(ctx, getDocsWindow);
 }

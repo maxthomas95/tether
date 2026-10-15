@@ -35,7 +35,6 @@ import { useWorkspaceRecipeController, type OpenedWorkspaceRecipeLayout } from '
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTerminalSearch } from './hooks/useTerminalSearch';
 import { useTheme } from './hooks/useTheme';
-import { themeList } from './styles/themes';
 import {
   addPane,
   clampMaxPanes,
@@ -169,7 +168,7 @@ export function App() {
   const notifyError = useCallback((title: string, err: unknown) => {
     notify({ type: 'error', title, message: extractErrorMessage(err) });
   }, [notify]);
-  const { themeName, setTheme, previewTheme, xtermTheme } = useTheme(notifyError);
+  const { themeName, setTheme, previewTheme, xtermTheme, themeList, localThemeCatalog, reloadThemes } = useTheme(notifyError);
   const effectiveXtermTheme = useMemo(
     () => hideTerminalCursor ? withHiddenXtermCursor(xtermTheme) : xtermTheme,
     [hideTerminalCursor, xtermTheme],
@@ -1899,7 +1898,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, layoutState.focusedPaneId, themeName, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, canvasState.focusedPaneId, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle, pip.settings, pip.busy, pip.toggle, handleOpenTerminalSearch, modalOpen, workspaceRecipes.open, workspaceRecipes.busy, maintenanceTarget]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, layoutState.focusedPaneId, themeName, themeList, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, canvasState.focusedPaneId, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle, pip.settings, pip.busy, pip.toggle, handleOpenTerminalSearch, modalOpen, workspaceRecipes.open, workspaceRecipes.busy, maintenanceTarget]);
 
   return (
     <div className="app-layout" data-density={uiDensity}>
@@ -2213,6 +2212,9 @@ export function App() {
         }}
         currentTheme={themeName}
         onThemeChange={previewTheme}
+        availableThemes={themeList}
+        localThemeCatalog={localThemeCatalog}
+        onReloadThemes={reloadThemes}
         onResetSessionFontSizes={handleResetSessionFontSizes}
         keybindings={resolvedBindings}
         onKeybindingChange={handleKeybindingChange}

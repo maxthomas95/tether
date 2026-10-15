@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { LocalThemeCatalog, TetherTheme } from '../shared/theme-types';
 
 interface DocsNavigateTarget {
   page?: string;
@@ -6,8 +7,9 @@ interface DocsNavigateTarget {
 }
 
 const docsAPI = {
-  onThemeChanged(cb: (themeName: string) => void): () => void {
-    const handler = (_e: Electron.IpcRendererEvent, name: string) => cb(name);
+  listThemes: (): Promise<LocalThemeCatalog> => ipcRenderer.invoke('themes:list'),
+  onThemeChanged(cb: (themeName: string, localThemes: TetherTheme[]) => void): () => void {
+    const handler = (_e: Electron.IpcRendererEvent, name: string, themes: TetherTheme[]) => cb(name, themes);
     ipcRenderer.on('docs:theme-changed', handler);
     return () => ipcRenderer.removeListener('docs:theme-changed', handler);
   },

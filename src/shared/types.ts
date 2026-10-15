@@ -617,6 +617,11 @@ export interface CreateEnvironmentOptions {
 }
 
 export interface TetherAPI {
+  themes: {
+    list(): Promise<import('./theme-types').LocalThemeCatalog>;
+    reload(): Promise<import('./theme-types').LocalThemeCatalog>;
+    openFolder(): Promise<void>;
+  };
   cliMaintenance: {
     start(request: import('./cli-maintenance').CliMaintenanceRequest): Promise<import('./cli-maintenance').CliMaintenanceRun>;
     cancel(id: string): Promise<void>;

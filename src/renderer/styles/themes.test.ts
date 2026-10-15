@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it } from 'vitest';
-import { themes } from './themes';
+import { themes, buildThemeQuery, setLocalThemes } from './themes';
 import { LOADER_THEMES } from '../../shared/loader-themes';
+import example from '../../shared/example-theme.json';
+import { parseThemeFile } from '../../shared/theme-format';
 
 function luminance(hex: string): number {
   const channels = hex.slice(1).match(/../g)!.map(v => parseInt(v, 16) / 255)
@@ -31,6 +33,19 @@ describe('readable and consistent theme chrome', () => {
   }
 
   for (const file of ['index.html', 'docs-window.html']) {
+    it(`paints every local theme surface in ${file} before the renderer starts`, () => {
+      const theme = parseThemeFile({ ...example, id: 'startup', isDark: false });
+      setLocalThemes([theme]);
+      const html = readFileSync(file, 'utf8');
+      const dom = new JSDOM(html.replace(/<script type="module"[^>]*><\/script>/g, ''), {
+        url: `https://tether.local/?${buildThemeQuery(theme.name)}`, runScripts: 'dangerously',
+      });
+      try {
+        for (const [key, value] of Object.entries(theme.css)) expect(dom.window.document.documentElement.style.getPropertyValue(key)).toBe(value);
+        expect(dom.window.document.documentElement.style.colorScheme).toBe('light');
+        expect(dom.window.document.documentElement.dataset.theme).toBe(theme.name);
+      } finally { dom.window.close(); setLocalThemes([]); }
+    });
     it(`authorizes the ${file} boot script with its exact CSP hash`, () => {
       const html = readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
       // Parse HTML without executing it, including case-insensitive tag names.
