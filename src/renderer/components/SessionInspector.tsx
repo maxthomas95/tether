@@ -16,6 +16,7 @@ interface SessionInspectorProps {
   tetherSessionId?: string | null;
   session?: InspectableSession;
   environment?: EnvironmentInfo;
+  remoteStatus?: InspectableSession['remoteUsageStatus'];
   usage: SessionUsage | null;
   config: InspectorConfig;
   isOpen: boolean;
@@ -28,6 +29,7 @@ export function SessionInspector({
   tetherSessionId,
   session,
   environment,
+  remoteStatus,
   usage,
   config,
   isOpen,
@@ -36,7 +38,7 @@ export function SessionInspector({
 }: SessionInspectorProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, isOpen);
-  const view = buildInspectorViewModel({ nativeSessionId, tetherSessionId, session, environment, usage, config });
+  const view = buildInspectorViewModel({ nativeSessionId, tetherSessionId, session, environment, remoteStatus, usage, config });
 
   useEffect(() => {
     if (!isOpen) return;

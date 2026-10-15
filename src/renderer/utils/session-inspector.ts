@@ -36,8 +36,10 @@ export interface InspectorConfig {
 export interface InspectorViewModel {
   stripModel: string | null;
   costLabel: string;
+  costSourceLabel: string;
   messageLabel: string;
   usageAvailable: boolean;
+  collectionUnavailable: boolean;
   hookHealth: HookHealthStatus;
   rows: Array<{ label: string; value: string; muted?: boolean }>;
 }
@@ -98,16 +100,22 @@ export function buildInspectorViewModel(args: {
   tetherSessionId?: string | null;
   session?: InspectableSession;
   environment?: EnvironmentInfo;
+  remoteStatus?: SessionInfo['remoteUsageStatus'];
   usage: SessionUsage | null;
   config: InspectorConfig;
 }): InspectorViewModel {
-  const { nativeSessionId, tetherSessionId, session, environment, usage, config } = args;
+  const { nativeSessionId, tetherSessionId, session, environment, config } = args;
+  const remoteStatus = args.remoteStatus ?? session?.remoteUsageStatus;
+  const collectionUnavailable = args.usage?.collectionStatus === 'unavailable' || remoteStatus === 'unavailable';
+  const usage = args.usage?.collectionStatus === 'unavailable' && !args.usage.observedAt ? null : args.usage;
   const model = latestModel(usage, session);
   const usageAvailable = usage !== null;
   const messageCount = usage?.messageCount ?? null;
+  const costLabel = usageAvailable ? formatCost(usage.totalCost) : 'Unknown';
+  const costSourceLabel = args.usage?.costSource === 'reported' ? 'CLI reported' : 'API equivalent';
   const hookHealth = describeHookHealth(session, environment, config);
   const activity = session?.activity;
-  const cliTool = session?.cliTool ?? usage?.cliTool ?? 'claude';
+  const cliTool = session?.cliTool ?? args.usage?.cliTool ?? 'claude';
   const isCodex = cliTool === 'codex';
   const launchProfile = session?.launchProfileName ?? 'Default';
   const stripModel = isCodex ? model : usageModel(usage);
@@ -144,23 +152,33 @@ export function buildInspectorViewModel(args: {
   }
 
   rows.push(
+    { label: 'Cost', value: costLabel, muted: !usageAvailable },
+    { label: 'Cost Basis', value: args.usage?.costSource === 'reported'
+      ? 'CLI reported; not a subscription invoice'
+      : 'API-equivalent estimate; not a subscription invoice' },
+    { label: 'Messages', value: messageCount === null ? 'Unknown' : String(messageCount), muted: messageCount === null },
     { label: 'Input Tokens', value: formatTokens(usage?.inputTokens), muted: usage?.inputTokens === null || usage?.inputTokens === undefined },
     { label: 'Output Tokens', value: formatTokens(usage?.outputTokens), muted: usage?.outputTokens === null || usage?.outputTokens === undefined },
     { label: 'Reasoning Tokens', value: formatTokens(usage?.reasoningTokens), muted: usage?.reasoningTokens === null || usage?.reasoningTokens === undefined },
     { label: 'Cache Created', value: formatTokens(usage?.cacheCreationTokens), muted: usage?.cacheCreationTokens === null || usage?.cacheCreationTokens === undefined },
     { label: 'Cache Read', value: formatTokens(usage?.cacheReadTokens), muted: usage?.cacheReadTokens === null || usage?.cacheReadTokens === undefined },
-    { label: 'Usage Tracking', value: usageAvailable
-      ? session?.remoteUsageStatus === 'unavailable' ? 'Last collected remote totals; retrying' : 'Available'
-      : session?.remoteUsageStatus === 'pending' ? 'Waiting for remote usage' : usageAvailabilityLabel(environment), muted: !usageAvailable || session?.remoteUsageStatus === 'unavailable' },
+    { label: 'Usage Tracking', value: collectionUnavailable
+      ? usageAvailable
+        ? remoteStatus === 'unavailable' ? 'Last collected remote totals; retrying' : 'Last collected totals; retrying'
+        : 'Unavailable; retrying'
+      : usageAvailable ? 'Available'
+        : remoteStatus === 'pending' ? 'Waiting for remote usage' : usageAvailabilityLabel(environment), muted: !usageAvailable || collectionUnavailable },
   );
 
   return {
     stripModel: stripModel ? shortenModel(stripModel) : null,
-    costLabel: usageAvailable ? formatCost(usage.totalCost) : 'Unknown',
+    costLabel,
+    costSourceLabel,
     messageLabel: messageCount === null
       ? 'Unknown msgs'
       : `${messageCount} ${messageCount === 1 ? 'msg' : 'msgs'}`,
     usageAvailable,
+    collectionUnavailable,
     hookHealth,
     rows,
   };
