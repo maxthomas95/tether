@@ -21,15 +21,18 @@ let running;
 let page;
 let browser;
 let appOutput = '';
+let taskkillExecutable;
 const errors = [];
 
 async function waitFor(check, description) {
   const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
+  async function poll() {
     if (await check()) return;
+    if (Date.now() >= deadline) throw new Error(`Timed out: ${description}`);
     await new Promise(resolve => setTimeout(resolve, 100));
+    return poll();
   }
-  throw new Error(`Timed out: ${description}`);
+  return poll();
 }
 
 async function launch() {
@@ -60,7 +63,7 @@ async function launch() {
     if (running.exitCode !== null) throw new Error(`App exited during startup (${running.exitCode}): ${appOutput}`);
     return appOutput.includes('DevTools listening on ws://');
   }, 'packaged app CDP startup');
-  const endpoint = appOutput.match(/DevTools listening on (ws:\/\/127\.0\.0\.1:\d+\/[^\s]+)/)?.[1];
+  const endpoint = /DevTools listening on (ws:\/\/127\.0\.0\.1:\d+\/[^\s]+)/.exec(appOutput)?.[1];
   assert.ok(endpoint, 'CDP must listen on loopback');
   browser = await chromium.connectOverCDP(endpoint);
   await waitFor(() => browser.contexts()[0]?.pages().some(candidate => candidate.url().startsWith('file:')), 'main window');
@@ -92,11 +95,12 @@ async function closeCleanly() {
 
 try {
   assert.equal(process.platform, 'win32', 'This smoke targets the shipped Windows package');
+  assert.ok(process.env.SystemRoot && path.isAbsolute(process.env.SystemRoot), 'Windows system directory is available');
+  taskkillExecutable = path.join(process.env.SystemRoot, 'System32', 'taskkill.exe');
   await fs.access(executable);
   await fs.mkdir(diagnostics, { recursive: true });
-  for (const filename of ['failure.txt', 'failure.png', 'app-output.log', 'terminal-output.log', 'first-launch.log']) {
-    await fs.rm(path.join(diagnostics, filename), { force: true });
-  }
+  await Promise.all(['failure.txt', 'failure.png', 'app-output.log', 'terminal-output.log', 'first-launch.log']
+    .map(filename => fs.rm(path.join(diagnostics, filename), { force: true })));
   await fs.mkdir(isolatedHome, { recursive: true });
   await fs.copyFile(path.join(root, 'scripts', 'fixtures', 'terminal-smoke.cjs'), path.join(scratch, 'terminal-smoke.cjs'));
   const output = await launch();
@@ -165,9 +169,9 @@ try {
   throw error;
 } finally {
   if (browser) await browser.close().catch(() => {});
-  if (running && running.exitCode === null && running.pid) {
+  if (running?.pid && running.exitCode === null) {
     // Kill only the child tree launched by this harness after a failed smoke.
-    spawnSync('taskkill.exe', ['/pid', String(running.pid), '/T', '/F'], { windowsHide: true });
+    spawnSync(taskkillExecutable, ['/pid', String(running.pid), '/T', '/F'], { windowsHide: true });
   }
   // Keep only the bounded diagnostics above; never upload a user-data directory.
   assert.equal(path.dirname(path.resolve(scratch)), path.resolve(os.tmpdir()), 'cleanup stays inside the temp directory');
