@@ -100,7 +100,7 @@ export function buildInspectorViewModel(args: {
   tetherSessionId?: string | null;
   session?: InspectableSession;
   environment?: EnvironmentInfo;
-  remoteStatus?: SessionInfo['remoteUsageStatus'];
+  remoteStatus?: NonNullable<SessionInfo['remoteUsageStatus']>;
   usage: SessionUsage | null;
   config: InspectorConfig;
 }): InspectorViewModel {
@@ -162,12 +162,7 @@ export function buildInspectorViewModel(args: {
     { label: 'Reasoning Tokens', value: formatTokens(usage?.reasoningTokens), muted: usage?.reasoningTokens === null || usage?.reasoningTokens === undefined },
     { label: 'Cache Created', value: formatTokens(usage?.cacheCreationTokens), muted: usage?.cacheCreationTokens === null || usage?.cacheCreationTokens === undefined },
     { label: 'Cache Read', value: formatTokens(usage?.cacheReadTokens), muted: usage?.cacheReadTokens === null || usage?.cacheReadTokens === undefined },
-    { label: 'Usage Tracking', value: collectionUnavailable
-      ? usageAvailable
-        ? remoteStatus === 'unavailable' ? 'Last collected remote totals; retrying' : 'Last collected totals; retrying'
-        : 'Unavailable; retrying'
-      : usageAvailable ? 'Available'
-        : remoteStatus === 'pending' ? 'Waiting for remote usage' : usageAvailabilityLabel(environment), muted: !usageAvailable || collectionUnavailable },
+    { label: 'Usage Tracking', value: usageTrackingLabel(collectionUnavailable, usageAvailable, remoteStatus, environment), muted: !usageAvailable || collectionUnavailable },
   );
 
   return {
@@ -207,6 +202,22 @@ function timestampMs(value: string): number {
 function usageAvailabilityLabel(environment: EnvironmentInfo | undefined): string {
   if (environment && environment.type !== 'local') return 'Unavailable for remote metadata';
   return 'No local usage metadata yet';
+}
+
+function usageTrackingLabel(
+  collectionUnavailable: boolean,
+  usageAvailable: boolean,
+  remoteStatus: SessionInfo['remoteUsageStatus'],
+  environment: EnvironmentInfo | undefined,
+): string {
+  if (collectionUnavailable) {
+    if (!usageAvailable) return 'Unavailable; retrying';
+    if (remoteStatus === 'unavailable') return 'Last collected remote totals; retrying';
+    return 'Last collected totals; retrying';
+  }
+  if (usageAvailable) return 'Available';
+  if (remoteStatus === 'pending') return 'Waiting for remote usage';
+  return usageAvailabilityLabel(environment);
 }
 
 function formatTimestamp(value: string | null | undefined): string {

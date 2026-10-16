@@ -16,7 +16,7 @@ interface SessionInspectorProps {
   tetherSessionId?: string | null;
   session?: InspectableSession;
   environment?: EnvironmentInfo;
-  remoteStatus?: InspectableSession['remoteUsageStatus'];
+  remoteStatus?: NonNullable<InspectableSession['remoteUsageStatus']>;
   usage: SessionUsage | null;
   config: InspectorConfig;
   isOpen: boolean;

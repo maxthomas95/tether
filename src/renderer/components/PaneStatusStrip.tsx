@@ -66,11 +66,15 @@ export function PaneStatusStrip({ sessionId, remoteStatus, tetherSessionId, sess
     usage,
     config,
   });
+  let collectionTitle: string | undefined;
+  if (view.collectionUnavailable) {
+    const collector = collectionStatus === 'unavailable' ? 'Remote collection' : 'Collection';
+    const totals = view.usageAvailable ? ' Showing last collected totals.' : '';
+    collectionTitle = `${collector} unavailable.${totals} Retrying automatically.`;
+  }
 
   return (
-    <div className="pane-status-strip" title={view.collectionUnavailable
-      ? `${collectionStatus === 'unavailable' ? 'Remote collection' : 'Collection'} unavailable.${view.usageAvailable ? ' Showing last collected totals.' : ''} Retrying automatically.`
-      : undefined}>
+    <div className="pane-status-strip" title={collectionTitle}>
       {!view.usageAvailable && (collectionStatus || view.collectionUnavailable) && <span className="pane-status-strip-item">{collectionStatus === 'pending' && !view.collectionUnavailable ? 'Waiting for remote usage' : 'Usage unavailable'}</span>}
       {view.usageAvailable && view.collectionUnavailable && <span className="pane-status-strip-item">Last collected</span>}
       {(view.usageAvailable || (!collectionStatus && !view.collectionUnavailable)) && <>
