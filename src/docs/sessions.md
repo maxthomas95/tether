@@ -26,6 +26,10 @@ Click **+ New session** or press **Ctrl+N**. The dialog has three tabs for picki
 
 On Existing directory and New folder, pressing **Enter** in a standard text field runs the same primary action as clicking **Create session**.
 
+Removing or force-killing a session while it starts cancels that launch. Closing
+Tether also cancels pending launches and cleans up resources that finish starting
+during shutdown.
+
 Other fields:
 
 - **Environment** — Local, SSH, or Coder (see [Environments](environments.md))

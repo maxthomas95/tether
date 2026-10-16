@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { SessionTransport, TransportExitInfo, TransportStartOptions } from '../transport/types';
+import type { CliToolId } from '../../shared/types';
 
 const transportHarness = vi.hoisted(() => {
   const state = {
@@ -104,7 +105,7 @@ vi.mock('../db/profile-repo', () => ({
 vi.mock('../vault/vault-resolver', () => ({
   isVaultRef: (value: string) => typeof value === 'string' && value.startsWith('vault://'),
   resolveRef: vi.fn(),
-  resolveAll: async (env: Record<string, string>) => env,
+  resolveAll: vi.fn(async (env: Record<string, string>) => env),
 }));
 
 vi.mock('../claude/transcripts', () => ({
@@ -172,6 +173,16 @@ import { usageService } from '../usage/usage-service';
 import { remoteUsageService } from '../usage/remote-usage-service';
 import { buildSessionRestartOptions } from '../../renderer/utils/session-restart';
 import { statusDetector } from '../status/status-detector';
+import { resolveAll } from '../vault/vault-resolver';
+import { resolveSshConfig } from '../ssh/resolve-ssh-config';
+import { usageService } from '../usage/usage-service';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+}
 
 function callbacks() {
   return {
@@ -191,6 +202,11 @@ describe('SessionManager', () => {
     vi.mocked(remoteUsageService.stop).mockClear();
     vi.mocked(opencodeTranscriptExists).mockClear();
     vi.mocked(detectNewOpencodeSession).mockClear();
+    vi.mocked(detectNewCodexSession).mockClear();
+    vi.mocked(detectNewCopilotSession).mockClear();
+    vi.mocked(usageService.trackSession).mockClear();
+    vi.mocked(resolveAll).mockReset().mockImplementation(async env => env);
+    vi.mocked(resolveSshConfig).mockReset().mockResolvedValue({ host: 'test', port: 22, username: 'user' });
     transportHarness.state.instances.length = 0;
     transportHarness.state.startImpl.mockReset();
     transportHarness.state.startImpl.mockResolvedValue(undefined);
@@ -213,6 +229,188 @@ describe('SessionManager', () => {
 
   afterEach(() => {
     manager.dispose();
+  });
+
+  describe('session creation cancellation', () => {
+    function expectNoCreationEffects(created: ReturnType<typeof vi.fn>) {
+      expect(manager.listSessions()).toEqual([]);
+      expect(created).not.toHaveBeenCalled();
+      expect(dbState.launchSnapshots).toEqual({});
+      expect(dbState.saveCount).toBe(0);
+      expect(remoteUsageService.start).not.toHaveBeenCalled();
+      expect(usageService.trackSession).not.toHaveBeenCalled();
+      expect(detectNewCodexSession).not.toHaveBeenCalled();
+      expect(detectNewCopilotSession).not.toHaveBeenCalled();
+      expect(detectNewOpencodeSession).not.toHaveBeenCalled();
+    }
+
+    function cancel(action: 'dispose' | 'remove' | 'forceKill') {
+      if (action === 'dispose') manager.dispose();
+      else if (action === 'remove') manager.removeSession(manager.listSessions()[0].id);
+      else manager.forceKill(manager.listSessions()[0].id);
+    }
+
+    it('rejects new creation after disposal without allocating a transport', async () => {
+      const created = vi.fn();
+      manager.addLifecycleObserver({ onCreated: created });
+      manager.dispose();
+      await expect(manager.createSession({ workingDir: '/work', cliTool: 'custom' }, callbacks())).rejects.toThrow('Session manager is disposed');
+      expect(transportHarness.state.instances).toEqual([]);
+      expect(resolveAll).not.toHaveBeenCalled();
+      expectNoCreationEffects(created);
+    });
+
+    it.each(['dispose', 'remove', 'forceKill'] as const)('cleans a late-acquired transport once after %s during transport acquisition', async action => {
+      envState.type = 'ssh';
+      const gate = deferred<Awaited<ReturnType<typeof resolveSshConfig>>>();
+      vi.mocked(resolveSshConfig).mockReturnValueOnce(gate.promise);
+      const created = vi.fn();
+      manager.addLifecycleObserver({ onCreated: created });
+      const creation = manager.createSession({ environmentId: 'env', workingDir: '/work', cliTool: 'custom' }, callbacks());
+      await vi.waitFor(() => expect(resolveSshConfig).toHaveBeenCalledOnce());
+      cancel(action);
+      gate.resolve({ host: 'test', port: 22, username: 'user' });
+      await expect(creation).rejects.toThrow('Session creation was canceled');
+      const transport = transportHarness.state.instances[0];
+      expect(transport.start).not.toHaveBeenCalled();
+      expect(transport.dispose).toHaveBeenCalledOnce();
+      expect(resolveAll).not.toHaveBeenCalled();
+      expectNoCreationEffects(created);
+    });
+
+    it.each(['local', 'ssh', 'coder'] as const)('does not start an already-disposed %s transport when Vault resolution finishes', async environment => {
+      envState.type = environment === 'local' ? '' : environment;
+      const gate = deferred<Record<string, string>>();
+      vi.mocked(resolveAll).mockReturnValueOnce(gate.promise);
+      const created = vi.fn();
+      manager.addLifecycleObserver({ onCreated: created });
+      const cb = callbacks();
+      const creation = manager.createSession({ environmentId: environment === 'local' ? undefined : 'env',
+        workingDir: '/work', cliTool: 'custom', env: { TOKEN: 'vault://secret/key#value' } }, cb);
+      await vi.waitFor(() => expect(resolveAll).toHaveBeenCalledOnce());
+      const transport = transportHarness.state.instances[0];
+      manager.dispose();
+      gate.resolve({ TOKEN: 'resolved-secret' });
+      await expect(creation).rejects.toThrow('Session creation was canceled');
+      expect(transport.start).not.toHaveBeenCalled();
+      expect(transport.dispose).toHaveBeenCalledOnce();
+      transport.onData.mock.calls[0][0]('late bytes');
+      transport.onExit.mock.calls[0][0]({ exitCode: 1 });
+      expect(cb.onData).not.toHaveBeenCalled();
+      expect(cb.onExit).not.toHaveBeenCalled();
+      expectNoCreationEffects(created);
+    });
+
+    it.each([
+      ['local', 'dispose'], ['ssh', 'dispose'], ['coder', 'dispose'],
+      ['local', 'remove'], ['local', 'forceKill'],
+    ] as const)('cleans resources allocated by a pending %s start after %s', async (environment, action) => {
+      envState.type = environment === 'local' ? '' : environment;
+      const gate = deferred<void>();
+      const resources = new Set<string>();
+      const cleaned = new Set<string>();
+      transportHarness.state.startImpl.mockImplementationOnce(async () => {
+        resources.add('connecting');
+        await gate.promise;
+        resources.add('started-after-cancellation');
+      });
+      const created = vi.fn();
+      manager.addLifecycleObserver({ onCreated: created });
+      const creation = manager.createSession({ environmentId: environment === 'local' ? undefined : 'env',
+        workingDir: '/work', cliTool: 'custom' }, callbacks());
+      await vi.waitFor(() => expect(transportHarness.state.startImpl).toHaveBeenCalledOnce());
+      const transport = transportHarness.state.instances[0];
+      transport.dispose.mockImplementation(() => {
+        expect(resources.size).toBeGreaterThan(0);
+        resources.forEach(resource => cleaned.add(resource));
+        resources.clear();
+      });
+      cancel(action);
+      expect(resources.size).toBe(0);
+      gate.resolve(undefined);
+      await expect(creation).rejects.toThrow('Session creation was canceled');
+      expect(resources.size).toBe(0);
+      expect(cleaned).toEqual(new Set(['connecting', 'started-after-cancellation']));
+      expect(transport.dispose).toHaveBeenCalledTimes(2);
+      expectNoCreationEffects(created);
+    });
+
+    it.each(['claude', 'codex', 'copilot', 'opencode', 'custom'] satisfies CliToolId[])('does not publish late %s startup success or register metadata watchers', async cliTool => {
+      const gate = deferred<void>();
+      transportHarness.state.startImpl.mockReturnValueOnce(gate.promise);
+      const created = vi.fn();
+      manager.addLifecycleObserver({ onCreated: created });
+      const creation = manager.createSession({ workingDir: '/work', cliTool }, callbacks());
+      await vi.waitFor(() => expect(transportHarness.state.startImpl).toHaveBeenCalledOnce());
+      manager.dispose();
+      gate.resolve(undefined);
+      await expect(creation).rejects.toThrow('Session creation was canceled');
+      expectNoCreationEffects(created);
+    });
+
+    it('preserves cancellation when late startup fails and transport cleanup throws', async () => {
+      const gate = deferred<void>();
+      transportHarness.state.startImpl.mockReturnValueOnce(gate.promise);
+      const created = vi.fn();
+      manager.addLifecycleObserver({ onCreated: created });
+      const creation = manager.createSession({ workingDir: '/work', cliTool: 'custom' }, callbacks());
+      await vi.waitFor(() => expect(transportHarness.state.startImpl).toHaveBeenCalledOnce());
+      const transport = transportHarness.state.instances[0];
+      transport.dispose.mockImplementation(() => { throw new Error('cleanup failed'); });
+      manager.dispose();
+      gate.reject(new Error('late start failure'));
+      await expect(creation).rejects.toThrow('Session creation was canceled');
+      expect(transport.dispose).toHaveBeenCalledTimes(2);
+      expectNoCreationEffects(created);
+    });
+
+    it('cleans late Helm setup once and does not swallow cancellation when cleanup throws', async () => {
+      dbState.config.allowHelm = 'true';
+      const gate = deferred<{ mcpConfigPath: string; cleanup: () => void }>();
+      helmHarness.setup.mockReturnValueOnce(gate.promise);
+      const created = vi.fn();
+      manager.addLifecycleObserver({ onCreated: created });
+      const creation = manager.createSession({ workingDir: '/work', cliTool: 'claude', helmEnabled: true }, callbacks());
+      await vi.waitFor(() => expect(helmHarness.setup).toHaveBeenCalledOnce());
+      manager.dispose();
+      const cleanup = vi.fn(() => { throw new Error('Helm cleanup failed'); });
+      gate.resolve({ mcpConfigPath: '/helm/config.json', cleanup });
+      await expect(creation).rejects.toThrow('Session creation was canceled');
+      expect(cleanup).toHaveBeenCalledOnce();
+      const transport = transportHarness.state.instances[0];
+      expect(transport.dispose).toHaveBeenCalledOnce();
+      expect(transport.start).not.toHaveBeenCalled();
+      expectNoCreationEffects(created);
+    });
+
+    it('cancels local OpenCode history setup before transport startup', async () => {
+      const gate = deferred<boolean>();
+      vi.mocked(opencodeTranscriptExists).mockReturnValueOnce(gate.promise);
+      const created = vi.fn();
+      manager.addLifecycleObserver({ onCreated: created });
+      const creation = manager.createSession({ workingDir: '/work', cliTool: 'opencode', resumeToolSessionId: 'ses_saved' }, callbacks());
+      await vi.waitFor(() => expect(opencodeTranscriptExists).toHaveBeenCalledOnce());
+      manager.dispose();
+      gate.resolve(true);
+      await expect(creation).rejects.toThrow('Session creation was canceled');
+      expect(transportHarness.state.instances[0].start).not.toHaveBeenCalled();
+      expect(transportHarness.state.instances[0].dispose).toHaveBeenCalledOnce();
+      expectNoCreationEffects(created);
+    });
+
+    it('cleans an established transport and Helm once across repeated shutdown', async () => {
+      dbState.config.allowHelm = 'true';
+      const cleanup = vi.fn();
+      helmHarness.setup.mockResolvedValueOnce({ mcpConfigPath: '/helm/config.json', cleanup });
+      const session = await manager.createSession({ workingDir: '/work', cliTool: 'claude', helmEnabled: true }, callbacks());
+      const transport = transportHarness.state.instances[0];
+      manager.dispose();
+      manager.dispose();
+      expect(transport.dispose).toHaveBeenCalledOnce();
+      expect(cleanup).toHaveBeenCalledOnce();
+      expect(session.transport).toBeNull();
+      expect(manager.listSessions()).toEqual([]);
+    });
   });
 
   it.each([
