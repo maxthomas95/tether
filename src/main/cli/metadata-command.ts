@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { statSync } from 'node:fs';
+import path from 'node:path';
 import type { MaintainableCliTool } from '../../shared/cli-tools';
 import { resolveCliExecutable, resolveWindowsSystemExecutable } from './executable-resolver';
 
@@ -27,6 +29,24 @@ function environmentValue(env: NodeJS.ProcessEnv, name: string): string {
     ? Object.keys(env).find(key => key.toLowerCase() === name.toLowerCase())
     : name;
   return (key === undefined ? undefined : env[key]) ?? '';
+}
+
+function metadataWorkingDirectory(input: string): string {
+  if (typeof input !== 'string' || input.length === 0 || /[\0\r\n]/.test(input)) {
+    throw new Error('Invalid metadata working directory');
+  }
+  const paths = process.platform === 'win32' ? path.win32 : path.posix;
+  if (!paths.isAbsolute(input)) throw new Error('Metadata working directory must be absolute');
+  const normalized = paths.normalize(input);
+  if (process.platform === 'win32' && paths.parse(normalized).root === '\\') {
+    throw new Error('Metadata working directory must be drive-qualified or UNC');
+  }
+  // The user selects this local project, including directories outside the app.
+  // Validate the directory itself rather than confining it to an app-owned root.
+  // stat follows directory symlinks and supports Windows extended-length paths.
+  const resolved = paths.resolve(normalized);
+  if (!statSync(resolved).isDirectory()) throw new Error('Metadata working directory must be a folder');
+  return resolved;
 }
 
 function stopMetadataProcess(proc: ReturnType<typeof spawn>): void {
@@ -73,6 +93,7 @@ export async function runCliMetadata(
 
     let proc: ReturnType<typeof spawn>;
     try {
+      const cwd = options.cwd === undefined ? undefined : metadataWorkingDirectory(options.cwd);
       const env = metadataEnvironment(options.env);
       const launch = resolveCliExecutable(tool, {
         args,
@@ -88,7 +109,7 @@ export async function runCliMetadata(
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe'],
         env,
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(cwd === undefined ? {} : { cwd }),
       });
     } catch {
       finish({ ok: false, reason: 'failed' });

@@ -1,9 +1,11 @@
 import { EventEmitter } from 'node:events';
+import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ spawn: vi.fn(), resolve: vi.fn(), system: vi.fn() }));
+const mocks = vi.hoisted(() => ({ spawn: vi.fn(), resolve: vi.fn(), system: vi.fn(), stat: vi.fn() }));
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }));
+vi.mock('node:fs', () => ({ statSync: mocks.stat }));
 vi.mock('./executable-resolver', () => ({
   resolveCliExecutable: mocks.resolve, resolveWindowsSystemExecutable: mocks.system,
 }));
@@ -28,6 +30,7 @@ beforeEach(() => {
   mocks.spawn.mockReset().mockReturnValue(proc);
   mocks.resolve.mockReset().mockImplementation(tool => ({ kind: 'direct', file: `/tools/${tool}`, args: [...args] }));
   mocks.system.mockReset().mockReturnValue(null);
+  mocks.stat.mockReset().mockReturnValue({ isDirectory: () => true });
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -95,6 +98,54 @@ describe('CLI metadata commands', () => {
   it('does not fall back to the app PATH when an override removes PATH', async () => {
     const pending = runCliMetadata('codex', args, { env: { PATH: undefined } });
     expect(mocks.resolve).toHaveBeenCalledWith('codex', expect.objectContaining({ pathEnv: '' }));
+    proc.emit('close', 0);
+    await pending;
+  });
+
+  it.each([
+    ['win32', 'D:\\Other Projects\\one\\..\\selected'],
+    ['win32', '\\\\server\\share\\Other Projects\\selected'],
+    ['win32', `\\\\?\\D:\\${'long directory\\'.repeat(30)}selected`],
+    ['win32', '\\\\?\\UNC\\server\\share\\selected'],
+    ['linux', '/home/someone/Other Projects/one/../selected'],
+  ] as const)('validates and normalizes a selected %s project directory outside the app root (%s)', async (platform, cwd) => {
+    vi.stubGlobal('process', { ...process, platform });
+    const paths = platform === 'win32' ? path.win32 : path.posix;
+    const expected = paths.resolve(cwd);
+    const pending = runCliMetadata('opencode', args, { cwd });
+    expect(mocks.stat).toHaveBeenCalledExactlyOnceWith(expected);
+    expect(mocks.spawn).toHaveBeenCalledWith('/tools/opencode', args, expect.objectContaining({ cwd: expected }));
+    proc.emit('close', 0);
+    await expect(pending).resolves.toEqual({ ok: true, stdout: '' });
+  });
+
+  it.each([
+    ['win32', ''], ['win32', '..\\outside'], ['win32', 'C:relative'],
+    ['win32', '\\root-relative'], ['win32', '/root-relative'], ['win32', '\\\\server'],
+    ['win32', 'D:\\project\0bad'], ['win32', 'D:\\project\nother'],
+    ['linux', '../outside'], ['linux', 'project'], ['linux', '/project\0bad'], ['linux', '/project\rother'],
+  ] as const)('rejects an invalid %s working directory before resolving or spawning (%s)', async (platform, cwd) => {
+    vi.stubGlobal('process', { ...process, platform });
+    await expect(runCliMetadata('opencode', args, { cwd })).resolves.toEqual({ ok: false, reason: 'failed' });
+    expect(mocks.stat).not.toHaveBeenCalled();
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    expect(mocks.spawn).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['missing', 'file'])('rejects a %s working directory without spawning or exposing filesystem errors', async failure => {
+    if (failure === 'missing') mocks.stat.mockImplementationOnce(() => { throw new Error('private path details'); });
+    else mocks.stat.mockReturnValueOnce({ isDirectory: () => false });
+    await expect(runCliMetadata('opencode', args, { cwd: process.cwd() })).resolves.toEqual({ ok: false, reason: 'failed' });
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    expect(mocks.spawn).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('preserves the inherited working directory when no cwd is supplied', async () => {
+    const pending = runCliMetadata('opencode', args);
+    expect(mocks.stat).not.toHaveBeenCalled();
+    expect(mocks.spawn.mock.calls[0][2]).not.toHaveProperty('cwd');
     proc.emit('close', 0);
     await pending;
   });
