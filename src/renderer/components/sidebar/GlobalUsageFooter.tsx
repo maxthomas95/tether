@@ -235,7 +235,7 @@ export function GlobalUsageFooter({ onOpenHistory, onBudgetCrossed, environments
     ...envLines,
     ...cliToolLines,
     '',
-    '(API-equivalent cost — your subscription covers this usage)',
+    '(API estimates or CLI-reported costs; not subscription invoices)',
   ].join('\n');
 
   const tooltipWithHint = onOpenHistory ? `${tooltip}\n\nClick for full history.` : tooltip;

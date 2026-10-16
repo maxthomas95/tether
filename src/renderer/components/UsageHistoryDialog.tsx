@@ -403,7 +403,7 @@ export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps)
         </div>
         <div className="dialog-footer">
           <p className="form-hint usage-explorer-footer">
-            API-equivalent local estimates. Reasoning tokens are shown separately and are already included in output totals.
+            API estimates or CLI-reported costs; not subscription invoices. Reasoning tokens are shown separately and are already included in output totals.
           </p>
           <button className="form-btn" onClick={onClose}>Close</button>
         </div>

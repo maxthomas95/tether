@@ -181,3 +181,75 @@ describe('session inspector formatting', () => {
     expect(vm.rows).toContainEqual({ label: 'Hook Health', value: 'Unavailable for remote sessions' });
   });
 });
+
+describe.each(['claude', 'codex', 'opencode'] as const)('%s usage collection availability', cliTool => {
+  function view(usage: SessionUsage | null, remoteStatus?: InspectableSession['remoteUsageStatus']) {
+    return buildInspectorViewModel({
+      session: { ...session, cliTool, remoteUsageStatus: remoteStatus },
+      environment: remoteStatus ? { ...localEnv, type: 'ssh' } : localEnv,
+      usage: usage && { ...usage, cliTool },
+      config: { cliHooksEnabled: false, codexLifecycleHooksEnabled: false },
+    });
+  }
+
+  it('treats a failed first read as unknown rather than measured zero', () => {
+    const vm = view({ ...baseUsage, collectionStatus: 'unavailable' });
+    expect(vm.usageAvailable).toBe(false);
+    expect(vm.collectionUnavailable).toBe(true);
+    expect(vm.costLabel).toBe('Unknown');
+    expect(vm.messageLabel).toBe('Unknown msgs');
+    for (const label of ['Cost', 'Messages', 'Input Tokens', 'Output Tokens', 'Reasoning Tokens', 'Cache Created', 'Cache Read']) {
+      expect(vm.rows).toContainEqual({ label, value: 'Unknown', muted: true });
+    }
+    expect(vm.rows).toContainEqual({ label: 'Usage Tracking', value: 'Unavailable; retrying', muted: true });
+    if (cliTool === 'codex') {
+      expect(vm.rows).toContainEqual({ label: 'Last Request Size', value: 'Unknown tokens', muted: true });
+    }
+  });
+
+  it('retains the last successful totals when collection becomes unavailable', () => {
+    const vm = view({ ...baseUsage, collectionStatus: 'unavailable', observedAt: '2026-10-15T12:00:00Z', inputTokens: 1234, messageCount: 2, totalCost: 0.25 });
+    expect(vm.usageAvailable).toBe(true);
+    expect(vm.collectionUnavailable).toBe(true);
+    expect(vm.costLabel).toBe('$0.25');
+    expect(vm.messageLabel).toBe('2 msgs');
+    expect(vm.rows).toContainEqual({ label: 'Input Tokens', value: '1.2k', muted: false });
+    expect(vm.rows).toContainEqual({ label: 'Usage Tracking', value: 'Last collected totals; retrying', muted: true });
+  });
+
+  it.each([
+    { name: 'measured zero', collectionStatus: 'available' as const, observedAt: '2026-10-15T12:00:00Z' },
+    { name: 'legacy fields absent', collectionStatus: undefined, observedAt: null },
+  ])('preserves numeric zero for $name', fields => {
+    const vm = view({ ...baseUsage, ...fields });
+    expect(vm.usageAvailable).toBe(true);
+    expect(vm.collectionUnavailable).toBe(false);
+    expect(vm.costLabel).toBe('$0.00');
+    expect(vm.messageLabel).toBe('0 msgs');
+    expect(vm.costSourceLabel).toBe('API equivalent');
+    expect(vm.rows).toContainEqual({ label: 'Input Tokens', value: '0', muted: false });
+    expect(vm.rows).toContainEqual({ label: 'Usage Tracking', value: 'Available', muted: false });
+  });
+
+  it('preserves legacy remote stale totals and pending discovery', () => {
+    const stale = view(baseUsage, 'unavailable');
+    expect(stale.costLabel).toBe('$0.00');
+    expect(stale.rows).toContainEqual({ label: 'Usage Tracking', value: 'Last collected remote totals; retrying', muted: true });
+    expect(view(null, 'pending').rows).toContainEqual({ label: 'Usage Tracking', value: 'Waiting for remote usage', muted: true });
+    const failed = view({ ...baseUsage, collectionStatus: 'unavailable' }, 'unavailable');
+    expect(failed.costLabel).toBe('Unknown');
+    expect(failed.rows).toContainEqual({ label: 'Usage Tracking', value: 'Unavailable; retrying', muted: true });
+  });
+
+  it.each(['native-opencode', 'crush'] as const)('explains reported costs from %s', usageSource => {
+    const vm = view({ ...baseUsage, costSource: 'reported', usageSource });
+    expect(vm.costSourceLabel).toBe('CLI reported');
+    expect(vm.rows).toContainEqual({ label: 'Cost Basis', value: 'CLI reported; not a subscription invoice' });
+  });
+
+  it('explains estimated costs without calling them subscription invoices', () => {
+    const vm = view({ ...baseUsage, costSource: 'estimated' });
+    expect(vm.costSourceLabel).toBe('API equivalent');
+    expect(vm.rows).toContainEqual({ label: 'Cost Basis', value: 'API-equivalent estimate; not a subscription invoice' });
+  });
+});

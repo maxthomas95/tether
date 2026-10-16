@@ -4,7 +4,7 @@
 
 Tether is a desktop session multiplexer for Claude Code, Codex CLI, and OpenCode. It provides a single unified interface to manage multiple agentic CLI sessions across local, SSH, and Coder workspace environments — preserving the exact native terminal experience via raw PTY piping into xterm.js.
 
-**Status:** The `0.7.x` stable line graduates the soaked `0.6.x` beta train; Windows 1.0 polish continues. Local/SSH/Coder sessions, conversation recovery, split/Canvas layouts, workspace recipes, encrypted launch snapshots, local/remote Claude/Codex usage, child-agent viewers, CLI maintenance, optional Pip/GIF/J.O.B.S. integrations, and stable/beta update notifications are implemented. See `CHANGELOG.md` for release scope and `ROADMAP.md` for remaining work.
+**Status:** The `0.7.x` stable line graduates the soaked `0.6.x` beta train; Windows 1.0 polish continues. Local/SSH/Coder sessions, conversation recovery, split/Canvas layouts, workspace recipes, encrypted launch snapshots, local/remote Claude/Codex usage, local native OpenCode/legacy Crush usage, child-agent viewers, CLI maintenance, optional Pip/GIF/J.O.B.S. integrations, and stable/beta update notifications are implemented. See `CHANGELOG.md` for release scope and `ROADMAP.md` for remaining work.
 
 ## Core Principle
 
@@ -19,7 +19,7 @@ Tether is a desktop session multiplexer for Claude Code, Codex CLI, and OpenCode
 - **SSH:** ssh2 (Node.js)
 - **Coder:** Coder REST API + SSH-style PTY exec into workspaces
 - **Secrets:** HashiCorp Vault integration (KV v2) for env var refs
-- **State:** Atomic JSON persistence (`{userData}/data.json`); secrets and saved launch overrides use safeStorage. SQLite app-state migration is deferred; the local Crush usage reader uses built-in `node:sqlite`.
+- **State:** Atomic JSON persistence (`{userData}/data.json`); secrets and saved launch overrides use safeStorage. SQLite app-state migration is deferred; the native OpenCode and legacy Crush usage readers use built-in `node:sqlite` in read-only mode.
 - **IPC:** Electron IPC (commands + event channels for PTY data streaming)
 - **Themes:** Catppuccin (Mocha, Macchiato, Frappé, Latte) + Brass + Tether (Default Dark) + Tether Light + Nord + Gruvbox (Dark, Light) + Harbor
 - **CLI tools registry:** Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, Custom — selected per session via `src/shared/cli-tools.ts`
@@ -72,17 +72,23 @@ Each environment has preconfigured settings (host, auth, default directory, env 
 
 Tether is a dumb-pipe PTY multiplexer; it does not depend on any one CLI.
 
-Claude Code, Codex CLI, and OpenCode are first-class product targets. Review existing and planned features for equivalent outcomes across all three, including the supported local/SSH/Coder paths. Share common behavior, use native adapters for tool-specific interfaces, and document verified capability or version limitations. Do not treat the supported Crush database reader as complete native OpenCode usage coverage. Copilot and Custom support must continue to work when common paths change.
+Claude Code, Codex CLI, and OpenCode are first-class product targets. Review existing and planned features for equivalent outcomes across all three, including the supported local/SSH/Coder paths. Share common behavior, use native adapters for tool-specific interfaces, and document verified capability or version limitations. Native OpenCode usage covers the supported local SQLite schema; remote usage and local/remote quota remain unsupported. Copilot and Custom support must continue to work when common paths change.
 
 Tools are registered in `src/shared/cli-tools.ts`:
 
 - **Claude Code** — full support including session resume (`--resume`, `--session-id`) and transcript browsing
 - **Codex CLI** — full support including session resume (`codex resume <id>`) and transcript browsing
 - **GitHub Copilot CLI** — local session resume (`copilot --resume <id>`) and transcript browsing; no cost reader
-- **OpenCode** — local session resume (`opencode --session <id>`) and transcript browsing; usage coverage is limited to the supported Crush database reader
+- **OpenCode** — local session resume (`opencode --session <id>`) and transcript browsing; read-only native SQLite step-finish usage accounting plus legacy Crush snapshots
 - **Custom** — any binary the user specifies
 
 CLI flag presets are stored as strings in arrays. Multi-token flags (e.g. `--permission-mode plan`) are tokenized at the transport boundary, so single-string entries with whitespace are split into separate process args.
+
+Native OpenCode database discovery uses supported native source layouts and the effective local launch environment (`OPENCODE_DB`, `XDG_DATA_HOME`, home overrides and supported channel database selection). Uncertain channel/source locations leave usage unavailable; discovery does not invoke a database command. Startup backfill uses the application environment; active local sessions poll every 10 seconds.
+
+The reader keeps provider/model, input/output, cache and reasoning breakdowns, and preserves CLI-reported cost including zero. Reported amounts and API-equivalent estimates are distinct sources; neither is a subscription invoice. Failed first reads show unavailable/Unknown, while later failures preserve last-known totals. Imported timestamp fallbacks are approximate; ambiguous fork timestamps, invalid/unsupported schemas and read limits leave usage unavailable.
+
+The OpenCode history picker still uses the default application environment, while local launch-time existence checks and new-session discovery honor launch overrides.
 
 ### Vault integration
 
@@ -211,7 +217,9 @@ src/
     opencode/
       transcripts.ts                  # OpenCode transcript reader
       session-watcher.ts              # OpenCode session id capture at spawn
-      usage-reader.ts                 # OpenCode cost from its local DB
+      usage-reader.ts                 # Legacy Crush session snapshots (read-only SQLite)
+      native-usage-reader.ts          # Native OpenCode step-finish accounting (read-only SQLite)
+      native-usage-source.ts          # Passive native DB path resolution with launch environment
     coder/workspace-service.ts        # Coder CLI workspace list/create + template API lookup
     cli-maintenance/                  # Temporary native version/update terminals
     workspace-recipes/                # Recipe persistence, validation and fresh launches

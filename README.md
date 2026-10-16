@@ -91,7 +91,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 
 ### Cost & quota
 
-- **Usage tracking** — Claude Code and Codex CLI estimates cover local transcripts and Tether-launched SSH/Coder conversations, using a bundled [LiteLLM](https://github.com/BerriAI/litellm) pricing table. The OpenCode reader covers supported local Crush databases; other storage formats are not covered. Copilot has resume/history but no cost reader. Estimates are API-equivalent costs, not subscription bills. See [Usage & Quota](src/docs/usage-quota.md).
+- **Usage tracking** — Claude Code and Codex CLI estimates cover local transcripts and Tether-launched SSH/Coder conversations, using a bundled [LiteLLM](https://github.com/BerriAI/litellm) pricing table. OpenCode reads completed steps from its supported native local SQLite database, alongside legacy Crush snapshots, using CLI-reported costs including zero. Native database discovery honors the effective launch environment; active sessions refresh every 10 seconds. Failed first reads show unavailable; later failures retain last-collected totals. Costs are labelled API equivalent or CLI reported, and do not represent subscription invoices. Remote OpenCode usage and OpenCode quota tracking are not supported. Copilot has resume/history but no cost reader. See [Usage & Quota](src/docs/usage-quota.md).
 - **Usage history dialog** — project, environment, CLI, model and date filters, daily trends, period comparisons, and expandable session/model details
 - **Budget warnings** — optional daily/weekly cost thresholds and Codex low-quota alerts; warnings do not enforce spending limits
 - **CSV / JSON export** of usage history for offline analysis
@@ -132,10 +132,12 @@ Tether is a dumb-pipe PTY multiplexer for interactive coding CLIs. You can selec
 - **Claude Code** (`claude`) — full support including session resume and transcript browsing
 - **Codex CLI** (`codex`) — conversation resume, local transcript browsing, local/remote usage, and optional lifecycle visibility
 - **GitHub Copilot CLI** (`copilot`) — session resume via `--resume`
-- **OpenCode** (`opencode`) — session resume and transcript browsing support
+- **OpenCode** (`opencode`) — session resume, transcript browsing and local native SQLite/legacy Crush usage
 - **Custom** — any binary you specify
 
 Custom tools run as raw PTY sessions without tool-specific resume/history. The conversation picker is local-only. Saved-ID restart/restore supports remote Claude/Codex when the same user/home and history remain available; Codex needs its native ID captured before disconnect. Missing Claude history starts fresh under its saved ID. This restores context, not a surviving process. See [Sessions](src/docs/sessions.md#resume-conversation).
+
+The OpenCode history picker uses Tether's default application environment. Local launch-time session checks and new-session discovery honor the effective launch environment, so history stored under other launch overrides may be absent from the picker.
 
 ## Quick Start
 

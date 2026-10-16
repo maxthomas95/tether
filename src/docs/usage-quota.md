@@ -1,6 +1,6 @@
 # Usage & Quota
 
-Tether reads local CLI metadata and sanitized Claude Code/Codex usage records collected over SSH or Coder. Terminal output continues directly to the terminal; usage tracking does not intercept it. Costs are estimates at API rates, using a cached [LiteLLM](https://github.com/BerriAI/litellm) pricing table. They are not subscription bills.
+Tether reads local CLI metadata and sanitized Claude Code/Codex usage records collected over SSH or Coder. Terminal output continues directly to the terminal; usage tracking does not intercept it. Claude Code and Codex costs are estimates at API rates, using a cached [LiteLLM](https://github.com/BerriAI/litellm) pricing table. Native OpenCode and legacy Crush costs are reported by those CLIs. Neither source represents a subscription invoice.
 
 ## How It Works
 
@@ -8,16 +8,31 @@ Tether reads local CLI metadata and sanitized Claude Code/Codex usage records co
 |-----|--------|----------|
 | Claude Code | Local or remote transcript JSONL | Input, output, cache creation and cache reads per event. |
 | Codex CLI | Local or remote session JSONL under the Codex home | Token events, model, reasoning effort and reported context metadata when available. |
-| OpenCode usage reader | Crush's local `crush.db` | Session snapshots; does not cover every OpenCode storage format. Exact event-day timing may be unavailable. |
+| OpenCode | Native local SQLite database | Completed `step-finish` records with provider/model, input, output, cache and reasoning tokens, and CLI-reported cost. |
+| Legacy Crush | Local `crush.db` | Session snapshots with CLI-reported cost; exact event-day timing may be unavailable. |
 | Copilot CLI | Not available | Its supported history source does not report token usage. |
 
 The Crush reader checks `%LOCALAPPDATA%/crush/crush.db` on Windows and `~/.local/share/crush/crush.db` elsewhere. `CRUSH_GLOBAL_DATA` can override the directory. Claude transcript discovery respects `CLAUDE_CONFIG_DIR`.
 
-Backfill runs at startup and filesystem watchers update local usage. Codex uses `CODEX_HOME` when set, otherwise `~/.codex`. Remote usage uses a separate authenticated command connection and returns usage fields rather than full messages. SSH keeps a resident reader per connection, so an elevated host authenticates when it starts rather than for every poll. Coder usage uses command mode per poll; its separate child-agent reader is resident.
+Backfill runs at startup and filesystem watchers update local Claude Code and Codex usage. Codex uses `CODEX_HOME` when set, otherwise `~/.codex`. Remote usage uses a separate authenticated command connection and returns usage fields rather than full messages. SSH keeps a resident reader per connection, so an elevated host authenticates when it starts rather than for every poll. Coder usage uses command mode per poll; its separate child-agent reader is resident.
 
 Codex uses per-request usage records when available, including compaction requests that may be absent from context token events. A separate request checkpoint prevents repeated records from being counted twice across app restarts. Older transcripts continue to use cumulative token events. A subagent's local rollout is counted separately from its parent's copied history. Reasoning tokens are part of output tokens; the reasoning breakdown is not added to output or billed again. Cached input and reported cache writes are separated from uncached input for cost calculations.
 
 Daily totals use each event's UTC date. Resuming a conversation on another day does not move its earlier usage to the new day. Tether rebuilds older summaries from available transcripts once. Remote summaries are rebuilt on the next successful collection; failures retain the previous lifetime totals. If the source is missing, historical lifetime totals remain available with unknown daily timing. Snapshot-based sources are marked approximate. Session counts count unique conversations across the selected period.
+
+### Local OpenCode sessions
+
+Tether locates the native database using launch overrides and the supported native source layout, then reads the SQLite `session`, `message` and `part` tables without modifying them. For sessions launched through Tether, path discovery uses the effective launch environment, including `OPENCODE_DB`, `XDG_DATA_HOME`, home-directory overrides and supported channel-specific database selection (`OPENCODE_DISABLE_CHANNEL_DB`). An uncertain channel or source location leaves usage unavailable. Relative paths use the session's working directory. Startup backfill uses Tether's application environment; active local OpenCode sessions refresh every 10 seconds.
+
+Automatic layout detection supports official release version formats and was checked with OpenCode 1.14.44. It uses a bounded version probe, never the database command that can run native migrations. Custom builds with independently changed channel/layout rules need an explicit `OPENCODE_DB` path. The database must already exist; Tether does not create or migrate it.
+
+Usage comes from completed `step-finish` records, rather than combining message totals that can repeat or overwrite earlier steps. Provider and model identify each breakdown. Cache reads and writes are separate from input tokens; reasoning tokens are included in output with a separate reasoning breakdown. Costs use OpenCode's reported amounts, including a true zero, and are labelled **CLI reported**. They are not recalculated at API rates or treated as subscription invoices. Legacy Crush snapshots remain supported separately.
+
+Copied fork history is excluded when timestamps identify it. Ambiguous fork timestamps, such as a usage message created at exactly the session's creation time, leave the affected session's usage unavailable. Imported records whose database timestamps follow message completion use the original message timestamp for daily attribution; these totals are marked approximate. Unsupported schemas, invalid records, unreadable databases or databases exceeding the reader's session or record limits also leave usage unavailable.
+
+Before the first successful measurement, the pane shows **Usage unavailable** and details show **Unknown** instead of numeric zero. If a later read fails, the last successful totals remain visible as **Last collected** while collection retries.
+
+OpenCode usage collection is local-only; SSH/Coder usage and OpenCode quota tracking are unsupported. The local history picker still uses Tether's default application environment; local launch-time session checks and new-session discovery use the effective launch environment. A session visible under a different launch environment may therefore be absent from the picker.
 
 ### SSH and Coder sessions
 
@@ -68,7 +83,7 @@ Requirements and limits:
 
 ## Per-Session Cost Strip
 
-The pane footer shows available usage and an API-equivalent cost estimate. Click its details control to inspect the native conversation ID, working directory, environment, launch profile and tracking coverage.
+The pane footer shows available usage and its cost source: **API equivalent** for estimates, or **CLI reported** for native OpenCode and legacy Crush amounts. Click its details control to inspect the native conversation ID, working directory, environment, launch profile, tracking coverage and cost basis. Costs do not represent subscription invoices.
 
 For Codex, details distinguish requested launch overrides from the latest observed model and reasoning effort. The last reported request size and context-window capacity are shown when available. This is a transcript observation, not a live measurement of remaining context. Missing metadata is labelled unavailable instead of being presented as a measured zero.
 
@@ -102,6 +117,8 @@ Enable **Show usage quota in sidebar** (on by default) in [Settings -> Usage](se
 
 Codex quota uses the installed Codex CLI's supported app-server interface. Tether shows reported quota buckets with their actual window durations and retains the last successful observation when a refresh fails. A last-known reading is labelled with its observation time. Availability depends on the installed CLI, sign-in and account mode.
 
+OpenCode quota tracking is not supported, locally or remotely.
+
 Set **Codex quota warning** in [Settings → CLI tools → Codex CLI](settings.md#codex) to a remaining-percentage threshold. `0` disables notifications. Fresh successful measurements at or below the threshold produce one in-app warning per reported window reset. Stale, failed, expired and unknown measurements do not trigger warnings. Subscription quota must be enabled.
 
 ## Codex Account Usage
@@ -110,7 +127,7 @@ Set **Codex quota warning** in [Settings → CLI tools → Codex CLI](settings.m
 
 ## Privacy
 
-Local transcript files are read locally. For SSH and Coder sessions, prompts and
+Local transcript files and usage databases are read locally. For SSH and Coder sessions, prompts and
 responses stay on the remote host: the usage reader sends only model names, reasoning
 effort, token counts, context capacity, timestamps, and source/cursor metadata over the authenticated connection.
 The [sidebar subagent list](sessions.md#subagents) adds two reads, made by a second reader process on the host that is separate from the usage reader (on an SSH host that uses **sudo**, a second sudo login per Tether run).

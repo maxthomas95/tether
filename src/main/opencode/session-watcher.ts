@@ -12,6 +12,7 @@ export type OpencodeDetectHandle = DetectHandle;
 
 export interface OpencodeDetectOptions {
   workingDir: string;
+  env?: NodeJS.ProcessEnv;
   /** Poll cadence in ms. Default 1000. Higher than codex/copilot because each
    * tick spawns a child process, which is more expensive than a directory scan. */
   pollIntervalMs?: number;
@@ -28,7 +29,7 @@ export interface OpencodeDetectOptions {
 export function detectNewOpencodeSession(opts: OpencodeDetectOptions): OpencodeDetectHandle {
   const { workingDir, pollIntervalMs = 1000, timeoutMs } = opts;
   return detectNewSession({
-    list: () => listOpencodeTranscripts(workingDir, Number.MAX_SAFE_INTEGER),
+    list: () => listOpencodeTranscripts(workingDir, Number.MAX_SAFE_INTEGER, opts.env),
     claimedIds,
     // The list call shells out, so snapshot lazily on the first tick rather
     // than blocking the spawn path with a synchronous pre-snapshot.

@@ -168,6 +168,7 @@ import { detectNewCodexSession } from '../codex/session-watcher';
 import { detectNewCopilotSession } from '../copilot/session-watcher';
 import { detectNewOpencodeSession } from '../opencode/session-watcher';
 import { opencodeTranscriptExists } from '../opencode/transcripts';
+import { usageService } from '../usage/usage-service';
 import { remoteUsageService } from '../usage/remote-usage-service';
 import { buildSessionRestartOptions } from '../../renderer/utils/session-restart';
 import { statusDetector } from '../status/status-detector';
@@ -243,6 +244,23 @@ describe('SessionManager', () => {
     expect(session.toInfo().codexLaunch).toEqual({ model: 'new-model', profile: 'work', reasoningEffort: 'xhigh' });
     expect(JSON.stringify(session.toInfo())).not.toContain('SECRET');
     expect(cliArgs).toEqual(['--model', 'new-model', '-c model_reasoning_effort=xhigh', '-c private_value=SECRET']);
+  });
+
+  it('uses the resolved local launch environment for OpenCode identity and usage discovery', async () => {
+    vi.mocked(detectNewOpencodeSession).mockReturnValueOnce({ cancel: vi.fn(), promise: Promise.resolve('ses_native') });
+    const env = { OPENCODE_DB: 'custom.db' };
+    const session = await manager.createSession({ workingDir: 'C:/projects/tether', cliTool: 'opencode', env }, callbacks());
+    await Promise.resolve();
+    expect(detectNewOpencodeSession).toHaveBeenCalledWith(expect.objectContaining({ workingDir: session.workingDir, env: expect.objectContaining(env) }));
+    expect(usageService.trackSession).toHaveBeenCalledWith('ses_native', session.workingDir, 'opencode', undefined, { env: expect.objectContaining(env) });
+  });
+
+  it('validates and tracks a resumed local OpenCode ID in the same launch source', async () => {
+    vi.mocked(opencodeTranscriptExists).mockResolvedValueOnce(true);
+    const env = { OPENCODE_DB: 'custom.db' };
+    const session = await manager.createSession({ workingDir: 'C:/projects/tether', cliTool: 'opencode', env, resumeToolSessionId: 'ses_saved' }, callbacks());
+    expect(opencodeTranscriptExists).toHaveBeenCalledWith(session.workingDir, 'ses_saved', expect.objectContaining(env));
+    expect(usageService.trackSession).toHaveBeenCalledWith('ses_saved', session.workingDir, 'opencode', undefined, { env: expect.objectContaining(env) });
   });
 
   it('stores launch overrides only in an opaque encrypted snapshot id', async () => {

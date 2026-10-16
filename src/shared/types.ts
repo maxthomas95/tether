@@ -410,6 +410,12 @@ export interface SessionUsage {
   sessionId: string;
   /** Which CLI tool produced this usage data. */
   cliTool: CliToolId;
+  /** Health of the latest local metadata read; prior successful totals may remain. */
+  collectionStatus?: 'available' | 'unavailable';
+  /** How the cost was obtained; CLI-reported amounts are not provider invoices. */
+  costSource?: 'estimated' | 'reported';
+  /** Distinguish native OpenCode event accounting from legacy Crush snapshots. */
+  usageSource?: 'native-opencode' | 'crush';
   /**
    * Tether environment id this session ran under, when known. Backfilled
    * sessions (out-of-band Claude/Codex transcripts) have no associated
