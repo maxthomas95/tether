@@ -471,6 +471,8 @@ export class SessionManager {
   private sessions = new Map<string, Session>();
   private callbacksMap = new Map<string, SessionCallbacks>();
   private lifecycleObservers = new Set<SessionLifecycleObserver>();
+  private creatingSessions = new Set<Session>();
+  private disposed = false;
   /**
    * Optional notification sink. Wired by the main process after both the
    * session manager and the notification service exist. Left null during
@@ -703,6 +705,7 @@ export class SessionManager {
     opts: CreateSessionOptions,
     callbacks: SessionCallbacks,
   ): Promise<Session> {
+    if (this.disposed) throw new Error('Session manager is disposed');
     const prepared = resolveLaunchOptions(opts, true);
     opts = prepared.opts;
     const id = uuidv4();
@@ -718,8 +721,16 @@ export class SessionManager {
       parentSessionId: opts.parentSessionId,
     });
     this.sessions.set(id, session);
+    this.creatingSessions.add(session);
     session.launchSnapshotId = prepared.snapshotId;
     this.callbacksMap.set(id, callbacks);
+    const isCurrent = () => !this.disposed && this.sessions.get(id) === session;
+    const cancellationError = () => new Error('Session creation was canceled');
+    const assertCurrent = (lateTransport?: SessionTransport) => {
+      if (isCurrent()) return;
+      this.cleanupFailedCreation(session, lateTransport);
+      throw cancellationError();
+    };
 
     // Compute the hook env up front so we know whether this session is
     // actually hook-wired before we register it with the status detector.
@@ -736,13 +747,7 @@ export class SessionManager {
     const hookEnv = !hookEnvRow || hookEnvRow.type === 'local'
       ? hookEnvForSession(id, cliTool)
       : await envForRemoteSession(id, hookEnvRow, cliTool);
-    // The await above can span seconds for remote envs. If the session was
-    // removed while we waited, abort before registering the detector or
-    // spawning a transport nothing could ever dispose.
-    if (!this.sessions.has(id)) {
-      detachRemoteSession(id);
-      throw new Error('Session was removed while it was being created');
-    }
+    assertCurrent();
     const hookCapable = Object.keys(hookEnv).length > 0;
 
     // Sessions with no hook env (toggle off, install failed, remote transport)
@@ -756,22 +761,22 @@ export class SessionManager {
       transport = await createTransport(opts.environmentId);
     } catch (err) {
       log.error('Transport creation failed', { id, error: err instanceof Error ? err.message : String(err) });
-      statusDetector.unregister(id);
-      detachRemoteSession(id);
-      this.sessions.delete(id);
-      this.callbacksMap.delete(id);
-      throw err;
+      const canceled = !isCurrent();
+      this.cleanupFailedCreation(session);
+      throw canceled ? cancellationError() : err;
     }
+    assertCurrent(transport);
     session.transport = transport;
 
     transport.onData((data: string) => {
+      if (!isCurrent()) return;
       statusDetector.feedData(id, data);
       callbacks.onData(id, data);
     });
 
     transport.onExit((exitInfo) => {
       const { exitCode } = exitInfo;
-      if (!session.transport) return;
+      if (!isCurrent() || session.transport !== transport) return;
       log.info('Session exited', { id, exitCode });
       session.activity = null;
       remoteUsageService.stop(id);
@@ -792,6 +797,7 @@ export class SessionManager {
 
     // Resolve env var cascade: app defaults -> environment -> profile -> session override
     const { getDb } = await import('../db/database');
+    assertCurrent();
     const appEnvVars = decryptEnvVarsRecord(getDb().defaultEnvVars || {});
     let envEnvVars: Record<string, string> = {};
     if (opts.environmentId) {
@@ -824,6 +830,7 @@ export class SessionManager {
     let resolvedEnv: Record<string, string>;
     try {
       resolvedEnv = await resolveAll(mergedEnv);
+      assertCurrent();
       session.maintenanceEnv = { ...resolvedEnv };
       // Layer the hook-bridge env (computed above) on top, AFTER vault
       // resolution. The hook env is short-lived and process-local — we never
@@ -833,12 +840,9 @@ export class SessionManager {
       Object.assign(resolvedEnv, hookEnv);
     } catch (err) {
       log.error('Env var resolution failed', { id, error: err instanceof Error ? err.message : String(err) });
-      statusDetector.unregister(id);
-      detachRemoteSession(id);
-      transport.dispose();
-      this.sessions.delete(id);
-      this.callbacksMap.delete(id);
-      throw err;
+      const canceled = !isCurrent();
+      this.cleanupFailedCreation(session);
+      throw canceled ? cancellationError() : err;
     }
 
     // Resolve CLI flags: tool-scoped app defaults + profile + session-specific
@@ -961,11 +965,13 @@ export class SessionManager {
             return { sessionId, terminated: true };
           },
         });
+        assertCurrent();
         // Use =-form so the local transport's whitespace tokenizer can't split
         // the path if it contains spaces (e.g. a Windows profile with a space).
         resolvedCliArgs.push(`--mcp-config=${session.helmIntegration.mcpConfigPath}`);
         log.info('Helm MCP wired for session', { id });
       } catch (err) {
+        assertCurrent();
         log.warn('Helm setup failed, launching without Helm', { id, error: err instanceof Error ? err.message : String(err) });
         session.helmIntegration = null;
       }
@@ -1037,6 +1043,7 @@ export class SessionManager {
       session.remoteUsageStatus = 'pending';
     }
 
+    assertCurrent();
     try {
       await transport.start({
         workingDir: opts.workingDir,
@@ -1053,20 +1060,17 @@ export class SessionManager {
         cloneUrl: opts.cloneUrl,
         initialPrompt: opts.initialPrompt,
       });
+      // A pending start can allocate resources after teardown already disposed
+      // the transport. Its captured instance must be cleaned again on settling.
+      if (!isCurrent()) throw cancellationError();
       if (prepared.snapshotRow) {
         persistLaunchSnapshot(prepared.snapshotRow);
       }
     } catch (err) {
       log.error('Transport start failed', { id, error: err instanceof Error ? err.message : String(err) });
-      statusDetector.unregister(id);
-      detachRemoteSession(id);
-      session.helmIntegration?.cleanup();
-      session.helmIntegration = null;
-      session.transport = null;
-      transport.dispose();
-      this.sessions.delete(id);
-      this.callbacksMap.delete(id);
-      throw err;
+      const canceled = !isCurrent();
+      this.cleanupFailedCreation(session, transport);
+      throw canceled ? cancellationError() : err;
     }
 
     // The session got in (an SSH session with sudo only starts once sudo accepted
@@ -1162,9 +1166,33 @@ export class SessionManager {
       });
     }
 
+    this.creatingSessions.delete(session);
     this.notifyLifecycle(o => o.onCreated?.(session));
 
     return session;
+  }
+
+  private cleanupSessionResources(session: Session, transport = session.transport): void {
+    const helm = session.helmIntegration;
+    session.helmIntegration = null;
+    if (session.transport === transport) session.transport = null;
+    try { helm?.cleanup(); } catch (err) {
+      log.warn('Helm cleanup failed', { id: session.id, error: err instanceof Error ? err.message : String(err) });
+    }
+    try { transport?.dispose(); } catch (err) {
+      log.warn('Transport cleanup failed', { id: session.id, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  private cleanupFailedCreation(session: Session, transport = session.transport): void {
+    this.creatingSessions.delete(session);
+    if (this.sessions.get(session.id) === session) {
+      this.sessions.delete(session.id);
+      this.callbacksMap.delete(session.id);
+    }
+    statusDetector.unregister(session.id);
+    detachRemoteSession(session.id);
+    this.cleanupSessionResources(session, transport);
   }
 
   getSession(id: string): Session | undefined {
@@ -1198,6 +1226,9 @@ export class SessionManager {
   removeSession(id: string): void {
     const session = this.sessions.get(id);
     if (session) {
+      this.sessions.delete(id);
+      this.callbacksMap.delete(id);
+      this.creatingSessions.delete(session);
       log.info('Removing session', { id });
       remoteUsageService.stop(id);
       statusDetector.unregister(id);
@@ -1214,11 +1245,7 @@ export class SessionManager {
       if (session.cliTool === 'codex') releaseCodexSessionClaim(session.toolSessionId);
       if (session.cliTool === 'copilot') releaseCopilotSessionClaim(session.toolSessionId);
       if (session.cliTool === 'opencode') releaseOpencodeSessionClaim(session.toolSessionId);
-      session.helmIntegration?.cleanup();
-      session.helmIntegration = null;
-      session.transport?.dispose();
-      this.sessions.delete(id);
-      this.callbacksMap.delete(id);
+      this.cleanupSessionResources(session);
       this.notifyLifecycle(o => o.onRemoved?.(id));
     }
   }
@@ -1310,6 +1337,10 @@ export class SessionManager {
   forceKill(id: string): void {
     this.stoppingIds.delete(id);
     const session = this.sessions.get(id);
+    if (session && this.creatingSessions.has(session)) {
+      this.removeSession(id);
+      return;
+    }
     if (session?.transport) {
       log.warn('Force-killing session', { id });
       remoteUsageService.stop(id);
@@ -1332,16 +1363,21 @@ export class SessionManager {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    const sessions = [...this.sessions.values()];
+    this.sessions.clear();
+    this.callbacksMap.clear();
+    this.creatingSessions.clear();
     remoteUsageService.dispose();
     remoteProbeChannels.dispose();
     statusDetector.dispose();
-    for (const session of this.sessions.values()) {
+    for (const session of sessions) {
       session.codexDetectCancel?.();
-      session.helmIntegration?.cleanup();
-      session.transport?.dispose();
+      session.copilotDetectCancel?.();
+      session.opencodeDetectCancel?.();
+      this.cleanupSessionResources(session);
     }
-    this.sessions.clear();
-    this.callbacksMap.clear();
   }
 }
 
