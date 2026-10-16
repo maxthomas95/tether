@@ -56,6 +56,15 @@ interface TrackedSession {
   codexRequestUsage?: CodexRequestUsageCheckpoint | null;
 }
 
+interface NativeUsageCandidate {
+  snapshot: SessionUsage;
+  dbPath: string;
+}
+
+function normalizeNativePath(value: string): string {
+  return process.platform === 'win32' ? path.normalize(value).toLowerCase() : path.normalize(value);
+}
+
 function emptySessionUsage(sessionId: string, cliTool: CliToolId, environmentId?: string): SessionUsage {
   return {
     sessionId,
@@ -291,8 +300,8 @@ export class UsageService {
   private tracked = new Map<string, TrackedSession>();
   private callback: ((info: UsageInfo) => void) | null = null;
   private rescanTimer: ReturnType<typeof setInterval> | null = null;
-  private nativeSource = new NativeOpenCodeUsageSource();
-  private nativeContexts = new Map<string, OpenCodeUsageContext>();
+  private readonly nativeSource = new NativeOpenCodeUsageSource();
+  private readonly nativeContexts = new Map<string, OpenCodeUsageContext>();
   private nativePoll: ReturnType<typeof setInterval> | null = null;
   private nativeRefresh: Promise<void> | null = null;
   private nativeGeneration = 0;
@@ -539,35 +548,7 @@ export class UsageService {
   trackSession(sessionId: string, workingDir: string, cliTool: CliToolId = 'claude', environmentId?: string, context?: OpenCodeUsageContext): void {
     const existing = this.tracked.get(sessionId);
     if (existing) {
-      let changed = false;
-      if (workingDir && existing.workingDir !== workingDir) {
-        existing.workingDir = workingDir;
-        existing.usage.workingDir = workingDir;
-        changed = true;
-      }
-      // start() pre-loads DB summaries into `tracked` without a watcher,
-      // so a subsequent trackSession from session:create used to silently
-      // skip the watcher. Attach one for any transcript-backed CLI whose
-      // file path we already know.
-      if (!existing.watching && existing.filePath && (existing.cliTool === 'claude' || existing.cliTool === 'codex')) {
-        this.startWatching(existing);
-      }
-      // If the session was first picked up via disk backfill (no env id) and
-      // we now know one — e.g. a Codex session whose toolSessionId arrives
-      // post-spawn from the watcher in session-manager — promote it so the
-      // per-environment rollup attributes the cost on the next refresh.
-      if (environmentId && !existing.usage.environmentId) {
-        existing.usage.environmentId = environmentId;
-        changed = true;
-      }
-      if (needsTrackedUsageReparse(existing.usage, existing.filePath)) {
-        this.reparseSessionPreservingLegacy(existing);
-        this.notifyUpdate();
-      } else if (changed) {
-        this.persistSession(existing);
-        this.notifyUpdate();
-      }
-      if (cliTool === 'opencode' && !existing.remote) this.activateOpenCode(existing, context);
+      this.refreshExistingTrackedSession(existing, workingDir, cliTool, environmentId, context);
       return;
     }
 
@@ -624,6 +605,33 @@ export class UsageService {
     } else if (cliTool === 'opencode') {
       this.activateOpenCode(session, context);
     }
+  }
+
+  private refreshExistingTrackedSession(existing: TrackedSession, workingDir: string, cliTool: CliToolId, environmentId?: string, context?: OpenCodeUsageContext): void {
+    let changed = false;
+    if (workingDir && existing.workingDir !== workingDir) {
+      existing.workingDir = workingDir;
+      existing.usage.workingDir = workingDir;
+      changed = true;
+    }
+    // Persisted summaries are loaded without watchers. Reattach known local
+    // transcript paths when a session is activated after startup.
+    if (!existing.watching && existing.filePath && (existing.cliTool === 'claude' || existing.cliTool === 'codex')) {
+      this.startWatching(existing);
+    }
+    // Backfill can discover the conversation before its environment is known.
+    if (environmentId && !existing.usage.environmentId) {
+      existing.usage.environmentId = environmentId;
+      changed = true;
+    }
+    if (needsTrackedUsageReparse(existing.usage, existing.filePath)) {
+      this.reparseSessionPreservingLegacy(existing);
+      this.notifyUpdate();
+    } else if (changed) {
+      this.persistSession(existing);
+      this.notifyUpdate();
+    }
+    if (cliTool === 'opencode' && !existing.remote) this.activateOpenCode(existing, context);
   }
 
   /** Restore a remote cursor without ever opening/watching its path locally. */
@@ -889,12 +897,13 @@ export class UsageService {
     return request;
   }
 
-  private async collectCurrentNativeOpenCode(generation: number): Promise<void> {
-    let revision: number;
-    do {
-      revision = this.nativeRevision;
-      await this.collectNativeOpenCode(generation, revision);
-    } while (generation === this.nativeGeneration && revision !== this.nativeRevision);
+  private collectCurrentNativeOpenCode(generation: number): Promise<void> {
+    const revision = this.nativeRevision;
+    return this.collectNativeOpenCode(generation, revision).then(() => {
+      if (generation === this.nativeGeneration && revision !== this.nativeRevision) {
+        return this.collectCurrentNativeOpenCode(generation);
+      }
+    });
   }
 
   private markNativeUnavailable(id: string): boolean {
@@ -906,55 +915,15 @@ export class UsageService {
   }
 
   private async collectNativeOpenCode(generation: number, revision: number): Promise<void> {
-    const active = [...this.nativeContexts.entries()];
-    const paths = await Promise.all([
-      this.nativeSource.resolvePath(),
-      ...active.map(([, context]) => this.nativeSource.resolvePath(context)),
-    ]);
+    const { expected, sources } = await this.discoverNativeSources();
     if (generation !== this.nativeGeneration || revision !== this.nativeRevision) return;
-    const expected = new Map<string, string | null>();
-    const sources = new Map<string, string>();
-    const normalize = (value: string) => process.platform === 'win32' ? path.normalize(value).toLowerCase() : path.normalize(value);
-    const addSource = (value: string | null) => { if (value) sources.set(normalize(value), value); };
-    paths.forEach(addSource);
-    active.forEach(([id], index) => expected.set(id, paths[index + 1] ? normalize(paths[index + 1]!) : null));
-    for (const session of this.tracked.values()) {
-      if (session.remote || session.usage.usageSource !== 'native-opencode' || !session.filePath) continue;
-      addSource(session.filePath);
-    }
     const failed = new Set<string>([...expected].filter(([, value]) => value === null).map(([id]) => id));
-    const candidates = new Map<string, { snapshot: SessionUsage; dbPath: string }[]>();
-    for (const [sourceKey, dbPath] of sources) {
-      const result = readNativeOpenCodeUsage(dbPath);
-      if (result.status !== 'available') {
-        for (const [id, source] of expected) if (source === sourceKey) failed.add(id);
-        for (const session of this.tracked.values()) {
-          if (!expected.has(session.sessionId) && session.usage.usageSource === 'native-opencode'
-            && normalize(session.filePath) === sourceKey) failed.add(session.sessionId);
-        }
-        continue;
-      }
-      const returned = new Set(result.sessions.map(session => session.sessionId));
-      for (const [id, source] of expected) if (source === sourceKey && !returned.has(id)) failed.add(id);
-      for (const session of this.tracked.values()) {
-        if (!expected.has(session.sessionId) && session.usage.usageSource === 'native-opencode'
-          && normalize(session.filePath) === sourceKey && !returned.has(session.sessionId)) failed.add(session.sessionId);
-      }
-      for (const id of result.unavailableSessionIds) {
-        if (!expected.has(id) || expected.get(id) === sourceKey) failed.add(id);
-      }
-      for (const snapshot of result.sessions) {
-        if (expected.has(snapshot.sessionId) && expected.get(snapshot.sessionId) !== sourceKey) continue;
-        const entries = candidates.get(snapshot.sessionId) ?? [];
-        entries.push({ snapshot, dbPath });
-        candidates.set(snapshot.sessionId, entries);
-      }
-    }
+    const candidates = new Map<string, NativeUsageCandidate[]>();
+    for (const [sourceKey, dbPath] of sources) this.readNativeSource(sourceKey, dbPath, expected, candidates, failed);
     let changed = false;
     for (const [id, entries] of candidates) {
       if (entries.length !== 1 || failed.has(id)) {
-        // An unowned ID shared by distinct databases has no authoritative
-        // source. Never persist a candidate and then silently prefer it later.
+        // Do not persist an arbitrary source for an ambiguous unowned ID.
         if (!this.tracked.has(id)) {
           this.tracked.set(id, { sessionId: id, cliTool: 'opencode', workingDir: '', filePath: '',
             watching: false, debounceTimer: null, usage: emptySessionUsage(id, 'opencode') });
@@ -966,6 +935,50 @@ export class UsageService {
     }
     for (const id of failed) changed = this.markNativeUnavailable(id) || changed;
     if (changed) this.notifyUpdate();
+  }
+
+  private async discoverNativeSources(): Promise<{ expected: Map<string, string | null>; sources: Map<string, string> }> {
+    const active = [...this.nativeContexts.entries()];
+    const paths = await Promise.all([
+      this.nativeSource.resolvePath(),
+      ...active.map(([, context]) => this.nativeSource.resolvePath(context)),
+    ]);
+    const expected = new Map<string, string | null>();
+    const sources = new Map<string, string>();
+    const addSource = (value: string | null) => { if (value) sources.set(normalizeNativePath(value), value); };
+    paths.forEach(addSource);
+    active.forEach(([id], index) => expected.set(id, paths[index + 1] ? normalizeNativePath(paths[index + 1]!) : null));
+    for (const session of this.tracked.values()) {
+      if (session.remote || session.usage.usageSource !== 'native-opencode' || !session.filePath) continue;
+      addSource(session.filePath);
+    }
+    return { expected, sources };
+  }
+
+  private readNativeSource(sourceKey: string, dbPath: string, expected: Map<string, string | null>, candidates: Map<string, NativeUsageCandidate[]>, failed: Set<string>): void {
+    const result = readNativeOpenCodeUsage(dbPath);
+    const returned = new Set(result.status === 'available' ? result.sessions.map(session => session.sessionId) : []);
+    this.markMissingNativeSessions(sourceKey, expected, returned, failed);
+    if (result.status !== 'available') return;
+    for (const id of result.unavailableSessionIds) {
+      if (!expected.has(id) || expected.get(id) === sourceKey) failed.add(id);
+    }
+    for (const snapshot of result.sessions) {
+      if (expected.has(snapshot.sessionId) && expected.get(snapshot.sessionId) !== sourceKey) continue;
+      const entries = candidates.get(snapshot.sessionId) ?? [];
+      entries.push({ snapshot, dbPath });
+      candidates.set(snapshot.sessionId, entries);
+    }
+  }
+
+  private markMissingNativeSessions(sourceKey: string, expected: Map<string, string | null>, returned: Set<string>, failed: Set<string>): void {
+    for (const [id, source] of expected) {
+      if (source === sourceKey && !returned.has(id)) failed.add(id);
+    }
+    for (const session of this.tracked.values()) {
+      if (!expected.has(session.sessionId) && session.usage.usageSource === 'native-opencode'
+        && normalizeNativePath(session.filePath) === sourceKey && !returned.has(session.sessionId)) failed.add(session.sessionId);
+    }
   }
 
   private applyNativeSnapshot(snapshot: SessionUsage, dbPath: string): boolean {

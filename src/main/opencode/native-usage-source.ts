@@ -22,8 +22,8 @@ export function openCodeUsageContext(cwd: string, env: NodeJS.ProcessEnv = {}): 
 }
 
 export class NativeOpenCodeUsageSource {
-  private cache = new Map<string, { path: string | null; expires: number }>();
-  private pending = new Map<string, Promise<string | null>>();
+  private readonly cache = new Map<string, { path: string | null; expires: number }>();
+  private readonly pending = new Map<string, Promise<string | null>>();
 
   async resolvePath(context: OpenCodeUsageContext = {}): Promise<string | null> {
     const cwd = context.cwd ?? os.homedir();
