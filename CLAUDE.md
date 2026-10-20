@@ -102,7 +102,7 @@ Tether ships Windows-only today; macOS and Linux are post-1.0 (see `ROADMAP.md`)
 - **Standard dirs:** use `os.homedir()` (not `process.env.HOME` — undefined on Windows — or `process.env.USERPROFILE` — undefined elsewhere). Prefer Electron's `app.getPath('userData' | 'temp' | 'logs')` for app-managed locations.
 - **Path comparison:** Windows is case-insensitive, POSIX is case-sensitive. Don't `===` raw paths when behavior depends on equality — normalize via `path.normalize` and decide consciously.
 - **Shells:** invoke binaries directly with `child_process.spawn(cmd, args)`. `cmd.exe` / `powershell.exe` only behind a `process.platform === 'win32'` gate (see `local-transport.ts` and `coder-transport.ts` for the pattern). No `shell: true` for one-liners that depend on Windows shell semantics.
-- **Windows-only APIs:** registry (`winreg`, `HKLM`, `HKCU`), WMI (`wmic`), Win32 named pipes — only behind a platform gate AND with a documented POSIX equivalent (see the SSH agent fallback in `ssh-transport.ts`).
+- **Windows-only APIs:** registry (`winreg`, `HKLM`, `HKCU`), WMI (`wmic`), Win32 named pipes — only behind a platform gate AND with a documented POSIX equivalent (see the SSH agent fallback in `ssh-connect-config.ts`).
 
 ### What NOT to do
 

@@ -48,8 +48,7 @@ export function buildSshConnectConfig(
   };
 
   if (sshConfig.useAgent) {
-    // Windows OpenSSH agent
-    connectConfig.agent = process.env.SSH_AUTH_SOCK || '\\\\.\\pipe\\openssh-ssh-agent';
+    connectConfig.agent = resolveAgentSocket();
   } else if (sshConfig.privateKeyPath) {
     try {
       connectConfig.privateKey = fs.readFileSync(sshConfig.privateKeyPath);
@@ -61,4 +60,19 @@ export function buildSshConnectConfig(
   }
 
   return connectConfig;
+}
+
+/**
+ * The agent ssh2 should talk to. `SSH_AUTH_SOCK` wins everywhere; Windows
+ * falls back to the OpenSSH agent's named pipe. POSIX has no well-known
+ * default socket, so fail with an actionable error instead of handing ssh2
+ * a Windows pipe path.
+ */
+function resolveAgentSocket(): string {
+  if (process.env.SSH_AUTH_SOCK) return process.env.SSH_AUTH_SOCK;
+  if (process.platform === 'win32') return '\\\\.\\pipe\\openssh-ssh-agent';
+  throw new Error(
+    'SSH agent authentication is enabled, but SSH_AUTH_SOCK is not set. '
+    + 'Start an SSH agent in the session that launches Tether, or use a private key file.',
+  );
 }

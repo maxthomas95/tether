@@ -166,15 +166,47 @@ describe('SSHTransport', () => {
     expect(cfg.hostHash).toBeUndefined();
   });
 
-  it('uses agent path when useAgent is set', async () => {
-    const t = new SSHTransport(baseConfig({ useAgent: true, password: undefined }));
-    delete process.env.SSH_AUTH_SOCK;
-    const { client } = await startConnected(t);
+  describe('SSH agent auth', () => {
+    const originalSock = process.env.SSH_AUTH_SOCK;
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    const setPlatform = (value: NodeJS.Platform) => {
+      Object.defineProperty(process, 'platform', { ...originalPlatform, value });
+    };
 
-    const cfg = client.connect.mock.calls[0][0] as Record<string, unknown>;
-    expect(cfg.agent).toBeDefined();
-    expect(cfg.privateKey).toBeUndefined();
-    expect(cfg.password).toBeUndefined();
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', originalPlatform);
+      if (originalSock === undefined) delete process.env.SSH_AUTH_SOCK;
+      else process.env.SSH_AUTH_SOCK = originalSock;
+    });
+
+    it('uses SSH_AUTH_SOCK when useAgent is set', async () => {
+      process.env.SSH_AUTH_SOCK = '/run/user/1000/ssh-agent.socket';
+      const t = new SSHTransport(baseConfig({ useAgent: true, password: undefined }));
+      const { client } = await startConnected(t);
+
+      const cfg = client.connect.mock.calls[0][0] as Record<string, unknown>;
+      expect(cfg.agent).toBe('/run/user/1000/ssh-agent.socket');
+      expect(cfg.privateKey).toBeUndefined();
+      expect(cfg.password).toBeUndefined();
+    });
+
+    it('falls back to the Windows OpenSSH agent pipe without SSH_AUTH_SOCK on win32', async () => {
+      delete process.env.SSH_AUTH_SOCK;
+      setPlatform('win32');
+      const t = new SSHTransport(baseConfig({ useAgent: true, password: undefined }));
+      const { client } = await startConnected(t);
+
+      const cfg = client.connect.mock.calls[0][0] as Record<string, unknown>;
+      expect(cfg.agent).toBe('\\\\.\\pipe\\openssh-ssh-agent');
+    });
+
+    it.each(['linux', 'darwin'] as const)('rejects without SSH_AUTH_SOCK on %s instead of using a Windows pipe', async (platform) => {
+      delete process.env.SSH_AUTH_SOCK;
+      setPlatform(platform);
+      const t = new SSHTransport(baseConfig({ useAgent: true, password: undefined }));
+      await expect(t.start(baseOptions())).rejects.toThrow(/SSH_AUTH_SOCK is not set/);
+      expect(ssh2Harness.current?.connect).not.toHaveBeenCalled();
+    });
   });
 
   it('falls back to password auth when no agent / key configured', async () => {
