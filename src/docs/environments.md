@@ -10,7 +10,7 @@ Runs the selected CLI directly on your machine via `node-pty`. No additional set
 
 ### SSH
 
-Connects to a remote host over SSH and runs the selected CLI there. Useful for Linux VMs, dev servers, or any host you can SSH into. Tether uses `ssh2` (Node), not OpenSSH; SSH agent fallback works on Windows (OpenSSH named pipe) and POSIX (UNIX socket).
+Connects to a remote host over SSH and runs the selected CLI there. Useful for Linux VMs, dev servers, or any host you can SSH into. Tether uses `ssh2` (Node), not OpenSSH. SSH agent auth uses the agent socket in `SSH_AUTH_SOCK`; on Windows it falls back to the OpenSSH agent's named pipe when that variable is unset. On macOS and Linux there is no fallback: if `SSH_AUTH_SOCK` is unset, the session fails with an error saying so. An app launched from the desktop menu only sees `SSH_AUTH_SOCK` when the desktop session exports it.
 
 SSH environments need:
 
