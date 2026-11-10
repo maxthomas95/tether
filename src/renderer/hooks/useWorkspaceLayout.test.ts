@@ -149,3 +149,22 @@ it('uses the current single-pane setting after a creation started with splitting
     await act(async () => root.unmount());
   }
 });
+
+it('replaces a restarted session in both arrangements', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  let layout!: ReturnType<typeof useWorkspaceLayout>;
+  function Harness() { layout = useWorkspaceLayout(); return null; }
+  const root = createRoot(document.createElement('div'));
+  try {
+    await act(async () => root.render(createElement(Harness)));
+    act(() => {
+      layout.layoutDispatch({ type: 'SET_ROOT', root: { type: 'leaf', id: 'split-a', sessionId: 'a' } });
+      layout.canvasDispatch({ type: 'SEED', sessionIds: ['a', 'b'], focusedSessionId: 'a' });
+    });
+    act(() => layout.layoutDispatch({ type: 'REPLACE_SESSION_ID', fromSessionId: 'a', toSessionId: 'fresh' }));
+    expect(getLeaves(layout.splitLayoutState.root).map(leaf => [leaf.id, leaf.sessionId])).toEqual([['split-a', 'fresh']]);
+    expect(layout.canvasState.panels.map(panel => panel.sessionId)).toEqual(['fresh', 'b']);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

@@ -155,6 +155,8 @@ Windows local and Coder sessions use the bundled terminal backend so **Stop** wo
 
 Right-click and choose **Remove** to drop the session from the sidebar. If it's still running, it's stopped first.
 
+A toast offers **Undo** for a few seconds. Undo opens a new session in the same directory and environment with the same launch settings, resuming the conversation when its ID is known; work that was in progress when the session was removed is not recovered. If the session cannot be brought back, the toast says why and offers **Retry**. A session in a managed worktree asks for confirmation instead and has no Undo.
+
 ### Duplicating
 
 Right-click and choose **Duplicate** to clone a session with the same environment, working directory, profile, env vars, and flags. The label is preserved with a `(copy)` suffix (`(copy 2)` on subsequent dupes).
@@ -200,8 +202,8 @@ Press **Ctrl+Shift+F**, choose **Session → Find in Terminal**, or click the fi
 Right-click a repo-group header in the sidebar for bulk actions across every session in that group:
 
 - **Stop all** — gracefully stop every running session under this working directory (auto-escalates to forced kill after 3 seconds per session)
-- **Restart all** — stop and re-spawn each session with its original params, resuming its known conversation
-- **Clear all** — stop and remove every session
+- **Restart all** — replace each session with a new one that uses its original params and resumes its known conversation. Sessions restart one at a time. Each replacement is started first, takes over the original's pane, and only then is the original removed, so a session whose replacement cannot start (for example an unreachable host or a declined Vault login) is left as it was. A toast reports the result, such as "Restarted 3 of 4 sessions", and names the ones that failed.
+- **Clear all** — stop and remove every session. **Undo** in the toast brings them back one at a time, as for a single [Remove](#removing); anything that cannot be restored is named, with **Retry**.
 
 ## Helm (opt-in)
 

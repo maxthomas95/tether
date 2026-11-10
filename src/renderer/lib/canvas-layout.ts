@@ -166,6 +166,11 @@ export function canvasReducer(state: CanvasState, action: CanvasAction): CanvasS
       if (existing) return focus(state, existing.id);
       return { ...state, panels: state.panels.map(p => p.id === action.paneId ? { ...p, sessionId: action.sessionId } : p) };
     }
+    case 'REPLACE_SESSION_ID': {
+      if (!state.panels.some(p => p.sessionId === action.fromSessionId)) return state;
+      return { ...state, panels: state.panels.map(p => p.sessionId === action.fromSessionId
+        ? { ...p, sessionId: action.toSessionId } : p) };
+    }
     case 'SWAP_PANES': {
       const a = state.panels.find(p => p.id === action.sourcePaneId);
       const b = state.panels.find(p => p.id === action.targetPaneId);

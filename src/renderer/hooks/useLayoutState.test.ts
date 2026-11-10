@@ -80,3 +80,18 @@ describe('split layout focus and maximize', () => {
     expect([null, next.focusedPaneId]).toContain(next.maximizedPaneId);
   });
 });
+
+describe('replacing a session in place', () => {
+  it('hands a restarted session the pane of the one it replaces', () => {
+    const before = state({ focusedPaneId: 'right', maximizedPaneId: null });
+    const next = layoutReducer(before, { type: 'REPLACE_SESSION_ID', fromSessionId: 'b', toSessionId: 'fresh' });
+    expect(getLeaves(next.root).map(leaf => [leaf.id, leaf.sessionId])).toEqual([['left', 'a'], ['right', 'fresh']]);
+    expect(next.focusedPaneId).toBe('right');
+  });
+
+  it('changes nothing when the session is not mounted', () => {
+    const before = state();
+    expect(layoutReducer(before, { type: 'REPLACE_SESSION_ID', fromSessionId: 'absent', toSessionId: 'fresh' })).toBe(before);
+    expect(layoutReducer(initialLayoutState, { type: 'REPLACE_SESSION_ID', fromSessionId: 'a', toSessionId: 'b' })).toBe(initialLayoutState);
+  });
+});
