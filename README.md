@@ -108,7 +108,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Customizable keyboard shortcuts** — every binding remappable in Settings, with a reserved-chord warn list for conflicts like `Ctrl+C`
 - **Window zoom** — `Ctrl+=` / `Ctrl+-` / `Ctrl+0` zoom UI + terminal together; `Ctrl+scroll` resizes just one pane's terminal font
 - **Font customization** — pick terminal font (Cascadia Code, JetBrains Mono, Fira Code, Consolas) and UI font (IBM Plex Sans, Inter, Atkinson Hyperlegible, System) independently
-- **Terminal search** — search each pane's scrollback with next/previous, match-case, whole-word and regular-expression options
+- **Terminal search** — search each pane's scrollback with next/previous, match-case and whole-word options
 - **Clickable URLs** — `Ctrl+click` HTTP(S) URLs and OSC 8 hyperlinks, including Claude login links, to open them in the system browser
 - **Clipboard and multiline input** — bracketed paste, write-only OSC 52 for remote clipboard copying, and per-CLI Windows Shift+Enter handling; hold Shift while dragging to select text in mouse-capturing full-screen CLIs
 - **In-app documentation** with `(?)` deep-link icons that jump from dialogs straight to the relevant docs section

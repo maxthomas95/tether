@@ -11,13 +11,13 @@ The app-action shortcuts below are defaults and are **remappable** in [Settings 
 | **Ctrl+N** | Create a new session |
 | **Ctrl+P** | Find a session (quick switcher) |
 | **Ctrl+Shift+F** | Find text in the focused terminal |
-| **Ctrl+W** | Stop the active session |
+| **Ctrl+W** | Stop the active session (asks first if it is still working) |
 
 ## Navigation
 
 | Shortcut | Action |
 |----------|--------|
-| **Ctrl+1** through **Ctrl+9** | Switch to session by position |
+| **Ctrl+1** through **Ctrl+9** | Switch to the first through ninth session in sidebar order |
 | **Ctrl+Shift+A** | Jump to next waiting session (see [Attention queue](sessions.md#attention-queue)) |
 
 ## Split Panes
