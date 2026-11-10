@@ -29,7 +29,7 @@ stops the maintenance terminal. Interrupted updates may need to be retried.
 Maintenance terminals are temporary: they are not saved as conversations and do not
 install Tether status hooks or contribute session usage statistics.
 
-Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **View** in the menu bar. Search for a settings section by name or topic, such as “theme”, “hooks”, or “usage”. The dialog has nine sections:
+Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **File → Settings…** in the menu bar. Search for a settings section by name or topic, such as “theme”, “hooks”, or “usage”. The dialog has nine sections:
 
 - [General](#general) — session restore and update checks
 - [Appearance](#appearance) — theme previews, UI font, and interface density
@@ -37,7 +37,7 @@ Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **Vie
 - [Sessions](#sessions) — launch profiles, default env vars, Helm and status hooks
 - [Notifications](#notifications) — desktop notification triggers and suppression
 - [Shortcuts](#shortcuts) — keyboard shortcut customization
-- [Integrations](#integrations) — Vault, Git providers, SSH known hosts, diagnostics, J.O.B.S. office
+- [Integrations](#integrations) — Vault, Git providers, SSH known hosts, J.O.B.S. office
 - [CLI tools](#cli-tools) — Claude, Codex, OpenCode and Copilot launch defaults, updates and native controls
 - [Usage](#usage) — cost tracking, history dialog, exports, subscription quota
 
@@ -154,6 +154,10 @@ Pick the font used in the sidebar, dialogs, and menus:
 
 On by default. Lists the subagents a Claude Code session (local, SSH or Coder) has started under that session, and the `codex exec` runs a local session has launched (when Codex lifecycle hooks are tracked and trusted), with their status, model and token use; click one to read its transcript. Turn it off to hide the rows and stop Tether reading subagent files on this machine and on remote hosts, and local Codex rollout files. Applies when you save. See [Subagents](sessions.md#subagents) and [Codex exec runs](sessions.md#codex-exec-runs).
 
+## Sidebar panels
+
+The GIF panel and Pip are not controls in the Settings dialog. Turn each one on from the **View** menu; its options are in the panel itself and save immediately.
+
 ### GIF panel
 
 Choose **View → GIF Panel** to show an optional animated-image viewer above the sidebar footers, then **Add GIF folder** to select local folders. This is Tether's native version of GIF Panel for VS Code; installing the VS Code extension is not required.
@@ -240,8 +244,12 @@ When on, Tether installs an additive entry in your `~/.claude/settings.json` and
 Local CLI hooks require a separate Node.js installation on PATH. Tether checks it at launch and writes its absolute executable path into the hooks. If Node.js is missing or cannot run, Tether removes its old entries, skips installation, and shows one warning; sessions use output-based status detection. Install Node.js and restart Tether to enable hooks. Existing user hooks are preserved. SSH hosts check their own Node.js installation separately.
 
 Claude hooks also observe prompt submission, tool activity and subagent
-start/stop events so quiet work stays running. The status helper forwards only
-event names and identifiers, without prompts, tool arguments or results.
+start/stop events so quiet work stays running, turns that end on an API error,
+and the conversation changes made by `/clear` and in-pane `/resume` (the helper
+does not run on ordinary startup, compaction or exit). The status helper
+forwards only event names, short type codes and identifiers, without prompts,
+tool arguments, results or error text. See [session status](sessions.md#session-states)
+for how Tether covers endings Claude does not report.
 Existing user hooks are preserved. If Claude disables all hooks, an overlay
 fails to install, or another integration owns Codex's `notify` command, the
 affected CLI uses output-cadence estimates unless its other Tether hooks are
@@ -293,7 +301,7 @@ Tether can post OS desktop notifications when a session changes state, and it ca
 
 The generic webhook is disabled while its URL is blank. When enabled, Tether sends fire-and-forget JSON with the event name, timestamp, and session metadata: id, label, working directory, state, CLI tool, environment id/name when available, and waiting reason when available. It does not include PTY output, environment variables, CLI args, tokens, or secrets. Only `http://` and `https://` URLs are used, and endpoint URLs are not written to logs because they may contain tokens.
 
-Configure the optional **Webhook token** separately instead of embedding credentials in the endpoint URL. Tether sends it as a Bearer token and stores it encrypted with the OS keychain; saving it fails rather than falling back to plaintext when the keychain is unavailable.
+Configure the optional **Webhook token** separately instead of embedding credentials in the endpoint URL. Tether sends it as a Bearer token and stores it encrypted with the OS keychain; it is sent only to HTTPS endpoints or loopback HTTP addresses, and saving it fails rather than falling back to plaintext when the keychain is unavailable.
 
 Muting a session suppresses both desktop notifications and generic webhook posts for that session.
 
@@ -345,6 +353,7 @@ To opt out:
 - **Remove integration… → Remove and forget** turns the integration off and clears its saved URL, encrypted token, folder, and sharing preferences. It leaves JOBS files and independently running servers alone. Enable the connection again to add a new setup.
 
 When sharing ends or the server changes, Tether makes a best-effort request to remove its agents from the previous office. If that server cannot be reached, its stale-agent timeout clears them later. Closing the office view only closes the view; use the settings above to opt out of sharing.
+
 ### Diagnostics export
 
 Open **About → Export diagnostics for support** to create a zip containing a scrubbed copy of `data.json`, rotated logs, and a version/OS manifest. Credentials, encrypted secrets, saved launch-setting snapshots, and all literal environment values are redacted; Vault references and variable names are preserved. Malformed environment JSON is redacted too. Log scrubbing removes recognized credential patterns. The export is in About, not a control in this settings section.
@@ -383,7 +392,7 @@ Two buttons here — **Export as CSV…** and **Export as JSON…**. CSV is one 
 
 ### Subscription quota
 
-**Show usage quota in sidebar** is on by default. Tether can poll subscription quota and show the remaining budget in the sidebar footer. Codex quota uses the supported Codex app-server interface instead of reading local auth tokens directly. Disable here if you're on metered API billing instead. See [Usage & Quota](usage-quota.md#quota-tracking).
+**Show usage quota in sidebar** is on by default. Tether can poll subscription quota and show the remaining budget in the sidebar footer. Claude quota reads Claude Code's saved access token without refreshing or modifying its sign-in, and shows as paused until Claude Code refreshes an expired token. Codex quota uses the supported Codex app-server interface instead of reading local auth tokens directly. Disable here if you're on metered API billing instead. See [Usage & Quota](usage-quota.md#quota-tracking).
 
 ## CLI tools
 

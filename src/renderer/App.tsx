@@ -56,6 +56,11 @@ import { initializeWorkspace } from './utils/workspace-initialization';
 import { nextDuplicateLabel } from './utils/duplicate-label';
 import { buildSessionRestartOptions } from './utils/session-restart';
 import { selectNextWaiting } from './utils/attention-queue';
+import { isSessionWorking } from './utils/session-status';
+import { sidebarSessionOrder, sessionsForEnvironment, sortRepoGroupEntries, sortSessionsByPref } from './utils/sidebar-order';
+import {
+  SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_WIDTH_CONFIG_KEY, defaultSidebarWidth, parseSavedSidebarWidth,
+} from './utils/sidebar-width';
 import { readLastLines } from './utils/terminal-preview';
 import type { LayoutNode } from '../shared/layout-types';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, SessionOrderPref, HostVerifyRequest, JobsStatus } from '../shared/types';
@@ -115,7 +120,8 @@ export function App() {
    *   - session enters visibleSessionIds while waiting → add id  (user saw it)
    */
   const [acknowledgedWaitingIds, setAcknowledgedWaitingIds] = useState<Set<string>>(new Set());
-  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [sidebarWidth, setSidebarWidth] = useState(() => defaultSidebarWidth('comfortable'));
+  const customSidebarWidthRef = useRef(false);
   const [uiDensity, setUiDensity] = useState('comfortable');
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -303,6 +309,12 @@ export function App() {
     sessionsRef.current = sessions;
   }, [sessions]);
 
+  // What the sidebar is currently built from, read at keypress time so the
+  // switch-by-position shortcut does not rebuild the shortcut map on every
+  // session state change.
+  const sidebarOrderInputsRef = useRef({ environments, sessions, repoGroupPrefs, sessionOrderPrefs });
+  sidebarOrderInputsRef.current = { environments, sessions, repoGroupPrefs, sessionOrderPrefs };
+
   // Derive activeSessionId from focused pane
   const focusedLeaf = layoutState.focusedPaneId && layoutState.root
     ? findLeaf(layoutState.root, layoutState.focusedPaneId)
@@ -422,9 +434,27 @@ export function App() {
     return () => { cancelled = true; };
   }, [settingsOpen]);
 
+  // A width the user dragged to wins over the density default and survives restarts.
   useEffect(() => {
-    setSidebarWidth(uiDensity === 'compact' ? 220 : 260);
+    let cancelled = false;
+    window.electronAPI.config.get(SIDEBAR_WIDTH_CONFIG_KEY).then(value => {
+      const saved = parseSavedSidebarWidth(value);
+      if (cancelled || saved === null) return;
+      customSidebarWidthRef.current = true;
+      setSidebarWidth(saved);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!customSidebarWidthRef.current) setSidebarWidth(defaultSidebarWidth(uiDensity));
   }, [uiDensity]);
+
+  const handleSidebarResizeEnd = useCallback((width: number) => {
+    customSidebarWidthRef.current = true;
+    window.electronAPI.config.set(SIDEBAR_WIDTH_CONFIG_KEY, String(width))
+      .catch(error => notifyError('Could not save the sidebar width', error));
+  }, [notifyError]);
 
   // Check for first launch
   useEffect(() => {
@@ -935,6 +965,35 @@ export function App() {
     }
   }, [markExpectedSessionExit, notifyError]);
 
+  /**
+   * Stop from the keyboard shortcut or the Session menu. Both act on whichever
+   * session happens to be active, so a session that is mid-turn or blocked on
+   * a permission prompt asks first; a session resting at its prompt stops at
+   * once, as before. The sidebar's per-session Stop names its target and stays
+   * immediate.
+   */
+  const stopConfirmOpenRef = useRef(false);
+  const handleStopActive = useCallback(async (id: string) => {
+    const session = sessionsRef.current.find(s => s.id === id);
+    if (!session) return;
+    if (isSessionWorking(session)) {
+      if (stopConfirmOpenRef.current) return;
+      stopConfirmOpenRef.current = true;
+      try {
+        const result = await confirmDialog({
+          title: 'Stop session?',
+          message: `"${session.label}" is still working. Stopping it interrupts the work in progress.`,
+          confirmLabel: 'Stop session',
+          danger: true,
+        });
+        if (!result.confirmed) return;
+      } finally {
+        stopConfirmOpenRef.current = false;
+      }
+    }
+    await handleStop(id);
+  }, [confirmDialog, handleStop]);
+
   const handleRename = useCallback(async (id: string, label: string) => {
     try {
       await window.electronAPI.session.rename(id, label);
@@ -1168,6 +1227,9 @@ export function App() {
     if (!resumePickerFor) return;
     const source = sessions.find(s => s.id === resumePickerFor.sessionId);
     if (!source) return;
+    // Carry the source session's saved launch settings (profile, env, flags)
+    // the way Duplicate does; otherwise a session launched under an API-key
+    // or model profile would resume under the defaults.
     handleCreateSession(
       source.workingDir,
       '',
@@ -1179,6 +1241,10 @@ export function App() {
       undefined,
       source.cliTool,
       source.customCliBinary,
+      undefined,
+      undefined,
+      source.helmEnabled,
+      source.launchSnapshotId,
     );
   }, [resumePickerFor, sessions, handleCreateSession]);
 
@@ -1286,19 +1352,7 @@ export function App() {
     entries: [string, SessionInfo[]][],
     envId: string,
   ): [string, SessionInfo[]][] => {
-    const envPrefs = repoGroupPrefs.filter(p => p.environmentId === envId);
-    const prefMap = new Map(envPrefs.map(p => [p.workingDir, p]));
-    return entries.sort((a, b) => {
-      const pa = prefMap.get(a[0]);
-      const pb = prefMap.get(b[0]);
-      const pinnedA = pa?.pinned ?? false;
-      const pinnedB = pb?.pinned ?? false;
-      if (pinnedA !== pinnedB) return pinnedA ? -1 : 1;
-      const orderA = pa?.sortOrder ?? Infinity;
-      const orderB = pb?.sortOrder ?? Infinity;
-      if (orderA !== orderB) return orderA - orderB;
-      return a[0].localeCompare(b[0]);
-    });
+    return sortRepoGroupEntries(entries, repoGroupPrefs.filter(p => p.environmentId === envId));
   }, [repoGroupPrefs]);
 
   const handleTogglePin = useCallback(async (environmentId: string, workingDir: string) => {
@@ -1335,14 +1389,7 @@ export function App() {
     groupSessions: SessionInfo[],
   ): SessionInfo[] => {
     const pref = sessionOrderPrefs.find(p => p.environmentId === envId && p.workingDir === workingDir);
-    if (!pref || pref.orderedIds.length === 0) return groupSessions;
-    const indexById = new Map(pref.orderedIds.map((id, i) => [id, i]));
-    return [...groupSessions].sort((a, b) => {
-      const ia = indexById.get(a.id) ?? Infinity;
-      const ib = indexById.get(b.id) ?? Infinity;
-      if (ia !== ib) return ia - ib;
-      return a.createdAt.localeCompare(b.createdAt);
-    });
+    return sortSessionsByPref(pref, groupSessions);
   }, [sessionOrderPrefs]);
 
   const handleReorderSession = useCallback(async (
@@ -1547,19 +1594,17 @@ export function App() {
     onOpenSearch: () => setSearchOpen(true),
     onFindInTerminal: () => handleOpenTerminalSearch(),
     onToggleSidebar: () => setSidebarVisible(v => !v),
-    onStopSession: () => { if (activeSessionId) handleStop(activeSessionId); },
+    onStopSession: () => { if (activeSessionId) void handleStopActive(activeSessionId); },
     onOpenSettings: () => setSettingsOpen(true),
     onShowShortcuts: () => setShortcutsOpen(true),
     onZoomIn: () => setWindowZoom(window.electronAPI.webFrame.getZoomLevel() + 0.5),
     onZoomOut: () => setWindowZoom(window.electronAPI.webFrame.getZoomLevel() - 0.5),
     onZoomReset: () => setWindowZoom(0),
+    // Nth session in sidebar order, opened the same way a Ctrl+P pick is.
     onSwitchSession: (index: number) => {
-      if (!layoutState.root) return;
-      const leaves = getLeaves(layoutState.root);
-      if (index < leaves.length) {
-        layoutDispatch({ type: 'SET_FOCUS', paneId: leaves[index].id });
-        termManager.focusPane(leaves[index].id);
-      }
+      const { environments: envs, sessions: all, repoGroupPrefs: groupPrefs, sessionOrderPrefs: orderPrefs } = sidebarOrderInputsRef.current;
+      const target = sidebarSessionOrder(envs, all, groupPrefs, orderPrefs)[index];
+      if (target) handleActivateFromSearch(target.id);
     },
     onNextSession: () => {
       if (!layoutState.root) return;
@@ -1603,7 +1648,7 @@ export function App() {
         targetPaneId: neighborId,
       });
     },
-  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStop, setWindowZoom, handleJumpToNextWaiting, canvasEnabled, canvasState, handleOpenTerminalSearch]);
+  }), [activeSessionId, layoutState.root, layoutState.focusedPaneId, layoutState.maximizedPaneId, layoutDispatch, termManager, handleStopActive, handleActivateFromSearch, setWindowZoom, handleJumpToNextWaiting, canvasEnabled, canvasState, handleOpenTerminalSearch]);
 
   useKeyboardShortcuts(shortcutActions, resolvedBindings, maintenanceTarget === null && !workspaceRecipes.isOpen && !workspaceRecipes.busy);
 
@@ -1855,7 +1900,7 @@ export function App() {
         { label: 'Find in Terminal', shortcut: formatChord(resolvedBindings['terminal.find']) || undefined, onClick: () => handleOpenTerminalSearch(), disabled: modalOpen || !(canvasEnabled ? canvasState.focusedPaneId : layoutState.focusedPaneId) },
         { label: 'Jump to Next Waiting', shortcut: formatChord(resolvedBindings['session.nextWaiting']) || undefined, onClick: handleJumpToNextWaiting, disabled: waitingCount === 0 },
         { separator: true },
-        { label: 'Stop Session', shortcut: formatChord(resolvedBindings['session.stop']) || undefined, onClick: () => { if (activeSessionId) handleStop(activeSessionId); }, disabled: !isAlive },
+        { label: 'Stop Session', shortcut: formatChord(resolvedBindings['session.stop']) || undefined, onClick: () => { if (activeSessionId) void handleStopActive(activeSessionId); }, disabled: !isAlive },
         { label: 'Duplicate Session', onClick: () => { if (activeSessionId) handleDuplicate(activeSessionId); }, disabled: !activeSession },
         { label: 'Check / Update CLI...', onClick: () => { if (activeSessionId) setMaintenanceTarget({ sessionId: activeSessionId }); }, disabled: !activeSession || !['claude', 'codex', 'opencode'].includes(activeSession.cliTool ?? 'claude') },
         { separator: true },
@@ -1898,7 +1943,7 @@ export function App() {
         { label: 'About Tether', onClick: () => setAboutOpen(true) },
       ],
     },
-  ], [activeSessionId, activeSession, isAlive, layoutState.root, layoutState.focusedPaneId, themeName, themeList, setTheme, handleStop, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, canvasState.focusedPaneId, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle, pip.settings, pip.busy, pip.toggle, handleOpenTerminalSearch, modalOpen, workspaceRecipes.open, workspaceRecipes.busy, maintenanceTarget]);
+  ], [activeSessionId, activeSession, isAlive, layoutState.root, layoutState.focusedPaneId, themeName, themeList, setTheme, handleStopActive, handleRemove, handleDuplicate, shortcutActions, handleCheckForUpdates, resolvedBindings, handleClearBroadcastTargets, broadcastPaneIds.size, sessions.length, jobsStatus?.detected, officeOpen, handleJumpToNextWaiting, waitingCount, canvasEnabled, canvasState.focusedPaneId, handleCanvasMode, workspaceReady, gifPanel.settings, gifPanel.toggle, pip.settings, pip.busy, pip.toggle, handleOpenTerminalSearch, modalOpen, workspaceRecipes.open, workspaceRecipes.busy, maintenanceTarget]);
 
   return (
     <div className="app-layout" data-density={uiDensity}>
@@ -1923,7 +1968,8 @@ export function App() {
         className="sidebar"
         style={{
           width: sidebarVisible ? sidebarWidth : 0,
-          minWidth: sidebarVisible ? 180 : 0,
+          minWidth: sidebarVisible ? SIDEBAR_MIN_WIDTH : 0,
+          maxWidth: SIDEBAR_MAX_WIDTH,
           overflow: sidebarVisible ? undefined : 'hidden',
           borderRight: sidebarVisible ? undefined : 'none',
         }}
@@ -1939,10 +1985,7 @@ export function App() {
         </div>
         <div className="sidebar-content">
           {environments.map(env => {
-            const envSessions = sessions.filter(s => {
-              if (env.type === 'local') return !s.environmentId || s.environmentId === env.id;
-              return s.environmentId === env.id;
-            });
+            const envSessions = sessionsForEnvironment(env, sessions);
             const isCollapsed = collapsedGroups.has(env.id);
             const runningCount = envSessions.filter(s =>
               s.state === 'running' || s.state === 'waiting',
@@ -2098,7 +2141,7 @@ export function App() {
           onJumpToNextWaiting={handleJumpToNextWaiting}
         />
       </aside>
-      {sidebarVisible && <SidebarResizeHandle onResize={setSidebarWidth} />}
+      {sidebarVisible && <SidebarResizeHandle onResize={setSidebarWidth} onResizeEnd={handleSidebarResizeEnd} />}
       <main
         className={`terminal-panel ${isDragging && !layoutState.root ? 'terminal-panel--drop-active' : ''}`}
         onDragOver={handleMainDragOver}

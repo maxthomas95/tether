@@ -24,13 +24,6 @@ vi.mock('../session/session-manager', () => ({
   ...sessionExtras,
 }));
 
-const sessionRepoMocks = vi.hoisted(() => ({
-  createSessionRow: vi.fn(),
-  updateSessionLabel: vi.fn(),
-  updateSessionState: vi.fn(),
-}));
-vi.mock('../db/session-repo', () => sessionRepoMocks);
-
 const environmentRepoMocks = vi.hoisted(() => ({ getEnvironment: vi.fn() }));
 vi.mock('../db/environment-repo', () => environmentRepoMocks);
 
@@ -81,7 +74,6 @@ describe('session-handlers', () => {
     harness.reset();
     Object.values(sessionManagerMock).forEach((m) => 'mockReset' in m && m.mockReset());
     Object.values(sessionExtras).forEach((m) => m.mockReset());
-    Object.values(sessionRepoMocks).forEach((m) => m.mockReset());
     environmentRepoMocks.getEnvironment.mockReset();
     Object.values(usageServiceMock).forEach((m) => m.mockReset());
     vaultAuthMock.getStatus.mockReset();
@@ -96,18 +88,12 @@ describe('session-handlers', () => {
   });
 
   describe('SESSION_CREATE', () => {
-    it('creates session, persists row, returns toInfo()', async () => {
+    it('creates a session and returns toInfo()', async () => {
       const s = fakeSession();
       sessionManagerMock.createSession.mockResolvedValue(s);
       const opts = { workingDir: '/repo', environmentId: 'env-1' };
       const result = await harness.invoke<{ id: string }>(IPC.SESSION_CREATE, opts);
       expect(sessionManagerMock.createSession).toHaveBeenCalledWith(opts, expect.any(Object));
-      expect(sessionRepoMocks.createSessionRow).toHaveBeenCalledWith(expect.objectContaining({
-        label: 'session',
-        working_dir: '/repo',
-        environment_id: 'env-1',
-        state: 'running',
-      }));
       expect(result).toEqual({ id: 's1', label: 'session', workingDir: '/repo' });
     });
 
@@ -213,10 +199,9 @@ describe('session-handlers', () => {
     expect(sessionManagerMock.setHelmEnabled).toHaveBeenCalledWith('s4', true);
   });
 
-  it('SESSION_RENAME updates manager AND repo', async () => {
+  it('SESSION_RENAME updates the manager', async () => {
     await harness.invoke(IPC.SESSION_RENAME, 's1', 'New Name');
     expect(sessionManagerMock.renameSession).toHaveBeenCalledWith('s1', 'New Name');
-    expect(sessionRepoMocks.updateSessionLabel).toHaveBeenCalledWith('s1', 'New Name');
   });
 
   it('SESSION_INPUT / SESSION_RESIZE forward via emit', () => {
@@ -237,6 +222,19 @@ describe('session-handlers', () => {
       });
       expect(JSON.stringify(dbState.savedWorkspace)).not.toContain('SECRET');
       expect(dbState.saveCount).toBe(1);
+    });
+
+    it('does not write an identical workspace twice', async () => {
+      const sessions = [{ workingDir: '/r', label: 'a' }];
+      await harness.invoke(IPC.WORKSPACE_SAVE, sessions, 0);
+      await harness.invoke(IPC.WORKSPACE_SAVE, sessions, 0);
+      expect(dbState.saveCount).toBe(1);
+    });
+
+    it('writes a changed workspace', async () => {
+      await harness.invoke(IPC.WORKSPACE_SAVE, [{ workingDir: '/r', label: 'a' }], 0);
+      await harness.invoke(IPC.WORKSPACE_SAVE, [{ workingDir: '/r', label: 'renamed' }], 0);
+      expect(dbState.saveCount).toBe(2);
     });
 
     it('WORKSPACE_LOAD returns the stored workspace', async () => {

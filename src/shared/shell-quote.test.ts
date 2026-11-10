@@ -54,7 +54,9 @@ describe('shell quote helpers', () => {
   });
 
   it('rejects cmd.exe argv values with embedded double quotes', () => {
-    expect(() => escapeCmdExeArgForNodePty('foo"bar')).toThrow(/double quotes/);
+    expect(() => escapeCmdExeArgForNodePty('foo"bar')).toThrow(
+      'This CLI starts through a Windows batch file, which cannot safely receive arguments containing double quotes. Remove the quotes, or point the CLI path at the program itself.',
+    );
   });
 
   it('rejects unsafe cmd.exe command-position values', () => {

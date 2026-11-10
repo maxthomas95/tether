@@ -58,7 +58,11 @@ workspace intact. Restart Tether to retry before relying on workspace saving.
 Stopping a session cancels its conversation-ID watcher immediately. A transcript
 read failure ends that watcher without interrupting the running CLI.
 
+With [CLI hooks](settings.md#cli-hooks) on, Tether follows a Claude Code pane when you run `/clear` or switch conversations with `/resume` inside it: status, usage, subagent rows and the conversation that restart or workspace restore reopens all move to the new conversation. Without hooks (including Coder sessions), the pane stays tied to the conversation it was launched with.
+
 For local Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode sessions, use **Resume conversation** in the launcher to choose history for the working directory. Tether uses `claude --resume <id>`, `codex resume <id>`, `copilot --resume <id>`, or `opencode --session <id>`. The conversation picker is local-only.
+
+A local session's right-click menu also has **Resume previous conversation...**. It opens the chosen conversation as a new session in the same directory and environment, keeping the original session's launch profile and its session-specific environment and CLI flag overrides, as **Duplicate** does.
 
 OpenCode history requires a working OpenCode installation in an absolute directory on your system PATH. Windows native executables and npm `.cmd` installations are supported. Tether asks OpenCode for its session list; if that command is unavailable or cannot finish, the picker stays empty without interrupting running sessions.
 
@@ -66,7 +70,7 @@ For Claude Code and Codex CLI over **SSH or Coder**, **Restart in this pane** an
 
 For **OpenCode over SSH or Coder**, restart and workspace restore also pass a known saved native conversation ID to `opencode --session <id>`. Tether does not check that ID against history on your local machine or substitute the latest conversation. Automatic discovery of IDs for fresh remote OpenCode sessions is not available yet, so those sessions cannot automatically resume through Tether unless a native conversation ID is already known and saved.
 
-Recovery requires the same remote host or Coder workspace, CLI user/home, and saved conversation history. If Claude Code has no history for the saved ID (the pane closed before its first message, the conversation was switched with `/resume` or `/clear`, or the history was deleted), the pane opens a fresh Claude conversation under that same ID instead of stopping on a resume error; use `/resume` inside Claude to reopen another conversation. Codex CLI and OpenCode handle missing saved history themselves; Tether does not retry with another conversation. If Tether never captured an ID (for example, remote Codex usage collection was unavailable before disconnection, or a fresh remote OpenCode session has no known ID), restarting opens a fresh session and you can use the CLI's own resume picker to recover older history. Resuming restores saved conversation context; it does not reattach a surviving process or keep a task running through disconnection.
+Recovery requires the same remote host or Coder workspace, CLI user/home, and saved conversation history. If Claude Code has no history for the saved ID (the pane closed before its first message, the conversation was switched with `/resume` or `/clear` while hooks were off, or the history was deleted), the pane opens a fresh Claude conversation under that same ID instead of stopping on a resume error; use `/resume` inside Claude to reopen another conversation. Codex CLI and OpenCode handle missing saved history themselves; Tether does not retry with another conversation. If Tether never captured an ID (for example, remote Codex usage collection was unavailable before disconnection, or a fresh remote OpenCode session has no known ID), restarting opens a fresh session and you can use the CLI's own resume picker to recover older history. Resuming restores saved conversation context; it does not reattach a surviving process or keep a task running through disconnection.
 
 Claude Code and GitHub Copilot transcript lookups require a full session UUID. Invalid identifiers are treated as unavailable conversations and are not used as filesystem paths.
 
@@ -92,7 +96,7 @@ Each session has a state, shown by the colored dot in the sidebar:
 | **Waiting** | Amber | The CLI is paused on a prompt (input, permission, tool approval) |
 | **Idle** | Gray | Session is alive but quiet |
 | **Stopped** | Gray (dim) | Session was stopped gracefully |
-| **Dead** | Red | The process exited with an error, or the transport failed |
+| **Dead** | Red | The process exited with an error, or the transport failed. Shown as **Failed** in the sidebar |
 
 State detection is passive — Tether watches output cadence; it does not parse or filter the terminal stream. With [CLI hooks](settings.md#cli-hooks) enabled, Claude/Codex sessions get hook-grade detection on top: local sessions automatically, SSH sessions when their environment opts in via [CLI status hooks on remote hosts](environments.md#cli-status-hooks-on-remote-hosts). Coder sessions are cadence-only for now.
 
@@ -100,6 +104,25 @@ Hook-confirmed completion and permission waits survive terminal redraws, typing
 echo and window resizing. Claude stays running while tracked subagents are
 active, including when the parent pauses for their results. Answering an
 elicitation resumes work; it does not mean the turn has finished.
+
+Claude Code does not report every way a turn can end, so hook-driven Claude
+sessions keep three safeguards:
+
+- A turn that ends on an API error (rate limit, overloaded, sign-in problem)
+  counts as finished, the same as a normal stop.
+- Claude sends nothing when you interrupt it. Pressing **Esc** or **Ctrl+C** in
+  a running Claude pane hands that session back to output-based estimates until
+  its next hook arrives: if Claude keeps working, it stays running; if output
+  stops for a few seconds, it shows waiting. Tether only notices the keypress;
+  it does not change or delay what you type.
+- A running session that produces no terminal output and no hook for two
+  minutes is marked waiting. Claude redraws its spinner and timer for as long as
+  it works, so that much silence means the turn ended without saying so. This
+  does not apply while a tracked subagent is still running.
+
+About a minute after Claude stops, its idle notice confirms the pause. Because
+Claude only sends that notice once nothing is running in the background, it also
+clears any subagent whose stop was never reported.
 
 When hooks are unavailable, detection estimates activity from output and silence.
 It cannot reliably distinguish a quiet model or remote subagent from an idle
@@ -124,7 +147,7 @@ Double-click the label in the sidebar, or right-click and choose **Rename**. Ent
 
 ### Stopping
 
-**Ctrl+W** or **Stop** requests shutdown of the active session. Local and Coder sessions terminate their local PTY process; SSH sends **Ctrl+C**, then `exit`, and closes the connection. If the session remains alive, Tether escalates after the 3-second grace period. A second **Stop** during that period forces an immediate kill.
+**Ctrl+W** or **Session → Stop Session** requests shutdown of the active session. If that session is still working (starting, running, or blocked on a permission prompt), Tether asks first; a session resting at its prompt stops at once. **Stop** in a session's right-click menu names its target and stops it without asking. Local and Coder sessions terminate their local PTY process; SSH sends **Ctrl+C**, then `exit`, and closes the connection. If the session remains alive, Tether escalates after the 3-second grace period. A second **Stop** during that period forces an immediate kill.
 
 Windows local and Coder sessions use the bundled terminal backend so **Stop** works with the packaged app's security hardening enabled.
 
@@ -238,7 +261,9 @@ Press **Ctrl+P** (or **Session → Find Session…**) to open the quick switcher
 - **Esc** closes the switcher
 - Clicking a row opens it too
 
-Opening a session from the switcher behaves exactly like clicking it in the sidebar: if it's already mounted in a pane, that pane is focused (and un-maximized if it was hidden behind a maximized pane); otherwise it replaces the focused/empty pane in a standard layout or adds a panel in Canvas.
+Opening a session from the switcher behaves exactly like clicking it in the sidebar: if it's already mounted in a pane, that pane is focused (and un-maximized if it was hidden behind a maximized pane); otherwise it replaces the focused/empty pane in a standard layout or adds a panel in Canvas. **Ctrl+1** through **Ctrl+9** open the first through ninth session in sidebar order the same way; sessions inside collapsed groups still count.
+
+Focus never rests on a hidden pane. Any action that moves focus to a pane behind a maximized one, including a notification click and **Ctrl+ArrowDown** / **Ctrl+ArrowUp**, restores the split first.
 
 Switching sessions preserves the background session's terminal buffer. Pending layout work from the previous session is discarded so only the current session receives focus and terminal-size updates.
 

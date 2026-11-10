@@ -31,14 +31,31 @@ export type LayoutAction =
   | { type: 'SWAP_PANES'; sourcePaneId: string; targetPaneId: string }
   | { type: 'SET_MAX_PANES'; maxPanes: number };
 
-const initialState: LayoutState = {
+export const initialLayoutState: LayoutState = {
   root: null,
   focusedPaneId: null,
   maximizedPaneId: null,
   maxPanes: 4,
 };
 
-function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
+/**
+ * The focused pane must be on screen. While a pane is maximized every other
+ * pane is hidden, so a focus that lands elsewhere (sidebar click, notification
+ * click, pane-cycle and switch shortcuts, a newly added pane) drops the
+ * maximize instead of leaving keystrokes going to one session while Stop and
+ * Remove act on another.
+ */
+function keepFocusVisible(state: LayoutState): LayoutState {
+  if (!state.maximizedPaneId || !state.focusedPaneId) return state;
+  if (state.focusedPaneId === state.maximizedPaneId) return state;
+  return { ...state, maximizedPaneId: null };
+}
+
+export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
+  return keepFocusVisible(reduceLayout(state, action));
+}
+
+function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
   switch (action.type) {
     case 'SET_ROOT':
       return { ...state, root: action.root };
@@ -118,11 +135,15 @@ function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
     }
 
     case 'SET_FOCUS':
+      // Terminals re-announce focus on every mousedown; keep that a no-op.
+      if (state.focusedPaneId === action.paneId) return state;
       return { ...state, focusedPaneId: action.paneId };
 
     case 'TOGGLE_MAXIMIZE': {
-      const maximized = state.maximizedPaneId === action.paneId ? null : action.paneId;
-      return { ...state, maximizedPaneId: maximized };
+      if (state.maximizedPaneId === action.paneId) return { ...state, maximizedPaneId: null };
+      // Maximizing a pane focuses it, as in Canvas: otherwise the focus would
+      // stay on a pane the maximize has just hidden.
+      return { ...state, maximizedPaneId: action.paneId, focusedPaneId: action.paneId };
     }
 
     case 'MOVE_PANE': {
@@ -224,6 +245,6 @@ function pickFocusPane(
 }
 
 export function useLayoutState() {
-  const [layoutState, layoutDispatch] = useReducer(layoutReducer, initialState);
+  const [layoutState, layoutDispatch] = useReducer(layoutReducer, initialLayoutState);
   return { layoutState, layoutDispatch };
 }

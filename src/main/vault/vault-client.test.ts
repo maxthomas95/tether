@@ -2,11 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fetchMock = vi.hoisted(() => vi.fn());
 vi.mock('electron', () => ({ net: { fetch: fetchMock } }));
-import { VaultClient, normalizeVaultAddr } from './vault-client';
+import { VaultClient, isLoopbackHost, normalizeVaultAddr } from './vault-client';
 
 beforeEach(() => { fetchMock.mockReset(); });
 
 describe('Vault credential destination', () => {
+  it.each(['localhost', '127.0.0.1', '127.255.255.255', '[::1]'])('recognizes loopback host %s', host => {
+    expect(isLoopbackHost(host)).toBe(true);
+  });
+
   it.each(['http://vault.example.test', 'https://user:password@vault.example.test', 'https://vault.example.test/path', 'https://vault.example.test?token=x', 'file:///vault'])('refuses unsafe address %s', addr => {
     expect(() => normalizeVaultAddr(addr)).toThrow();
     expect(fetchMock).not.toHaveBeenCalled();

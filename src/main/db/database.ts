@@ -86,7 +86,8 @@ export interface LaunchSnapshotRow {
 
 export interface DbData {
   environments: EnvironmentRow[];
-  sessions: SessionRow[];
+  // Retired table, kept empty for downgrade compatibility.
+  sessions: unknown[];
   launchProfiles: LaunchProfileRow[];
   config: Record<string, string>;
   defaultEnvVars: Record<string, string>;
@@ -200,22 +201,6 @@ export interface EnvironmentRow {
   sort_order: number;
   created_at: string;
   updated_at: string;
-}
-
-export interface SessionRow {
-  id: string;
-  environment_id: string | null;
-  label: string;
-  working_dir: string;
-  state: string;
-  auth_mode: string | null;
-  model: string | null;
-  small_model: string | null;
-  pid: number | null;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
-  last_active_at: string | null;
 }
 
 let data: DbData | null = null;
@@ -369,7 +354,7 @@ function migrateLoadedDb(loaded: Record<string, unknown>): DbData {
 
   return {
     environments: envs,
-    sessions: (loaded.sessions as SessionRow[]) || [],
+    sessions: [],
     launchProfiles: normalizeLaunchProfiles(loaded.launchProfiles),
     config: (loaded.config as Record<string, string>) || {},
     defaultEnvVars: (loaded.defaultEnvVars as Record<string, string>) || {},

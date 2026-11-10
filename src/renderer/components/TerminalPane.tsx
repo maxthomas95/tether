@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback } from 'react';
 import '@xterm/xterm/css/xterm.css';
-import type { EnvironmentInfo, SessionInfo, SessionState } from '../../shared/types';
+import type { EnvironmentInfo, SessionInfo } from '../../shared/types';
 import type { TerminalManagerAPI } from '../hooks/useTerminalManager';
 import type { LayoutAction } from '../hooks/useLayoutState';
 import { DropZoneOverlay } from './DropZoneOverlay';
@@ -8,6 +8,7 @@ import { CliToolBadge } from './CliToolBadge';
 import { PaneStatusStrip } from './PaneStatusStrip';
 import { TerminalSearchBar } from './TerminalSearchBar';
 import { abbreviatePath } from '../utils/paths';
+import { ENDED_STATUS, isEndedState, plainStatusDotClass } from '../utils/session-status';
 import { Icon } from './Icon';
 
 interface TerminalPaneProps {
@@ -71,7 +72,8 @@ export function TerminalPane({
   const containerRef = useRef<HTMLDivElement>(null);
   const previousSessionIdRef = useRef<string | null>(sessionId);
   const isPlaceholder = sessionId === null;
-  const isDead = !isPlaceholder && (session?.state === 'dead' || session?.state === 'stopped');
+  const endedState = !isPlaceholder && isEndedState(session?.state) ? session.state : null;
+  const isDead = endedState !== null;
 
   // Mount terminal into container
   useEffect(() => {
@@ -238,7 +240,10 @@ export function TerminalPane({
         }}
         onDragEnd={() => onDragStateChange(false)}
       >
-        <span className={`status-dot status-dot--${getStatusClass(session?.state)}`} />
+        <span
+          className={`status-dot status-dot--${plainStatusDotClass(session?.state)}`}
+          title={endedState ? ENDED_STATUS[endedState].text : undefined}
+        />
         {session && <CliToolBadge session={session} />}
         <span className="terminal-pane-header-label" title={session ? `${headerLabel}\n${environmentLabel}\n${session.workingDir}` : headerLabel}>
           <span className="terminal-pane-title">{headerLabel}</span>
@@ -321,10 +326,12 @@ export function TerminalPane({
               session={session}
               environment={environment}
             />
-            {isDead && sessionId && (
+            {endedState && sessionId && (
               <div className="dead-pane-overlay" role="status">
                 <div className="dead-pane-overlay-card">
-                  <div className="dead-pane-overlay-title">Session ended</div>
+                  <div className={`dead-pane-overlay-title dead-pane-overlay-title--${endedState}`}>
+                    {endedState === 'dead' ? 'Session exited with an error' : 'Session ended'}
+                  </div>
                   <div className="dead-pane-overlay-actions">
                     {onRestartInPane && (
                       <button
@@ -361,20 +368,4 @@ export function TerminalPane({
       </div>
     </div>
   );
-}
-
-function getStatusClass(state?: SessionState): string {
-  if (!state) return 'idle';
-  switch (state) {
-    case 'running':
-    case 'starting':
-      return 'running';
-    case 'waiting':
-      return 'waiting';
-    case 'stopped':
-    case 'dead':
-      return 'dead';
-    default:
-      return 'idle';
-  }
 }

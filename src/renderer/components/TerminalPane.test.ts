@@ -141,3 +141,29 @@ describe('terminal pane resizing', () => {
     expect(manager.fitPane).toHaveBeenCalledWith('pane');
   });
 });
+
+describe('ended sessions', () => {
+  function renderEnded(state: 'stopped' | 'dead') {
+    render('session-a', {
+      session: { id: 'session-a', label: 'Test session', state, workingDir: 'repo', createdAt: 0, updatedAt: 0 } as never,
+    });
+  }
+
+  it('shows a clean stop as dim gray with neutral wording', () => {
+    renderEnded('stopped');
+    expect(host.querySelector('.status-dot--stopped')).not.toBeNull();
+    expect(host.querySelector('.status-dot--dead')).toBeNull();
+    const title = host.querySelector('.dead-pane-overlay-title')!;
+    expect(title.textContent).toBe('Session ended');
+    expect(title.classList.contains('dead-pane-overlay-title--dead')).toBe(false);
+  });
+
+  it('shows a failure as red and says it exited with an error', () => {
+    renderEnded('dead');
+    expect(host.querySelector('.status-dot--dead')).not.toBeNull();
+    expect(host.querySelector('.status-dot--stopped')).toBeNull();
+    const title = host.querySelector('.dead-pane-overlay-title')!;
+    expect(title.textContent).toBe('Session exited with an error');
+    expect(title.classList.contains('dead-pane-overlay-title--dead')).toBe(true);
+  });
+});

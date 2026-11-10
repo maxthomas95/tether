@@ -4,6 +4,7 @@ import { CliToolBadge } from '../CliToolBadge';
 import { PaneLocationBadge } from './PaneLocationBadge';
 import { onKeyActivate, stopPropagationOnKey } from '../../utils/a11y';
 import { abbreviatePath } from '../../utils/paths';
+import { ENDED_STATUS } from '../../utils/session-status';
 import { Icon } from '../Icon';
 import type { PaneLocation } from '../../lib/layout-tree';
 
@@ -448,7 +449,7 @@ function getStateText({ state, waitingReason }: SessionInfo): string {
   switch (state) {
     case 'waiting': return 'Waiting for you';
     case 'dead':
-    case 'stopped': return 'Stopped';
+    case 'stopped': return ENDED_STATUS[state].text;
     case 'starting': return 'Starting';
     case 'running': return 'Running';
     default: return 'Idle';
@@ -484,7 +485,8 @@ function getStatusClass(
       return 'idle';
     case 'stopped':
     case 'dead':
-      return 'dead';
+      // A clean stop is dim gray; only a failure is red.
+      return ENDED_STATUS[state].dotClass;
     default:
       return 'idle';
   }
@@ -535,7 +537,7 @@ function getStatusLabel(
       return 'Status: idle';
     case 'stopped':
     case 'dead':
-      return 'Status: stopped';
+      return ENDED_STATUS[state].label;
     default:
       return 'Status: idle';
   }

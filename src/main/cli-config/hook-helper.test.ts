@@ -20,6 +20,8 @@ afterEach(async () => {
 interface HelperResult {
   exitCode: number | null;
   events: HookEvent[];
+  /** Everything the helper printed. Claude reads hook stdout, so it must stay empty. */
+  output: string;
 }
 
 /**
@@ -50,11 +52,14 @@ function runHelper(args: {
   } else {
     child.stdin.end();
   }
+  let output = '';
+  child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf8'); });
+  child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString('utf8'); });
   return new Promise<HelperResult>((resolve) => {
     child.on('exit', (code) => {
       // Tiny grace period so the bridge handler runs to completion before
       // we snapshot the captured events array.
-      setTimeout(() => resolve({ exitCode: code, events: args.events.slice() }), 50);
+      setTimeout(() => resolve({ exitCode: code, events: args.events.slice(), output }), 50);
     });
   });
 }
@@ -186,6 +191,65 @@ describe('tether-cli-hook helper (end-to-end against the bridge)', () => {
     });
     expect(JSON.stringify(result.events)).not.toContain('SECRET');
     expect(result.events[0].payload).not.toHaveProperty('transcript_path');
+  });
+
+  it('forwards Claude StopFailure as turn_complete with the error type only', async () => {
+    const events: HookEvent[] = [];
+    const bridge = await createHookBridge((e) => events.push(e));
+    handles.push(bridge);
+    const result = await runHelper({
+      socket: bridge.socketPath, token: bridge.token, sessionId: 'tether-parent', mode: '--claude', events,
+      payload: {
+        session_id: 'claude-parent', hook_event_name: 'StopFailure', error: 'rate_limit',
+        error_details: 'SECRET 429 for org', last_assistant_message: 'SECRET API Error', transcript_path: '/private/path',
+      },
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toBe('');
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      source: 'claude', type: 'turn_complete',
+      payload: { session_id: 'claude-parent', hook_event_name: 'StopFailure', error: 'rate_limit' },
+    });
+    expect(JSON.stringify(result.events)).not.toContain('SECRET');
+    expect(result.events[0].payload).not.toHaveProperty('transcript_path');
+  });
+
+  it.each([
+    ['SessionStart', 'session_start', { source: 'clear' }],
+    ['SessionEnd', 'session_end', { reason: 'resume' }],
+  ] as const)('forwards Claude %s as %s and prints nothing Claude could read', async (hookEventName, type, extra) => {
+    const events: HookEvent[] = [];
+    const bridge = await createHookBridge((e) => events.push(e));
+    handles.push(bridge);
+    const result = await runHelper({
+      socket: bridge.socketPath, token: bridge.token, sessionId: 'tether-parent', mode: '--claude', events,
+      payload: {
+        session_id: 'claude-next', hook_event_name: hookEventName, ...extra,
+        session_title: 'SECRET title', cwd: '/private/cwd', transcript_path: '/private/path', model: 'claude-x',
+      },
+    });
+    expect(result.exitCode).toBe(0);
+    // A SessionStart hook's stdout is added to Claude's context.
+    expect(result.output).toBe('');
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      source: 'claude', type, payload: { session_id: 'claude-next', hook_event_name: hookEventName, ...extra },
+    });
+    expect(JSON.stringify(result.events)).not.toContain('SECRET');
+    expect(JSON.stringify(result.events)).not.toContain('/private/');
+  });
+
+  it('reports a browser-URL elicitation as an elicitation dialog and ignores unknown notifications', async () => {
+    const events: HookEvent[] = [];
+    const bridge = await createHookBridge((e) => events.push(e));
+    handles.push(bridge);
+    const base = { socket: bridge.socketPath, token: bridge.token, sessionId: 'tether-parent', mode: '--claude' as const, events };
+    await runHelper({ ...base, payload: { hook_event_name: 'Notification', notification_type: 'elicitation_url_dialog' } });
+    const result = await runHelper({ ...base, payload: { hook_event_name: 'Notification', notification_type: 'constructor' } });
+    expect(result.exitCode).toBe(0);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({ source: 'claude', type: 'elicitation_dialog' });
   });
 
   it('classifies Codex lifecycle hooks and redacts non-metadata fields', async () => {
