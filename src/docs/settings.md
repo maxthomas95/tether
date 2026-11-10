@@ -385,7 +385,7 @@ Two buttons here — **Export as CSV…** and **Export as JSON…**. CSV is one 
 
 ### Subscription quota
 
-**Show usage quota in sidebar** is on by default. Tether can poll subscription quota and show the remaining budget in the sidebar footer. Codex quota uses the supported Codex app-server interface instead of reading local auth tokens directly. Disable here if you're on metered API billing instead. See [Usage & Quota](usage-quota.md#quota-tracking).
+**Show usage quota in sidebar** is on by default. Tether can poll subscription quota and show the remaining budget in the sidebar footer. Claude quota reads Claude Code's saved access token without refreshing or modifying its sign-in, and shows as paused until Claude Code refreshes an expired token. Codex quota uses the supported Codex app-server interface instead of reading local auth tokens directly. Disable here if you're on metered API billing instead. See [Usage & Quota](usage-quota.md#quota-tracking).
 
 ## CLI tools
 

@@ -58,8 +58,16 @@ const PREFIX_PRICING: Array<[string, ModelPricing]> = [
 
 const DEFAULT_PRICING: ModelPricing = { inputPerMTok: 3, outputPerMTok: 15 };
 
+/** Where a model's price came from. `sibling` and `default` are approximations. */
+export type ModelPricingSource = 'table' | 'sibling' | 'prefix' | 'default' | 'none';
+
+const ZERO_PRICING: ModelPricing = { inputPerMTok: 0, outputPerMTok: 0 };
+
 const warnedModels = new Set<string>();
 const pricingCache = new Map<string, ModelPricing>();
+const sourceCache = new Map<string, ModelPricingSource>();
+/** Priced table keys with no `provider/` segment; built on first sibling lookup. */
+let bareKeyIndex: string[] | null = null;
 
 function isLiteLLMEntry(value: unknown): value is LiteLLMEntry {
   if (!value || typeof value !== 'object') return false;
@@ -108,6 +116,84 @@ function lookupLiteLLM(modelId: string): ModelPricing | undefined {
   return undefined;
 }
 
+const DATE_SEGMENT_RE = /^\d{8}$/;
+const NUMERIC_SEGMENT_RE = /^\d+(\.\d+)?$/;
+
+function pricedBareKeys(): string[] {
+  bareKeyIndex ??= Object.keys(litellmTable)
+    .filter(key => !key.includes('/') && isLiteLLMEntry(litellmTable[key]));
+  return bareKeyIndex;
+}
+
+/** Drop a trailing `-YYYYMMDD` or `-YYYY-MM-DD` release date. */
+function withoutReleaseDate(segments: string[]): string[] {
+  const n = segments.length;
+  if (n > 1 && DATE_SEGMENT_RE.test(segments[n - 1])) return segments.slice(0, -1);
+  if (n > 3 && /^\d{4}$/.test(segments[n - 3]) && /^\d{2}$/.test(segments[n - 2]) && /^\d{2}$/.test(segments[n - 1])) {
+    return segments.slice(0, -3);
+  }
+  return segments;
+}
+
+/**
+ * Order ids by version: numeric segments compare as numbers and outrank
+ * tags, and a release date never makes an older version look newer.
+ */
+function compareVersionOrder(a: string, b: string): number {
+  const left = withoutReleaseDate(a.split('-'));
+  const right = withoutReleaseDate(b.split('-'));
+  for (let i = 0; i < Math.min(left.length, right.length); i++) {
+    if (left[i] === right[i]) continue;
+    const leftNumber = NUMERIC_SEGMENT_RE.test(left[i]) ? Number(left[i]) : null;
+    const rightNumber = NUMERIC_SEGMENT_RE.test(right[i]) ? Number(right[i]) : null;
+    if (leftNumber !== null && rightNumber !== null) return leftNumber - rightNumber;
+    if (leftNumber !== null) return 1;
+    if (rightNumber !== null) return -1;
+    return left[i] < right[i] ? -1 : 1;
+  }
+  if (left.length !== right.length) return left.length - right.length;
+  // Same version: prefer the undated key.
+  return b.length - a.length;
+}
+
+/**
+ * Price a model the table does not list yet from the newest listed version
+ * of the same family. A release usually reaches the table days after it
+ * reaches the CLI; without this the model falls through to DEFAULT_PRICING,
+ * which can be several times too low.
+ *
+ * The family is found by dropping trailing `-segments` one at a time, never
+ * below two segments, so `claude-fable-5-2` can borrow from `claude-fable-5-1`
+ * but never from another family. Only bare keys are considered:
+ * provider-qualified keys carry that provider's markup.
+ */
+function lookupSibling(modelId: string): { pricing: ModelPricing; sibling: string; exact: boolean } | undefined {
+  const slash = modelId.indexOf('/');
+  const bare = (slash > 0 ? modelId.slice(slash + 1) : modelId).replace(/[@:].*$/, '');
+  const segments = withoutReleaseDate(bare.split('-'));
+  const undated = segments.join('-');
+
+  // A dated or suffixed id for a listed model is that model, not a sibling.
+  if (undated !== modelId) {
+    const entry = litellmTable[undated];
+    if (isLiteLLMEntry(entry)) return { pricing: fromLiteLLM(entry), sibling: undated, exact: true };
+  }
+
+  for (let count = segments.length - 1; count >= 2; count--) {
+    const stem = segments.slice(0, count).join('-');
+    const prefix = `${stem}-`;
+    let best: string | undefined;
+    for (const key of pricedBareKeys()) {
+      if (key !== stem && !key.startsWith(prefix)) continue;
+      if (best === undefined || compareVersionOrder(key, best) > 0) best = key;
+    }
+    if (best !== undefined) {
+      return { pricing: fromLiteLLM(litellmTable[best] as LiteLLMEntry), sibling: best, exact: false };
+    }
+  }
+  return undefined;
+}
+
 /**
  * Try to load the userData-cached pricing JSON. Falls back to the bundled
  * import if the cache is missing or invalid. Safe to call repeatedly —
@@ -118,7 +204,9 @@ function lookupLiteLLM(modelId: string): ModelPricing | undefined {
  */
 export function loadPrices(userDataDir: string): void {
   pricingCache.clear();
+  sourceCache.clear();
   warnedModels.clear();
+  bareKeyIndex = null;
 
   const cachePath = path.join(userDataDir, 'litellm-prices.json');
   try {
@@ -156,29 +244,46 @@ export function reloadPrices(): void {
   loadPrices(electron.app.getPath('userData'));
 }
 
+function remember(modelId: string, pricing: ModelPricing, source: ModelPricingSource): ModelPricing {
+  pricingCache.set(modelId, pricing);
+  sourceCache.set(modelId, source);
+  return pricing;
+}
+
 export function getModelPricing(modelId: string): ModelPricing {
   const cached = pricingCache.get(modelId);
   if (cached) return cached;
 
+  // Claude Code writes zero-token `<synthetic>` records; they have no price.
+  if (!modelId.trim() || modelId === '<synthetic>') return remember(modelId, ZERO_PRICING, 'none');
+
   const fromTable = lookupLiteLLM(modelId);
-  if (fromTable) {
-    pricingCache.set(modelId, fromTable);
-    return fromTable;
+  if (fromTable) return remember(modelId, fromTable, 'table');
+
+  const fromSibling = lookupSibling(modelId);
+  if (fromSibling) {
+    if (!fromSibling.exact && !warnedModels.has(modelId)) {
+      warnedModels.add(modelId);
+      log.info('Model not in pricing table, using nearest sibling', { model: modelId, sibling: fromSibling.sibling });
+    }
+    return remember(modelId, fromSibling.pricing, fromSibling.exact ? 'table' : 'sibling');
   }
 
   for (const [prefix, pricing] of PREFIX_PRICING) {
-    if (modelId.startsWith(prefix)) {
-      pricingCache.set(modelId, pricing);
-      return pricing;
-    }
+    if (modelId.startsWith(prefix)) return remember(modelId, pricing, 'prefix');
   }
 
   if (!warnedModels.has(modelId)) {
     warnedModels.add(modelId);
     log.warn('Unknown model, using default pricing', { model: modelId });
   }
-  pricingCache.set(modelId, DEFAULT_PRICING);
-  return DEFAULT_PRICING;
+  return remember(modelId, DEFAULT_PRICING, 'default');
+}
+
+/** How `getModelPricing` priced this model, so callers can label approximations. */
+export function getModelPricingSource(modelId: string): ModelPricingSource {
+  getModelPricing(modelId);
+  return sourceCache.get(modelId) ?? 'default';
 }
 
 /**

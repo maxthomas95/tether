@@ -1,6 +1,6 @@
 # Usage & Quota
 
-Tether reads local CLI metadata and sanitized Claude Code/Codex usage records collected over SSH or Coder. Terminal output continues directly to the terminal; usage tracking does not intercept it. Claude Code and Codex costs are estimates at API rates, using a cached [LiteLLM](https://github.com/BerriAI/litellm) pricing table. Native OpenCode and legacy Crush costs are reported by those CLIs. Neither source represents a subscription invoice.
+Tether reads local CLI metadata and sanitized Claude Code/Codex usage records collected over SSH or Coder. Terminal output continues directly to the terminal; usage tracking does not intercept it. Claude Code and Codex costs are estimates at API rates, using a cached [LiteLLM](https://github.com/BerriAI/litellm) pricing table. A model newer than the table is priced from the newest listed version of the same family, and a model from a family the table does not know uses a default rate, so very new models can be approximate until the table refreshes. Native OpenCode and legacy Crush costs are reported by those CLIs. Neither source represents a subscription invoice.
 
 ## How It Works
 
@@ -114,6 +114,8 @@ Daily warnings use the UTC calendar day; weekly warnings use Monday-Sunday UTC. 
 ## Quota Tracking
 
 Enable **Show usage quota in sidebar** (on by default) in [Settings -> Usage](settings.md#usage). The sidebar shows the percentage left and the next reported reset. Quota polling starts shortly after launch and refreshes every five minutes; click the footer to refresh.
+
+Claude quota reads the access token Claude Code saves in `~/.claude/.credentials.json` without modifying it, and sends that token only to Anthropic's usage endpoint. Tether never refreshes or changes Claude Code's sign-in. When the saved token has expired, the footer shows quota as paused until Claude Code refreshes it. This endpoint is not a documented API and may stop working. Turn quota tracking off with **Show usage quota in sidebar**.
 
 Codex quota uses the installed Codex CLI's supported app-server interface. Tether shows reported quota buckets with their actual window durations and retains the last successful observation when a refresh fails. A last-known reading is labelled with its observation time. Availability depends on the installed CLI, sign-in and account mode.
 
