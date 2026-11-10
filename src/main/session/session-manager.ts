@@ -950,12 +950,14 @@ export class SessionManager {
             const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
             if (!sessionId) throw new Error('get_session_status requires sessionId');
             const s = this.getSession(sessionId);
-            if (!s) throw new Error(`Session not found: ${sessionId}`);
+            if (!s || s.parentSessionId !== id) throw new Error(`Session not found: ${sessionId}`);
             return s.toInfo();
           },
           kill_session: async (params) => {
             const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
             if (!sessionId) throw new Error('kill_session requires sessionId');
+            const s = this.getSession(sessionId);
+            if (!s || s.parentSessionId !== id) throw new Error(`Session not found: ${sessionId}`);
             if (params.graceful === false) {
               // Explicit non-graceful request → bypass the grace period
               this.forceKill(sessionId);

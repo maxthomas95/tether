@@ -1,10 +1,12 @@
 import { getEnvironment } from '../db/environment-repo';
 import { createLogger } from '../logger';
 import { sessionManager, type Session, type SessionLifecycleObserver } from '../session/session-manager';
+import { isLoopbackHost } from '../vault/vault-client';
 import type { CliToolId, NotificationPrefs, SessionState, WaitingReason } from '../../shared/types';
 
 const log = createLogger('outbound-webhook');
 const POST_TIMEOUT_MS = 3_000;
+const warnedInsecureWebhookOrigins = new Set<string>();
 
 export type OutboundWebhookEvent = 'waiting' | 'idle' | 'dead' | 'bell';
 
@@ -84,6 +86,13 @@ export class OutboundWebhookService {
       if (!url) return false;
       if (!prefs.webhook[EVENT_TO_PREF[event]]) return false;
       if (session.notificationsMuted) return false;
+      if (prefs.webhook.token && url.protocol === 'http:' && !isLoopbackHost(url.hostname)) {
+        if (!warnedInsecureWebhookOrigins.has(url.origin)) {
+          warnedInsecureWebhookOrigins.add(url.origin);
+          log.warn('Webhook token requires HTTPS or a loopback address; skipping');
+        }
+        return false;
+      }
 
       const payload = this.buildPayload(event, session);
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };

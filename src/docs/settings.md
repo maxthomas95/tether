@@ -291,7 +291,7 @@ Tether can post OS desktop notifications when a session changes state, and it ca
 
 The generic webhook is disabled while its URL is blank. When enabled, Tether sends fire-and-forget JSON with the event name, timestamp, and session metadata: id, label, working directory, state, CLI tool, environment id/name when available, and waiting reason when available. It does not include PTY output, environment variables, CLI args, tokens, or secrets. Only `http://` and `https://` URLs are used, and endpoint URLs are not written to logs because they may contain tokens.
 
-Configure the optional **Webhook token** separately instead of embedding credentials in the endpoint URL. Tether sends it as a Bearer token and stores it encrypted with the OS keychain; saving it fails rather than falling back to plaintext when the keychain is unavailable.
+Configure the optional **Webhook token** separately instead of embedding credentials in the endpoint URL. Tether sends it as a Bearer token and stores it encrypted with the OS keychain; it is sent only to HTTPS endpoints or loopback HTTP addresses, and saving it fails rather than falling back to plaintext when the keychain is unavailable.
 
 Muting a session suppresses both desktop notifications and generic webhook posts for that session.
 

@@ -850,6 +850,22 @@ describe('SessionManager', () => {
       const child = manager.getSession(result.sessionId);
       expect(child?.cliTool).toBe('claude');
     });
+
+    it('limits session status and termination to its own children', async () => {
+      const handlers = await spawnHelmParent();
+      const child = await handlers.spawn_session({ label: 'child' }) as { sessionId: string };
+      const unrelated = await manager.createSession({
+        workingDir: 'C:\\repo\\unrelated',
+        cliTool: 'claude',
+      }, callbacks());
+
+      await expect(handlers.get_session_status({ sessionId: child.sessionId })).resolves.toMatchObject({ id: child.sessionId });
+      await expect(handlers.get_session_status({ sessionId: unrelated.id }))
+        .rejects.toThrow(`Session not found: ${unrelated.id}`);
+      await expect(handlers.kill_session({ sessionId: unrelated.id }))
+        .rejects.toThrow(`Session not found: ${unrelated.id}`);
+      await expect(handlers.kill_session({ sessionId: child.sessionId })).resolves.toEqual({ sessionId: child.sessionId, terminated: true });
+    });
   });
 
   it('cleans up a session when transport.start rejects', async () => {
