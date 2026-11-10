@@ -107,6 +107,13 @@ const CLAUDE_NOTIFICATION_TYPES = new Set([
   'elicitation_dialog', 'elicitation_complete', 'elicitation_response',
 ]);
 
+// Notification types that mean the same thing to the status side channel as
+// one we already forward. A browser-URL elicitation blocks Claude on the user
+// exactly like a form elicitation does.
+const CLAUDE_NOTIFICATION_ALIASES = new Map([
+  ['elicitation_url_dialog', 'elicitation_dialog'],
+]);
+
 function classifyClaude(payload) {
   // Claude hook payloads carry `hook_event_name` ('Notification' | 'Stop' | ...)
   // and, for Notification, `notification_type` ('permission_prompt' |
@@ -114,14 +121,23 @@ function classifyClaude(payload) {
   // flat event enum so the detector doesn't need to know the Claude schema.
   switch (payload.hook_event_name) {
     case 'Stop': return 'turn_complete';
+    // Claude runs StopFailure INSTEAD of Stop when a turn ends on an API error
+    // (rate limit, overload, auth). Either way the turn is over.
+    case 'StopFailure': return 'turn_complete';
     case 'UserPromptSubmit': return 'turn_start';
     case 'PreToolUse': return 'tool_start';
     case 'PostToolUse':
     case 'PostToolUseFailure': return 'tool_complete';
     case 'SubagentStart': return 'subagent_start';
     case 'SubagentStop': return 'subagent_stop';
-    case 'Notification':
-      return CLAUDE_NOTIFICATION_TYPES.has(payload.notification_type) ? payload.notification_type : null;
+    // /clear and an in-pane /resume end one conversation and start another
+    // under a new session id; Tether follows the pane across that boundary.
+    case 'SessionStart': return 'session_start';
+    case 'SessionEnd': return 'session_end';
+    case 'Notification': {
+      const notificationType = CLAUDE_NOTIFICATION_ALIASES.get(payload.notification_type) || payload.notification_type;
+      return CLAUDE_NOTIFICATION_TYPES.has(notificationType) ? notificationType : null;
+    }
     default: return null;
   }
 }
@@ -184,6 +200,12 @@ function claudeHookMetadata(payload) {
     hook_event_name: cappedString(payload.hook_event_name, 128),
     notification_type: cappedString(payload.notification_type, 128),
     agent_id: cappedString(payload.agent_id, 256),
+    // Short enum-like fields: SessionStart `source`, SessionEnd `reason`,
+    // StopFailure `error` (the error TYPE; never `error_details` or
+    // `last_assistant_message`, which carry free text).
+    source: cappedString(payload.source, 64),
+    reason: cappedString(payload.reason, 64),
+    error: cappedString(payload.error, 64),
   };
 }
 

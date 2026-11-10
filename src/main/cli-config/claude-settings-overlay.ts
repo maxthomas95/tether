@@ -53,6 +53,26 @@ export interface ClaudeOverlayContext {
 
 const withMutex = createOverlayMutex();
 const ACTIVITY_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop'] as const;
+/**
+ * Turn-ending events, installed without a matcher so every occurrence fires.
+ * Claude runs `StopFailure` INSTEAD of `Stop` when a turn ends on an API error
+ * (rate limit, overload, auth), so observing only `Stop` leaves such a turn
+ * looking like it is still running.
+ */
+const TURN_END_EVENTS = ['Stop', 'StopFailure'] as const;
+/**
+ * Conversation-boundary events and the matcher each is installed with. Only
+ * `/clear` and an in-pane `/resume` move a pane to a different session id, so
+ * the helper is not spawned on ordinary startup, compaction or exit — where it
+ * would add latency (SessionStart delays the first prompt, SessionEnd delays
+ * quitting) and report nothing Tether acts on.
+ */
+const SESSION_BOUNDARY_EVENTS = {
+  SessionStart: 'resume|clear',
+  SessionEnd: 'clear|resume',
+} as const;
+/** Every non-Notification event key Tether installs under `hooks`. */
+const OBSERVED_EVENTS: readonly string[] = [...TURN_END_EVENTS, ...Object.keys(SESSION_BOUNDARY_EVENTS), ...ACTIVITY_EVENTS];
 
 interface CommandHook { type?: string; command?: string; [k: string]: unknown }
 interface NotificationGroup { matcher?: string; hooks?: CommandHook[]; [k: string]: unknown }
@@ -104,6 +124,14 @@ function isTetherManaged(hook: CommandHook | undefined): boolean {
   return typeof hook?.command === 'string' && hook.command.includes(SENTINEL_TOKEN);
 }
 
+/** True for a bare `{type, command}` hook or a `{hooks: [...]}` group that holds a Tether-managed command. */
+function hasTetherManagedHook(entry: unknown): boolean {
+  if (!entry || typeof entry !== 'object') return false;
+  if (isTetherManaged(entry as CommandHook)) return true;
+  const hooks = (entry as StopEntryGroup).hooks;
+  return Array.isArray(hooks) && hooks.some(isTetherManaged);
+}
+
 /**
  * Strip every Tether-managed entry from the observed hook arrays.
  * Returns true if the structure changed (used to decide whether to write).
@@ -138,9 +166,15 @@ function scrubTetherEntries(settings: SettingsShape): boolean {
     }
   }
 
-  for (const event of ['Stop', ...ACTIVITY_EVENTS]) {
+  // Events this version installs, then any other event key: an entry left by a
+  // different Tether version (or a crash) must be removed even when this
+  // version no longer observes that event. Keys we never installed into are
+  // only rewritten when one of our entries is actually found in them.
+  const otherEvents = Object.keys(settings.hooks).filter((event) => event !== 'Notification' && !OBSERVED_EVENTS.includes(event));
+  for (const event of [...OBSERVED_EVENTS, ...otherEvents]) {
     const stop = settings.hooks[event];
     if (!Array.isArray(stop)) continue;
+    if (!OBSERVED_EVENTS.includes(event) && !stop.some(hasTetherManagedHook)) continue;
     const filtered: StopEntry[] = [];
     for (const entry of stop) {
       if (!entry || typeof entry !== 'object') continue;
@@ -211,6 +245,7 @@ const NOTIFICATION_MATCHER = [
   'idle_prompt',
   'auth_success',
   'elicitation_dialog',
+  'elicitation_url_dialog',
   'elicitation_complete',
   'elicitation_response',
 ].join('|');
@@ -236,13 +271,15 @@ export function mergeClaudeSettings(text: string | null, helperCmd: string): str
   notif.push({ matcher: NOTIFICATION_MATCHER, hooks: [{ type: 'command', command: helperCmd }] });
   settings.hooks.Notification = notif;
 
-  const stop = Array.isArray(settings.hooks.Stop) ? settings.hooks.Stop : [];
-  stop.push({ hooks: [{ type: 'command', command: helperCmd }] });
-  settings.hooks.Stop = stop;
-
-  for (const event of ACTIVITY_EVENTS) {
+  for (const event of [...TURN_END_EVENTS, ...ACTIVITY_EVENTS]) {
     const entries = Array.isArray(settings.hooks[event]) ? settings.hooks[event] as StopEntry[] : [];
     entries.push({ hooks: [{ type: 'command', command: helperCmd }] });
+    settings.hooks[event] = entries;
+  }
+
+  for (const [event, matcher] of Object.entries(SESSION_BOUNDARY_EVENTS)) {
+    const entries = Array.isArray(settings.hooks[event]) ? settings.hooks[event] as StopEntry[] : [];
+    entries.push({ matcher, hooks: [{ type: 'command', command: helperCmd }] });
     settings.hooks[event] = entries;
   }
 
@@ -252,12 +289,7 @@ export function mergeClaudeSettings(text: string | null, helperCmd: string): str
 export function hasTetherClaudeHooks(text: string): boolean {
   const settings = parseSettings(text, 'settings.json');
   if (settings.disableAllHooks === true) return false;
-  return Array.isArray(settings.hooks?.Stop) && settings.hooks.Stop.some((entry) => {
-    if (!entry || typeof entry !== 'object') return false;
-    if (isTetherManaged(entry as CommandHook)) return true;
-    const hooks = (entry as StopEntryGroup).hooks;
-    return Array.isArray(hooks) && hooks.some(isTetherManaged);
-  });
+  return Array.isArray(settings.hooks?.Stop) && settings.hooks.Stop.some(hasTetherManagedHook);
 }
 
 /**
