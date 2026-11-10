@@ -360,12 +360,26 @@ describe('StatusDetector', () => {
       expect(detector.getState('s1')).toBe('idle');
     });
 
-    it('keeps a confirmed model or tool turn running through prolonged silence', () => {
-      detector.register('s1', 'claude');
+    it('keeps a confirmed Codex turn running through prolonged silence', () => {
+      detector.register('s1', 'codex');
       detector.markTurnStarted('s1');
       feed('s1', 'tool started');
       vi.advanceTimersByTime(30 * 60 * 1000);
       expect(detector.getState('s1')).toBe('running');
+      detector.markTurnComplete('s1');
+      expect(detector.getWaitingReason('s1')).toBe('idle');
+    });
+
+    it('keeps a confirmed Claude turn running for as long as its TUI keeps drawing', () => {
+      detector.register('s1', 'claude');
+      detector.markTurnStarted('s1');
+      // Thirty minutes of a long tool run: the spinner redraws, no hook fires.
+      for (let i = 0; i < 30; i++) {
+        detector.feedData('s1', 'spinner frame');
+        vi.advanceTimersByTime(60_000);
+      }
+      expect(detector.getState('s1')).toBe('running');
+      expect(detector.isHookDriven('s1')).toBe(true);
       detector.markTurnComplete('s1');
       expect(detector.getWaitingReason('s1')).toBe('idle');
     });
@@ -483,6 +497,200 @@ describe('StatusDetector', () => {
       detector.register('s1', 'claude');
       detector.markTurnComplete('s1');
       expect(detector.getWaitingReason('s1')).toBe('idle');
+    });
+  });
+
+  describe('authoritative completion', () => {
+    it('forgets subagents that never reported stopping', () => {
+      detector.register('s1', 'claude');
+      detector.markSubagentStarted('s1', 'ghost');
+      detector.markTurnComplete('s1');
+      expect(detector.getState('s1')).toBe('running');
+
+      detector.markTurnComplete('s1', { authoritative: true });
+      expect(detector.getState('s1')).toBe('waiting');
+      expect(detector.getWaitingReason('s1')).toBe('idle');
+      expect(detector.getActiveSubagentIds('s1')).toEqual([]);
+
+      // Nothing is left to wait for, so the next turn completes normally.
+      detector.markTurnStarted('s1');
+      detector.markTurnComplete('s1');
+      expect(detector.getWaitingReason('s1')).toBe('idle');
+    });
+
+    it('also clears a permission wait that belonged to a forgotten subagent', () => {
+      detector.register('s1', 'claude');
+      detector.markPermissionWaiting('s1', 'ghost');
+      expect(detector.getWaitingReason('s1')).toBe('permission');
+      detector.markTurnComplete('s1', { authoritative: true });
+      expect(detector.getWaitingReason('s1')).toBe('idle');
+      detector.markTurnStarted('s1');
+      expect(detector.getState('s1')).toBe('running');
+    });
+  });
+
+  describe('Claude silence watchdog', () => {
+    const WATCHDOG = 2 * 60 * 1000;
+
+    it('hands a hook-confirmed turn back to cadence after two minutes without output or hooks', () => {
+      detector.register('s1', 'claude');
+      detector.markTurnStarted('s1');
+      vi.advanceTimersByTime(WATCHDOG - 1);
+      expect(detector.getState('s1')).toBe('running');
+      vi.advanceTimersByTime(1);
+      expect(detector.getState('s1')).toBe('waiting');
+      expect(detector.getWaitingReason('s1')).toBe('idle');
+      expect(detector.isHookDriven('s1')).toBe(false);
+    });
+
+    it('is held off by PTY output and by every kind of hook event', () => {
+      detector.register('s1', 'claude');
+      detector.markTurnStarted('s1');
+      vi.advanceTimersByTime(100_000);
+      detector.feedData('s1', 'spinner frame');
+      vi.advanceTimersByTime(100_000);
+      detector.markTurnStarted('s1'); // tool hook
+      vi.advanceTimersByTime(100_000);
+      detector.markSubagentStopped('s1', 'never-seen');
+      vi.advanceTimersByTime(100_000);
+      expect(detector.getState('s1')).toBe('running');
+      // Measured from the last sign of life, not from the start of the turn.
+      vi.advanceTimersByTime(19_999);
+      expect(detector.getState('s1')).toBe('running');
+      vi.advanceTimersByTime(1);
+      expect(detector.getState('s1')).toBe('waiting');
+    });
+
+    it('does not apply to Codex, to a waiting session, or while a subagent is reported running', () => {
+      detector.register('codex', 'codex');
+      detector.markTurnStarted('codex');
+      detector.register('prompt', 'claude');
+      detector.markTurnStarted('prompt');
+      detector.markPermissionWaiting('prompt');
+      detector.register('agent', 'claude');
+      detector.markTurnStarted('agent');
+      detector.markSubagentStarted('agent', 'a');
+      detector.markTurnComplete('agent');
+
+      vi.advanceTimersByTime(10 * WATCHDOG);
+      expect(detector.getState('codex')).toBe('running');
+      expect(detector.getWaitingReason('prompt')).toBe('permission');
+      expect(detector.getState('agent')).toBe('running');
+      expect(detector.getActiveSubagentIds('agent')).toEqual(['a']);
+
+      // Once the subagent stops with the parent still mid-turn, the watchdog covers it again.
+      detector.register('resumed', 'claude');
+      detector.markTurnStarted('resumed');
+      detector.markSubagentStarted('resumed', 'a');
+      vi.advanceTimersByTime(10 * WATCHDOG);
+      detector.markSubagentStopped('resumed', 'a');
+      expect(detector.getState('resumed')).toBe('running');
+      vi.advanceTimersByTime(WATCHDOG);
+      expect(detector.getState('resumed')).toBe('waiting');
+    });
+
+    it('rests at waiting afterwards and lets the confirming hook pass silently', () => {
+      detector.register('s1', 'claude');
+      detector.markTurnStarted('s1');
+      vi.advanceTimersByTime(WATCHDOG);
+      expect(detector.getState('s1')).toBe('waiting');
+      const announced = stateChanges.length;
+
+      // A redraw is cadence-inferred activity; silence then returns it to
+      // waiting, and it stays there instead of decaying to idle.
+      feed('s1', 'prompt redraw');
+      expect(detector.getState('s1')).toBe('running');
+      vi.advanceTimersByTime(3_500);
+      expect(detector.getState('s1')).toBe('waiting');
+      vi.advanceTimersByTime(10 * 60 * 1000);
+      expect(detector.getState('s1')).toBe('waiting');
+
+      const beforeHook = stateChanges.length;
+      expect(beforeHook).toBeGreaterThan(announced);
+      detector.markTurnComplete('s1', { authoritative: true });
+      expect(stateChanges).toHaveLength(beforeHook);
+      expect(detector.isHookDriven('s1')).toBe(true);
+    });
+
+    it('is cancelled by completion, exit and unregister', () => {
+      for (const id of ['done', 'exited', 'gone']) {
+        detector.register(id, 'claude');
+        detector.markTurnStarted(id);
+      }
+      detector.markTurnComplete('done');
+      detector.markExited('exited', 0);
+      detector.unregister('gone');
+      const before = stateChanges.length;
+      vi.advanceTimersByTime(10 * WATCHDOG);
+      expect(stateChanges).toHaveLength(before);
+      expect(detector.isHookDriven('done')).toBe(true);
+    });
+  });
+
+  describe('Claude interrupt keypress', () => {
+    const ETX = String.fromCharCode(0x03);
+
+    it.each([['Esc', ESC], ['Ctrl+C', ETX]])('%s during a hook-driven turn marks it waiting once the output stops', (_name, key) => {
+      detector.register('s1', 'claude');
+      detector.markTurnStarted('s1');
+      detector.feedInput('s1', key);
+      expect(detector.getState('s1')).toBe('running');
+      feed('s1', 'Interrupted by user');
+      vi.advanceTimersByTime(3_500);
+      expect(detector.getState('s1')).toBe('waiting');
+      expect(detector.getWaitingReason('s1')).toBe('idle');
+      // It rests there; the idle prompt that follows a minute later changes nothing.
+      vi.advanceTimersByTime(60_000);
+      const before = stateChanges.length;
+      detector.markTurnComplete('s1', { authoritative: true });
+      expect(stateChanges).toHaveLength(before);
+    });
+
+    it('keeps the turn running when Claude carries on, and the next hook restores hook mode', () => {
+      detector.register('s1', 'claude');
+      detector.markTurnStarted('s1');
+      detector.feedInput('s1', ESC);
+      for (let i = 0; i < 10; i++) {
+        detector.feedData('s1', 'spinner frame');
+        vi.advanceTimersByTime(1_000);
+      }
+      expect(detector.getState('s1')).toBe('running');
+      detector.markTurnStarted('s1'); // tool hook: the turn was never interrupted
+      expect(detector.isHookDriven('s1')).toBe(true);
+      vi.advanceTimersByTime(60_000);
+      expect(detector.getState('s1')).toBe('running');
+    });
+
+    it('ignores escape sequences, ordinary typing and keys pressed while not running', () => {
+      detector.register('s1', 'claude');
+      detector.markTurnStarted('s1');
+      for (const data of [`${ESC}[A`, `${ESC}[I`, `${ESC}[200~pasted${ESC}[201~`, `${ESC}${ESC}`, 'a', '\r']) {
+        detector.feedInput('s1', data);
+      }
+      vi.advanceTimersByTime(60_000);
+      expect(detector.getState('s1')).toBe('running');
+      expect(detector.isHookDriven('s1')).toBe(true);
+
+      detector.markPermissionWaiting('s1');
+      detector.feedInput('s1', ESC);
+      vi.advanceTimersByTime(60_000);
+      expect(detector.getWaitingReason('s1')).toBe('permission');
+      expect(detector.isHookDriven('s1')).toBe(true);
+    });
+
+    it('does not apply to Codex or to a Claude session without hooks', () => {
+      detector.register('codex', 'codex');
+      detector.markTurnStarted('codex');
+      detector.feedInput('codex', ESC);
+      vi.advanceTimersByTime(60_000);
+      expect(detector.getState('codex')).toBe('running');
+      expect(detector.isHookDriven('codex')).toBe(true);
+
+      detector.register('plain', 'claude', { hookCapable: false });
+      feed('plain', 'output');
+      const before = stateChanges.length;
+      detector.feedInput('plain', ESC);
+      expect(stateChanges).toHaveLength(before);
     });
   });
 
