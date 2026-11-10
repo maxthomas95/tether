@@ -167,6 +167,10 @@ try {
   await fs.mkdir(diagnostics, { recursive: true });
   await fs.writeFile(path.join(diagnostics, 'failure.txt'), `${error.stack}\n${errors.join('\n')}`);
   await fs.writeFile(path.join(diagnostics, 'app-output.log'), appOutput);
+  // The app's own log for this run. It comes from the harness's scratch
+  // profile, never a real one, and only its tail is kept.
+  const appLog = await fs.readFile(path.join(userData, 'logs', 'tether.log'), 'utf8').catch(() => '');
+  await fs.writeFile(path.join(diagnostics, 'app-log-tail.log'), appLog.slice(-200_000));
   if (page && !page.isClosed()) {
     const terminalOutput = await page.evaluate(() => globalThis.smokeOutput || '').catch(() => '');
     await fs.writeFile(path.join(diagnostics, 'terminal-output.log'), terminalOutput);
