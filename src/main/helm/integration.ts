@@ -5,6 +5,7 @@ import { createHelmBridge, type HelmBridgeHandlers } from './bridge';
 import { createLogger } from '../logger';
 
 const log = createLogger('helm-integration');
+let clearedStaleConfigs = false;
 
 /**
  * Per-session Helm wiring: a listening bridge + a temp MCP config file that
@@ -58,6 +59,18 @@ function getConfigsDir(): string {
   return dir;
 }
 
+function clearStaleConfigs(dir: string): void {
+  if (clearedStaleConfigs) return;
+  clearedStaleConfigs = true;
+  try {
+    for (const entry of fs.readdirSync(dir)) {
+      if (entry.endsWith('.json')) {
+        try { fs.unlinkSync(path.join(dir, entry)); } catch { /* best effort */ }
+      }
+    }
+  } catch { /* best effort */ }
+}
+
 export async function setupHelmForSession(
   sessionId: string,
   handlers: HelmBridgeHandlers,
@@ -78,7 +91,9 @@ export async function setupHelmForSession(
       },
     },
   };
-  const configPath = path.join(getConfigsDir(), `${sessionId}.json`);
+  const configsDir = getConfigsDir();
+  clearStaleConfigs(configsDir);
+  const configPath = path.join(configsDir, `${sessionId}.json`);
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
   log.info('Helm integration ready', { sessionId, configPath, socketPath: bridge.socketPath });
 

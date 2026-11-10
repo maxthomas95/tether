@@ -24,8 +24,17 @@ export function decodeOsc52Write(data: string): string | null {
   try {
     const binary = atob(payload);
     const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
-    return new TextDecoder().decode(bytes);
+    const text = new TextDecoder().decode(bytes);
+    return text.length <= 1_000_000 ? text : null;
   } catch {
     return null;
   }
+}
+
+export function canWriteOsc52Clipboard(
+  documentHasFocus: boolean,
+  terminalElement: Element | undefined,
+  activeElement: Element | null,
+): boolean {
+  return documentHasFocus && !!terminalElement?.contains(activeElement);
 }

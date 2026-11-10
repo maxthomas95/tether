@@ -76,7 +76,7 @@ export class CoderTransport implements SessionTransport {
     const shell = plan?.kind === 'direct' ? plan.file : isWin32 ? 'cmd.exe' : this.binaryPath;
     const spawnArgs = plan?.kind === 'shell'
       ? ['/d', '/c', plan.file, 'ssh', escapeCmdExeArgForNodePty(workspaceName)]
-      : ['ssh', workspaceName];
+      : [...(plan?.args ?? []), 'ssh', workspaceName];
     if (plan?.kind === 'shell') {
       assertSafeCmdExeCommand(plan.file, 'Coder binary');
     }

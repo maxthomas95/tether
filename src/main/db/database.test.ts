@@ -110,4 +110,25 @@ describe('database', () => {
     expect(JSON.parse(fs.readFileSync(dbPath, 'utf-8')).config.theme).toBe('mocha');
     expect(fs.readFileSync(path.join(userData, backups[0]), 'utf-8')).toBe('{bad json');
   });
+
+  it('drops retired session rows while preserving other loaded collections', async () => {
+    const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-db-'));
+    tempDirs.push(userData);
+    fs.writeFileSync(path.join(userData, 'data.json'), JSON.stringify({
+      environments: [{ id: 'env-1', name: 'Local' }],
+      sessions: [{ id: 'legacy-session', label: 'Old session', state: 'running' }],
+      config: { theme: 'mocha' },
+      savedWorkspace: { sessions: [{ workingDir: '/repo', label: 'Restored' }], activeIndex: 0 },
+      usageSummaries: [{ sessionId: 'usage-1' }],
+    }));
+
+    const db = await loadDatabaseWithUserData(userData);
+    expect(db.getDb()).toMatchObject({
+      environments: [{ id: 'env-1', name: 'Local' }],
+      sessions: [],
+      config: { theme: 'mocha' },
+      savedWorkspace: { sessions: [{ workingDir: '/repo', label: 'Restored' }], activeIndex: 0 },
+      usageSummaries: [{ sessionId: 'usage-1' }],
+    });
+  });
 });

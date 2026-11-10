@@ -102,9 +102,70 @@ describe('Claude settings overlay', () => {
     expect(s.hooks.Notification).toHaveLength(1);
     expect(s.hooks.Stop).toHaveLength(1);
     const hooks = s.hooks as Record<string, unknown[]>;
-    for (const event of ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop']) {
+    for (const event of [
+      'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop',
+      'StopFailure', 'SessionStart', 'SessionEnd',
+    ]) {
       expect(hooks[event]).toHaveLength(1);
     }
+  });
+
+  it('observes failed turns, and conversation boundaries only for /clear and /resume', async () => {
+    const { settingsPath } = makeCtx();
+    await installClaudeHooks({ helperPath: HELPER, settingsPath });
+    const s = readSettings(settingsPath) as {
+      hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ command: string }> }>>;
+    };
+    // StopFailure replaces Stop when a turn ends on an API error: every error type counts.
+    expect(s.hooks.StopFailure[0].matcher).toBeUndefined();
+    expect(s.hooks.StopFailure[0].hooks[0].command).toContain('tether-cli-hook');
+    // No helper process on ordinary startup, compaction or exit.
+    expect(s.hooks.SessionStart[0].matcher).toBe('resume|clear');
+    expect(s.hooks.SessionEnd[0].matcher).toBe('clear|resume');
+    expect(s.hooks.Notification[0].matcher?.split('|')).toContain('elicitation_url_dialog');
+  });
+
+  it('adds its conversation-boundary observers beside the user\'s own and removes only its own', async () => {
+    const { settingsPath } = makeCtx();
+    const original = {
+      hooks: {
+        SessionStart: [{ matcher: 'startup', hooks: [{ type: 'command', command: 'load-context' }] }],
+        SessionEnd: [{ hooks: [{ type: 'command', command: 'save-notes' }] }],
+        StopFailure: [{ matcher: 'rate_limit', hooks: [{ type: 'command', command: 'page-me' }] }],
+      },
+    };
+    fs.writeFileSync(settingsPath, JSON.stringify(original));
+    await installClaudeHooks({ helperPath: HELPER, settingsPath });
+    const installed = readSettings(settingsPath) as { hooks: Record<string, unknown[]> };
+    for (const event of ['SessionStart', 'SessionEnd', 'StopFailure']) {
+      expect(installed.hooks[event]).toHaveLength(2);
+      expect(installed.hooks[event][0]).toEqual(original.hooks[event as keyof typeof original.hooks][0]);
+    }
+    await uninstallClaudeHooks({ helperPath: HELPER, settingsPath });
+    expect(readSettings(settingsPath)).toEqual(original);
+  });
+
+  it('scrubs a Tether entry from an event this version does not install, and nothing else there', async () => {
+    const { settingsPath } = makeCtx();
+    const stale = { hooks: [{ type: 'command', command: 'node /old/tether-cli-hook/index.js --claude' }] };
+    const theirs = { hooks: [{ type: 'command', command: 'their-compact-hook' }] };
+    fs.writeFileSync(settingsPath, JSON.stringify({
+      hooks: {
+        PreCompact: [stale, theirs],
+        PostCompact: [stale],
+        // Keys with nothing of ours in them are left exactly as written.
+        TeammateIdle: [],
+        ConfigChange: [{ hooks: [] }, 'malformed'],
+      },
+    }));
+    await uninstallClaudeHooks({ helperPath: HELPER, settingsPath });
+    expect(readSettings(settingsPath)).toEqual({
+      hooks: {
+        PreCompact: [theirs],
+        TeammateIdle: [],
+        ConfigChange: [{ hooks: [] }, 'malformed'],
+      },
+    });
   });
 
   it('reports disabled hooks without changing the user setting', async () => {

@@ -8,16 +8,12 @@ import { readCodexQuota } from '../codex/integration-service';
 const log = createLogger('quota');
 
 const POLL_INTERVAL_MS = 300_000; // 5 minutes
-const TOKEN_REFRESH_BUFFER_MS = 300_000; // refresh if <5 min until expiry
 const CLAUDE_API_URL = 'https://api.anthropic.com/api/oauth/usage';
-const CLAUDE_TOKEN_REFRESH_URL = 'https://platform.claude.com/v1/oauth/token';
-const CLAUDE_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 const CLAUDE_CREDENTIALS_PATH = path.join(os.homedir(), '.claude', '.credentials.json');
 
 
 interface ClaudeCredentials {
   accessToken: string;
-  refreshToken: string;
   expiresAt: number;
   subscriptionType?: string;
   rateLimitTier?: string;
@@ -69,6 +65,9 @@ export class QuotaService {
   private _enabled = true;
   private generation = 0;
   private inflight: Promise<QuotaInfo> | null = null;
+  private claudeRejectedToken: string | null = null;
+  private claudeRejectedAttempts = 0;
+  private claudeRejectedUntil = 0;
 
   get enabled(): boolean { return this._enabled; }
 
@@ -101,6 +100,7 @@ export class QuotaService {
   stop(): void {
     this.generation++;
     this.inflight = null;
+    this.resetClaudeRejectionBackoff();
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
@@ -147,24 +147,29 @@ export class QuotaService {
       return { ...emptyQuota('No Claude credentials found') };
     }
 
+    if (creds.expiresAt > 0 && creds.expiresAt <= Date.now()) {
+      return this.pausedClaudeQuota(
+        creds,
+        'Claude quota paused: the saved sign-in has expired. It resumes after Claude Code next refreshes it.',
+      );
+    }
+
+    if (this.claudeRejectedToken !== null && this.claudeRejectedToken !== creds.accessToken) {
+      this.resetClaudeRejectionBackoff();
+    }
+
+    const rejectedError = 'Claude sign-in was rejected. Open a Claude Code session to sign in again.';
+    if (this.claudeRejectedToken === creds.accessToken && Date.now() < this.claudeRejectedUntil) {
+      return this.pausedClaudeQuota(creds, rejectedError);
+    }
+
     try {
-      let token = creds.accessToken;
-
-      // Refresh token if close to expiry
-      if (creds.expiresAt - Date.now() < TOKEN_REFRESH_BUFFER_MS) {
-        try {
-          token = await this.refreshClaudeToken(creds.refreshToken);
-        } catch (err) {
-          log.warn('Claude token refresh failed', { error: err instanceof Error ? err.message : String(err) });
-        }
-      }
-
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10_000);
 
       const res = await fetch(CLAUDE_API_URL, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${creds.accessToken}`,
           'Accept': 'application/json',
           'anthropic-beta': 'oauth-2025-04-20',
         },
@@ -173,11 +178,8 @@ export class QuotaService {
       clearTimeout(timeout);
 
       if (res.status === 401 || res.status === 403) {
-        return {
-          ...emptyQuota("Claude credentials expired — run 'claude login' to refresh"),
-          subscriptionType: creds.subscriptionType ?? null,
-          rateLimitTier: creds.rateLimitTier ?? null,
-        };
+        this.recordClaudeRejection(creds.accessToken);
+        return this.pausedClaudeQuota(creds, rejectedError);
       }
 
       if (!res.ok) {
@@ -192,6 +194,7 @@ export class QuotaService {
       }
 
       const data: ClaudeApiResponse = await res.json();
+      this.resetClaudeRejectionBackoff();
 
       return {
         fiveHour: {
@@ -254,7 +257,6 @@ export class QuotaService {
       if (!oauth?.accessToken) return null;
       return {
         accessToken: oauth.accessToken,
-        refreshToken: oauth.refreshToken,
         expiresAt: oauth.expiresAt ?? 0,
         subscriptionType: oauth.subscriptionType,
         rateLimitTier: oauth.rateLimitTier,
@@ -264,45 +266,31 @@ export class QuotaService {
     }
   }
 
-  private async refreshClaudeToken(refreshToken: string): Promise<string> {
-    const body = new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-      client_id: CLAUDE_CLIENT_ID,
-    });
+  private pausedClaudeQuota(creds: ClaudeCredentials, error: string): Omit<QuotaInfo, 'codex'> {
+    return {
+      fiveHour: this.lastQuota.fiveHour,
+      sevenDay: this.lastQuota.sevenDay,
+      subscriptionType: creds.subscriptionType ?? null,
+      rateLimitTier: creds.rateLimitTier ?? null,
+      lastUpdated: this.lastQuota.lastUpdated,
+      error,
+    };
+  }
 
-    const res = await fetch(CLAUDE_TOKEN_REFRESH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
-
-    if (!res.ok) {
-      throw new Error(`Token refresh failed: ${res.status}`);
+  private recordClaudeRejection(accessToken: string): void {
+    if (this.claudeRejectedToken !== accessToken) {
+      this.claudeRejectedToken = accessToken;
+      this.claudeRejectedAttempts = 0;
     }
+    this.claudeRejectedAttempts++;
+    const delay = Math.min(300_000 * 2 ** (this.claudeRejectedAttempts - 1), 3_600_000);
+    this.claudeRejectedUntil = Date.now() + delay;
+  }
 
-    const data = await res.json();
-    const newToken = data.access_token as string;
-    const newExpiry = Date.now() + ((data.expires_in as number) ?? 3600) * 1000;
-
-    // Write updated credentials back
-    try {
-      const raw = fs.readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8');
-      const json = JSON.parse(raw);
-      json.claudeAiOauth.accessToken = newToken;
-      json.claudeAiOauth.expiresAt = newExpiry;
-      if (data.refresh_token) {
-        json.claudeAiOauth.refreshToken = data.refresh_token;
-      }
-      const tmpPath = CLAUDE_CREDENTIALS_PATH + '.tmp';
-      fs.writeFileSync(tmpPath, JSON.stringify(json, null, 2), 'utf-8');
-      fs.renameSync(tmpPath, CLAUDE_CREDENTIALS_PATH);
-      log.info('Refreshed Claude OAuth token');
-    } catch (err) {
-      log.warn('Failed to write refreshed token', { error: err instanceof Error ? err.message : String(err) });
-    }
-
-    return newToken;
+  private resetClaudeRejectionBackoff(): void {
+    this.claudeRejectedToken = null;
+    this.claudeRejectedAttempts = 0;
+    this.claudeRejectedUntil = 0;
   }
 
   private update(info: QuotaInfo): void {

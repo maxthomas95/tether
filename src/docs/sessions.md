@@ -58,6 +58,8 @@ workspace intact. Restart Tether to retry before relying on workspace saving.
 Stopping a session cancels its conversation-ID watcher immediately. A transcript
 read failure ends that watcher without interrupting the running CLI.
 
+With [CLI hooks](settings.md#cli-hooks) on, Tether follows a Claude Code pane when you run `/clear` or switch conversations with `/resume` inside it: status, usage, subagent rows and the conversation that restart or workspace restore reopens all move to the new conversation. Without hooks (including Coder sessions), the pane stays tied to the conversation it was launched with.
+
 For local Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode sessions, use **Resume conversation** in the launcher to choose history for the working directory. Tether uses `claude --resume <id>`, `codex resume <id>`, `copilot --resume <id>`, or `opencode --session <id>`. The conversation picker is local-only.
 
 A local session's right-click menu also has **Resume previous conversation...**. It opens the chosen conversation as a new session in the same directory and environment, keeping the original session's launch profile and its session-specific environment and CLI flag overrides, as **Duplicate** does.
@@ -68,7 +70,7 @@ For Claude Code and Codex CLI over **SSH or Coder**, **Restart in this pane** an
 
 For **OpenCode over SSH or Coder**, restart and workspace restore also pass a known saved native conversation ID to `opencode --session <id>`. Tether does not check that ID against history on your local machine or substitute the latest conversation. Automatic discovery of IDs for fresh remote OpenCode sessions is not available yet, so those sessions cannot automatically resume through Tether unless a native conversation ID is already known and saved.
 
-Recovery requires the same remote host or Coder workspace, CLI user/home, and saved conversation history. If Claude Code has no history for the saved ID (the pane closed before its first message, the conversation was switched with `/resume` or `/clear`, or the history was deleted), the pane opens a fresh Claude conversation under that same ID instead of stopping on a resume error; use `/resume` inside Claude to reopen another conversation. Codex CLI and OpenCode handle missing saved history themselves; Tether does not retry with another conversation. If Tether never captured an ID (for example, remote Codex usage collection was unavailable before disconnection, or a fresh remote OpenCode session has no known ID), restarting opens a fresh session and you can use the CLI's own resume picker to recover older history. Resuming restores saved conversation context; it does not reattach a surviving process or keep a task running through disconnection.
+Recovery requires the same remote host or Coder workspace, CLI user/home, and saved conversation history. If Claude Code has no history for the saved ID (the pane closed before its first message, the conversation was switched with `/resume` or `/clear` while hooks were off, or the history was deleted), the pane opens a fresh Claude conversation under that same ID instead of stopping on a resume error; use `/resume` inside Claude to reopen another conversation. Codex CLI and OpenCode handle missing saved history themselves; Tether does not retry with another conversation. If Tether never captured an ID (for example, remote Codex usage collection was unavailable before disconnection, or a fresh remote OpenCode session has no known ID), restarting opens a fresh session and you can use the CLI's own resume picker to recover older history. Resuming restores saved conversation context; it does not reattach a surviving process or keep a task running through disconnection.
 
 Claude Code and GitHub Copilot transcript lookups require a full session UUID. Invalid identifiers are treated as unavailable conversations and are not used as filesystem paths.
 
@@ -102,6 +104,25 @@ Hook-confirmed completion and permission waits survive terminal redraws, typing
 echo and window resizing. Claude stays running while tracked subagents are
 active, including when the parent pauses for their results. Answering an
 elicitation resumes work; it does not mean the turn has finished.
+
+Claude Code does not report every way a turn can end, so hook-driven Claude
+sessions keep three safeguards:
+
+- A turn that ends on an API error (rate limit, overloaded, sign-in problem)
+  counts as finished, the same as a normal stop.
+- Claude sends nothing when you interrupt it. Pressing **Esc** or **Ctrl+C** in
+  a running Claude pane hands that session back to output-based estimates until
+  its next hook arrives: if Claude keeps working, it stays running; if output
+  stops for a few seconds, it shows waiting. Tether only notices the keypress;
+  it does not change or delay what you type.
+- A running session that produces no terminal output and no hook for two
+  minutes is marked waiting. Claude redraws its spinner and timer for as long as
+  it works, so that much silence means the turn ended without saying so. This
+  does not apply while a tracked subagent is still running.
+
+About a minute after Claude stops, its idle notice confirms the pause. Because
+Claude only sends that notice once nothing is running in the background, it also
+clears any subagent whose stop was never reported.
 
 When hooks are unavailable, detection estimates activity from output and silence.
 It cannot reliably distinguish a quiet model or remote subagent from an idle

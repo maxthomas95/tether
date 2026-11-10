@@ -8,7 +8,9 @@ import { createTransportOptions, getPtySpawnSpy, setupPtyTransportTest } from '.
 // unresolved shell launch. Real resolution is covered by its own unit test.
 vi.mock('./win-binary-resolver', () => ({
   resolveWindowsLaunch: (binary: string) =>
-    binary === process.execPath
+    binary === 'tether-test-direct-shim'
+      ? { kind: 'direct', file: process.execPath, args: ['C:\\tools\\node_modules\\coder\\bin\\coder.js'] }
+      : binary === process.execPath
       ? { kind: 'direct', file: binary }
       : { kind: 'shell', file: binary },
 }));
@@ -123,6 +125,14 @@ describe('CoderTransport', () => {
     expect(file).toBe(process.execPath);
     expect(args).toEqual(['ssh', 'ws']);
     expect(ptySpawnSpy.mock.calls[0][2].useConptyDll).toBe(true);
+  });
+
+  it('on win32, prefixes direct shim arguments before coder ssh args', async () => {
+    platform.set('win32');
+    await new CoderTransport({ binaryPath: 'tether-test-direct-shim' }).start(baseOptions({ workingDir: 'ws' }));
+    const [file, args] = ptySpawnSpy.mock.calls[0];
+    expect(file).toBe(process.execPath);
+    expect(args).toEqual(['C:\\tools\\node_modules\\coder\\bin\\coder.js', 'ssh', 'ws']);
   });
 
   it('on win32, uses cmd.exe for an unresolved command', async () => {
