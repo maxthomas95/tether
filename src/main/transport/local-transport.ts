@@ -60,7 +60,7 @@ export class LocalTransport implements SessionTransport {
     const spawnFile = plan?.kind === 'direct' ? plan.file : isWin32 ? 'cmd.exe' : binary;
     const spawnArgs = plan?.kind === 'shell'
       ? ['/d', '/c', plan.file, ...tokenizedArgs.map(escapeCmdExeArgForNodePty)]
-      : tokenizedArgs;
+      : [...(plan?.args ?? []), ...tokenizedArgs];
     if (plan?.kind === 'shell') {
       assertSafeCmdExeCommand(plan.file, 'CLI binary');
     }
