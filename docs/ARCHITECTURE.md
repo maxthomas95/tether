@@ -100,7 +100,7 @@ App state is JSON at `{app.getPath('userData')}/data.json`. `src/main/db/databas
 
 The file contains:
 
-- Environment and session metadata.
+- Environment metadata; the retired sessions table remains empty for downgrade compatibility, while live session state is in memory and the saved workspace restores sessions.
 - Config values, global env vars, and per-tool default flags.
 - Launch profiles and GitHub/ADO/Gitea provider records.
 - Saved workspace, split/Canvas layout configuration, named workspace recipes, sidebar ordering, and recent projects.

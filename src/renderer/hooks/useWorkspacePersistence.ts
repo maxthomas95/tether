@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SavedCanvas } from '../../shared/canvas-types';
 import type { SessionInfo, TetherAPI } from '../../shared/types';
 import type { NotifyOptions } from '../components/Notifications';
@@ -20,6 +20,21 @@ export function useWorkspacePersistence(
   recovery: RecoveryUI,
 ) {
   const [failedSessions, setFailedSessions] = useState<SavedWorkspaceSession[]>([]);
+  const lastSentPayload = useRef<string | null>(null);
+  const pendingSave = useRef<{ payload: string; sessions: SavedWorkspaceSession[]; activeIndex: number; canvas: SavedCanvas | undefined } | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushPendingSave = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    const pending = pendingSave.current;
+    pendingSave.current = null;
+    if (!pending) return;
+    lastSentPayload.current = pending.payload;
+    void window.electronAPI.workspace?.save?.(pending.sessions, pending.activeIndex, pending.canvas);
+  }, []);
   const retainFailedSessions = useCallback((saved: SavedWorkspaceSession[]) => {
     setFailedSessions(saved.map(session => ({ ...session, restorePending: true })));
   }, []);
@@ -75,8 +90,31 @@ export function useWorkspacePersistence(
       launchSnapshotId: session.launchSnapshotId,
     }));
     // Current sessions stay first so Canvas session indices retain their meaning.
-    void window.electronAPI.workspace?.save?.([...current, ...failedSessions], Math.max(0, activeIndex), canvas);
-  }, [sessions, activeSessionId, canvas, ready, failedSessions]);
+    const savedSessions = [...current, ...failedSessions];
+    const savedActiveIndex = Math.max(0, activeIndex);
+    const payload = JSON.stringify([savedSessions, savedActiveIndex, canvas]);
+    if (payload === lastSentPayload.current) {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      pendingSave.current = null;
+      return;
+    }
+
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    pendingSave.current = { payload, sessions: savedSessions, activeIndex: savedActiveIndex, canvas };
+    saveTimer.current = setTimeout(flushPendingSave, 250);
+  }, [sessions, activeSessionId, canvas, ready, failedSessions, flushPendingSave]);
+
+  useEffect(() => {
+    const flush = () => flushPendingSave();
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('beforeunload', flush);
+      flushPendingSave();
+    };
+  }, [flushPendingSave]);
 
   return { retainFailedSessions, forgetFailedSessions, reportRestoreFailures, retainPendingRestores };
 }
