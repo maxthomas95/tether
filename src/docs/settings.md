@@ -238,8 +238,12 @@ When on, Tether installs an additive entry in your `~/.claude/settings.json` and
 Local CLI hooks require a separate Node.js installation on PATH. Tether checks it at launch and writes its absolute executable path into the hooks. If Node.js is missing or cannot run, Tether removes its old entries, skips installation, and shows one warning; sessions use output-based status detection. Install Node.js and restart Tether to enable hooks. Existing user hooks are preserved. SSH hosts check their own Node.js installation separately.
 
 Claude hooks also observe prompt submission, tool activity and subagent
-start/stop events so quiet work stays running. The status helper forwards only
-event names and identifiers, without prompts, tool arguments or results.
+start/stop events so quiet work stays running, turns that end on an API error,
+and the conversation changes made by `/clear` and in-pane `/resume` (the helper
+does not run on ordinary startup, compaction or exit). The status helper
+forwards only event names, short type codes and identifiers, without prompts,
+tool arguments, results or error text. See [session status](sessions.md#session-states)
+for how Tether covers endings Claude does not report.
 Existing user hooks are preserved. If Claude disables all hooks, an overlay
 fails to install, or another integration owns Codex's `notify` command, the
 affected CLI uses output-cadence estimates unless its other Tether hooks are
@@ -381,7 +385,7 @@ Two buttons here — **Export as CSV…** and **Export as JSON…**. CSV is one 
 
 ### Subscription quota
 
-**Show usage quota in sidebar** is on by default. Tether can poll subscription quota and show the remaining budget in the sidebar footer. Codex quota uses the supported Codex app-server interface instead of reading local auth tokens directly. Disable here if you're on metered API billing instead. See [Usage & Quota](usage-quota.md#quota-tracking).
+**Show usage quota in sidebar** is on by default. Tether can poll subscription quota and show the remaining budget in the sidebar footer. Claude quota reads Claude Code's saved access token without refreshing or modifying its sign-in, and shows as paused until Claude Code refreshes an expired token. Codex quota uses the supported Codex app-server interface instead of reading local auth tokens directly. Disable here if you're on metered API billing instead. See [Usage & Quota](usage-quota.md#quota-tracking).
 
 ## CLI tools
 

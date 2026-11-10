@@ -162,6 +162,16 @@ const CODEX_LIFECYCLE_TYPES: ReadonlySet<CodexLifecycleEventType> = new Set([
   'session_end',
 ]);
 
+/**
+ * `SessionEnd` reasons after which the SAME Claude process carries on in a
+ * different conversation: `/clear`, and `/resume` used inside a session.
+ */
+const CLAUDE_SWITCH_REASONS: ReadonlySet<string> = new Set(['clear', 'resume']);
+/** How long after such an end the conversation that replaces it may claim the pane. */
+const CLAUDE_SWITCH_WINDOW_MS = 30_000;
+/** Claude session ids are UUIDs; an adopted id later becomes a `--resume` argument and a transcript file name. */
+const CLAUDE_SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const CODEX_METADATA_STRING_LIMITS: Record<Exclude<keyof CodexLifecycleMetadata, 'at'>, number> = {
   toolSessionId: 256,
   turnId: 256,
@@ -298,6 +308,14 @@ export class Session {
   remoteUsageStatus?: 'pending' | 'collecting' | 'unavailable';
   /** Main-only: the remote host whose resident reader serves this session's side-channel reads. */
   remoteProbe?: RemoteProbeTarget;
+  /**
+   * Main-only: Claude reported that this pane's conversation ended by `/clear`
+   * or an in-pane `/resume`, so the session start that follows may move the
+   * pane to a new native session id. Short-lived and consumed on use.
+   */
+  claudeSwitchPending: { reason: string; expiresAt: number } | null = null;
+  /** Main-only: point the remote usage reader at the conversation the pane moved to. */
+  restartRemoteUsage: ((nativeSessionId: string) => void) | null = null;
 
   constructor(id: string, label: string, workingDir: string, options: {
     environmentId?: string;
@@ -581,8 +599,14 @@ export class SessionManager {
    *     mode confirmations and similar input boxes fire elicitation_dialog;
    *     they're the same UX category as a permission prompt — both block
    *     Claude until the user clicks something.
-   *   - turn_complete + idle_prompt → "Claude is paused, your turn", unless
-   *     subagents still have work outstanding.
+   *   - turn_complete → "Claude is paused, your turn", unless subagents still
+   *     have work outstanding. Claude's StopFailure (the turn ended on an API
+   *     error) arrives as turn_complete too.
+   *   - idle_prompt → the same pause, but Claude only raises it once nothing
+   *     is running in the background, so it also retires subagents whose stop
+   *     event never arrived.
+   *   - session_end + session_start (Claude) → `/clear` or an in-pane
+   *     `/resume` moved the pane to another conversation; follow its new id.
    *   - elicitation_complete/response → resume work after the user's answer.
    *   - auth_success → informational, no state change.
    */
@@ -644,8 +668,18 @@ export class SessionManager {
   private handleClaudeAgentEvent(session: Session, event: HookEvent): boolean {
     if (session.cliTool !== 'claude') return true;
     const nativeId = event.payload?.session_id;
-    if (typeof nativeId === 'string' && session.toolSessionId && nativeId !== session.toolSessionId) return true;
     const agentId = boundedMetadataString(event.payload?.agent_id, 256);
+    if (typeof nativeId === 'string' && session.toolSessionId && nativeId !== session.toolSessionId) {
+      // Another Claude process that inherited this pane's Tether env (a nested
+      // `claude -p`, a background fork) must never drive the pane's status.
+      // The one exception is the conversation the pane itself just moved to.
+      if (event.type === 'session_start' && !agentId) this.adoptClaudeConversation(session, nativeId, event);
+      return true;
+    }
+    if (event.type === 'session_end' || event.type === 'session_start') {
+      if (!agentId) this.noteClaudeSessionBoundary(session, event);
+      return true;
+    }
     if (event.type === 'subagent_start' || event.type === 'subagent_stop') {
       if (agentId) {
         if (event.type === 'subagent_start') statusDetector.markSubagentStarted(session.id, agentId);
@@ -654,7 +688,15 @@ export class SessionManager {
       }
       return true;
     }
-    if (!agentId) return false;
+    if (!agentId) {
+      if (event.type !== 'idle_prompt') return false;
+      // Claude raises its idle prompt only once no background agent is still
+      // running, so this is the one completion that need not wait for them.
+      const hadSubagents = statusDetector.getActiveSubagentIds(session.id).length > 0;
+      statusDetector.markTurnComplete(session.id, { authoritative: true });
+      if (hadSubagents) this.notifyLifecycle(o => o.onSubagentEvent?.(session));
+      return true;
+    }
     // Subagents inherit the same configured hooks and Tether env. Their
     // activity and Stop events cannot start or complete the parent turn.
     switch (event.type) {
@@ -674,6 +716,57 @@ export class SessionManager {
       default:
         return false;
     }
+  }
+
+  /**
+   * A session boundary reported for the conversation this pane is already in.
+   * Only an end caused by `/clear` or `/resume` opens the window in which a
+   * different conversation may be adopted; anything else closes it.
+   */
+  private noteClaudeSessionBoundary(session: Session, event: HookEvent): void {
+    const reason = boundedMetadataString(event.payload?.reason, 64);
+    if (
+      event.type === 'session_end' &&
+      event.payload?.session_id === session.toolSessionId &&
+      reason && CLAUDE_SWITCH_REASONS.has(reason)
+    ) {
+      session.claudeSwitchPending = { reason, expiresAt: Date.now() + CLAUDE_SWITCH_WINDOW_MS };
+      return;
+    }
+    session.claudeSwitchPending = null;
+  }
+
+  /**
+   * A session start arrived under a different native id. Follow it only when
+   * this pane's own conversation just ended the matching way; otherwise it is
+   * some other Claude process and stays ignored, as every mismatched event is.
+   */
+  private adoptClaudeConversation(session: Session, nativeId: string, event: HookEvent): void {
+    const pending = session.claudeSwitchPending;
+    if (!pending || Date.now() > pending.expiresAt) return;
+    if (boundedMetadataString(event.payload?.source, 64) !== pending.reason) return;
+    if (!CLAUDE_SESSION_ID_RE.test(nativeId)) return;
+    session.claudeSwitchPending = null;
+
+    const previousId = session.toolSessionId;
+    session.toolSessionId = nativeId;
+    session.claudeSessionId = nativeId;
+    log.info('Claude conversation switched in pane', { id: session.id, reason: pending.reason });
+
+    if (session.restartRemoteUsage) {
+      session.usageSessionId = `remote-pending:${session.id}`;
+      session.restartRemoteUsage(nativeId);
+    } else if (!session.usageSessionId) {
+      // Mirrors the create-time tracking and exit-time untracking in the IPC
+      // layer, which key off `claudeSessionId`.
+      if (previousId) usageService.untrackSession(previousId);
+      usageService.trackSession(nativeId, session.workingDir, 'claude', session.environmentId ?? undefined);
+    }
+
+    // The previous conversation's turn, subagents and prompts ended with it.
+    statusDetector.markTurnComplete(session.id, { authoritative: true });
+    this.callbacksMap.get(session.id)?.onUpdate?.(session.id, session.toInfo());
+    this.notifyLifecycle(o => o.onSubagentEvent?.(session));
   }
 
   private handleCodexLifecycleEvent(session: Session, event: HookEvent): boolean {
@@ -1090,23 +1183,36 @@ export class SessionManager {
         claudeHome: resolvedEnv.CLAUDE_CONFIG_DIR,
       };
       session.remoteProbe = target;
-      remoteUsageService.start({
-        sessionId: id, cli: cliTool as 'claude' | 'codex', ...target,
-        nativeSessionId: toolSessionId,
-        codexHome: resolvedEnv.CODEX_HOME,
-        onSource: (key, nativeId) => {
-          if (!this.sessions.has(id)) return;
-          session.usageSessionId = key;
-          session.toolSessionId = nativeId;
-          if (cliTool === 'claude') session.claudeSessionId = nativeId;
-          callbacks.onUpdate?.(id, session.toInfo());
-        },
-        onStatus: status => {
-          if (!this.sessions.has(id) || session.remoteUsageStatus === status) return;
-          session.remoteUsageStatus = status;
-          callbacks.onUpdate?.(id, session.toInfo());
-        },
-      });
+      // Each (re)start gets its own generation so a reply still in flight for
+      // the conversation the pane left cannot put that id back.
+      let usageGeneration = 0;
+      const startRemoteUsage = (nativeSessionId: string | undefined) => {
+        const generation = ++usageGeneration;
+        const isCurrentReader = () => generation === usageGeneration && this.sessions.has(id);
+        remoteUsageService.start({
+          sessionId: id, cli: cliTool as 'claude' | 'codex', ...target,
+          nativeSessionId,
+          codexHome: resolvedEnv.CODEX_HOME,
+          onSource: (key, nativeId) => {
+            if (!isCurrentReader()) return;
+            session.usageSessionId = key;
+            session.toolSessionId = nativeId;
+            if (cliTool === 'claude') session.claudeSessionId = nativeId;
+            callbacks.onUpdate?.(id, session.toInfo());
+          },
+          onStatus: status => {
+            if (!isCurrentReader() || session.remoteUsageStatus === status) return;
+            session.remoteUsageStatus = status;
+            callbacks.onUpdate?.(id, session.toInfo());
+          },
+        });
+      };
+      startRemoteUsage(toolSessionId);
+      if (cliTool === 'claude') {
+        session.restartRemoteUsage = nativeSessionId => {
+          if (this.sessions.get(id) === session && session.transport) startRemoteUsage(nativeSessionId);
+        };
+      }
     }
 
     // Codex doesn't accept a pre-assigned session id — it mints one and writes

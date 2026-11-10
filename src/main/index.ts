@@ -12,7 +12,6 @@ import { loadPrices } from './usage/model-pricing';
 import { refreshPricesInBackground } from './usage/pricing-fetcher';
 import { getDb, closeDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
-import { markAllRunningAsStopped } from './db/session-repo';
 import { startHookService, stopHookService } from './cli-config/hook-service';
 import { stopRemoteHookService, hasLiveRemoteAgents } from './cli-config/remote/remote-hook-service';
 import { jobsService } from './jobs/jobs-service';
@@ -163,7 +162,6 @@ const createWindow = () => {
   loadLocalThemes();
   // Initialize persistence
   const db = getDb();
-  markAllRunningAsStopped();
   ensureDefaultLocalEnvironment();
 
   // Read the saved theme synchronously so we can paint the window chrome
