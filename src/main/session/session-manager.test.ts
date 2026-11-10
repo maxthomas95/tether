@@ -175,7 +175,6 @@ import { buildSessionRestartOptions } from '../../renderer/utils/session-restart
 import { statusDetector } from '../status/status-detector';
 import { resolveAll } from '../vault/vault-resolver';
 import { resolveSshConfig } from '../ssh/resolve-ssh-config';
-import { usageService } from '../usage/usage-service';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
