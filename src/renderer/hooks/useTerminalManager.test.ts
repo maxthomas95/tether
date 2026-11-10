@@ -632,8 +632,19 @@ describe('terminal clipboard', () => {
     expect(mocks.clipboard.readText).not.toHaveBeenCalled();
   });
 
+  // OSC 52 writes are honoured only for the pane the user is working in.
+  function focusTerminal(sessionId: string): () => void {
+    const fake = terminal(sessionId);
+    fake.element ??= host.appendChild(document.createElement('div'));
+    const input = fake.element.appendChild(document.createElement('textarea'));
+    input.focus();
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    return () => { hasFocus.mockRestore(); input.remove(); };
+  }
+
   it('forwards an OSC 52 write to the clipboard and consumes the sequence', () => {
     api.getOrCreate('a');
+    const blur = focusTerminal('a');
     const [[code, handler]] = terminal('a').parser.registerOscHandler.mock.calls as [[number, (data: string) => boolean]];
     expect(code).toBe(52);
 
@@ -641,6 +652,19 @@ describe('terminal clipboard', () => {
     expect(mocks.clipboard.writeText).toHaveBeenCalledExactlyOnceWith('café\nline two');
     expect(handler('c;?')).toBe(true);
     expect(mocks.clipboard.writeText).toHaveBeenCalledOnce();
+    blur();
+  });
+
+  it('drops an OSC 52 write from a terminal the user is not working in', () => {
+    api.getOrCreate('a');
+    api.getOrCreate('b');
+    const blur = focusTerminal('a');
+    const [[, background]] = terminal('b').parser.registerOscHandler.mock.calls as [[number, (data: string) => boolean]];
+
+    // Still consumed, so the sequence never reaches the screen.
+    expect(background(`c;${Buffer.from('hijack').toString('base64')}`)).toBe(true);
+    expect(mocks.clipboard.writeText).not.toHaveBeenCalled();
+    blur();
   });
 
   it('swallows a failed clipboard write from every copy path', async () => {
@@ -659,8 +683,10 @@ describe('terminal clipboard', () => {
       terminal('a').selection = 'x';
       press(handler, 'keydown', { key: 'c' });
       press(handler, 'keydown', { key: 'C', shiftKey: true });
+      const blur = focusTerminal('a');
       const [[, osc]] = terminal('a').parser.registerOscHandler.mock.calls as [[number, (data: string) => boolean]];
       expect(osc(`c;${Buffer.from('y').toString('base64')}`)).toBe(true);
+      blur();
       expect(writes).toEqual(['x', 'x', 'y']);
       await new Promise(resolve => setTimeout(resolve, 0));
       expect(unhandled).not.toHaveBeenCalled();

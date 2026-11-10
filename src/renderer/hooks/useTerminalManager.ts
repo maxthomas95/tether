@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon, type ISearchDecorationOptions, type ISearchResultChangeEvent } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { PaneId } from '../../shared/layout-types';
-import { decodeOsc52Write } from '../utils/osc52';
+import { canWriteOsc52Clipboard, decodeOsc52Write } from '../utils/osc52';
 import { DEFAULT_TERMINAL_FONT, loadTerminalFont } from '../styles/terminal-fonts';
 import { reportPipActivity } from '../lib/pip-activity';
 import { encodeShiftEnter } from '../utils/terminal-input';
@@ -287,7 +287,7 @@ export function useTerminalManager(
     // terminal. Write-only: see decodeOsc52Write.
     terminal.parser.registerOscHandler(52, (data: string) => {
       const text = decodeOsc52Write(data);
-      if (text !== null) {
+      if (text !== null && canWriteOsc52Clipboard(document.hasFocus(), terminal.element, document.activeElement)) {
         writeClipboard(text);
       }
       return true;

@@ -6,6 +6,12 @@ const envState = vi.hoisted(() => ({
   rows: new Map<string, { id: string; name: string }>(),
 }));
 
+const logState = vi.hoisted(() => ({ warn: vi.fn() }));
+
+vi.mock('../logger', () => ({
+  createLogger: () => ({ warn: logState.warn }),
+}));
+
 vi.mock('../db/environment-repo', () => ({
   getEnvironment: (id: string) => envState.rows.get(id) ?? null,
 }));
@@ -123,6 +129,34 @@ describe('OutboundWebhookService', () => {
     await withoutToken.fire('waiting', session());
     expect(fetchImpl.mock.calls[1][1].headers).toEqual({ 'Content-Type': 'application/json' });
   });
+
+  it('does not send webhook tokens to remote HTTP origins and warns once', async () => {
+    logState.warn.mockClear();
+    const fetchImpl = vi.fn(async () => ({ ok: true } as Response));
+    const service = new OutboundWebhookService({
+      getPrefs: () => prefs({ url: 'http://insecure-webhook.example.test/hook?secret=value', token: 'webhook-secret' }),
+      fetchImpl,
+    });
+
+    await expect(service.fire('waiting', session())).resolves.toBe(false);
+    await expect(service.fire('waiting', session())).resolves.toBe(false);
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(logState.warn).toHaveBeenCalledTimes(1);
+    expect(logState.warn).toHaveBeenCalledWith('Webhook token requires HTTPS or a loopback address; skipping');
+  });
+
+  it.each(['http://localhost:8780/hook', 'http://127.0.0.2/hook', 'http://[::1]:8780/hook'])(
+    'allows a webhook token over loopback HTTP at %s',
+    async url => {
+      const fetchImpl = vi.fn(async () => ({ ok: true } as Response));
+      const service = new OutboundWebhookService({ getPrefs: () => prefs({ url, token: 'webhook-secret' }), fetchImpl });
+
+      await expect(service.fire('waiting', session())).resolves.toBe(true);
+
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    },
+  );
 
   it('suppresses posts for muted sessions', async () => {
     const fetchImpl = vi.fn(async () => ({ ok: true } as Response));
