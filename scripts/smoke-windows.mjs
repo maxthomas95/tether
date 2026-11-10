@@ -108,6 +108,11 @@ try {
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
+  // Both exits below must stay unattended. The quit confirmation is a native
+  // dialog, which cannot be answered through the debugging port, and a
+  // restored session may still be starting when the second launch exits.
+  await settings.getByRole('tab', { name: 'General', exact: true }).click();
+  await settings.getByLabel('Confirm before quitting while sessions are working', { exact: true }).uncheck();
   await settings.getByRole('tab', { name: 'Appearance', exact: true }).click();
   await settings.getByRole('button', { name: 'Nord', exact: true }).click();
   await settings.getByRole('button', { name: 'Save', exact: true }).click();
@@ -154,6 +159,7 @@ try {
   const saved = JSON.parse(await fs.readFile(path.join(userData, 'data.json'), 'utf8'));
   assert.equal(saved.config.theme, 'nord', 'saved theme survives restart');
   assert.equal(saved.config.setupComplete, 'true', 'saved setup completion');
+  assert.equal(saved.config.confirmQuitWithActiveSessions, 'false', 'saved quit confirmation preference');
   assert.deepEqual(errors, [], 'renderer errors after restart');
   await closeCleanly();
   console.log('Windows packaged smoke passed: fresh setup, saved theme, local PTY, ordinary typing, resize, Stop, clean exit, restart.');
@@ -161,6 +167,10 @@ try {
   await fs.mkdir(diagnostics, { recursive: true });
   await fs.writeFile(path.join(diagnostics, 'failure.txt'), `${error.stack}\n${errors.join('\n')}`);
   await fs.writeFile(path.join(diagnostics, 'app-output.log'), appOutput);
+  // The app's own log for this run. It comes from the harness's scratch
+  // profile, never a real one, and only its tail is kept.
+  const appLog = await fs.readFile(path.join(userData, 'logs', 'tether.log'), 'utf8').catch(() => '');
+  await fs.writeFile(path.join(diagnostics, 'app-log-tail.log'), appLog.slice(-200_000));
   if (page && !page.isClosed()) {
     const terminalOutput = await page.evaluate(() => globalThis.smokeOutput || '').catch(() => '');
     await fs.writeFile(path.join(diagnostics, 'terminal-output.log'), terminalOutput);
