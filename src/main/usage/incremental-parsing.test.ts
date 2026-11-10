@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { parseJsonlFile, type ParsedMessage } from './jsonl-parser';
 import { parseCodexJsonl } from './codex-jsonl-parser';
 
-vi.mock('../logger', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
+vi.mock('../logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn() }) }));
 
 let directory: string | undefined;
 let file: string;

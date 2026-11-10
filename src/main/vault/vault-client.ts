@@ -13,12 +13,16 @@ export interface VaultClientOptions {
   token?: string;
 }
 
+export function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === 'localhost' || host === '::1' || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host);
+}
+
 /** Credentials are only sent to an explicit TLS endpoint (or loopback dev Vault). */
 export function normalizeVaultAddr(addr: string): string {
   let url: URL;
   try { url = new URL(addr); } catch { throw new VaultError('Invalid Vault address'); }
-  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopbackHost(url.hostname))) {
     throw new VaultError('Vault requires HTTPS; HTTP is only allowed on loopback');
   }
   if (url.username || url.password || url.search || url.hash || /[^/]/.test(url.pathname)) {

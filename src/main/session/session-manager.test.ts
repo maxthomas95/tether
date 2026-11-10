@@ -151,6 +151,7 @@ vi.mock('../helm/integration', () => ({
 vi.mock('../usage/usage-service', () => ({
   usageService: {
     trackSession: vi.fn(),
+    untrackSession: vi.fn(),
   },
 }));
 vi.mock('../usage/remote-usage-service', () => ({ remoteUsageService: { start: vi.fn(), stop: vi.fn(), dispose: vi.fn() } }));
@@ -204,6 +205,7 @@ describe('SessionManager', () => {
     vi.mocked(detectNewCodexSession).mockClear();
     vi.mocked(detectNewCopilotSession).mockClear();
     vi.mocked(usageService.trackSession).mockClear();
+    vi.mocked(usageService.untrackSession).mockClear();
     vi.mocked(resolveAll).mockReset().mockImplementation(async env => env);
     vi.mocked(resolveSshConfig).mockReset().mockResolvedValue({ host: 'test', port: 22, username: 'user' });
     transportHarness.state.instances.length = 0;
@@ -850,6 +852,22 @@ describe('SessionManager', () => {
       const child = manager.getSession(result.sessionId);
       expect(child?.cliTool).toBe('claude');
     });
+
+    it('limits session status and termination to its own children', async () => {
+      const handlers = await spawnHelmParent();
+      const child = await handlers.spawn_session({ label: 'child' }) as { sessionId: string };
+      const unrelated = await manager.createSession({
+        workingDir: 'C:\\repo\\unrelated',
+        cliTool: 'claude',
+      }, callbacks());
+
+      await expect(handlers.get_session_status({ sessionId: child.sessionId })).resolves.toMatchObject({ id: child.sessionId });
+      await expect(handlers.get_session_status({ sessionId: unrelated.id }))
+        .rejects.toThrow(`Session not found: ${unrelated.id}`);
+      await expect(handlers.kill_session({ sessionId: unrelated.id }))
+        .rejects.toThrow(`Session not found: ${unrelated.id}`);
+      await expect(handlers.kill_session({ sessionId: child.sessionId })).resolves.toEqual({ sessionId: child.sessionId, terminated: true });
+    });
   });
 
   it('cleans up a session when transport.start rejects', async () => {
@@ -977,6 +995,157 @@ describe('SessionManager', () => {
       cb.onStateChange.mockClear();
       manager.handleHookEvent({ tetherSessionId: codex.id, source: 'claude', type: 'turn_complete' });
       expect(cb.onStateChange).not.toHaveBeenCalled();
+    });
+
+    it('treats a parent idle prompt as proof that no subagent is still running', async () => {
+      const { session } = await createClaudeSession();
+      const onSubagentEvent = vi.fn();
+      manager.addLifecycleObserver({ onSubagentEvent });
+      const send = (type: 'subagent_start' | 'turn_start' | 'turn_complete' | 'idle_prompt', agentId?: string) => manager.handleHookEvent({
+        tetherSessionId: session.id, source: 'claude', type, payload: agentId ? { agent_id: agentId } : undefined,
+      });
+      // Its SubagentStop never arrives (interrupted, or the helper lost its race).
+      send('subagent_start', 'ghost');
+      send('turn_complete');
+      expect(session.state).toBe('running');
+      onSubagentEvent.mockClear();
+
+      send('idle_prompt');
+      expect(session.state).toBe('waiting');
+      expect(session.waitingReason).toBe('idle');
+      expect(statusDetector.getActiveSubagentIds(session.id)).toEqual([]);
+      expect(onSubagentEvent).toHaveBeenCalledWith(session);
+
+      send('turn_start');
+      send('turn_complete');
+      expect(session.waitingReason).toBe('idle');
+    });
+
+    describe('conversation switches inside a pane', () => {
+      const OLD_ID = '11111111-1111-4111-8111-111111111111';
+      const NEW_ID = '22222222-2222-4222-8222-222222222222';
+      type SwitchEvent = 'session_end' | 'session_start' | 'subagent_start' | 'turn_start' | 'turn_complete';
+
+      async function createPinnedSession() {
+        const { session, cb } = await createClaudeSession();
+        session.toolSessionId = OLD_ID;
+        session.claudeSessionId = OLD_ID;
+        const send = (type: SwitchEvent, payload: Record<string, unknown>) => manager.handleHookEvent({
+          tetherSessionId: session.id, source: 'claude', type, payload,
+        });
+        return { session, cb, send };
+      }
+
+      it.each(['clear', 'resume'] as const)('follows the pane to its new conversation after an in-pane %s', async (how) => {
+        const { session, cb, send } = await createPinnedSession();
+        send('subagent_start', { session_id: OLD_ID, agent_id: 'left-behind' });
+        expect(session.state).toBe('running');
+        vi.mocked(usageService.trackSession).mockClear();
+        cb.onUpdate.mockClear();
+
+        send('session_end', { session_id: OLD_ID, reason: how });
+        expect(session.toolSessionId).toBe(OLD_ID);
+        send('session_start', { session_id: NEW_ID, source: how });
+
+        expect(session.toolSessionId).toBe(NEW_ID);
+        expect(session.claudeSessionId).toBe(NEW_ID);
+        expect(cb.onUpdate).toHaveBeenLastCalledWith(session.id, expect.objectContaining({ toolSessionId: NEW_ID, claudeSessionId: NEW_ID }));
+        expect(usageService.untrackSession).toHaveBeenCalledWith(OLD_ID);
+        expect(usageService.trackSession).toHaveBeenCalledWith(NEW_ID, session.workingDir, 'claude', undefined);
+        // The old conversation's turn and subagents ended with it.
+        expect(session.state).toBe('waiting');
+        expect(session.waitingReason).toBe('idle');
+        expect(statusDetector.getActiveSubagentIds(session.id)).toEqual([]);
+
+        // The new conversation's hooks drive status; the old one is now foreign.
+        send('turn_start', { session_id: NEW_ID });
+        expect(session.state).toBe('running');
+        send('turn_complete', { session_id: OLD_ID });
+        expect(session.state).toBe('running');
+        send('turn_complete', { session_id: NEW_ID });
+        expect(session.waitingReason).toBe('idle');
+      });
+
+      it('never adopts a session start it was not told to expect', async () => {
+        vi.useFakeTimers();
+        try {
+          const { session, cb, send } = await createPinnedSession();
+          cb.onStateChange.mockClear();
+          cb.onUpdate.mockClear();
+
+          // Nothing pending: a nested `claude -p` or `claude --resume` announcing itself.
+          send('session_start', { session_id: NEW_ID, source: 'startup' });
+          send('session_start', { session_id: NEW_ID, source: 'resume' });
+          // Another conversation ending says nothing about this pane.
+          send('session_end', { session_id: NEW_ID, reason: 'clear' });
+          send('session_start', { session_id: NEW_ID, source: 'clear' });
+          // Pending, but not the kind of start that end announced, or not a session id.
+          send('session_end', { session_id: OLD_ID, reason: 'clear' });
+          send('session_start', { session_id: NEW_ID, source: 'resume' });
+          send('session_start', { session_id: '../../not-a-session-id', source: 'clear' });
+          send('session_start', { session_id: NEW_ID, source: 'clear', agent_id: 'agent-a' });
+          // Too late.
+          vi.advanceTimersByTime(30_001);
+          send('session_start', { session_id: NEW_ID, source: 'clear' });
+          // The pane's Claude is exiting, not switching.
+          send('session_end', { session_id: OLD_ID, reason: 'prompt_input_exit' });
+          send('session_start', { session_id: NEW_ID, source: 'clear' });
+
+          expect(session.toolSessionId).toBe(OLD_ID);
+          expect(session.claudeSessionId).toBe(OLD_ID);
+          expect(cb.onStateChange).not.toHaveBeenCalled();
+          expect(cb.onUpdate).not.toHaveBeenCalled();
+          expect(usageService.untrackSession).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('ignores a session start for the conversation the pane is already in', async () => {
+        const { session, cb, send } = await createPinnedSession();
+        cb.onStateChange.mockClear();
+        // Launch, launch with --resume, and compaction: none of them starts a turn.
+        for (const source of ['startup', 'resume', 'compact']) {
+          send('session_start', { session_id: OLD_ID, source });
+        }
+        expect(cb.onStateChange).not.toHaveBeenCalled();
+
+        // Picking the same conversation in /resume closes the window again.
+        send('session_end', { session_id: OLD_ID, reason: 'resume' });
+        send('session_start', { session_id: OLD_ID, source: 'resume' });
+        send('session_start', { session_id: NEW_ID, source: 'resume' });
+        expect(session.toolSessionId).toBe(OLD_ID);
+      });
+
+      it('points the remote usage reader at the new conversation and drops replies for the old one', async () => {
+        envState.type = 'ssh';
+        const cb = callbacks();
+        const session = await manager.createSession({ environmentId: 'env', cliTool: 'claude', workingDir: '/work' }, cb);
+        statusDetector.setHookCapable(session.id, true);
+        const send = (type: SwitchEvent, payload: Record<string, unknown>) => manager.handleHookEvent({
+          tetherSessionId: session.id, source: 'claude', type, payload,
+        });
+        const first = vi.mocked(remoteUsageService.start).mock.calls[0][0];
+        first.onSource('remote:old', OLD_ID);
+        expect(session.toolSessionId).toBe(OLD_ID);
+
+        send('session_end', { session_id: OLD_ID, reason: 'clear' });
+        send('session_start', { session_id: NEW_ID, source: 'clear' });
+
+        expect(session.toolSessionId).toBe(NEW_ID);
+        expect(remoteUsageService.start).toHaveBeenCalledTimes(2);
+        const second = vi.mocked(remoteUsageService.start).mock.calls[1][0];
+        expect(second).toMatchObject({ sessionId: session.id, cli: 'claude', workingDir: '/work', nativeSessionId: NEW_ID });
+        expect(session.toInfo().usageSessionId).toBe(`remote-pending:${session.id}`);
+        expect(usageService.trackSession).not.toHaveBeenCalled();
+        expect(usageService.untrackSession).not.toHaveBeenCalled();
+
+        // A reply still in flight for the old reader must not put the old id back.
+        first.onSource('remote:old', OLD_ID);
+        expect(session.toolSessionId).toBe(NEW_ID);
+        second.onSource('remote:new', NEW_ID);
+        expect(session.toInfo().usageSessionId).toBe('remote:new');
+      });
     });
   });
 
