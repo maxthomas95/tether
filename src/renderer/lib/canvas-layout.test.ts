@@ -84,6 +84,14 @@ describe('session canvas', () => {
     expect(canvasReducer(pruned, { type: 'OPEN', sessionId: 'fresh' }).panels).toHaveLength(2);
   });
 
+  it('hands a restarted session the panel of the one it replaces', () => {
+    const state = seed();
+    const swapped = canvasReducer(state, { type: 'REPLACE_SESSION_ID', fromSessionId: 's1', toSessionId: 'fresh' });
+    expect(swapped.panels[1]).toEqual({ ...state.panels[1], sessionId: 'fresh' });
+    expect(swapped.focusedPaneId).toBe(state.focusedPaneId);
+    expect(canvasReducer(state, { type: 'REPLACE_SESSION_ID', fromSessionId: 'absent', toSessionId: 'fresh' })).toBe(state);
+  });
+
   it('does not reopen closed panels when switching modes', () => {
     const state = canvasReducer(seed(), { type: 'REMOVE_PANE', paneId: 'canvas-s2' });
     expect(canvasReducer(state, { type: 'SEED', sessionIds: ['s0', 's1', 's2'], focusedSessionId: 's0' })).toBe(state);
