@@ -11,7 +11,9 @@ export function useWorkspaceLayout(enablePaneSplitting = true) {
   modeRef.current = { canvasEnabled, enablePaneSplitting };
   const canvasLayout = useMemo(() => canvasLayoutState(canvasState), [canvasState]);
   const layoutDispatch = useCallback((action: LayoutAction) => {
-    if (action.type === 'REMOVE_SESSION') {
+    // A session can be mounted in both arrangements; removing or replacing
+    // it applies to both, whichever one is showing.
+    if (action.type === 'REMOVE_SESSION' || action.type === 'REPLACE_SESSION_ID') {
       splitDispatch(action);
       canvasDispatch(action);
     } else if (modeRef.current.canvasEnabled) {

@@ -179,6 +179,20 @@ export function replaceSession(root: LayoutNode, paneId: PaneId, newSessionId: s
   };
 }
 
+/**
+ * Point every pane showing `fromSessionId` at `toSessionId`, keeping the pane
+ * itself. Returns the same tree when the session is not mounted.
+ */
+export function replaceSessionId(root: LayoutNode, fromSessionId: string, toSessionId: string): LayoutNode {
+  if (root.type === 'leaf') {
+    return root.sessionId === fromSessionId ? { ...root, sessionId: toSessionId } : root;
+  }
+  const first = replaceSessionId(root.children[0], fromSessionId, toSessionId);
+  const second = replaceSessionId(root.children[1], fromSessionId, toSessionId);
+  if (first === root.children[0] && second === root.children[1]) return root;
+  return { ...root, children: [first, second] };
+}
+
 export function getLeaves(root: LayoutNode | null): LayoutLeaf[] {
   if (!root) return [];
   if (root.type === 'leaf') return [root];

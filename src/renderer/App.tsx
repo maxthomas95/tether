@@ -57,6 +57,7 @@ import { nextDuplicateLabel } from './utils/duplicate-label';
 import { buildSessionRestartOptions } from './utils/session-restart';
 import { selectNextWaiting } from './utils/attention-queue';
 import { isSessionWorking } from './utils/session-status';
+import { runBatch, summarizeBatch, type BatchStepResult } from './utils/session-batch';
 import { sidebarSessionOrder, sessionsForEnvironment, sortRepoGroupEntries, sortSessionsByPref } from './utils/sidebar-order';
 import {
   SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_WIDTH_CONFIG_KEY, defaultSidebarWidth, parseSavedSidebarWidth,
@@ -95,6 +96,15 @@ import { usePipSettings } from './hooks/usePipSettings';
  * twitch) can't sneak through as "real" activity and re-bang the user.
  */
 const ACK_DROP_DELAY_MS = 5000;
+
+/** How long a remove or clear can be undone from its toast. */
+const UNDO_TOAST_TTL_MS = 8000;
+
+type CreateSessionOutcome =
+  | { status: 'created'; session: SessionInfo }
+  /** The user declined the Vault login the session needed. */
+  | { status: 'cancelled' }
+  | { status: 'failed'; error: unknown };
 
 export function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -815,6 +825,40 @@ export function App() {
     return () => { removeData(); removeState(); removeExit(); removeUpdated(); removeCreated(); };
   }, [termManager, notify]);
 
+  /**
+   * Vault preflight plus `session.create`, with the outcome returned instead
+   * of reported, so bulk actions can run several in turn and say what really
+   * happened. Registers the terminal; the caller places the session in the
+   * sidebar and the layout.
+   */
+  const createSessionFromOptions = useCallback(async (createOpts: CreateSessionOptions): Promise<CreateSessionOutcome> => {
+    // If this session would resolve vault:// refs but the Vault token is
+    // missing/expired, prompt for login first so the user doesn't have to
+    // open Settings, click Log In, click Save, then retry.
+    try {
+      const preflight = await window.electronAPI.session.vaultPreflight(createOpts);
+      if (preflight.needsLogin) {
+        const loggedIn = await new Promise<boolean>(resolve => {
+          setVaultPrompt({ reason: preflight.reason, onDone: resolve });
+        });
+        setVaultPrompt(null);
+        if (!loggedIn) return { status: 'cancelled' };
+      }
+    } catch (preflightErr) {
+      // Preflight failure shouldn't block session creation — fall through
+      // and let session.create produce its own error if one is warranted.
+      console.warn('Vault preflight failed:', preflightErr);
+    }
+    try {
+      const session = await window.electronAPI.session.create(createOpts);
+      recordSession(session.id);
+      termManager.getOrCreate(session.id);
+      return { status: 'created', session };
+    } catch (error) {
+      return { status: 'failed', error };
+    }
+  }, [termManager, recordSession]);
+
   const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean, launchSnapshotId?: string) => {
     const createOpts: CreateSessionOptions = {
       workingDir,
@@ -833,35 +877,16 @@ export function App() {
       helmEnabled,
       launchSnapshotId,
     };
-    try {
-      // If this session would resolve vault:// refs but the Vault token is
-      // missing/expired, prompt for login first so the user doesn't have to
-      // open Settings, click Log In, click Save, then retry.
-      try {
-        const preflight = await window.electronAPI.session.vaultPreflight(createOpts);
-        if (preflight.needsLogin) {
-          const loggedIn = await new Promise<boolean>(resolve => {
-            setVaultPrompt({ reason: preflight.reason, onDone: resolve });
-          });
-          setVaultPrompt(null);
-          if (!loggedIn) return; // user cancelled — silent abort
-        }
-      } catch (preflightErr) {
-        // Preflight failure shouldn't block session creation — fall through
-        // and let session.create produce its own error if one is warranted.
-        console.warn('Vault preflight failed:', preflightErr);
-      }
-      const session = await window.electronAPI.session.create(createOpts);
-      recordSession(session.id);
-      termManager.getOrCreate(session.id);
-      setSessions(prev => [...prev, session]);
-
-      openCreatedSession(session.id);
-    } catch (err) {
-      console.error('Failed to create session:', err);
-      notifyError('Failed to create session', err);
+    const outcome = await createSessionFromOptions(createOpts);
+    if (outcome.status === 'created') {
+      setSessions(prev => [...prev, outcome.session]);
+      openCreatedSession(outcome.session.id);
+    } else if (outcome.status === 'failed') {
+      console.error('Failed to create session:', outcome.error);
+      notifyError('Failed to create session', outcome.error);
     }
-  }, [termManager, notifyError, openCreatedSession, recordSession]);
+    // 'cancelled': the user declined the Vault login — silent abort.
+  }, [createSessionFromOptions, notifyError, openCreatedSession]);
 
   const registerRecipeSession = useCallback((session: SessionInfo) => {
     recordSession(session.id);
@@ -1003,6 +1028,32 @@ export function App() {
     }
   }, [notifyError]);
 
+  /** Bring a removed session back as a new one that resumes its conversation. */
+  const recreateFromSnapshot = useCallback(async (snap: SessionInfo): Promise<BatchStepResult> => {
+    const outcome = await createSessionFromOptions(buildSessionRestartOptions(snap));
+    if (outcome.status !== 'created') return outcome;
+    setSessions(prev => [...prev, outcome.session]);
+    openCreatedSession(outcome.session.id);
+    return { status: 'done' };
+  }, [createSessionFromOptions, openCreatedSession]);
+
+  /**
+   * Undo for a remove or a clear. Sessions come back one at a time, so a Vault
+   * login prompt is answered once and applies to the rest. Whatever could not
+   * be brought back is named in a toast and stays on offer through Retry.
+   */
+  const restoreSnapshotsRef = useRef<(snapshots: SessionInfo[]) => Promise<void>>(async () => {});
+  const restoreSnapshots = useCallback(async (snapshots: SessionInfo[]) => {
+    const result = await runBatch(snapshots, recreateFromSnapshot);
+    const remaining = [...result.failed.map(entry => entry.item), ...result.skipped];
+    if (remaining.length === 0) return;
+    notify({
+      ...summarizeBatch('Restored', result, 'Choose Retry to try again.'),
+      action: { label: 'Retry', onClick: () => { void restoreSnapshotsRef.current(remaining); } },
+    });
+  }, [recreateFromSnapshot, notify]);
+  restoreSnapshotsRef.current = restoreSnapshots;
+
   const handleRemove = useCallback(async (id: string) => {
     const session = sessions.find(s => s.id === id);
     let removeWorktree = false;
@@ -1037,6 +1088,18 @@ export function App() {
       return;
     }
 
+    // A worktree session was confirmed above (and its directory may be going
+    // away); every other remove is immediate, so it can be taken back.
+    if (session && !session.worktreeOf) {
+      const snapshot = { ...session };
+      notify({
+        type: 'info',
+        title: `Removed ${session.label}`,
+        ttl: UNDO_TOAST_TTL_MS,
+        action: { label: 'Undo', onClick: () => { void restoreSnapshots([snapshot]); } },
+      });
+    }
+
     if (removeWorktree && session?.worktreeOf) {
       try {
         await window.electronAPI.git.worktreeRemove({
@@ -1067,7 +1130,7 @@ export function App() {
         }
       }
     }
-  }, [sessions, termManager, layoutDispatch, confirmDialog, notify, notifyError, markExpectedSessionExit, clearPendingAckDrop]);
+  }, [sessions, termManager, layoutDispatch, confirmDialog, notify, notifyError, markExpectedSessionExit, clearPendingAckDrop, restoreSnapshots]);
 
   const handleToggleHelm = useCallback(async (id: string, enabled: boolean) => {
     try {
@@ -1130,25 +1193,34 @@ export function App() {
     setSessions(prev => prev.filter(s => !targets.some(t => t.id === s.id)));
   }, [termManager, layoutDispatch, markExpectedSessionExit, notifyError, clearPendingAckDrop]);
 
-  const recreateFromSnapshot = useCallback((snap: SessionInfo) => {
-    const opts = buildSessionRestartOptions(snap);
-    handleCreateSession(
-      opts.workingDir,
-      opts.label || '',
-      opts.environmentId,
-      undefined,
-      undefined,
-      opts.resumeToolSessionId,
-      undefined,
-      undefined,
-      opts.cliTool,
-      opts.customCliBinary,
-      undefined,
-      opts.worktreeOf,
-      opts.helmEnabled,
-      opts.launchSnapshotId,
-    );
-  }, [handleCreateSession]);
+  /**
+   * Restart one session without a gap: start its replacement first, hand it
+   * the old session's panes and sidebar slot, and only then remove the old
+   * one. If the replacement cannot start, the original is left untouched.
+   */
+  const restartSessionInPlace = useCallback(async (old: SessionInfo): Promise<BatchStepResult> => {
+    const outcome = await createSessionFromOptions(buildSessionRestartOptions(old));
+    if (outcome.status !== 'created') return outcome;
+    const fresh = old.fontSize === undefined ? outcome.session : { ...outcome.session, fontSize: old.fontSize };
+    setSessions(prev => prev.some(s => s.id === old.id)
+      ? prev.map(s => s.id === old.id ? fresh : s)
+      : [...prev, fresh]);
+    layoutDispatch({ type: 'REPLACE_SESSION_ID', fromSessionId: old.id, toSessionId: fresh.id });
+    markExpectedSessionExit(old.id);
+    try {
+      await window.electronAPI.session.remove(old.id);
+    } catch (err) {
+      // The old process may still be alive; keep its row so it stays reachable.
+      expectedSessionExitIds.current.delete(old.id);
+      setSessions(prev => prev.some(s => s.id === old.id) ? prev : [...prev, old]);
+      notifyError(`Restarted ${old.label}, but could not remove the previous session`, err);
+      return { status: 'done' };
+    }
+    termManager.remove(old.id);
+    clearPendingAckDrop(old.id);
+    waitingSinceRef.current.delete(old.id);
+    return { status: 'done' };
+  }, [createSessionFromOptions, layoutDispatch, markExpectedSessionExit, termManager, clearPendingAckDrop, notifyError]);
 
   const handleStopAllInGroup = useCallback(async (environmentId: string, workingDir: string) => {
     const targets = sessionsInGroup(environmentId, workingDir).filter(
@@ -1171,20 +1243,23 @@ export function App() {
     });
   }, [sessionsInGroup, markExpectedSessionExit, notify, notifyError]);
 
+  const restartAllBusyRef = useRef(false);
   const handleRestartAllInGroup = useCallback(async (environmentId: string, workingDir: string) => {
     const targets = sessionsInGroup(environmentId, workingDir);
     if (targets.length === 0) return;
-    const snapshots = targets.map(s => ({ ...s }));
-    await removeSessionsLocal(targets);
-    for (const snap of snapshots) {
-      recreateFromSnapshot(snap);
+    // One bulk restart at a time: a second click would target sessions that
+    // are in the middle of being replaced.
+    if (restartAllBusyRef.current) return;
+    restartAllBusyRef.current = true;
+    try {
+      const result = await runBatch(targets.map(s => ({ ...s })), restartSessionInPlace);
+      const summary = summarizeBatch('Restarted', result, 'They were left as they were.');
+      // Keep a partial result on screen long enough to read the names.
+      notify(summary.type === 'info' ? summary : { ...summary, ttl: 12000 });
+    } finally {
+      restartAllBusyRef.current = false;
     }
-    notify({
-      type: 'info',
-      title: `Restarted ${snapshots.length} session${snapshots.length === 1 ? '' : 's'}`,
-      ttl: 5000,
-    });
-  }, [sessionsInGroup, removeSessionsLocal, recreateFromSnapshot, notify]);
+  }, [sessionsInGroup, restartSessionInPlace, notify]);
 
   const handleClearAllInGroup = useCallback(async (environmentId: string, workingDir: string) => {
     const targets = sessionsInGroup(environmentId, workingDir);
@@ -1194,15 +1269,13 @@ export function App() {
     notify({
       type: 'info',
       title: `Cleared ${snapshots.length} session${snapshots.length === 1 ? '' : 's'}`,
-      ttl: 8000,
+      ttl: UNDO_TOAST_TTL_MS,
       action: {
         label: 'Undo',
-        onClick: () => {
-          for (const snap of snapshots) recreateFromSnapshot(snap);
-        },
+        onClick: () => { void restoreSnapshots(snapshots); },
       },
     });
-  }, [sessionsInGroup, removeSessionsLocal, recreateFromSnapshot, notify]);
+  }, [sessionsInGroup, removeSessionsLocal, restoreSnapshots, notify]);
 
   const canResumePrevious = useCallback((session: SessionInfo) => {
     if (!enableResumePicker) return false;

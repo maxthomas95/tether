@@ -4,6 +4,7 @@ import {
   removePane,
   replaceSession,
   removeSessionFromTree,
+  replaceSessionId,
   getLeaves,
   getLeafCount,
   findLeaf,
@@ -23,6 +24,8 @@ export type LayoutAction =
   | { type: 'REMOVE_PANE'; paneId: string }
   | { type: 'COMPACT_PLACEHOLDER'; paneId: string }
   | { type: 'REPLACE_SESSION'; paneId: string; sessionId: string }
+  /** A restarted session takes over the panes of the one it replaces. */
+  | { type: 'REPLACE_SESSION_ID'; fromSessionId: string; toSessionId: string }
   | { type: 'UPDATE_RATIO'; splitId: string; ratio: number }
   | { type: 'SET_FOCUS'; paneId: string | null }
   | { type: 'TOGGLE_MAXIMIZE'; paneId: string }
@@ -128,6 +131,12 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       if (!state.root) return state;
       const newRoot = replaceSession(state.root, action.paneId, action.sessionId);
       return { ...state, root: newRoot };
+    }
+
+    case 'REPLACE_SESSION_ID': {
+      if (!state.root) return state;
+      const newRoot = replaceSessionId(state.root, action.fromSessionId, action.toSessionId);
+      return newRoot === state.root ? state : { ...state, root: newRoot };
     }
 
     case 'UPDATE_RATIO': {
