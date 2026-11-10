@@ -11,7 +11,6 @@ import type {
 } from '../../shared/types';
 import { sessionManager, findVaultRefInSession, setHelmChildCallbacks } from '../session/session-manager';
 import { usageService } from '../usage/usage-service';
-import * as sessionRepo from '../db/session-repo';
 import { getEnvironment } from '../db/environment-repo';
 import { getStatus as getVaultStatus } from '../vault/vault-auth';
 import { createLogger } from '../logger';
@@ -32,7 +31,6 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     },
     onStateChange(sessionId: string, state: SessionState, waitingReason?: WaitingReason) {
       send(IPC.SESSION_STATE_CHANGE, sessionId, state, waitingReason);
-      sessionRepo.updateSessionState(sessionId, state);
     },
     onUpdate(sessionId: string, info: SessionInfo) {
       send(IPC.SESSION_UPDATED, sessionId, info);
@@ -61,14 +59,6 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     // `transport.start()` resolving and the `await` unblocking, which would
     // hit the temporal dead zone on the const binding (v0.1.3 SSH crash).
     const session = await sessionManager.createSession(opts, sessionCallbacks);
-
-    // Persist to DB
-    sessionRepo.createSessionRow({
-      label: session.label,
-      working_dir: session.workingDir,
-      environment_id: opts.environmentId,
-      state: 'running',
-    });
 
     // Start tracking usage for Claude sessions
     if (session.claudeSessionId && !session.usageSessionId) {
@@ -103,7 +93,6 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
 
   ipc.handle(IPC.SESSION_RENAME, async (_event, sessionId: string, label: string) => {
     sessionManager.renameSession(sessionId, label);
-    sessionRepo.updateSessionLabel(sessionId, label);
   });
 
   ipc.handle(IPC.SESSION_SET_HELM_ENABLED, async (_event, sessionId: string, enabled: boolean) => {
@@ -131,11 +120,13 @@ export function registerSessionHandlers(ctx: HandlerContext): void {
     // here is already the real conversation id (or undefined if codex hadn't
     // written its transcript yet — in which case we'd rather not resume than
     // resume a stale/unrelated conversation).
-    getDb().savedWorkspace = {
+    const next = {
       sessions: sessions.map(projectSavedSession),
       activeIndex,
       ...(canvas ? { canvas } : {}),
     };
+    if (JSON.stringify(next) === JSON.stringify(getDb().savedWorkspace)) return;
+    getDb().savedWorkspace = next;
     saveDb();
   });
 
