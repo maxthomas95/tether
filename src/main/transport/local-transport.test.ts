@@ -7,7 +7,9 @@ import { createTransportOptions, getPtySpawnSpy, setupPtyTransportTest } from '.
 // launch. Real resolution is covered by win-binary-resolver.test.ts.
 vi.mock('./win-binary-resolver', () => ({
   resolveWindowsLaunch: (binary: string) =>
-    binary === process.execPath
+    binary === 'tether-test-direct-shim'
+      ? { kind: 'direct', file: process.execPath, args: ['C:\\tools\\node_modules\\tool\\bin\\tool.js'] }
+      : binary === process.execPath
       ? { kind: 'direct', file: binary }
       : { kind: 'shell', file: binary },
 }));
@@ -45,6 +47,16 @@ describe('LocalTransport', () => {
     expect(file).toBe(process.execPath);
     expect(args).toEqual([]);
     expect(ptySpawnSpy.mock.calls[0][2].useConptyDll).toBe(true);
+  });
+
+  it('on win32, preserves quoted prompts through a direct shim launch', async () => {
+    platform.set('win32');
+    const prompt = 'say "hello" & continue';
+    await new LocalTransport().start(baseOptions({ binaryName: 'tether-test-direct-shim', initialPrompt: prompt }));
+    const [file, args] = ptySpawnSpy.mock.calls[0];
+    expect(file).toBe(process.execPath);
+    expect(args).toEqual(['C:\\tools\\node_modules\\tool\\bin\\tool.js', prompt]);
+    expect(file).not.toBe('cmd.exe');
   });
 
   it('on win32, uses cmd.exe for an unresolved command', async () => {

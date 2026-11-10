@@ -44,7 +44,7 @@ export function quotePosixPathPreservingHome(value: string): string {
 export function quoteCmdExeArg(value: string): string {
   assertNoNul(value, 'cmd.exe argument');
   if (value.includes('"')) {
-    throw new Error('cmd.exe arguments with double quotes are not supported here');
+    throw new Error('This CLI starts through a Windows batch file, which cannot safely receive arguments containing double quotes. Remove the quotes, or point the CLI path at the program itself.');
   }
 
   let out = '"';
@@ -77,7 +77,7 @@ export function escapeCmdExeArgForNodePty(value: string): string {
   assertNoNul(value, 'cmd.exe argument');
   assertNoCmdLineBreak(value, 'cmd.exe argument');
   if (value.includes('"')) {
-    throw new Error('cmd.exe arguments with double quotes are not supported here');
+    throw new Error('This CLI starts through a Windows batch file, which cannot safely receive arguments containing double quotes. Remove the quotes, or point the CLI path at the program itself.');
   }
 
   let out = '';
