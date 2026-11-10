@@ -182,6 +182,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
   const [cliHooksEnabled, setCliHooksEnabled] = useState(false);
   const [codexLifecycleHooksEnabled, setCodexLifecycleHooksEnabled] = useState(false);
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true);
+  const [confirmQuitWithActiveSessions, setConfirmQuitWithActiveSessions] = useState(true);
   const [updateChannel, setUpdateChannel] = useState<'stable' | 'beta'>('stable');
   const [quotaEnabled, setQuotaEnabled] = useState(true);
   const [codexQuotaWarningPercent, setCodexQuotaWarningPercent] = useState(0);
@@ -276,6 +277,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       window.electronAPI.config.get?.('enablePaneSplitting')?.catch(() => null),
       window.electronAPI.config.get?.('maxPanes')?.catch(() => null),
       window.electronAPI.config.get?.('updateCheckEnabled')?.catch(() => null),
+      window.electronAPI.config.get?.('confirmQuitWithActiveSessions')?.catch(() => null),
       window.electronAPI.config.get?.('quotaEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('codexQuotaWarningPercent')?.catch(() => null),
       window.electronAPI.config.get?.('usageStripEnabled')?.catch(() => null),
@@ -296,7 +298,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       window.electronAPI.config.get?.('updateChannel')?.catch(() => null),
       window.electronAPI.config.get('uiDensity').catch(() => null),
       window.electronAPI.config.get?.('showSubagentsInSidebar')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, quota, codexQuotaWarning, usageStrip, globalUsage, cliBreakdown, dailyBudget, weeklyBudget, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, codexLifecycleHooks, updateCh, densityValue, subagentsSetting]) => {
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, confirmQuit, quota, codexQuotaWarning, usageStrip, globalUsage, cliBreakdown, dailyBudget, weeklyBudget, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, codexLifecycleHooks, updateCh, densityValue, subagentsSetting]) => {
       if (cancelled) return;
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
@@ -311,6 +313,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       setEnablePaneSplitting(splitting === 'true');
       setMaxPanes(parseMaxPanes(maxPaneValue));
       setUpdateCheckEnabled(updateCheck !== 'false');
+      setConfirmQuitWithActiveSessions(confirmQuit !== 'false');
       setQuotaEnabled(quota !== 'false');
       setCodexQuotaWarningPercent(parsePercentSetting(codexQuotaWarning));
       setUsageStripEnabled(usageStrip !== 'false');
@@ -410,6 +413,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       await window.electronAPI.config.set?.('enablePaneSplitting', enablePaneSplitting ? 'true' : 'false');
       await window.electronAPI.config.set?.('maxPanes', String(maxPanes));
       await window.electronAPI.config.set?.('updateCheckEnabled', updateCheckEnabled ? 'true' : 'false');
+      await window.electronAPI.config.set?.('confirmQuitWithActiveSessions', confirmQuitWithActiveSessions ? 'true' : 'false');
       await window.electronAPI.config.set?.('updateChannel', updateChannel);
       await window.electronAPI.config.set?.('quotaEnabled', quotaEnabled ? 'true' : 'false');
       await window.electronAPI.quota.setEnabled(quotaEnabled);
@@ -449,7 +453,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
     } finally {
       setSaving(false);
     }
-  }, [saving, loaded, currentTheme, uiDensity, envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, showSubagents, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, updateChannel, quotaEnabled, codexQuotaWarningPercent, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, dailyBudgetUsd, weeklyBudgetUsd, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, codexLifecycleHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsSettings, jobsDirty, jobsTesting, onClose]);
+  }, [saving, loaded, currentTheme, uiDensity, envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, showSubagents, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, confirmQuitWithActiveSessions, updateChannel, quotaEnabled, codexQuotaWarningPercent, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, dailyBudgetUsd, weeklyBudgetUsd, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, codexLifecycleHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsSettings, jobsDirty, jobsTesting, onClose]);
 
   const handleJobsAction = async (action: 'save' | 'disable' | 'remove') => {
     if (jobsTesting || saving || (action === 'save' && !jobsSettings)) return;
@@ -626,7 +630,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
 
   const sectionTerms: Record<SettingsSection, string> = {
     appearance: 'theme color dark light font interface density comfortable compact sidebar subagents',
-    general: 'restore resume startup launch update folder logs',
+    general: 'restore resume startup launch update quit close folder logs',
     terminal: 'terminal cursor font size scrollback blink',
     sessions: 'profiles environment variables helm hooks splitting maximum panes advanced',
     'cli-tools': 'claude codex opencode copilot cli default flags update account usage quota configuration model agent reasoning profile hooks lifecycle mcp skill',
@@ -822,6 +826,17 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
                 Lets you pick an older Claude Code, Codex CLI, GitHub Copilot CLI, or OpenCode conversation for a local working directory.
               </p>
             </div>
+          </div>
+
+          <div className="form-group" style={{ marginTop: 20 }}>
+            <label className="form-radio-label">
+              <input
+                type="checkbox"
+                checked={confirmQuitWithActiveSessions}
+                onChange={e => setConfirmQuitWithActiveSessions(e.target.checked)}
+              />
+              Confirm before quitting while sessions are working
+            </label>
           </div>
 
           {/* Updates */}
