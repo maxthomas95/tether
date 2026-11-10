@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { SessionInfo, EnvironmentInfo, SessionState } from '../../shared/types';
+import type { SessionInfo, EnvironmentInfo } from '../../shared/types';
 import { CliToolBadge } from './CliToolBadge';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { onKeyActivate, stopPropagationOnKey } from '../utils/a11y';
 import { abbreviatePath } from '../utils/paths';
 import { searchSessions, type SearchableSession, type SearchHit } from '../utils/session-search';
+import { plainStatusDotClass } from '../utils/session-status';
 
 interface SessionSearchDialogProps {
   isOpen: boolean;
@@ -14,24 +15,6 @@ interface SessionSearchDialogProps {
   /** Activate (focus / bring forward) the chosen session. Reuses the same
    *  selection path the sidebar uses — see App.tsx handleActivateFromSearch. */
   onActivate: (sessionId: string) => void;
-}
-
-/** Map a session state to the status-dot modifier class used in the sidebar. */
-function statusDotClass(state: SessionState): string {
-  switch (state) {
-    case 'running':
-    case 'starting':
-      return 'running';
-    case 'waiting':
-      return 'waiting';
-    case 'idle':
-      return 'idle';
-    case 'stopped':
-    case 'dead':
-      return 'dead';
-    default:
-      return 'idle';
-  }
 }
 
 /**
@@ -194,7 +177,7 @@ export function SessionSearchDialog({ isOpen, sessions, environments, onClose, o
                   onKeyDown={onKeyActivate(() => activate(s.id))}
                   onMouseMove={() => setSelectedIndex(index)}
                 >
-                  <span className={`status-dot status-dot--${statusDotClass(s.state)}`} aria-hidden="true" />
+                  <span className={`status-dot status-dot--${plainStatusDotClass(s.state)}`} aria-hidden="true" />
                   <span className="session-search-label">{s.label}</span>
                   <CliToolBadge session={s} />
                   <span className="session-search-dir">{abbreviatePath(s.workingDir)}</span>

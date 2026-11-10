@@ -60,6 +60,8 @@ read failure ends that watcher without interrupting the running CLI.
 
 For local Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode sessions, use **Resume conversation** in the launcher to choose history for the working directory. Tether uses `claude --resume <id>`, `codex resume <id>`, `copilot --resume <id>`, or `opencode --session <id>`. The conversation picker is local-only.
 
+A local session's right-click menu also has **Resume previous conversation...**. It opens the chosen conversation as a new session in the same directory and environment, keeping the original session's launch profile and its session-specific environment and CLI flag overrides, as **Duplicate** does.
+
 OpenCode history requires a working OpenCode installation in an absolute directory on your system PATH. Windows native executables and npm `.cmd` installations are supported. Tether asks OpenCode for its session list; if that command is unavailable or cannot finish, the picker stays empty without interrupting running sessions.
 
 For Claude Code and Codex CLI over **SSH or Coder**, **Restart in this pane** and **Restart all** resume the exact conversation when Tether knows its native session ID. Workspace restore also uses that ID when **Resume previous conversations** is enabled. Claude's ID is assigned at launch; Codex's ID is captured by the passive remote usage connection, independently of status hooks. Tether never chooses the most recent conversation in the directory, so another session in the same repo cannot change which conversation is resumed.
@@ -92,7 +94,7 @@ Each session has a state, shown by the colored dot in the sidebar:
 | **Waiting** | Amber | The CLI is paused on a prompt (input, permission, tool approval) |
 | **Idle** | Gray | Session is alive but quiet |
 | **Stopped** | Gray (dim) | Session was stopped gracefully |
-| **Dead** | Red | The process exited with an error, or the transport failed |
+| **Dead** | Red | The process exited with an error, or the transport failed. Shown as **Failed** in the sidebar |
 
 State detection is passive — Tether watches output cadence; it does not parse or filter the terminal stream. With [CLI hooks](settings.md#cli-hooks) enabled, Claude/Codex sessions get hook-grade detection on top: local sessions automatically, SSH sessions when their environment opts in via [CLI status hooks on remote hosts](environments.md#cli-status-hooks-on-remote-hosts). Coder sessions are cadence-only for now.
 
@@ -124,7 +126,7 @@ Double-click the label in the sidebar, or right-click and choose **Rename**. Ent
 
 ### Stopping
 
-**Ctrl+W** or **Stop** requests shutdown of the active session. Local and Coder sessions terminate their local PTY process; SSH sends **Ctrl+C**, then `exit`, and closes the connection. If the session remains alive, Tether escalates after the 3-second grace period. A second **Stop** during that period forces an immediate kill.
+**Ctrl+W** or **Session → Stop Session** requests shutdown of the active session. If that session is still working (starting, running, or blocked on a permission prompt), Tether asks first; a session resting at its prompt stops at once. **Stop** in a session's right-click menu names its target and stops it without asking. Local and Coder sessions terminate their local PTY process; SSH sends **Ctrl+C**, then `exit`, and closes the connection. If the session remains alive, Tether escalates after the 3-second grace period. A second **Stop** during that period forces an immediate kill.
 
 Windows local and Coder sessions use the bundled terminal backend so **Stop** works with the packaged app's security hardening enabled.
 
@@ -238,7 +240,9 @@ Press **Ctrl+P** (or **Session → Find Session…**) to open the quick switcher
 - **Esc** closes the switcher
 - Clicking a row opens it too
 
-Opening a session from the switcher behaves exactly like clicking it in the sidebar: if it's already mounted in a pane, that pane is focused (and un-maximized if it was hidden behind a maximized pane); otherwise it replaces the focused/empty pane in a standard layout or adds a panel in Canvas.
+Opening a session from the switcher behaves exactly like clicking it in the sidebar: if it's already mounted in a pane, that pane is focused (and un-maximized if it was hidden behind a maximized pane); otherwise it replaces the focused/empty pane in a standard layout or adds a panel in Canvas. **Ctrl+1** through **Ctrl+9** open the first through ninth session in sidebar order the same way; sessions inside collapsed groups still count.
+
+Focus never rests on a hidden pane. Any action that moves focus to a pane behind a maximized one, including a notification click and **Ctrl+ArrowDown** / **Ctrl+ArrowUp**, restores the split first.
 
 Switching sessions preserves the background session's terminal buffer. Pending layout work from the previous session is discarded so only the current session receives focus and terminal-size updates.
 

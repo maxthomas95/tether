@@ -453,9 +453,9 @@ textarea:focus-visible,
 
 /* Sidebar */
 .sidebar {
+  /* Min and max width are set inline from utils/sidebar-width.ts, the one
+     definition the resize handle also clamps to. */
   width: var(--sidebar-width);
-  min-width: 180px;
-  max-width: 320px;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
   display: flex;
@@ -950,6 +950,12 @@ textarea:focus-visible,
 
 .status-dot--idle {
   background: var(--status-idle);
+}
+
+/* A clean stop: the idle gray, dimmed. Only a failure (dead) is red. */
+.status-dot--stopped {
+  background: var(--status-idle);
+  opacity: 0.5;
 }
 
 .status-dot--dead {
@@ -2958,6 +2964,10 @@ input[type="password"].form-input {
   font-size: var(--text-sm);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.dead-pane-overlay-title--dead {
+  color: var(--status-dead);
 }
 
 .dead-pane-overlay-actions {

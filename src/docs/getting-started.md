@@ -60,27 +60,30 @@ The left sidebar groups sessions by environment and then by working directory. U
 
 Each session row shows:
 
-- A **status dot** — green (running), amber (waiting on you), gray (idle or stopped), red (dead)
+- A **status dot** — green (running), amber (waiting on you), gray (idle), dim gray (stopped cleanly), red (failed)
 - The **CLI badge and readable state**, with the shared path available on the repo group and row tooltip
 - The **label** (auto-named from the directory, or rename inline by double-clicking)
 - A **pane badge** when the session is currently mounted in a split pane
 - A **🔕 badge** when notifications are muted for that session
 - A **↻ badge** when the session was resumed from a previous conversation (optional — see [Settings](settings.md#session-restore))
 
-Drag sessions to reorder them inside a group. Right-click a group header for **bulk actions** (Stop all, Restart all, Clear all). Right-click a session for per-session actions (Stop, Duplicate, Remove, Mute/Unmute notifications, Helm enable). Collapse groups with the chevron. Resize the sidebar by dragging its edge or hide it with **Ctrl+B**.
+Drag sessions to reorder them inside a group. Right-click a group header for **bulk actions** (Stop all, Restart all, Clear all). Right-click a session for per-session actions (Stop, Duplicate, Remove, Mute/Unmute notifications, Helm enable). Collapse groups with the chevron. Resize the sidebar by dragging its edge (180 to 400 px; the width you choose is remembered) or hide it with **Ctrl+B**.
 
-Footers along the bottom of the sidebar show:
+Along the bottom of the sidebar, from top to bottom:
 
-- [Vault](vault.md) auth and expiry status
+- The [GIF panel](settings.md#gif-panel) and [Pip](settings.md#pip-sidebar-pet), when you have turned them on from the **View** menu
 - Today's [cost and 7-day usage sparkline](usage-quota.md#global-usage-footer)
 - [Subscription quota](usage-quota.md#quota-tracking) status (if you've enabled it)
+- [Vault](vault.md) auth and expiry status
+- The J.O.B.S. office pill, when that [integration](settings.md#integrations) is set up
+- A **waiting** pill with the number of sessions waiting on you (click it to jump to the next one; see [Attention queue](sessions.md#attention-queue)), beside the **Settings** button
 
 ### Terminal Panel
 
 The main area displays the active session. It's a real terminal emulator (xterm.js — the same one VS Code uses). Output flows through byte-for-byte; Tether does not parse or rewrite what the CLI prints. State detection is a passive side-channel.
 
 - Click a session in the sidebar to switch to it
-- **Ctrl+1** through **Ctrl+9** — switch by position
+- **Ctrl+1** through **Ctrl+9** — switch to the first through ninth session in sidebar order
 - **Ctrl+ArrowDown** / **Ctrl+ArrowUp** — focus the next / previous pane in layout order
 - **Ctrl+scroll** on the terminal — change terminal font size
 - **Ctrl+=** / **Ctrl+-** — zoom the whole window (UI + terminal together)

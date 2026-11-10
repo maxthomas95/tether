@@ -29,7 +29,7 @@ stops the maintenance terminal. Interrupted updates may need to be retried.
 Maintenance terminals are temporary: they are not saved as conversations and do not
 install Tether status hooks or contribute session usage statistics.
 
-Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **View** in the menu bar. Search for a settings section by name or topic, such as “theme”, “hooks”, or “usage”. The dialog has nine sections:
+Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **File → Settings…** in the menu bar. Search for a settings section by name or topic, such as “theme”, “hooks”, or “usage”. The dialog has nine sections:
 
 - [General](#general) — session restore and update checks
 - [Appearance](#appearance) — theme previews, UI font, and interface density
@@ -37,7 +37,7 @@ Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **Vie
 - [Sessions](#sessions) — launch profiles, default env vars, Helm and status hooks
 - [Notifications](#notifications) — desktop notification triggers and suppression
 - [Shortcuts](#shortcuts) — keyboard shortcut customization
-- [Integrations](#integrations) — Vault, Git providers, SSH known hosts, diagnostics, J.O.B.S. office
+- [Integrations](#integrations) — Vault, Git providers, SSH known hosts, J.O.B.S. office
 - [CLI tools](#cli-tools) — Claude, Codex, OpenCode and Copilot launch defaults, updates and native controls
 - [Usage](#usage) — cost tracking, history dialog, exports, subscription quota
 
@@ -151,6 +151,10 @@ Pick the font used in the sidebar, dialogs, and menus:
 ### Show subagents in sidebar
 
 On by default. Lists the subagents a Claude Code session (local, SSH or Coder) has started under that session, and the `codex exec` runs a local session has launched (when Codex lifecycle hooks are tracked and trusted), with their status, model and token use; click one to read its transcript. Turn it off to hide the rows and stop Tether reading subagent files on this machine and on remote hosts, and local Codex rollout files. Applies when you save. See [Subagents](sessions.md#subagents) and [Codex exec runs](sessions.md#codex-exec-runs).
+
+## Sidebar panels
+
+The GIF panel and Pip are not controls in the Settings dialog. Turn each one on from the **View** menu; its options are in the panel itself and save immediately.
 
 ### GIF panel
 
@@ -343,6 +347,7 @@ To opt out:
 - **Remove integration… → Remove and forget** turns the integration off and clears its saved URL, encrypted token, folder, and sharing preferences. It leaves JOBS files and independently running servers alone. Enable the connection again to add a new setup.
 
 When sharing ends or the server changes, Tether makes a best-effort request to remove its agents from the previous office. If that server cannot be reached, its stale-agent timeout clears them later. Closing the office view only closes the view; use the settings above to opt out of sharing.
+
 ### Diagnostics export
 
 Open **About → Export diagnostics for support** to create a zip containing a scrubbed copy of `data.json`, rotated logs, and a version/OS manifest. Credentials, encrypted secrets, saved launch-setting snapshots, and all literal environment values are redacted; Vault references and variable names are preserved. Malformed environment JSON is redacted too. Log scrubbing removes recognized credential patterns. The export is in About, not a control in this settings section.
