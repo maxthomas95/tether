@@ -78,6 +78,8 @@ Caveats:
 
 The new environment appears as a top-level group in the sidebar.
 
+If an environment cannot be created or saved, the dialog stays open with your settings so you can correct them and try again.
+
 ## Environment Settings
 
 Each environment can have:
