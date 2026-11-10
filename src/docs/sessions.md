@@ -258,6 +258,8 @@ Hover any session row for about a third of a second and a small popover shows it
 
 Tether saves open sessions and their order to `{userData}/data.json` as the workspace changes. Writes are atomic (tmp file → fsync → rename) and survive AV / OneDrive transient locks via a short retry loop. On next launch, saved sessions reopen when **Restore sessions on launch** is enabled.
 
+Closing Tether while sessions are working asks for confirmation first. Idle sessions close without a prompt and can be restored on the next launch.
+
 Workspace restore keeps an opaque reference to the encrypted launch settings for each saved session. It restores the selected launch profile and any session-specific environment variables, CLI flags, and disabled inherited flags. Global defaults, environment settings, and the profile's current values are still read from current configuration, and Vault references are resolved again during launch. Older workspace entries without saved launch settings reopen with their existing metadata-only behavior.
 
 Entries that fail to restore remain saved for the next launch, even while other sessions open or close. The error notification offers **Forget failed sessions**; confirming removes those entries from the saved workspace. Dismissing the notification keeps them saved.

@@ -56,6 +56,8 @@ Controls what happens to your sessions when you quit and relaunch Tether:
 
 Restore, automatic conversation resume, and the manual resume picker are on by default. The resumed-session badge is off by default.
 
+**Confirm before quitting while sessions are working** is on by default. It asks before closing Tether when a session is starting, running, or waiting for permission.
+
 When a saved workspace is restored, Tether also restores the selected launch profile and any SESSION-level env-var overrides, CLI flags, and disabled inherited flags that were used to start each session. The saved record is encrypted with the OS keychain and the renderer only carries an opaque id. Global defaults, environment settings, and launch profile contents are read from current Settings at the next launch, and Vault references are resolved again. If the keychain is unavailable or a saved profile was deleted, Tether does not start that session and shows the restore error instead of launching it with different settings.
 
 Workspace recipes follow the same rule when you open them: saved launch references are protected, Vault values are resolved fresh, and current defaults, environment settings, and launch profile contents are read at launch time. Changing default flags, profile contents, or environment variables in Settings changes future recipe launches; it does not rewrite existing recipes.

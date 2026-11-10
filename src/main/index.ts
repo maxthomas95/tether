@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import path from 'node:path';
 import { createTrustedIpc } from './ipc/trusted-ipc';
 import { isAllowedAppNavigation, hardenOfficeGuest } from './window-security';
@@ -10,7 +10,7 @@ import { quotaService } from './quota/quota-service';
 import { usageService } from './usage/usage-service';
 import { loadPrices } from './usage/model-pricing';
 import { refreshPricesInBackground } from './usage/pricing-fetcher';
-import { getDb, closeDb } from './db/database';
+import { getDb, closeDb, saveDb } from './db/database';
 import { ensureDefaultLocalEnvironment } from './db/environment-repo';
 import { markAllRunningAsStopped } from './db/session-repo';
 import { startHookService, stopHookService } from './cli-config/hook-service';
@@ -24,6 +24,7 @@ import { buildThemeQuery, getTheme } from '../shared/themes';
 import { loadLocalThemes } from './themes/local-themes';
 import { IPC } from '../shared/constants';
 import { createLogger, closeLogger } from './logger';
+import { countSessionsInFlight, shouldConfirmQuit } from './quit-guard';
 
 // Install global error handlers before anything else so that errors thrown
 // during startup (vault resolution, SSH init, etc.) are captured and logged
@@ -44,6 +45,8 @@ if (squirrelStartup) {
 let mainWindow: BrowserWindow | null = null;
 let docsWindow: BrowserWindow | null = null;
 let hookShutdownDone = false;
+let quitConfirmed = false;
+let quitConfirmationPromise: Promise<boolean> | null = null;
 const outboundWebhookService = createOutboundWebhookService({
   getPrefs: () => readPrefsFromConfig(getDb().config),
 });
@@ -86,6 +89,51 @@ function hardenNavigation(win: BrowserWindow, htmlFile: string, devServerUrl?: s
     event.preventDefault();
     openExternalWebUrl(url);
   });
+}
+
+function needsQuitConfirmation(): boolean {
+  return shouldConfirmQuit({
+    configValue: getDb().config.confirmQuitWithActiveSessions,
+    inFlight: countSessionsInFlight(sessionManager.listSessions()),
+    alreadyConfirmed: quitConfirmed,
+  });
+}
+
+async function confirmQuitIfNeeded(): Promise<boolean> {
+  if (!needsQuitConfirmation()) return true;
+  if (quitConfirmationPromise) return quitConfirmationPromise;
+
+  // With no window there is nothing to ask on. Refusing here would leave a
+  // windowless app that can never quit.
+  const window = mainWindow;
+  if (!window || window.isDestroyed()) return true;
+
+  const inFlight = countSessionsInFlight(sessionManager.listSessions());
+  const confirmation = dialog.showMessageBox(window, {
+    type: 'warning',
+    buttons: ['Quit', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Quit Tether?',
+    message: inFlight === 1 ? '1 session is still working' : `${inFlight} sessions are still working`,
+    detail: 'Quitting stops them. Conversations can be resumed on the next launch, but work in progress is interrupted.',
+    checkboxLabel: "Don't ask again",
+  }).then(({ response, checkboxChecked }) => {
+    if (response !== 0) return false;
+
+    quitConfirmed = true;
+    if (checkboxChecked) {
+      getDb().config.confirmQuitWithActiveSessions = 'false';
+      saveDb();
+    }
+    return true;
+  });
+  quitConfirmationPromise = confirmation;
+  try {
+    return await confirmation;
+  } finally {
+    if (quitConfirmationPromise === confirmation) quitConfirmationPromise = null;
+  }
 }
 
 function createDocsWindow(target?: DocsOpenTarget): void {
@@ -201,24 +249,18 @@ const createWindow = () => {
   hardenNavigation(mainWindow, path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`), MAIN_WINDOW_VITE_DEV_SERVER_URL);
   hardenOfficeGuest(mainWindow);
 
-  // Block browser-style refresh shortcuts (Ctrl+R, Ctrl+Shift+R, F5).
-  // Tether isn't a website — an accidental refresh disconnects the renderer
-  // from live PTY sessions.
-  mainWindow.webContents.on('before-input-event', (event, input) => {
-    const ctrl = input.control || input.meta;
-    if (ctrl && input.key.toLowerCase() === 'r') {
-      event.preventDefault();
-    }
-    if (input.key === 'F5') {
-      event.preventDefault();
-    }
-  });
-
-  // Wait until the renderer has painted its first frame (which includes
-  // the inline boot loader in index.html) before showing the window.
-  // This avoids a blank/white flash on launch.
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
+  let revealed = false;
+  let revealFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearRevealFallbackTimer = () => {
+    if (revealFallbackTimer) clearTimeout(revealFallbackTimer);
+    revealFallbackTimer = null;
+  };
+  const revealMainWindow = (reason: 'ready-to-show' | 'fallback') => {
+    if (revealed || !mainWindow || mainWindow.isDestroyed()) return;
+    revealed = true;
+    clearRevealFallbackTimer();
+    log.info('Showing main window', { reason });
+    mainWindow.show();
 
     // Background update check — non-blocking, 15s after window shows.
     // TODO: Replace with electron-updater auto-update when code signing is implemented.
@@ -259,6 +301,27 @@ const createWindow = () => {
       jobsService.start();
       jobsBridge.start();
     }, 5_000);
+  };
+
+  // Block browser-style refresh shortcuts (Ctrl+R, Ctrl+Shift+R, F5).
+  // Tether isn't a website — an accidental refresh disconnects the renderer
+  // from live PTY sessions.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    const ctrl = input.control || input.meta;
+    if (ctrl && input.key.toLowerCase() === 'r') {
+      event.preventDefault();
+    }
+    if (input.key === 'F5') {
+      event.preventDefault();
+    }
+  });
+
+  // Wait until the renderer has painted its first frame (which includes
+  // the inline boot loader in index.html) before showing the window.
+  // This avoids a blank/white flash on launch.
+  mainWindow.once('ready-to-show', () => {
+    clearRevealFallbackTimer();
+    revealMainWindow('ready-to-show');
   });
 
   registerIpcHandlers(mainWindow, getDocsWindow);
@@ -293,7 +356,22 @@ const createWindow = () => {
     );
   }
 
+  revealFallbackTimer = setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
+    log.warn('ready-to-show did not fire; showing window anyway');
+    revealMainWindow('fallback');
+  }, 4_000);
+
+  mainWindow.on('close', (event) => {
+    if (!needsQuitConfirmation()) return;
+    event.preventDefault();
+    void confirmQuitIfNeeded().then(confirmed => {
+      if (confirmed && mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+    });
+  });
+
   mainWindow.on('closed', () => {
+    clearRevealFallbackTimer();
     mainWindow = null;
   });
 };
@@ -311,6 +389,7 @@ if (!gotTheLock) {
 } else {
   app.on('second-instance', () => {
     if (mainWindow) {
+      if (!mainWindow.isVisible()) mainWindow.show();
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
@@ -346,6 +425,15 @@ if (!gotTheLock) {
   });
 
   app.on('before-quit', (event) => {
+    // Only ask while the window still exists. Once it has closed, a session
+    // that flips to running between `closed` and here must not block the quit.
+    if (mainWindow && !mainWindow.isDestroyed() && needsQuitConfirmation()) {
+      event.preventDefault();
+      void confirmQuitIfNeeded().then(confirmed => {
+        if (confirmed) app.quit();
+      });
+      return;
+    }
     log.info('App shutting down');
     // Hook teardown is async (uninstall settings.json mutation) but
     // before-quit is synchronous. Best-effort: preventDefault long enough
