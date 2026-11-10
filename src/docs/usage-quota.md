@@ -1,6 +1,6 @@
 # Usage & Quota
 
-Tether reads local CLI metadata and sanitized Claude Code/Codex usage records collected over SSH or Coder. Terminal output continues directly to the terminal; usage tracking does not intercept it. Claude Code and Codex costs are estimates at API rates, using a cached [LiteLLM](https://github.com/BerriAI/litellm) pricing table. Native OpenCode and legacy Crush costs are reported by those CLIs. Neither source represents a subscription invoice.
+Tether reads local CLI metadata and sanitized Claude Code/Codex usage records collected over SSH or Coder. Terminal output continues directly to the terminal; usage tracking does not intercept it. Claude Code and Codex costs are estimates at API rates, using a cached [LiteLLM](https://github.com/BerriAI/litellm) pricing table. A model newer than the table is priced from the newest listed version of the same family, and a model from a family the table does not know uses a default rate, so very new models can be approximate until the table refreshes. Native OpenCode and legacy Crush costs are reported by those CLIs. Neither source represents a subscription invoice.
 
 ## How It Works
 
