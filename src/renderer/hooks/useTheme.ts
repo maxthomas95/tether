@@ -7,7 +7,7 @@ import type { ITheme } from '@xterm/xterm';
 export function useTheme(onError?: (title: string, error: unknown) => void) {
   const [themeName, setThemeNameState] = useState(DEFAULT_THEME);
   const themeRef = useRef<TetherTheme>(getTheme(DEFAULT_THEME));
-  const [availableThemes, setAvailableThemes] = useState(themeList);
+  const [availableThemes, setAvailableThemes] = useState(() => [...themeList]);
   const [localThemeCatalog, setLocalThemeCatalog] = useState<LocalThemeCatalog>({ directory: '', themes: [], issues: [] });
   const mounted = useRef(true);
 
@@ -22,7 +22,7 @@ export function useTheme(onError?: (title: string, error: unknown) => void) {
 
   const installCatalog = useCallback((catalog: LocalThemeCatalog) => {
     setLocalThemes(catalog.themes);
-    setAvailableThemes(themeList);
+    setAvailableThemes([...themeList]);
     setLocalThemeCatalog(catalog);
   }, []);
 

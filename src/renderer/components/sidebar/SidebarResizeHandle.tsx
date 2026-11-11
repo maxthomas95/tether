@@ -7,7 +7,7 @@ interface SidebarResizeHandleProps {
   onResizeEnd?: (width: number) => void;
 }
 
-export function SidebarResizeHandle({ onResize, onResizeEnd }: SidebarResizeHandleProps) {
+export function SidebarResizeHandle({ onResize, onResizeEnd }: Readonly<SidebarResizeHandleProps>) {
   const dragging = useRef(false);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {

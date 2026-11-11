@@ -4,12 +4,13 @@ import { EnvVarEditor } from '../EnvVarEditor';
 import { HelpAnchor } from '../HelpAnchor';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
-import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, AdoProjectInfo, CoderWorkspace, CoderTemplate, CoderTemplateParam, CliToolId } from '../../../shared/types';
+import type { EnvironmentInfo, LaunchProfileInfo, GitProviderInfo, GitRepoInfo, CloneProgressInfo, AdoProjectInfo, CoderWorkspace, CoderTemplate, CoderTemplateParam, CliToolId, CreateSessionOptions } from '../../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import type { CliToolDef } from '../../../shared/cli-tools';
 import { onKeyActivate } from '../../utils/a11y';
 import { shouldHandleDialogEnter } from '../../utils/dialog-keyboard';
 import { submitAndClose } from '../../utils/submit-and-close';
+import { buildLaunchRequest } from '../../utils/create-session-request';
 
 type CliFlagsPerTool = Partial<Record<CliToolId, string[]>>;
 
@@ -230,12 +231,16 @@ function CoderCloneTarget({
   );
 }
 
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 interface NewSessionDialogProps {
   isOpen: boolean;
   environments: EnvironmentInfo[];
   profiles: LaunchProfileInfo[];
   onClose: () => void;
-  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean) => Promise<boolean>;
+  onCreate: (request: CreateSessionOptions) => Promise<boolean>;
   /** Optional environment to preselect when the dialog opens. Used by the welcome pane CTAs. */
   initialEnvId?: string;
   initialDirectory?: string;
@@ -690,55 +695,61 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     if (dir) setDirectory(dir);
   };
 
+  /** The launch settings chosen in this dialog, for a session in `workingDir`. */
+  const launchRequest = (workingDir: string, sessionLabel: string, extra: Partial<CreateSessionOptions> = {}): CreateSessionOptions =>
+    buildLaunchRequest({
+      workingDir, label: sessionLabel, environmentId: envId, env: sessionEnvVars, cliArgs: sessionCliFlags,
+      disabledFlags, profileId, cliTool, customBinary, helmEnabled,
+    }, extra);
+
+  /** Returns the new worktree's directory, or null (with the error shown) when it could not be created. */
+  const addRequestedWorktree = async (sourceRepo: string): Promise<string | null> => {
+    const branch = worktreeBranch.trim();
+    const path = worktreePath.trim();
+    if (!branch || !path) {
+      setWorktreeError('Branch name and path are required.');
+      return null;
+    }
+    setCreatingWorktree(true);
+    setWorktreeError('');
+    try {
+      return await window.electronAPI.git.worktreeAdd({ sourceRepo, worktreePath: path, branch });
+    } catch (err: unknown) {
+      setWorktreeError(errorText(err));
+      setCreatingWorktree(false);
+      return null;
+    }
+  };
+
+  /** A worktree made for a session that then failed to start is not left behind silently. */
+  const removeUnusedWorktree = async (sourceRepo: string) => {
+    try {
+      await window.electronAPI.git.worktreeRemove({ sourceRepo, worktreePath: worktreePath.trim(), force: true });
+    } catch (err: unknown) {
+      setWorktreeError(`The session did not start and the worktree was left at ${worktreePath.trim()}: ${errorText(err)}`);
+    }
+  };
+
   const handleCreate = async (resumeToolSessionId?: string) => {
-    if (!directory.trim() || creatingWorktree || creatingSession) return;
+    const sourceDir = directory.trim();
+    if (!sourceDir || creatingWorktree || creatingSession) return;
 
-    let effectiveDir = directory.trim();
-    let worktreeSourceRepo: string | undefined;
-    let createdWorktree = false;
-
-    if (createWorktree && dirIsRepo) {
-      const branch = worktreeBranch.trim();
-      const path = worktreePath.trim();
-      if (!branch || !path) {
-        setWorktreeError('Branch name and path are required.');
-        return;
-      }
-      setCreatingWorktree(true);
-      setWorktreeError('');
-      try {
-        // capture before effectiveDir is reassigned
-        worktreeSourceRepo = directory.trim();
-        effectiveDir = await window.electronAPI.git.worktreeAdd({
-          sourceRepo: worktreeSourceRepo,
-          worktreePath: path,
-          branch,
-        });
-        createdWorktree = true;
-      } catch (err: unknown) {
-        setWorktreeError(err instanceof Error ? err.message : String(err));
-        setCreatingWorktree(false);
-        return;
-      }
+    const worktreeSourceRepo = createWorktree && dirIsRepo ? sourceDir : undefined;
+    let effectiveDir = sourceDir;
+    if (worktreeSourceRepo) {
+      const worktreeDir = await addRequestedWorktree(worktreeSourceRepo);
+      if (worktreeDir === null) return;
+      effectiveDir = worktreeDir;
+    } else {
+      setCreatingSession(true);
     }
 
-    const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
-    const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
-    const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
-    if (!createdWorktree) setCreatingSession(true);
     try {
       const created = await submitAndClose(
-        () => onCreate(effectiveDir, label.trim(), envId || undefined, env, args, resumeToolSessionId, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, worktreeSourceRepo, helmEnabled || undefined),
+        () => onCreate(launchRequest(effectiveDir, label.trim(), { resumeToolSessionId, worktreeOf: worktreeSourceRepo })),
         resetAndClose,
       );
-      if (!created && createdWorktree && worktreeSourceRepo) {
-        try {
-          await window.electronAPI.git.worktreeRemove({ sourceRepo: worktreeSourceRepo, worktreePath: worktreePath.trim(), force: true });
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          setWorktreeError(`The session did not start and the worktree was left at ${worktreePath.trim()}: ${message}`);
-        }
-      }
+      if (!created && worktreeSourceRepo) await removeUnusedWorktree(worktreeSourceRepo);
     } finally {
       setCreatingWorktree(false);
       setCreatingSession(false);
@@ -818,11 +829,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
         }
       }
 
-      const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
-      const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
-      const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
       await submitAndClose(
-        () => onCreate(createdPath, label.trim() || name, envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, undefined, helmEnabled || undefined),
+        () => onCreate(launchRequest(createdPath, label.trim() || name)),
         resetAndClose,
       );
     } catch (err: unknown) {
@@ -853,14 +861,11 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
           return;
         }
         const destInside = coderCloneFullPath;
-        const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
-        const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
         // Encode workspace + target subdir so CoderTransport runs
         // `git clone <url> <subdir> && cd <subdir> && <cli>` inside the
         // workspace PTY. All clone output streams to the terminal.
-        const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
         await submitAndClose(
-          () => onCreate(`${coderCloneWorkspace}::${destInside}`, label.trim() || repoName, envId, env, args, undefined, profileId || undefined, url, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, undefined, helmEnabled || undefined),
+          () => onCreate(launchRequest(`${coderCloneWorkspace}::${destInside}`, label.trim() || repoName, { cloneUrl: url })),
           resetAndClose,
         );
         return;
@@ -874,11 +879,8 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       const sep = cloneDestination.includes('/') ? '/' : '\\';
       const fullDest = `${cloneDestination.trim()}${sep}${repoName}`;
       const clonedPath = await window.electronAPI.git.clone(url, fullDest);
-      const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
-      const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
-      const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
       await submitAndClose(
-        () => onCreate(clonedPath, label.trim() || repoName, envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, undefined, helmEnabled || undefined),
+        () => onCreate(launchRequest(clonedPath, label.trim() || repoName)),
         resetAndClose,
       );
     } catch (err: unknown) {

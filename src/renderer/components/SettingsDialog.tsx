@@ -22,6 +22,7 @@ import { JobsSettingsSection } from './JobsSettingsSection';
 import { DEFAULT_JOBS_SETTINGS } from '../../shared/jobs';
 import type { KeybindingAction, Chord } from '../../shared/keybindings';
 import type { TerminalCursorStyle } from '../hooks/useTerminalManager';
+import { VaultLoginControls } from './VaultLoginControls';
 import { FLAG_TOOLS, buildLaunchProfileOptions } from '../utils/launch-profile-options';
 
 const CLI_TOOL_IDS = Object.keys(CLI_TOOL_REGISTRY) as CliToolId[];
@@ -97,18 +98,6 @@ const UI_FONT_PRESETS: ReadonlyArray<{ label: string; value: string }> = [
     value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
   },
 ];
-
-function formatExpiry(expiresAt?: string): string {
-  if (!expiresAt) return '';
-  const ms = Date.parse(expiresAt) - Date.now();
-  if (!Number.isFinite(ms)) return expiresAt;
-  if (ms <= 0) return 'expired';
-  const minutes = Math.round(ms / 60000);
-  if (minutes < 60) return `in ${minutes}m`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `in ${hours}h`;
-  return `in ${Math.round(hours / 24)}d`;
-}
 
 type SettingsSection = 'appearance' | 'general' | 'terminal' | 'sessions' | 'cli-tools' | 'notifications' | 'shortcuts' | 'integrations' | 'usage';
 
@@ -305,7 +294,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       setCliFlagsPerTool(perToolFlags || {});
       setDefaultCliTool(isCliToolId(cliToolSetting) ? cliToolSetting : 'claude');
       setFlagTool(isCliToolId(cliToolSetting) && cliToolSetting !== 'custom' ? cliToolSetting : 'claude');
-      setDefaultCustomCliBinary(typeof customCliBinarySetting === 'string' ? customCliBinarySetting.trim() : '');
+      setDefaultCustomCliBinary(trimmedSetting(customCliBinarySetting));
       setResumePreviousChats(resumeChats !== 'false');
       setShowResumeBadge(badge === 'true');
       setShowSubagents(subagentsSetting !== 'false');
@@ -319,24 +308,18 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       setUsageStripEnabled(usageStrip !== 'false');
       setGlobalUsageEnabled(globalUsage !== 'false');
       setCliToolBreakdownEnabled(cliBreakdown === 'true');
-      setDailyBudgetUsd(typeof dailyBudget === 'string' ? dailyBudget : '');
-      setWeeklyBudgetUsd(typeof weeklyBudget === 'string' ? weeklyBudget : '');
+      setDailyBudgetUsd(dailyBudget ?? '');
+      setWeeklyBudgetUsd(weeklyBudget ?? '');
       setHideTerminalCursor(hideCursor !== 'false');
       setAllowHelm(helm === 'true');
-      const parsedFontSize = fontSize ? parseInt(fontSize, 10) : NaN;
-      if (Number.isFinite(parsedFontSize) && parsedFontSize >= 8 && parsedFontSize <= 32) {
-        setTerminalFontSize(parsedFontSize);
-      }
-      setTerminalFontFamily(typeof fontFamily === 'string' ? fontFamily.trim() : '');
-      setUiFontFamily(typeof uiFont === 'string' ? uiFont.trim() : '');
-      if (cursorStyle === 'block' || cursorStyle === 'underline' || cursorStyle === 'bar') {
-        setTerminalCursorStyle(cursorStyle);
-      }
+      const savedFontSize = parseTerminalFontSize(fontSize);
+      if (savedFontSize !== null) setTerminalFontSize(savedFontSize);
+      setTerminalFontFamily(trimmedSetting(fontFamily));
+      setUiFontFamily(trimmedSetting(uiFont));
+      if (isTerminalCursorStyle(cursorStyle)) setTerminalCursorStyle(cursorStyle);
       setTerminalCursorBlink(cursorBlink !== 'false');
-      const parsedScrollback = scrollback ? parseInt(scrollback, 10) : NaN;
-      if (Number.isFinite(parsedScrollback)) {
-        setTerminalScrollback(Math.max(100, Math.min(100000, parsedScrollback)));
-      }
+      const savedScrollback = parseTerminalScrollback(scrollback);
+      if (savedScrollback !== null) setTerminalScrollback(savedScrollback);
       // cliHooksEnabled: default-off, opt-in. Only literal 'true' enables —
       // matches the read on the main side (`=== 'true'`). Missing key, empty
       // string, or any other value counts as disabled.
@@ -1987,48 +1970,16 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
                   <p className="form-hint">Leave blank if not using Vault Enterprise namespaces.</p>
                 </div>
 
-                <div className="form-group">
-                  <div className="form-label">Status</div>
-                  <div style={{ marginTop: 4 }}>
-                    {vaultStatus.loggedIn ? (
-                      <span className="form-hint" style={{ color: 'var(--status-running)' }}>
-                        {'\u25CF'} Logged in
-                        {vaultStatus.identity ? ` as ${vaultStatus.identity}` : ''}
-                        {vaultStatus.expiresAt ? `, expires ${formatExpiry(vaultStatus.expiresAt)}` : ''}
-                      </span>
-                    ) : (
-                      <span className="form-hint" style={{ color: 'var(--text-muted)' }}>
-                        {'\u25CB'} Not logged in
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    {vaultStatus.loggedIn ? (
-                      <button className="form-btn" onClick={handleVaultLogout}>Log Out</button>
-                    ) : (
-                      <button
-                        className="form-btn form-btn--primary"
-                        onClick={handleVaultLogin}
-                        disabled={vaultLoggingIn || !vaultConfig.addr || !vaultConfig.role}
-                      >
-                        {vaultLoggingIn ? 'Opening browser…' : 'Log In'}
-                      </button>
-                    )}
-                    {vaultLoggingIn && (
-                      <button className="form-btn" onClick={() => window.electronAPI.vault.cancelLogin().catch(err => setVaultLoginError(String(err)))}>
-                        Cancel login
-                      </button>
-                    )}
-                    <button className="form-btn" onClick={() => setShowMigrateDialog(true)} disabled={!vaultStatus.loggedIn}>
-                      Migrate Existing Secrets…
-                    </button>
-                  </div>
-                  {vaultLoginError && (
-                    <p className="form-hint" style={{ color: 'var(--status-dead)', marginTop: 6 }}>
-                      {vaultLoginError}
-                    </p>
-                  )}
-                </div>
+                <VaultLoginControls
+                  status={vaultStatus}
+                  canLogIn={Boolean(vaultConfig.addr && vaultConfig.role)}
+                  loggingIn={vaultLoggingIn}
+                  error={vaultLoginError}
+                  onLogin={handleVaultLogin}
+                  onLogout={handleVaultLogout}
+                  onCancelLogin={() => window.electronAPI.vault.cancelLogin().catch(err => setVaultLoginError(String(err)))}
+                  onMigrate={() => setShowMigrateDialog(true)}
+                />
               </>
             )}
           </div>
@@ -2200,6 +2151,25 @@ function parseMaxPanes(value: string | null | undefined): number {
   if (parsed <= 1) return 1;
   if (parsed <= 2) return 2;
   return 4;
+}
+
+function trimmedSetting(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/** A saved size outside the supported 8-32 range keeps the current one. */
+function parseTerminalFontSize(value: string | null | undefined): number | null {
+  const parsed = value ? Number.parseInt(value, 10) : Number.NaN;
+  return Number.isFinite(parsed) && parsed >= 8 && parsed <= 32 ? parsed : null;
+}
+
+function parseTerminalScrollback(value: string | null | undefined): number | null {
+  const parsed = value ? Number.parseInt(value, 10) : Number.NaN;
+  return Number.isFinite(parsed) ? Math.max(100, Math.min(100000, parsed)) : null;
+}
+
+function isTerminalCursorStyle(value: unknown): value is TerminalCursorStyle {
+  return value === 'block' || value === 'underline' || value === 'bar';
 }
 
 function parsePercentSetting(value: string | null | undefined): number {

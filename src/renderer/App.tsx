@@ -66,6 +66,7 @@ import {
 } from './utils/sidebar-width';
 import { readLastLines } from './utils/terminal-preview';
 import type { LayoutNode } from '../shared/layout-types';
+import { relaunchRequest, withLegacyClaudeResume } from './utils/create-session-request';
 import type { SessionInfo, SessionState, EnvironmentInfo, EnvironmentType, LaunchProfileInfo, CreateSessionOptions, UpdateCheckResult, RepoGroupPref, SessionOrderPref, HostVerifyRequest, JobsStatus } from '../shared/types';
 import {
   DEFAULT_KEYBINDINGS,
@@ -865,24 +866,8 @@ export function App() {
     }
   }, [termManager, recordSession]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean, launchSnapshotId?: string): Promise<boolean> => {
-    const createOpts: CreateSessionOptions = {
-      workingDir,
-      label: label || undefined,
-      environmentId,
-      cliTool,
-      customCliBinary,
-      env,
-      cliArgs,
-      disabledInheritedFlags,
-      resumeToolSessionId,
-      resumeClaudeSessionId: !cliTool || cliTool === 'claude' ? resumeToolSessionId : undefined,
-      profileId,
-      cloneUrl,
-      worktreeOf,
-      helmEnabled,
-      launchSnapshotId,
-    };
+  const handleCreateSession = useCallback(async (request: CreateSessionOptions): Promise<boolean> => {
+    const createOpts = withLegacyClaudeResume(request);
     const outcome = await createSessionFromOptions(createOpts);
     if (outcome.status === 'created') {
       setSessions(prev => [...prev, outcome.session]);
@@ -1151,7 +1136,7 @@ export function App() {
       .filter(s => s.workingDir === source.workingDir)
       .map(s => s.label);
     const label = nextDuplicateLabel(source.label, siblingLabels);
-    void handleCreateSession(source.workingDir, label, source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined, source.helmEnabled, source.launchSnapshotId);
+    void handleCreateSession(relaunchRequest(source, { label }));
   }, [sessions, handleCreateSession]);
 
   const sessionsInGroup = useCallback((environmentId: string, workingDir: string): SessionInfo[] => {
@@ -1291,22 +1276,7 @@ export function App() {
     // Carry the source session's saved launch settings (profile, env, flags)
     // the way Duplicate does; otherwise a session launched under an API-key
     // or model profile would resume under the defaults.
-    void handleCreateSession(
-      source.workingDir,
-      '',
-      source.environmentId || undefined,
-      undefined,
-      undefined,
-      transcriptId,
-      undefined,
-      undefined,
-      source.cliTool,
-      source.customCliBinary,
-      undefined,
-      undefined,
-      source.helmEnabled,
-      source.launchSnapshotId,
-    );
+    void handleCreateSession(relaunchRequest(source, { resumeToolSessionId: transcriptId }));
   }, [resumePickerFor, sessions, handleCreateSession]);
 
   // Sidebar session click: focus existing pane or replace focused pane

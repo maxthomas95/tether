@@ -135,6 +135,17 @@ function withoutReleaseDate(segments: string[]): string[] {
   return segments;
 }
 
+/** Numbers compare as numbers and outrank tags; tags compare as text. */
+function compareVersionSegment(left: string, right: string): number {
+  if (left === right) return 0;
+  const leftNumber = NUMERIC_SEGMENT_RE.test(left) ? Number(left) : null;
+  const rightNumber = NUMERIC_SEGMENT_RE.test(right) ? Number(right) : null;
+  if (leftNumber !== null && rightNumber !== null) return leftNumber - rightNumber;
+  if (leftNumber !== null) return 1;
+  if (rightNumber !== null) return -1;
+  return left < right ? -1 : 1;
+}
+
 /**
  * Order ids by version: numeric segments compare as numbers and outrank
  * tags, and a release date never makes an older version look newer.
@@ -143,17 +154,23 @@ function compareVersionOrder(a: string, b: string): number {
   const left = withoutReleaseDate(a.split('-'));
   const right = withoutReleaseDate(b.split('-'));
   for (let i = 0; i < Math.min(left.length, right.length); i++) {
-    if (left[i] === right[i]) continue;
-    const leftNumber = NUMERIC_SEGMENT_RE.test(left[i]) ? Number(left[i]) : null;
-    const rightNumber = NUMERIC_SEGMENT_RE.test(right[i]) ? Number(right[i]) : null;
-    if (leftNumber !== null && rightNumber !== null) return leftNumber - rightNumber;
-    if (leftNumber !== null) return 1;
-    if (rightNumber !== null) return -1;
-    return left[i] < right[i] ? -1 : 1;
+    const order = compareVersionSegment(left[i], right[i]);
+    if (order !== 0) return order;
   }
   if (left.length !== right.length) return left.length - right.length;
   // Same version: prefer the undated key.
   return b.length - a.length;
+}
+
+/** The newest priced bare key that is `stem` itself or one of its versions. */
+function newestListedVersion(stem: string): string | undefined {
+  const prefix = `${stem}-`;
+  let best: string | undefined;
+  for (const key of pricedBareKeys()) {
+    if (key !== stem && !key.startsWith(prefix)) continue;
+    if (best === undefined || compareVersionOrder(key, best) > 0) best = key;
+  }
+  return best;
 }
 
 /**
@@ -169,7 +186,9 @@ function compareVersionOrder(a: string, b: string): number {
  */
 function lookupSibling(modelId: string): { pricing: ModelPricing; sibling: string; exact: boolean } | undefined {
   const slash = modelId.indexOf('/');
-  const bare = (slash > 0 ? modelId.slice(slash + 1) : modelId).replace(/[@:].*$/, '');
+  const unqualified = slash > 0 ? modelId.slice(slash + 1) : modelId;
+  const suffix = unqualified.search(/[@:]/);
+  const bare = suffix >= 0 ? unqualified.slice(0, suffix) : unqualified;
   const segments = withoutReleaseDate(bare.split('-'));
   const undated = segments.join('-');
 
@@ -180,13 +199,7 @@ function lookupSibling(modelId: string): { pricing: ModelPricing; sibling: strin
   }
 
   for (let count = segments.length - 1; count >= 2; count--) {
-    const stem = segments.slice(0, count).join('-');
-    const prefix = `${stem}-`;
-    let best: string | undefined;
-    for (const key of pricedBareKeys()) {
-      if (key !== stem && !key.startsWith(prefix)) continue;
-      if (best === undefined || compareVersionOrder(key, best) > 0) best = key;
-    }
+    const best = newestListedVersion(segments.slice(0, count).join('-'));
     if (best !== undefined) {
       return { pricing: fromLiteLLM(litellmTable[best] as LiteLLMEntry), sibling: best, exact: false };
     }
