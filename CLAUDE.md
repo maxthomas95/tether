@@ -262,7 +262,7 @@ src/
     components/
       AboutDialog.tsx
       CliToolBadge.tsx
-      ChildAgentViewer.tsx            # Read-only subagent transcript dialog
+      ChildAgentViewer.tsx            # Read-only subagent transcript panel, docked beside the terminals
       ConfirmDialog.tsx               # Tether-styled confirm replacement
       DropZoneOverlay.tsx
       EnvVarEditor.tsx

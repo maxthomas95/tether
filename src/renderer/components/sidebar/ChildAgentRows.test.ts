@@ -20,8 +20,8 @@ let view: ReturnType<typeof createView>;
 let toggle: ReturnType<typeof vi.fn>;
 let open: ReturnType<typeof vi.fn>;
 
-async function render(list: ChildAgentList, expanded = true) {
-  await view.render(React.createElement(ChildAgentRows, { sessionLabel: 'my session', list, expanded, onToggle: toggle, onOpen: open }));
+async function render(list: ChildAgentList, expanded = true, selectedId: string | null = null) {
+  await view.render(React.createElement(ChildAgentRows, { sessionLabel: 'my session', list, expanded, selectedId, onToggle: toggle, onOpen: open }));
 }
 const rows = () => [...view.container.querySelectorAll<HTMLElement>('.child-agent-row')];
 const key = (el: Element, k: string) => act(async () => { el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })); });
@@ -88,13 +88,33 @@ describe('ChildAgentRows', () => {
     expect(deep.style.paddingLeft).toContain('+ 24px');
   });
 
-  it('opens a transcript from a click or Enter', async () => {
+  it('opens a transcript from a click or Enter, and says which of the two it was', async () => {
     const first = agent();
     await render({ agents: [first], total: 1 });
     await act(async () => rows()[0].click());
+    expect(open).toHaveBeenLastCalledWith(first, false);
     await key(rows()[0], 'Enter');
+    expect(open).toHaveBeenLastCalledWith(first, true);
     expect(open).toHaveBeenCalledTimes(2);
-    expect(open).toHaveBeenCalledWith(first);
+  });
+
+  it('marks the row the panel is showing, and only that one', async () => {
+    await render({ agents: [agent(), agent({ id: 'a2' })], total: 2 }, true, 'a2');
+    const [plain, selected] = rows();
+    expect(plain.className).not.toContain('child-agent-row--selected');
+    expect(plain.getAttribute('aria-pressed')).toBe('false');
+    expect(plain.getAttribute('aria-label')).toMatch(/Open transcript$/);
+    expect(selected.className).toContain('child-agent-row--selected');
+    expect(selected.getAttribute('aria-pressed')).toBe('true');
+    expect(selected.getAttribute('aria-label')).toMatch(/Close transcript$/);
+  });
+
+  it('gives the whole first line and the token breakdown on hover', async () => {
+    const long = 'Investigate why the widget counter drifts after a reconnect';
+    await render({ agents: [agent({ description: long }), agent({ id: 'a2', description: '' })], total: 2 });
+    const [described, bare] = rows();
+    expect(described.getAttribute('title')).toBe(`tester · ${long}\nInput 5, output 1.2k, cache written 300, cache read 0`);
+    expect(bare.getAttribute('title')).toMatch(/^tester\nInput 5/);
   });
 
   it('caps the list at 20 with a "+N more" control that reveals the rest', async () => {
@@ -125,6 +145,6 @@ describe('ChildAgentRows', () => {
     expect(row.querySelector('.child-agent-meta')!.textContent).toContain('gpt-test/high · running 2m');
     expect(row.getAttribute('aria-label')).toMatch(/^Codex exec run codex exec/);
     await act(async () => row.click());
-    expect(open).toHaveBeenCalledWith(expect.objectContaining({ id: 'thread-1', source: 'codex-exec' }));
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ id: 'thread-1', source: 'codex-exec' }), false);
   });
 });

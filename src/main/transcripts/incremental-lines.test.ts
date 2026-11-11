@@ -12,9 +12,12 @@ import {
   createDigestState,
   nextLineStart,
   readCompleteLines,
+  toChildAgentTranscript,
   visibleDigestEntries,
   type DigestState,
+  type ViewerDigest,
 } from './incremental-lines';
+import type { ChildAgentInfo } from '../../shared/child-agents';
 
 let dir: string;
 let file: string;
@@ -177,5 +180,50 @@ describe('HeadTailReader', () => {
     expect(result!.lines).toBeLessThan(Math.ceil(filler.length / 1024));
     fs.appendFileSync(file, 'appended\n');
     expect((await r.refresh())?.lines).toBe(result!.lines + 1);
+  });
+});
+
+describe('toChildAgentTranscript', () => {
+  const agent = (state: ChildAgentInfo['state']): ChildAgentInfo => ({
+    source: 'claude-subagent', id: 'a1', agentType: 'tester', description: '', background: false, depth: 1, state,
+    startedAt: '2026-01-01T12:00:00.000Z', lastActivityAt: '2026-01-01T12:00:05.000Z',
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  });
+  const tool = { kind: 'tool' as const, name: 'Bash', summary: 'ls' };
+  const digest = (over: Partial<ViewerDigest> = {}): ViewerDigest => ({
+    prompt: 'task', entries: [tool], result: 'The answer.', truncated: false, resultFromEntries: true, ...over,
+  });
+
+  it('passes the digest of a finished child through without the internal marker', () => {
+    expect(toChildAgentTranscript(agent('done'), digest())).toEqual({
+      agent: agent('done'), prompt: 'task', entries: [tool], result: 'The answer.', truncated: false,
+    });
+  });
+
+  it('puts the newest message of a running child back at the end of the activity, cut like any other', () => {
+    const transcript = toChildAgentTranscript(agent('running'), digest({ result: 'x'.repeat(5000) }));
+    expect(transcript.result).toBeNull();
+    expect(transcript.entries).toEqual([tool, { kind: 'text', text: 'x'.repeat(4000) }]);
+  });
+
+  it('drops a result that did not come from the end of the list while the child runs', () => {
+    // A Codex completion message from an earlier turn, followed by new tool calls.
+    const transcript = toChildAgentTranscript(agent('running'), digest({ resultFromEntries: undefined }));
+    expect(transcript.result).toBeNull();
+    expect(transcript.entries).toEqual([tool]);
+  });
+
+  it('carries the note and the cut-answer flag for a finished child only', () => {
+    expect(toChildAgentTranscript(agent('done'), digest({ resultTruncated: true }), 'No rollout.')).toMatchObject({
+      note: 'No rollout.', resultTruncated: true,
+    });
+    expect(toChildAgentTranscript(agent('running'), digest({ resultTruncated: true }))).not.toHaveProperty('resultTruncated');
+  });
+
+  it('does not change the digest it was given', () => {
+    const source = digest();
+    toChildAgentTranscript(agent('running'), source);
+    expect(source.entries).toEqual([tool]);
+    expect(source.result).toBe('The answer.');
   });
 });

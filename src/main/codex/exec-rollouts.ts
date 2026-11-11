@@ -4,7 +4,6 @@ import type {
   ChildAgentInfo,
   ChildAgentTokens,
   ChildAgentTranscript,
-  ChildTranscriptEntry,
 } from '../../shared/child-agents';
 import {
   parseCodexUsageText,
@@ -14,12 +13,16 @@ import {
 import { asRecord, oneLine, parseLine, str, validIso, type Json } from '../transcripts/json-lines';
 import {
   HeadTailReader,
+  MAX_ENTRY_TEXT_CHARS,
+  MAX_RESULT_CHARS,
   capDigestEntries,
   createDigestState,
   readCompleteLines,
+  toChildAgentTranscript,
   visibleDigestEntries,
   type DigestState,
   type ToolEntry,
+  type ViewerDigest,
 } from '../transcripts/incremental-lines';
 
 /**
@@ -331,21 +334,16 @@ function outputFailed(output: unknown): boolean {
   return rec?.success === false;
 }
 
-export interface ParsedCodexExecTranscript {
-  prompt: string | null;
-  entries: ChildTranscriptEntry[];
-  result: string | null;
-  /** Earlier activity is missing: skipped bytes of a long file or entries past the cap. */
-  truncated: boolean;
-}
+export type ParsedCodexExecTranscript = ViewerDigest;
 
-/** The shared digest state plus the run's completion message. */
+/** The shared digest state plus the run's completion message, kept whole. */
 export interface CodexTranscriptState extends DigestState {
   finalMessage: string | null;
+  finalMessageCut: boolean;
 }
 
 export function createCodexTranscriptState(): CodexTranscriptState {
-  return { ...createDigestState(), finalMessage: null };
+  return { ...createDigestState(), finalMessage: null, finalMessageCut: false };
 }
 
 /**
@@ -372,7 +370,8 @@ export function foldCodexTranscriptLines(state: CodexTranscriptState, text: stri
     if (entry.type === 'event_msg') {
       if (payload.type === 'task_complete' || payload.type === 'turn_complete') {
         const last = typeof payload.last_agent_message === 'string' ? payload.last_agent_message.trim() : '';
-        state.finalMessage = last ? last.slice(0, 8000) : null;
+        state.finalMessage = last ? last.slice(0, MAX_RESULT_CHARS) : null;
+        state.finalMessageCut = last.length > MAX_RESULT_CHARS;
       }
       continue;
     }
@@ -382,7 +381,7 @@ export function foldCodexTranscriptLines(state: CodexTranscriptState, text: stri
       case 'message': {
         if (payload.role !== 'assistant') break;
         const body = messageText(payload, 'output_text').trim();
-        if (body) state.entries.push({ kind: 'text', text: body.slice(0, 4000) });
+        if (body) state.entries.push({ kind: 'text', text: body.slice(0, MAX_ENTRY_TEXT_CHARS) });
         break;
       }
       case 'function_call':
@@ -424,12 +423,23 @@ export function finishCodexTranscript(state: CodexTranscriptState): ParsedCodexE
   const { entries, truncated } = visibleDigestEntries(state);
   // The closing message is the answer; showing it twice would only add noise.
   let result = state.finalMessage;
+  let resultFromEntries = false;
   const last = entries.at(-1);
   if (last?.kind === 'text') {
     if (result === null) result = last.text;
-    if (last.text === result.slice(0, 4000)) entries.pop();
+    if (last.text === result.slice(0, MAX_ENTRY_TEXT_CHARS)) {
+      entries.pop();
+      resultFromEntries = true;
+    }
   }
-  return { prompt: state.prompt, entries, result, truncated };
+  return {
+    prompt: state.prompt,
+    entries,
+    result,
+    truncated,
+    ...(resultFromEntries ? { resultFromEntries } : {}),
+    ...(state.finalMessageCut && result === state.finalMessage ? { resultTruncated: true } : {}),
+  };
 }
 
 /**
@@ -443,8 +453,9 @@ export function parseCodexExecTranscript(text: string, truncated = false): Parse
   return finishCodexTranscript(state);
 }
 
+/** The viewer's payload. A run that is still going has no result yet. */
 export function buildCodexExecTranscript(agent: ChildAgentInfo, parsed: ParsedCodexExecTranscript, note?: string): ChildAgentTranscript {
-  return { agent, ...parsed, ...(note ? { note } : {}) };
+  return toChildAgentTranscript(agent, parsed, note);
 }
 
 // ---------------------------------------------------------------------------

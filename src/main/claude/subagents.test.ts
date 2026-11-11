@@ -284,6 +284,34 @@ describe('parseSubagentTranscript', () => {
     expect(parsed.entries.at(-1)).toMatchObject({ summary: 'cmd 999' });
   });
 
+  it('keeps a long closing answer whole, while a long interim message stays cut', () => {
+    const interim = 'i'.repeat(6000);
+    const answer = `${'a'.repeat(30_000)} END`;
+    const parsed = parseSubagentTranscript([
+      assistant(1, { id: 'm1', blocks: [{ type: 'text', text: interim }, { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } }] }),
+      assistant(2, { id: 'm2', blocks: [{ type: 'text', text: answer }] }),
+    ].join(''));
+    expect(parsed.entries[0]).toEqual({ kind: 'text', text: 'i'.repeat(4000) });
+    expect(parsed.result).toBe(answer);
+    expect(parsed.resultFromEntries).toBe(true);
+    expect(parsed).not.toHaveProperty('resultTruncated');
+  });
+
+  it('says so when even the closing answer is too long to keep whole', () => {
+    const parsed = parseSubagentTranscript(assistant(1, { id: 'm1', blocks: [{ type: 'text', text: 'z'.repeat(200_001) }] }));
+    expect(parsed.result).toHaveLength(200_000);
+    expect(parsed.resultTruncated).toBe(true);
+  });
+
+  it('does not offer an earlier message as the answer once a tool call follows it', () => {
+    const parsed = parseSubagentTranscript([
+      assistant(1, { id: 'm1', blocks: [{ type: 'text', text: 'x'.repeat(5000) }] }),
+      assistant(2, { id: 'm2', blocks: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } }] }),
+    ].join(''));
+    expect(parsed.result).toBeNull();
+    expect(parsed).not.toHaveProperty('resultFromEntries');
+  });
+
   it('summarises tool input on one bounded line', () => {
     expect(summarizeToolInput({ pattern: 'foo', path: '/x' })).toBe('/x');
     expect(summarizeToolInput({ other: 'first string' })).toBe('first string');

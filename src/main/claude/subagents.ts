@@ -5,21 +5,24 @@ import type {
   ChildAgentList,
   ChildAgentTokens,
   ChildAgentTranscript,
-  ChildTranscriptEntry,
 } from '../../shared/child-agents';
 import { getClaudeProjectsRoot, getProjectDir } from './transcripts';
 import { asRecord, oneLine, parseLine, str, validIso, type Json } from '../transcripts/json-lines';
 import {
   HeadTailReader,
+  MAX_ENTRY_TEXT_CHARS,
+  MAX_RESULT_CHARS,
   MAX_VIEWER_ENTRIES,
   TRANSCRIPT_HEAD_BYTES,
   TRANSCRIPT_TAIL_BYTES,
   capDigestEntries,
   createDigestState,
   readCompleteLines,
+  toChildAgentTranscript,
   visibleDigestEntries,
   type DigestState,
   type ToolEntry,
+  type ViewerDigest,
 } from '../transcripts/incremental-lines';
 
 export { MAX_VIEWER_ENTRIES, TRANSCRIPT_HEAD_BYTES, TRANSCRIPT_TAIL_BYTES };
@@ -303,18 +306,21 @@ export function summarizeToolInput(input: unknown): string {
   return typeof first === 'string' ? oneLine(first, 160) : '';
 }
 
-export interface ParsedSubagentTranscript {
-  prompt: string | null;
-  entries: ChildTranscriptEntry[];
-  result: string | null;
-  /** Earlier activity is missing: skipped bytes of a long file or entries past the cap. */
-  truncated: boolean;
+export type ParsedSubagentTranscript = ViewerDigest;
+
+/**
+ * Accumulates a transcript digest line by line, so a file can be read in
+ * pieces. `lastText` is the newest assistant message kept whole while it is
+ * still the newest entry: listed messages are cut short, the answer is not.
+ */
+export interface TranscriptState extends DigestState {
+  lastText: string | null;
+  lastTextCut: boolean;
 }
 
-/** Accumulates a transcript digest line by line, so a file can be read in pieces. */
-export type TranscriptState = DigestState;
-
-export const createTranscriptState = createDigestState;
+export function createTranscriptState(): TranscriptState {
+  return { ...createDigestState(), lastText: null, lastTextCut: false };
+}
 
 /** Fold complete JSONL lines (as text) into `state`. Keeps only the newest entries. */
 export function foldTranscriptLines(state: TranscriptState, text: string): void {
@@ -339,10 +345,15 @@ export function foldTranscriptLines(state: TranscriptState, text: string): void 
     if (entry.type !== 'assistant' || !message) continue;
     for (const block of blocks(message)) {
       if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
-        state.entries.push({ kind: 'text', text: block.text.trim().slice(0, 4000) });
+        const text = block.text.trim();
+        state.entries.push({ kind: 'text', text: text.slice(0, MAX_ENTRY_TEXT_CHARS) });
+        state.lastText = text.slice(0, MAX_RESULT_CHARS);
+        state.lastTextCut = text.length > MAX_RESULT_CHARS;
       } else if (block.type === 'tool_use' && typeof block.name === 'string') {
         const tool: ToolEntry = { kind: 'tool', name: block.name.slice(0, 80), summary: summarizeToolInput(block.input) };
         state.entries.push(tool);
+        state.lastText = null;
+        state.lastTextCut = false;
         if (typeof block.id === 'string') state.toolEntries.set(block.id, tool);
       }
     }
@@ -354,13 +365,17 @@ export function foldTranscriptLines(state: TranscriptState, text: string): void 
 export function finishTranscript(state: TranscriptState): ParsedSubagentTranscript {
   const { entries, truncated } = visibleDigestEntries(state);
   // The closing text is the answer; showing it twice would only add noise.
-  let result: string | null = null;
   const last = entries.at(-1);
-  if (last?.kind === 'text') {
-    result = last.text;
-    entries.pop();
-  }
-  return { prompt: state.prompt, entries, result, truncated };
+  if (last?.kind !== 'text') return { prompt: state.prompt, entries, result: null, truncated };
+  entries.pop();
+  return {
+    prompt: state.prompt,
+    entries,
+    result: state.lastText ?? last.text,
+    truncated,
+    resultFromEntries: true,
+    ...(state.lastTextCut ? { resultTruncated: true } : {}),
+  };
 }
 
 /**
@@ -374,8 +389,9 @@ export function parseSubagentTranscript(text: string, truncated = false): Parsed
   return finishTranscript(state);
 }
 
+/** The viewer's payload. A subagent that is still running has no result yet. */
 export function buildChildAgentTranscript(agent: ChildAgentInfo, parsed: ParsedSubagentTranscript): ChildAgentTranscript {
-  return { agent, ...parsed };
+  return toChildAgentTranscript(agent, parsed);
 }
 
 // ---------------------------------------------------------------------------

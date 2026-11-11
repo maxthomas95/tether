@@ -189,7 +189,7 @@ describe('SubagentTracker remote sessions', () => {
   });
 
   it('serves the viewer digest from the remote source', async () => {
-    source.snapshots = [snapshot('a1', 0)];
+    source.snapshots = [snapshot('a1', 60_000)];
     const transcript = await tracker.getTranscript('s1', 'a1');
     expect(transcript?.prompt).toBe('Count widgets');
     expect(transcript?.result).toBe('Three.');

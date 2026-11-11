@@ -56,8 +56,10 @@ export interface ChildAgentTranscript {
   prompt: string | null;
   /** Assistant text and tool calls in order, without tool output. */
   entries: ChildTranscriptEntry[];
-  /** The child's last assistant text, once it has finished. */
+  /** The child's last assistant text, once it has finished. Null while it runs. */
   result: string | null;
+  /** True when the result was too long to keep whole and its end is missing. */
+  resultTruncated?: boolean;
   /** True when the file was too large to read in full or entries were dropped. */
   truncated: boolean;
   /** Why there is little to show, e.g. a run that wrote no rollout file. */

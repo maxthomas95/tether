@@ -295,7 +295,10 @@ describe('viewer readers and polling bounds', () => {
   it('follows a rollout as it grows without re-reading it from the start', async () => {
     tracker.ingest('s1', hook('session_start', 5));
     const file = writeRollout({ done: false });
-    expect((await tracker.getTranscript('s1', THREAD))?.result).toBe('Two risks found.');
+    const midRun = await tracker.getTranscript('s1', THREAD);
+    expect(midRun?.agent.state).toBe('running');
+    expect(midRun?.result).toBeNull();
+    expect(midRun?.entries.at(-1)).toEqual({ kind: 'text', text: 'Two risks found.' });
     fs.appendFileSync(file, jsonl(
       { timestamp: at(9), type: 'event_msg', payload: { type: 'task_complete', last_agent_message: 'Finished.' } },
     ));

@@ -69,7 +69,9 @@ interface RepoGroupProps {
   childAgents?: ReadonlyMap<string, ChildAgentList>;
   expandedChildAgents?: ReadonlySet<string>;
   onToggleChildAgents?: (sessionId: string) => void;
-  onOpenChildAgent?: (sessionId: string, agent: ChildAgentInfo) => void;
+  onOpenChildAgent?: (sessionId: string, agent: ChildAgentInfo, viaKeyboard: boolean) => void;
+  /** The row the docked subagent panel is showing, in whichever group it lives. */
+  viewedChildAgent?: { sessionId: string; agentId: string } | null;
 }
 
 export function RepoGroup({
@@ -110,6 +112,7 @@ export function RepoGroup({
   expandedChildAgents,
   onToggleChildAgents,
   onOpenChildAgent,
+  viewedChildAgent,
 }: RepoGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null);
@@ -366,8 +369,9 @@ export function RepoGroup({
                 sessionLabel={session.label}
                 list={children}
                 expanded={expandedChildAgents?.has(session.id) ?? false}
+                selectedId={viewedChildAgent?.sessionId === session.id ? viewedChildAgent.agentId : null}
                 onToggle={() => onToggleChildAgents(session.id)}
-                onOpen={agent => onOpenChildAgent(session.id, agent)}
+                onOpen={(agent, viaKeyboard) => onOpenChildAgent(session.id, agent, viaKeyboard)}
               />
             )}
           </Fragment>

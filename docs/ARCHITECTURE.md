@@ -80,7 +80,7 @@ Local installation first checks standalone Node.js and records its absolute exec
 
 `codex/exec-tracker.ts` attributes local `codex exec` lifecycle events to the Claude session whose launch environment they inherit. Exact thread IDs locate rollout files; these rows never change the parent's status. Remote exec rows and separate rows for Codex's own nested subagents are unavailable.
 
-The list returns child metadata and a bounded task excerpt. Opening `ChildAgentViewer.tsx` explicitly reads that child's transcript into memory, with head/tail limits for long runs and incremental refresh. No child transcript is saved by Tether. **Show subagents in sidebar**, on by default, disables both local and remote child reads when turned off. Native children have read-only viewers; Helm children are separate Tether-managed PTY sessions.
+The list returns child metadata and a bounded task excerpt. Opening a row in `ChildAgentViewer.tsx`, a non-modal panel docked beside the terminal area, explicitly reads that child's transcript into memory, with head/tail limits for long runs and incremental refresh. A running child has no result: its newest message stays in the activity list until it finishes. No child transcript is saved by Tether. **Show subagents in sidebar**, on by default, disables both local and remote child reads when turned off. Native children have read-only viewers; Helm children are separate Tether-managed PTY sessions.
 
 ## Terminal Lifetime and IPC
 

@@ -79,9 +79,9 @@ import { WelcomePane } from './components/WelcomePane';
 import { Icon } from './components/Icon';
 import { useRecentProjects } from './hooks/useRecentProjects';
 import { useChildAgents } from './hooks/useChildAgents';
+import { useChildAgentViewer } from './hooks/useChildAgentViewer';
 import { useEnvironmentActions } from './hooks/useEnvironmentActions';
 import { ChildAgentViewer } from './components/ChildAgentViewer';
-import type { ChildAgentInfo } from '../shared/child-agents';
 import { OfficePane } from './components/OfficePane';
 import { JobsOfficePill } from './components/sidebar/JobsOfficePill';
 import { GifPanel } from './components/sidebar/GifPanel';
@@ -371,7 +371,15 @@ export function App() {
   const environmentById = useMemo(() => new Map(environments.map(env => [env.id, env])), [environments]);
   const { recentProjects, dismissProject, recordSession } = useRecentProjects(sessions, environments);
   const childAgents = useChildAgents(sessions, environmentById);
-  const [viewedChildAgent, setViewedChildAgent] = useState<{ sessionId: string; agent: ChildAgentInfo } | null>(null);
+  const childAgentViewer = useChildAgentViewer(
+    childAgents.lists,
+    useCallback((error: unknown) => notifyError('Could not save the subagent panel width', error), [notifyError]),
+  );
+  const viewedChildAgent = childAgentViewer.viewed;
+  const viewedChildAgentRow = useMemo(
+    () => (viewedChildAgent ? { sessionId: viewedChildAgent.sessionId, agentId: viewedChildAgent.agent.id } : null),
+    [viewedChildAgent?.sessionId, viewedChildAgent?.agent.id],
+  );
 
   // Load profiles on mount
   useEffect(() => {
@@ -2161,7 +2169,8 @@ export function App() {
                         childAgents={childAgents.lists}
                         expandedChildAgents={childAgents.expandedIds}
                         onToggleChildAgents={childAgents.toggleExpanded}
-                        onOpenChildAgent={(sessionId, agent) => setViewedChildAgent({ sessionId, agent })}
+                        onOpenChildAgent={childAgentViewer.toggle}
+                        viewedChildAgent={viewedChildAgentRow}
                       />
                     ));
                   })()
@@ -2274,6 +2283,17 @@ export function App() {
           />
         )}
       </main>
+      {viewedChildAgent && <ChildAgentViewer
+        key={`${viewedChildAgent.sessionId}:${viewedChildAgent.agent.id}`}
+        sessionId={viewedChildAgent.sessionId}
+        sessionLabel={sessions.find(s => s.id === viewedChildAgent.sessionId)?.label}
+        agent={viewedChildAgent.agent}
+        width={childAgentViewer.width}
+        focusOnOpen={viewedChildAgent.focusOnOpen}
+        onClose={childAgentViewer.close}
+        onResize={childAgentViewer.setWidth}
+        onResizeEnd={childAgentViewer.saveWidth}
+      />}
       </div>
 
       {workspaceRecipes.isOpen && <WorkspaceRecipesDialog
@@ -2331,11 +2351,6 @@ export function App() {
         initialEnvironmentId={maintenanceTarget.environmentId}
         initialSessionId={maintenanceTarget.sessionId}
         onClose={() => setMaintenanceTarget(null)}
-      />}
-      {viewedChildAgent && <ChildAgentViewer
-        sessionId={viewedChildAgent.sessionId}
-        agent={viewedChildAgent.agent}
-        onClose={() => setViewedChildAgent(null)}
       />}
       <SessionSearchDialog
         isOpen={searchOpen}
