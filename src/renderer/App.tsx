@@ -79,6 +79,7 @@ import { WelcomePane } from './components/WelcomePane';
 import { Icon } from './components/Icon';
 import { useRecentProjects } from './hooks/useRecentProjects';
 import { useChildAgents } from './hooks/useChildAgents';
+import { useEnvironmentActions } from './hooks/useEnvironmentActions';
 import { ChildAgentViewer } from './components/ChildAgentViewer';
 import type { ChildAgentInfo } from '../shared/child-agents';
 import { OfficePane } from './components/OfficePane';
@@ -914,31 +915,7 @@ export function App() {
     applyLayout: applyRecipeLayout, focusPane: termManager.focusPane, notifyError,
   });
 
-  const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>): Promise<boolean> => {
-    try {
-      const env = await window.electronAPI.environment.create({ name, type, config, envVars });
-      setEnvironments(prev => [...prev, env]);
-      return true;
-    } catch (err) {
-      console.error('Failed to create environment:', err);
-      notifyError('Failed to create environment', err);
-      return false;
-    }
-  }, [notifyError]);
-
-  const handleUpdateEnvironment = useCallback(async (id: string, name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>): Promise<boolean> => {
-    try {
-      await window.electronAPI.environment.update(id, { name, type, config, envVars });
-      setEnvironments(prev => prev.map(env =>
-        env.id === id ? { ...env, name, type, config, envVars } : env,
-      ));
-      return true;
-    } catch (err) {
-      console.error('Failed to update environment:', err);
-      notifyError('Failed to update environment', err);
-      return false;
-    }
-  }, [notifyError]);
+  const { handleCreateEnvironment, handleUpdateEnvironment } = useEnvironmentActions(setEnvironments, notifyError);
 
   const handleDeleteEnvironment = useCallback(async (env: EnvironmentInfo) => {
     const envSessions = sessions.filter(s => s.environmentId === env.id);
