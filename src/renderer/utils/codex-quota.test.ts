@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CodexQuota } from '../../shared/types';
-import { codexQuotaWarnings, quotaWindowLabel } from './codex-quota';
+import { codexQuotaWarnings, codexResetNotice, highestCodexUsedPercent, quotaWindowLabel } from './codex-quota';
 
 const now = Date.parse('2026-09-07T10:00:00Z');
 function quota(): CodexQuota {
@@ -41,5 +41,21 @@ describe('Codex quota warnings', () => {
     expect(quotaWindowLabel(120)).toBe('2h');
     expect(quotaWindowLabel(10080)).toBe('7d');
     expect(quotaWindowLabel(null)).toBe('Window');
+  });
+});
+
+describe('Codex reset helpers', () => {
+  it('finds the highest usage across buckets and falls back to the legacy windows', () => {
+    expect(highestCodexUsedPercent(quota())).toBe(85);
+    expect(highestCodexUsedPercent({ ...quota(), buckets: [] })).toBe(85);
+    expect(highestCodexUsedPercent({ ...quota(), buckets: [], primary: { usedPercent: null, resetAt: null } })).toBeNull();
+    expect(highestCodexUsedPercent(null)).toBeNull();
+  });
+
+  it('says plainly whether a reset was used', () => {
+    expect(codexResetNotice('reset').type).toBe('success');
+    expect(codexResetNotice('nothingToReset').message).toContain('not used');
+    expect(codexResetNotice('unsupported').message).toContain('No reset was used');
+    expect(codexResetNotice('unknown').message).toContain('could not confirm');
   });
 });

@@ -374,6 +374,8 @@ export interface CodexQuota {
   planType: string | null;
   error: string | null;
   buckets?: import('./codex-types').CodexAccountSnapshot['rateLimits'];
+  /** Free reset credits; retained from the last observation when a refresh fails. */
+  resetCredits?: import('./codex-types').CodexResetCredits | null;
   /** Last successful Codex quota observation, retained when a refresh fails. */
   lastUpdated?: string | null;
 }
@@ -781,6 +783,7 @@ export interface TetherAPI {
     get(): Promise<QuotaInfo>;
     refresh(): Promise<QuotaInfo>;
     setEnabled(enabled: boolean): Promise<void>;
+    redeemCodexReset(): Promise<import('./codex-types').CodexResetResult>;
     onUpdate(cb: (info: QuotaInfo) => void): () => void;
   };
   codex: {

@@ -13,6 +13,7 @@ export type CodexAppServerMethod =
   | 'account/read'
   | 'account/usage/read'
   | 'account/rateLimits/read'
+  | 'account/rateLimitResetCredit/consume'
   | 'config/read'
   | 'model/list';
 
@@ -47,6 +48,7 @@ const ALLOWED_METHODS = new Set<CodexAppServerMethod>([
   'account/read',
   'account/usage/read',
   'account/rateLimits/read',
+  'account/rateLimitResetCredit/consume',
   'config/read',
   'model/list',
 ]);

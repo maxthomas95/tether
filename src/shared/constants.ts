@@ -103,6 +103,7 @@ export const IPC = {
   QUOTA_GET: 'quota:get',
   QUOTA_REFRESH: 'quota:refresh',
   QUOTA_SET_ENABLED: 'quota:set-enabled',
+  QUOTA_CODEX_RESET: 'quota:codex-reset',
 
   // Usage
   USAGE_GET_SESSION: 'usage:get-session',

@@ -119,6 +119,8 @@ Claude quota reads the access token Claude Code saves in `~/.claude/.credentials
 
 Codex quota uses the installed Codex CLI's supported app-server interface. Tether shows reported quota buckets with their actual window durations and retains the last successful observation when a refresh fails. A last-known reading is labelled with its observation time. Availability depends on the installed CLI, sign-in and account mode.
 
+When the Codex account has free rate-limit resets, the Codex section shows how many are available and when the soonest one expires. **Use reset** spends one after you confirm. If your Codex limits are less than 80% used, the confirmation warns that the reset may be wasted. Codex restores the eligible limits immediately, and a reset cannot be undone. If Codex reports that nothing can be reset, the reset is not used. If Tether cannot confirm the result, for example after a timeout, it says so and re-reads the count rather than trying again. Resets require a Codex CLI that supports them.
+
 OpenCode quota tracking is not supported, locally or remotely.
 
 Set **Codex quota warning** in [Settings → CLI tools → Codex CLI](settings.md#codex) to a remaining-percentage threshold. `0` disables notifications. Fresh successful measurements at or below the threshold produce one in-app warning per reported window reset. Stale, failed, expired and unknown measurements do not trigger warnings. Subscription quota must be enabled.

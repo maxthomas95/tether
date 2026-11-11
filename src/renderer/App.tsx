@@ -27,6 +27,8 @@ import { Notifications, useNotifications } from './components/Notifications';
 import { ConfirmDialog, useConfirmDialog } from './components/ConfirmDialog';
 import type { UsageBudgetAlert } from './utils/usage-budget';
 import { formatCost } from './utils/usage-format';
+import { codexResetNotice } from './utils/codex-quota';
+import type { CodexResetOutcome } from '../shared/codex-types';
 import { useTerminalManager } from './hooks/useTerminalManager';
 import type { TerminalCursorStyle } from './hooks/useTerminalManager';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
@@ -221,6 +223,9 @@ export function App() {
   }, [notify]);
   const notifyCodexQuotaLow = useCallback((message: string) => {
     notify({ type: 'warning', title: 'Codex quota running low', message });
+  }, [notify]);
+  const notifyCodexReset = useCallback((outcome: CodexResetOutcome) => {
+    notify(codexResetNotice(outcome));
   }, [notify]);
   const { confirm: confirmDialog, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [vaultPrompt, setVaultPrompt] = useState<{ reason?: string; onDone: (loggedIn: boolean) => void } | null>(null);
@@ -2186,7 +2191,7 @@ export function App() {
           onOpenHistory={() => setUsageHistoryOpen(true)}
           onBudgetCrossed={notifyBudgetCrossed}
         />
-        <QuotaFooter onQuotaLow={notifyCodexQuotaLow} />
+        <QuotaFooter onQuotaLow={notifyCodexQuotaLow} confirm={confirmDialog} onCodexReset={notifyCodexReset} />
         <VaultStatusPill onAuthError={notifyVaultAuthError} />
         <JobsOfficePill status={jobsStatus} active={officeOpen} onToggle={() => setOfficeOpen(v => !v)}
           onConfigure={() => { setSettingsInitialSection('integrations'); setSettingsOpen(true); }} />

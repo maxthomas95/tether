@@ -3,7 +3,8 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { createLogger } from '../logger';
 import type { QuotaInfo, CodexQuota, ScopedQuotaWindow } from '../../shared/types';
-import { readCodexQuota } from '../codex/integration-service';
+import type { CodexResetResult } from '../../shared/codex-types';
+import { consumeCodexResetCredit, readCodexQuota } from '../codex/integration-service';
 
 const log = createLogger('quota');
 
@@ -98,6 +99,7 @@ export class QuotaService {
   private claudeRejectedToken: string | null = null;
   private claudeRejectedAttempts = 0;
   private claudeRejectedUntil = 0;
+  private codexResetInflight: Promise<CodexResetResult> | null = null;
 
   get enabled(): boolean { return this._enabled; }
 
@@ -150,6 +152,27 @@ export class QuotaService {
       if (this.inflight === request) this.inflight = null;
     });
     this.inflight = request;
+    return request;
+  }
+
+  /**
+   * Redeem one free Codex reset, then re-read quota so the footer shows the
+   * new count. Concurrent requests share one redemption, so a double click
+   * cannot spend two credits.
+   */
+  redeemCodexResetCredit(): Promise<CodexResetResult> {
+    if (this.codexResetInflight) return this.codexResetInflight;
+    const request = (async () => {
+      const result = await consumeCodexResetCredit();
+      log.info('Codex reset credit requested', { outcome: result.outcome });
+      // A poll started before the reset would report the old count.
+      await this.inflight?.catch(() => undefined);
+      await this.fetchQuota().catch(() => log.warn('Quota refresh after Codex reset failed'));
+      return result;
+    })().finally(() => {
+      if (this.codexResetInflight === request) this.codexResetInflight = null;
+    });
+    this.codexResetInflight = request;
     return request;
   }
 
@@ -267,6 +290,7 @@ export class QuotaService {
         secondary: previous?.secondary ?? { usedPercent: null, resetAt: null },
         planType: previous?.planType ?? null,
         buckets: previous?.buckets ?? [],
+        resetCredits: previous?.resetCredits ?? null,
         lastUpdated: previous?.lastUpdated ?? null,
         error: snapshot?.error || 'Codex quota is unavailable. Open Codex to check your sign-in.',
       };
@@ -276,6 +300,7 @@ export class QuotaService {
       primary: { usedPercent: main?.primary?.usedPercent ?? null, resetAt: main?.primary?.resetsAt ?? null },
       secondary: { usedPercent: main?.secondary?.usedPercent ?? null, resetAt: main?.secondary?.resetsAt ?? null },
       buckets: snapshot.rateLimits,
+      resetCredits: snapshot.resetCredits,
       lastUpdated: snapshot.lastUpdated,
       planType: snapshot.planType,
       error: snapshot.warnings.length ? snapshot.warnings.join(' ') : null,

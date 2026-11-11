@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { inspectCodexConfiguration, readCodexAccount, readCodexQuota } from './integration-service';
+import { consumeCodexResetCredit, inspectCodexConfiguration, readCodexAccount, readCodexQuota, resetCreditsFromResponse } from './integration-service';
 import { callCodexAppServer } from './app-server-client';
 
 vi.mock('electron', () => ({
@@ -153,6 +153,34 @@ describe('codex integration service', () => {
     ]);
   });
 
+  it('reports the free reset count and the soonest expiry of available credits', async () => {
+    mockedCall.mockResolvedValue([
+      { method: 'account/read', ok: true, result: { account: { type: 'chatgpt', planType: 'plus' } } },
+      {
+        method: 'account/rateLimits/read',
+        ok: true,
+        result: {
+          rateLimits: { primary: { usedPercent: 10, windowDurationMins: 300, resetsAt: null } },
+          rateLimitResetCredits: {
+            availableCount: 2,
+            credits: [
+              { id: 'later', status: 'available', grantedAt: 1_793_572_663, expiresAt: 1_796_164_663 },
+              { id: 'sooner', status: 'available', grantedAt: 1_793_477_086, expiresAt: 1_796_069_086 },
+              { id: 'spent', status: 'redeemed', grantedAt: 1_790_000_000, expiresAt: 1_790_100_000 },
+            ],
+          },
+        },
+      },
+    ]);
+
+    const snapshot = await readCodexQuota();
+
+    expect(snapshot.resetCredits).toEqual({
+      availableCount: 2,
+      soonestExpiresAt: new Date(1_796_069_086 * 1000).toISOString(),
+    });
+  });
+
   it('returns error for quota when rate limits fail even if account succeeds', async () => {
     mockedCall.mockResolvedValue([
       { method: 'account/read', ok: true, result: { account: { type: 'chatgpt', planType: 'plus' }, requiresOpenaiAuth: false } },
@@ -281,5 +309,50 @@ describe('codex integration service', () => {
     expect(snapshot.error).toBe('config/read: Codex app-server request failed');
     expect(snapshot.fields).toEqual([]);
     expect(snapshot.integrations).toEqual([]);
+  });
+});
+
+describe('Codex reset credits', () => {
+  beforeEach(() => {
+    mockedCall.mockReset();
+  });
+
+  it('keeps the count when only the summary is reported and rejects malformed counts', () => {
+    expect(resetCreditsFromResponse({ rateLimitResetCredits: { availableCount: 1, credits: null } }))
+      .toEqual({ availableCount: 1, soonestExpiresAt: null });
+    expect(resetCreditsFromResponse({ rateLimitResetCredits: { availableCount: -1 } })).toBeNull();
+    expect(resetCreditsFromResponse({ rateLimitResetCredits: null })).toBeNull();
+    expect(resetCreditsFromResponse(null)).toBeNull();
+  });
+
+  it('redeems with a fresh idempotency key and a longer timeout', async () => {
+    mockedCall.mockResolvedValue([{ method: 'account/rateLimitResetCredit/consume', ok: true, result: { outcome: 'reset' } }]);
+
+    expect(await consumeCodexResetCredit()).toEqual({ outcome: 'reset' });
+    await consumeCodexResetCredit();
+
+    const [[firstCalls, options], [secondCalls]] = mockedCall.mock.calls;
+    const firstKey = (firstCalls[0].params as { idempotencyKey: string }).idempotencyKey;
+    const secondKey = (secondCalls[0].params as { idempotencyKey: string }).idempotencyKey;
+    expect(firstCalls[0].method).toBe('account/rateLimitResetCredit/consume');
+    expect(firstKey).toMatch(/^[0-9a-f-]{36}$/);
+    expect(secondKey).not.toBe(firstKey);
+    expect(options).toEqual({ timeoutMs: 30_000 });
+  });
+
+  it.each(['nothingToReset', 'noCredit', 'alreadyRedeemed'])('passes through the %s outcome', async outcome => {
+    mockedCall.mockResolvedValue([{ method: 'account/rateLimitResetCredit/consume', ok: true, result: { outcome } }]);
+    expect(await consumeCodexResetCredit()).toEqual({ outcome });
+  });
+
+  it('treats an unknown method as unsupported but timeouts and odd replies as unknown', async () => {
+    mockedCall.mockResolvedValueOnce([{ method: 'account/rateLimitResetCredit/consume', ok: false, error: 'Codex app-server method unavailable', unavailable: true }]);
+    expect(await consumeCodexResetCredit()).toEqual({ outcome: 'unsupported' });
+
+    mockedCall.mockResolvedValueOnce([{ method: 'account/rateLimitResetCredit/consume', ok: false, error: 'Codex app-server unavailable', unavailable: true }]);
+    expect(await consumeCodexResetCredit()).toEqual({ outcome: 'unknown' });
+
+    mockedCall.mockResolvedValueOnce([{ method: 'account/rateLimitResetCredit/consume', ok: true, result: { outcome: 'surprise' } }]);
+    expect(await consumeCodexResetCredit()).toEqual({ outcome: 'unknown' });
   });
 });

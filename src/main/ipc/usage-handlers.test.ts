@@ -11,6 +11,7 @@ const quotaServiceMock = vi.hoisted(() => ({
   getQuota: vi.fn(),
   fetchQuota: vi.fn(),
   setEnabled: vi.fn(),
+  redeemCodexResetCredit: vi.fn(),
 }));
 vi.mock('../quota/quota-service', () => ({ quotaService: quotaServiceMock }));
 
@@ -70,6 +71,12 @@ describe('usage-handlers', () => {
     expect(await harness.invoke(IPC.QUOTA_REFRESH)).toEqual({ k: 2 });
     await harness.invoke(IPC.QUOTA_SET_ENABLED, false);
     expect(quotaServiceMock.setEnabled).toHaveBeenCalledWith(false);
+  });
+
+  it('QUOTA_CODEX_RESET forwards to the service', async () => {
+    quotaServiceMock.redeemCodexResetCredit.mockResolvedValue({ outcome: 'reset' });
+    expect(await harness.invoke(IPC.QUOTA_CODEX_RESET)).toEqual({ outcome: 'reset' });
+    expect(quotaServiceMock.redeemCodexResetCredit).toHaveBeenCalledTimes(1);
   });
 
   it('USAGE_GET_SESSION / USAGE_GET_ALL / USAGE_REFRESH forward to the service', async () => {
