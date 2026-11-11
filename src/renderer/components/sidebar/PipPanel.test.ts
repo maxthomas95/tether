@@ -266,4 +266,91 @@ describe('Pip sidebar interactions', () => {
     expect(panel().dataset.motion).toBe('false');
     expect(panel().style.getPropertyValue('--pip-gaze-x')).toBe('0px');
   });
+
+  it('keeps the Enter quip while the agent starts working and still speaks for a permission prompt', async () => {
+    sessions = sessions.map(session => session.id === 'a' ? { ...session, state: 'waiting', waitingReason: 'idle' } : session);
+    await render();
+    await act(async () => reportPipActivity('a', true));
+    expect(line()).toContain('idea');
+    await state('running');
+    expect(panel().dataset.mood).toBe('busy');
+    expect(line()).toContain('idea');
+    await advance(5000);
+    await state('waiting', 'permission');
+    expect(panel().dataset.mood).toBe('permission');
+    expect(line()).toBe('Your agent has a question. I have several.');
+  });
+
+  it('lets a ready line replace a routine one and retires it when the agent resumes', async () => {
+    await render();
+    await act(async () => reportPipActivity('a', true));
+    expect(line()).toContain('idea');
+    await advance(3000);
+    await state('waiting', 'idle');
+    expect(line()).toBe('Your agent is waiting. My supervision is impeccable.');
+    await act(async () => reportPipActivity('a', true));
+    expect(line()).toBe('Your agent is waiting. My supervision is impeccable.');
+    await state('running');
+    expect(line()).toBe('I supervise. You do the keyboard stuff.');
+  });
+
+  it('wakes for a background permission prompt and stays alert until it is answered', async () => {
+    const background = (state: PipSession['state'], waitingReason?: PipSession['waitingReason']) => {
+      sessions = sessions.map(session => session.id === 'c' ? { ...session, state, waitingReason } : session);
+      return render();
+    };
+    await render();
+    await advance(PIP_NAP_DELAY_MS);
+    expect(panel().dataset.mood).toBe('sleepy');
+    await background('waiting', 'permission');
+    expect(panel().dataset.mood).toBe('permission');
+    expect(line()).toContain('scratchpad');
+    await advance(PIP_EXPRESSION_MS + PIP_SPEECH_MS + PIP_NAP_DELAY_MS);
+    expect(panel().dataset.mood).toBe('permission');
+    expect(container.querySelector('.pip-emote')?.textContent).toBe('?');
+    expect(vi.getTimerCount()).toBe(0);
+    await background('running');
+    expect(panel().dataset.mood).toBe('busy');
+    await advance(PIP_NAP_DELAY_MS);
+    expect(panel().dataset.mood).toBe('sleepy');
+  });
+
+  it('wakes for an ordinary background wait, then naps again', async () => {
+    await render();
+    await advance(PIP_NAP_DELAY_MS);
+    expect(panel().dataset.mood).toBe('sleepy');
+    sessions = sessions.map(session => session.id === 'b' ? { ...session, state: 'waiting', waitingReason: 'idle' } : session);
+    await render();
+    expect(panel().dataset.mood).toBe('permission');
+    expect(line()).toContain('jobs');
+    await advance(PIP_EXPRESSION_MS);
+    expect(panel().dataset.mood).toBe('busy');
+    await advance(PIP_NAP_DELAY_MS);
+    expect(panel().dataset.mood).toBe('sleepy');
+  });
+
+  it('does not nap while the focused session waits on a permission prompt', async () => {
+    await render();
+    await state('waiting', 'permission');
+    await advance(PIP_NAP_DELAY_MS * 2);
+    expect(panel().dataset.mood).toBe('permission');
+    await state('running');
+    await advance(PIP_NAP_DELAY_MS);
+    expect(panel().dataset.mood).toBe('sleepy');
+  });
+
+  it('keeps the waiting shortcut in the header while collapsed', async () => {
+    settings = { ...settings, collapsed: true };
+    sessions = sessions.map(session => session.id === 'b' ? { ...session, state: 'waiting', waitingReason: 'permission' } : session);
+    await render();
+    expect(container.querySelector('.pip-content')).toBeNull();
+    expect(container.querySelector('.pip-header .pip-waiting')?.textContent).toContain('1 waiting');
+    await click('.pip-header .pip-waiting');
+    expect(activate).toHaveBeenCalledWith('b');
+    expect(vi.getTimerCount()).toBe(0);
+    settings = { ...settings, collapsed: false };
+    await render();
+    expect(container.querySelector('.pip-header .pip-waiting')).toBeNull();
+    expect(container.querySelector('.pip-footer .pip-waiting')?.textContent).toContain('1 waiting');
+  });
 });

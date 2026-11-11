@@ -38,6 +38,11 @@ export function PipPanel({ settings, sessions, activeSessionId, busy, onSettings
   const waiting = sessions.filter(session => session.id !== activeSessionId && session.state === 'waiting');
   const nextWaiting = waiting.find(session => session.waitingReason === 'permission') ?? waiting[0];
   const update = (patch: Partial<PipSettings>) => { void onSettingsChange(patch); };
+  // Shown in the footer, or in the header while collapsed. It is plain markup, so a collapsed Pip still runs no timers.
+  const waitingButton = nextWaiting ? <button type="button" className="pip-waiting" onClick={() => onActivateSession(nextWaiting.id)}
+    title={`View ${pipSessionLabel(nextWaiting)}`} aria-label={`View ${pipSessionLabel(nextWaiting)}; ${waiting.length} other session${waiting.length === 1 ? '' : 's'} waiting`}>
+    {waiting.length} waiting <Icon name="chevron" size={10} />
+  </button> : null;
 
   return <section className="pip-panel" aria-label="Pip sidebar pet" ref={pip.panelRef}
     data-mood={pip.mood} data-motion={pip.motionAllowed} data-quiet={settings.quiet}>
@@ -47,6 +52,7 @@ export function PipPanel({ settings, sessions, activeSessionId, busy, onSettings
         <Icon name="chevron" size={12} style={{ transform: settings.collapsed ? undefined : 'rotate(90deg)' }} />
         <span>Pip</span>
       </button>
+      {settings.collapsed && waitingButton}
       <label className="pip-quiet"><input type="checkbox" checked={settings.quiet} disabled={busy}
         onChange={event => update({ quiet: event.target.checked })} /> Quiet</label>
       <button type="button" className="icon-button" disabled={busy} aria-label="Hide Pip" title="Hide Pip (View menu to reopen)"
@@ -62,10 +68,7 @@ export function PipPanel({ settings, sessions, activeSessionId, busy, onSettings
       </div>
       <div className="pip-footer">
         <span className="pip-following" title={pip.following}>{pip.following}</span>
-        {nextWaiting ? <button type="button" className="pip-waiting" onClick={() => onActivateSession(nextWaiting.id)}
-          title={`View ${pipSessionLabel(nextWaiting)}`} aria-label={`View ${pipSessionLabel(nextWaiting)}; ${waiting.length} other session${waiting.length === 1 ? '' : 's'} waiting`}>
-          {waiting.length} waiting <Icon name="chevron" size={10} />
-        </button> : <span className="pip-mood">{PIP_MOOD_LABELS[pip.mood]}</span>}
+        {waitingButton ?? <span className="pip-mood">{PIP_MOOD_LABELS[pip.mood]}</span>}
       </div>
       <button type="button" className="pip-options-toggle" aria-expanded={optionsOpen} aria-controls={optionsId}
         onClick={() => setOptionsOpen(value => !value)}>Personality &amp; comments</button>

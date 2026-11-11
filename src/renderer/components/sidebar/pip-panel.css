@@ -8,8 +8,8 @@
   flex: 0 1 auto; min-height: 34px; max-height: 40%; overflow: auto;
   border-top: 1px solid var(--border-color); color: var(--text-primary); font-size: var(--text-xs);
 }
-.pip-header { display: flex; align-items: center; gap: 6px; padding: 3px 8px; }
-.pip-heading { display: flex; align-items: center; gap: 6px; flex: 1; padding: 6px 0; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.pip-header { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; padding: 3px 8px; }
+.pip-heading { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 44px; padding: 6px 0; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
 .pip-quiet { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); cursor: pointer; }
 .pip-quiet input, .pip-options input { accent-color: var(--accent); }
 .pip-panel button:disabled, .pip-panel input:disabled, .pip-panel select:disabled { opacity: .5; cursor: default; }
