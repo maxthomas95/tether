@@ -4,7 +4,8 @@ import type { PipSettings } from './pip-settings';
 export type PipSession = Pick<SessionInfo, 'id' | 'label' | 'workingDir' | 'state' | 'waitingReason'>;
 export type PipMood = 'curious' | 'busy' | 'permission' | 'waiting' | 'happy' | 'sleepy' | 'dizzy' | 'concerned' | 'typing';
 export type PipEventKind = 'switch' | 'dizzy' | 'working' | 'permission' | 'ready' | 'idle' | 'stopped' | 'attention' | 'pet' | 'nap' | 'submitted';
-export interface PipEvent { kind: PipEventKind; label: string; }
+/** `sessionId` names the session a line is about, so the line can be retired once it stops being true. */
+export interface PipEvent { kind: PipEventKind; label: string; sessionId?: string; }
 export interface PipReaction { mood: PipMood; emote: string; line: string; }
 
 export const PIP_COMMENT_COOLDOWN_MS = 25000;
@@ -16,12 +17,38 @@ export function pipSessionLabel(session?: PipSession): string {
   return session?.label || session?.workingDir.split(/[\\/]/).findLast(part => part.length > 0) || 'your sessions';
 }
 
+/** Ambient lines share one cooldown. A notable line may replace an ambient one. Urgent lines always speak. */
+export const PIP_TIER_AMBIENT = 0;
+export const PIP_TIER_NOTABLE = 1;
+export const PIP_TIER_URGENT = 2;
+export type PipEventTier = typeof PIP_TIER_AMBIENT | typeof PIP_TIER_NOTABLE | typeof PIP_TIER_URGENT;
+
+export function pipEventTier(kind: PipEventKind): PipEventTier {
+  if (kind === 'permission' || kind === 'attention') return PIP_TIER_URGENT;
+  return kind === 'ready' || kind === 'stopped' ? PIP_TIER_NOTABLE : PIP_TIER_AMBIENT;
+}
+
+function waitsOnPermission(session: PipSession): boolean {
+  return session.state === 'waiting' && session.waitingReason === 'permission';
+}
+
+/** True while any session, focused or not, is blocked on a permission prompt. */
+export function pipPermissionPending(sessions: readonly PipSession[]): boolean {
+  return sessions.some(waitsOnPermission);
+}
+
 export function pipSessionMood(session?: PipSession): PipMood {
   if (!session) return 'curious';
   if (session.state === 'starting' || session.state === 'running') return 'busy';
-  if (session.state === 'waiting') return session.waitingReason === 'permission' ? 'permission' : 'waiting';
+  if (session.state === 'waiting') return waitsOnPermission(session) ? 'permission' : 'waiting';
   if (session.state === 'idle') return 'sleepy';
   return 'concerned';
+}
+
+/** The focused session sets the resting mood, unless another session is blocked on a permission prompt. */
+export function pipRestingMood(sessions: readonly PipSession[], activeId: string | null): PipMood {
+  const mood = pipSessionMood(sessions.find(session => session.id === activeId));
+  return mood !== 'permission' && pipPermissionPending(sessions) ? 'permission' : mood;
 }
 
 export const PIP_MOOD_LABELS: Record<PipMood, string> = {
@@ -74,10 +101,11 @@ export function pipReaction(event: PipEvent, personality: PipSettings['personali
   return { ...EVENT_EXPRESSIONS[event.kind], line: lines[variation % lines.length].replaceAll('{session}', event.label) };
 }
 
-function stateEvent(active?: PipSession, previous?: PipSession): PipEventKind | null {
-  if (!active || !previous || (previous.state === active.state && previous.waitingReason === active.waitingReason)) return null;
-  switch (active.state) {
-    case 'waiting': return active.waitingReason === 'permission' ? 'permission' : 'ready';
+type PipStateEventKind = 'permission' | 'ready' | 'working' | 'idle' | 'stopped';
+
+function stateEventKind(session: PipSession): PipStateEventKind {
+  switch (session.state) {
+    case 'waiting': return waitsOnPermission(session) ? 'permission' : 'ready';
     case 'starting':
     case 'running': return 'working';
     case 'idle': return 'idle';
@@ -85,9 +113,33 @@ function stateEvent(active?: PipSession, previous?: PipSession): PipEventKind | 
   }
 }
 
+function stateEvent(active?: PipSession, previous?: PipSession): PipStateEventKind | null {
+  if (!active || !previous || (previous.state === active.state && previous.waitingReason === active.waitingReason)) return null;
+  return stateEventKind(active);
+}
+
+/**
+ * Whether a spoken line still describes the sessions. A line about a state ends
+ * with that state, so Pip never keeps saying an agent is waiting after it resumed.
+ */
+export function pipEventHolds(event: PipEvent, sessions: readonly PipSession[], activeId: string | null): boolean {
+  if (!event.sessionId) return true;
+  const subject = sessions.find(session => session.id === event.sessionId);
+  switch (event.kind) {
+    case 'attention': return !!subject && subject.id !== activeId && subject.state === 'waiting';
+    case 'switch': return event.sessionId === activeId;
+    case 'working':
+    case 'permission':
+    case 'ready':
+    case 'idle':
+    case 'stopped': return !!subject && subject.id === activeId && stateEventKind(subject) === event.kind;
+    default: return true;
+  }
+}
+
 function enteredWaiting(session: PipSession, previous?: PipSession): boolean {
   return session.state === 'waiting' && !!previous &&
-    (previous.state !== 'waiting' || (session.waitingReason === 'permission' && previous.waitingReason !== 'permission'));
+    (previous.state !== 'waiting' || (waitsOnPermission(session) && !waitsOnPermission(previous)));
 }
 
 /** Observes metadata only. Seeding prevents replaying events after a hidden panel resumes. */
@@ -108,7 +160,7 @@ export class PipObserver {
     if (oldActiveId) this.switches.push(now);
     const label = pipSessionLabel(active);
     if (this.switches.length >= 4) return { kind: 'dizzy', label };
-    return { kind: active.state === 'waiting' && active.waitingReason === 'permission' ? 'permission' : 'switch', label };
+    return { kind: waitsOnPermission(active) ? 'permission' : 'switch', label, sessionId: active.id };
   }
 
   observe(sessions: readonly PipSession[], activeId: string | null, now: number): PipEvent | null {
@@ -122,8 +174,8 @@ export class PipObserver {
     if (active && oldActiveId !== activeId) return this.focusEvent(active, oldActiveId, now);
     const old = active ? previous.get(active.id) : undefined;
     const kind = stateEvent(active, old);
-    if (kind) return { kind, label };
+    if (active && kind) return { kind, label, sessionId: active.id };
     const newlyWaiting = sessions.find(session => session.id !== activeId && enteredWaiting(session, previous.get(session.id)));
-    return newlyWaiting ? { kind: 'attention', label: pipSessionLabel(newlyWaiting) } : null;
+    return newlyWaiting ? { kind: 'attention', label: pipSessionLabel(newlyWaiting), sessionId: newlyWaiting.id } : null;
   }
 }

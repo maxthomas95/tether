@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  PipObserver, PIP_COMMENT_COOLDOWN_MS, PIP_EXPRESSION_MS, PIP_NAP_DELAY_MS, PIP_SPEECH_MS,
-  pipReaction, pipSessionLabel, pipSessionMood, type PipEvent, type PipSession,
+  PipObserver, PIP_COMMENT_COOLDOWN_MS, PIP_EXPRESSION_MS, PIP_NAP_DELAY_MS, PIP_SPEECH_MS, PIP_TIER_AMBIENT, PIP_TIER_URGENT,
+  pipEventHolds, pipEventTier, pipPermissionPending, pipReaction, pipRestingMood, pipSessionLabel,
+  type PipEvent, type PipEventTier, type PipSession,
 } from '../lib/pip-behavior';
 import type { PipSettings } from '../lib/pip-settings';
 import { PIP_ACTIVITY_EVENT, type PipActivity } from '../lib/pip-activity';
@@ -12,6 +13,8 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
   const observer = useRef(new PipObserver());
   const wasActive = useRef(false);
   const lastComment = useRef(-Infinity);
+  const lastTier = useRef<PipEventTier>(PIP_TIER_AMBIENT);
+  const rouse = useRef<() => void>(() => {});
   const variation = useRef(0);
   const [visible, setVisible] = useState(!document.hidden);
   const [reducedMotion, setReducedMotion] = useState(() => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
@@ -23,6 +26,7 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
   const active = settings.enabled && !settings.collapsed && visible;
   const motionAllowed = active && settings.motion && !reducedMotion;
   const session = sessions.find(item => item.id === activeSessionId);
+  const permissionPending = pipPermissionPending(sessions);
   const comments = usePipComments(speech, activeSessionId, active, settings);
 
   useEffect(() => {
@@ -39,15 +43,23 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
 
   const showEvent = useCallback((event: PipEvent, force = false) => {
     const now = Date.now();
+    const tier = pipEventTier(event.kind);
     const moment = { event, variation: variation.current };
+    // A session that needs the person outranks a nap.
+    if (tier === PIP_TIER_URGENT) rouse.current();
     setExpression(moment);
-    if (!settings.quiet && (force || now - lastComment.current >= PIP_COMMENT_COOLDOWN_MS)) {
-      setSpeech(moment);
-      lastComment.current = now;
-      variation.current += 1;
-    } else {
+    if (settings.quiet) {
       setSpeech(null);
+      return;
     }
+    // Inside the cooldown a line yields only to a more important one, and a
+    // line that is not replaced stays for its own lifetime instead of blanking.
+    const cooled = now - lastComment.current >= PIP_COMMENT_COOLDOWN_MS;
+    if (!force && tier !== PIP_TIER_URGENT && !cooled && tier <= lastTier.current) return;
+    setSpeech(moment);
+    lastComment.current = now;
+    lastTier.current = tier;
+    variation.current += 1;
   }, [settings.quiet]);
 
   useEffect(() => {
@@ -62,6 +74,8 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
     }
     const event = observer.current.observe(sessions, activeSessionId, Date.now());
     if (event) showEvent(event);
+    // Retire a line once the state it describes has ended.
+    setSpeech(moment => moment && !pipEventHolds(moment.event, sessions, activeSessionId) ? null : moment);
   }, [sessions, activeSessionId, active, showEvent]);
 
   useEffect(() => {
@@ -109,6 +123,8 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
         setSpeech(moment => moment?.event.kind === 'nap' ? null : moment);
       }
       clearTimeout(timer);
+      // No nap while a permission prompt is pending; the timer restarts when it clears.
+      if (permissionPending) return;
       timer = setTimeout(() => {
         sleeping.current = true;
         setNapping(true);
@@ -118,6 +134,7 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
     const inputWake = (event: Event) => {
       if ((event as CustomEvent<PipActivity>).detail?.sessionId === activeSessionId) wake();
     };
+    rouse.current = wake;
     wake();
     document.addEventListener('pointermove', wake, { passive: true });
     document.addEventListener('pointerdown', wake, { passive: true });
@@ -126,13 +143,14 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
     document.addEventListener('wheel', wake, { passive: true });
     return () => {
       clearTimeout(timer);
+      rouse.current = () => {};
       document.removeEventListener('pointermove', wake);
       document.removeEventListener('pointerdown', wake);
       document.removeEventListener('keydown', wake);
       document.removeEventListener(PIP_ACTIVITY_EVENT, inputWake);
       document.removeEventListener('wheel', wake);
     };
-  }, [active, activeSessionId, showEvent]);
+  }, [active, activeSessionId, showEvent, permissionPending]);
 
   useEffect(() => {
     const panel = panelRef.current;
@@ -161,7 +179,7 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
   }, [motionAllowed]);
 
   const reaction = expression ? pipReaction(expression.event, settings.personality, expression.variation) : null;
-  const mood = napping ? 'sleepy' : typing ? 'typing' : reaction?.mood ?? pipSessionMood(session);
+  const mood = napping ? 'sleepy' : typing ? 'typing' : reaction?.mood ?? pipRestingMood(sessions, activeSessionId);
   const greeting = settings.personality === 'dry' ? 'I supervise. You do the keyboard stuff.' : 'Your tiny coding buddy. Happy to be here.';
   const spokenLine = speech ? pipReaction(speech.event, settings.personality, speech.variation).line : greeting;
   const line = settings.quiet ? 'Quiet company. Same tiny supervisor.' : comments.line ?? spokenLine;
