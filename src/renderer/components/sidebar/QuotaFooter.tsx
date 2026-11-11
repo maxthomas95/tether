@@ -91,7 +91,8 @@ export function QuotaFooter({ onQuotaLow }: { onQuotaLow?: (message: string) => 
 
   if (!enabled || !quota) return null;
 
-  const hasClaudeData = quota.fiveHour.utilization !== null || quota.sevenDay.utilization !== null;
+  const hasClaudeData = quota.fiveHour.utilization !== null || quota.sevenDay.utilization !== null
+    || !!quota.scoped?.some(window => window.utilization !== null);
   const hasCodexData = quota.codex != null && (quota.codex.primary.usedPercent !== null
     || quota.codex.secondary.usedPercent !== null
     || !!quota.codex.buckets?.some(bucket => bucket.primary?.usedPercent != null || bucket.secondary?.usedPercent != null));
@@ -115,6 +116,12 @@ export function QuotaFooter({ onQuotaLow }: { onQuotaLow?: (message: string) => 
           </div>
           <QuotaBar label="5h" used={quota.fiveHour.utilization} resetsAt={quota.fiveHour.resetsAt} />
           <QuotaBar label="7d" used={quota.sevenDay.utilization} resetsAt={quota.sevenDay.resetsAt} />
+          {quota.scoped?.filter(window => window.utilization !== null).map(window => (
+            <React.Fragment key={window.label}>
+              <span className="quota-plan">{window.label}</span>
+              <QuotaBar label="7d" used={window.utilization} resetsAt={window.resetsAt} />
+            </React.Fragment>
+          ))}
           {quota.error && <div className="quota-error">{quota.error}</div>}
         </div>
       )}

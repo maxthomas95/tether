@@ -115,7 +115,7 @@ Daily warnings use the UTC calendar day; weekly warnings use Monday-Sunday UTC. 
 
 Enable **Show usage quota in sidebar** (on by default) in [Settings -> Usage](settings.md#usage). The sidebar shows the percentage left and the next reported reset. Quota polling starts shortly after launch and refreshes every five minutes; click the footer to refresh.
 
-Claude quota reads the access token Claude Code saves in `~/.claude/.credentials.json` without modifying it, and sends that token only to Anthropic's usage endpoint. Tether never refreshes or changes Claude Code's sign-in. When the saved token has expired, the footer shows quota as paused until Claude Code refreshes it. This endpoint is not a documented API and may stop working. Turn quota tracking off with **Show usage quota in sidebar**.
+Claude quota reads the access token Claude Code saves in `~/.claude/.credentials.json` without modifying it, and sends that token only to Anthropic's usage endpoint. Tether never refreshes or changes Claude Code's sign-in. When the saved token has expired, the footer shows quota as paused until Claude Code refreshes it. When the account has a separate weekly allowance for a specific model, such as Fable, it appears as its own bar under the overall Claude windows, labelled with the model name. This endpoint is not a documented API and may stop working. Turn quota tracking off with **Show usage quota in sidebar**.
 
 Codex quota uses the installed Codex CLI's supported app-server interface. Tether shows reported quota buckets with their actual window durations and retains the last successful observation when a refresh fails. A last-known reading is labelled with its observation time. Availability depends on the installed CLI, sign-in and account mode.
 

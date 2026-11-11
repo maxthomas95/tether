@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { createLogger } from '../logger';
-import type { QuotaInfo, CodexQuota } from '../../shared/types';
+import type { QuotaInfo, CodexQuota, ScopedQuotaWindow } from '../../shared/types';
 import { readCodexQuota } from '../codex/integration-service';
 
 const log = createLogger('quota');
@@ -22,7 +22,36 @@ interface ClaudeCredentials {
 interface ClaudeApiResponse {
   five_hour?: { utilization: number; resets_at: string | null };
   seven_day?: { utilization: number; resets_at: string | null };
+  limits?: unknown;
   [key: string]: unknown;
+}
+
+interface ClaudeApiLimit {
+  kind?: unknown;
+  percent?: unknown;
+  resets_at?: unknown;
+  scope?: { model?: { display_name?: unknown } | null } | null;
+}
+
+/**
+ * Extract model-scoped weekly limits (e.g. Fable) from the usage endpoint's
+ * `limits` array. Unknown or malformed entries are skipped.
+ */
+export function parseScopedClaudeLimits(limits: unknown): ScopedQuotaWindow[] {
+  if (!Array.isArray(limits)) return [];
+  const windows: ScopedQuotaWindow[] = [];
+  for (const entry of limits as ClaudeApiLimit[]) {
+    if (!entry || typeof entry !== 'object' || entry.kind !== 'weekly_scoped') continue;
+    const name = entry.scope?.model?.display_name;
+    if (typeof name !== 'string' || !name.trim()) continue;
+    if (typeof entry.percent !== 'number' || !Number.isFinite(entry.percent)) continue;
+    windows.push({
+      label: name.trim(),
+      utilization: entry.percent,
+      resetsAt: typeof entry.resets_at === 'string' ? entry.resets_at : null,
+    });
+  }
+  return windows;
 }
 
 export function normalizeCodexResetAt(value: string | number | null | undefined): string | null {
@@ -50,6 +79,7 @@ function emptyQuota(error: string | null = null): QuotaInfo {
   return {
     fiveHour: { utilization: null, resetsAt: null },
     sevenDay: { utilization: null, resetsAt: null },
+    scoped: [],
     subscriptionType: null,
     rateLimitTier: null,
     lastUpdated: null,
@@ -186,6 +216,7 @@ export class QuotaService {
         return {
           fiveHour: this.lastQuota.fiveHour,
           sevenDay: this.lastQuota.sevenDay,
+          scoped: this.lastQuota.scoped,
           subscriptionType: creds.subscriptionType ?? null,
           rateLimitTier: creds.rateLimitTier ?? null,
           lastUpdated: this.lastQuota.lastUpdated,
@@ -205,6 +236,7 @@ export class QuotaService {
           utilization: data.seven_day?.utilization ?? null,
           resetsAt: data.seven_day?.resets_at ?? null,
         },
+        scoped: parseScopedClaudeLimits(data.limits),
         subscriptionType: creds.subscriptionType ?? null,
         rateLimitTier: creds.rateLimitTier ?? null,
         lastUpdated: new Date().toISOString(),
@@ -216,6 +248,7 @@ export class QuotaService {
       return {
         fiveHour: this.lastQuota.fiveHour,
         sevenDay: this.lastQuota.sevenDay,
+        scoped: this.lastQuota.scoped,
         subscriptionType: this.lastQuota.subscriptionType,
         rateLimitTier: this.lastQuota.rateLimitTier,
         lastUpdated: this.lastQuota.lastUpdated,
@@ -270,6 +303,7 @@ export class QuotaService {
     return {
       fiveHour: this.lastQuota.fiveHour,
       sevenDay: this.lastQuota.sevenDay,
+      scoped: this.lastQuota.scoped,
       subscriptionType: creds.subscriptionType ?? null,
       rateLimitTier: creds.rateLimitTier ?? null,
       lastUpdated: this.lastQuota.lastUpdated,

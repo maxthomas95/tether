@@ -357,6 +357,12 @@ export interface QuotaWindow {
   resetsAt: string | null;
 }
 
+/** A Claude limit scoped to one model (e.g. the weekly Fable allowance). */
+export interface ScopedQuotaWindow extends QuotaWindow {
+  /** Display name reported by the usage endpoint, such as "Fable". */
+  label: string;
+}
+
 export interface CodexQuotaWindow {
   usedPercent: number | null;
   resetAt: string | null;
@@ -375,6 +381,8 @@ export interface CodexQuota {
 export interface QuotaInfo {
   fiveHour: QuotaWindow;
   sevenDay: QuotaWindow;
+  /** Model-scoped weekly limits reported alongside the overall windows. */
+  scoped: ScopedQuotaWindow[];
   subscriptionType: string | null;
   rateLimitTier: string | null;
   lastUpdated: string | null;
