@@ -11,7 +11,7 @@ vi.mock('../logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(
 vi.mock('../codex/integration-service', () => ({ readCodexQuota: vi.fn() }));
 
 import { readCodexQuota } from '../codex/integration-service';
-import { normalizeCodexResetAt, QuotaService } from './quota-service';
+import { normalizeCodexResetAt, parseScopedClaudeLimits, QuotaService } from './quota-service';
 
 beforeEach(() => {
   fsMocks.readFileSync.mockReset().mockImplementation(() => { throw new Error('No local credentials'); });
@@ -41,6 +41,17 @@ function usageResponse(): Response {
   return new Response(JSON.stringify({
     five_hour: { utilization: 25, resets_at: '2026-11-10T01:00:00.000Z' },
     seven_day: { utilization: 50, resets_at: '2026-11-16T01:00:00.000Z' },
+    limits: [
+      { kind: 'session', group: 'session', percent: 25, resets_at: '2026-11-10T01:00:00.000Z', scope: null },
+      { kind: 'weekly_all', group: 'weekly', percent: 50, resets_at: '2026-11-16T01:00:00.000Z', scope: null },
+      {
+        kind: 'weekly_scoped',
+        group: 'weekly',
+        percent: 26,
+        resets_at: '2026-11-16T01:00:00.000Z',
+        scope: { model: { id: null, display_name: 'Fable' }, surface: null },
+      },
+    ],
   }), { status: 200 });
 }
 
@@ -124,6 +135,24 @@ describe('Claude quota polling', () => {
     );
     expect(result.fiveHour.utilization).toBe(25);
     expect(result.sevenDay.utilization).toBe(50);
+    expect(result.scoped).toEqual([
+      { label: 'Fable', utilization: 26, resetsAt: '2026-11-16T01:00:00.000Z' },
+    ]);
+  });
+
+  it('keeps the last scoped limits when a later request fails', async () => {
+    fsMocks.readFileSync.mockReturnValue(claudeCredentials('valid-token', Date.now() + 60 * 60_000));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(usageResponse())
+      .mockResolvedValueOnce(new Response(null, { status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const service = new QuotaService();
+
+    const first = await service.fetchQuota();
+    const failed = await service.fetchQuota();
+
+    expect(failed.error).toContain('500');
+    expect(failed.scoped).toEqual(first.scoped);
   });
 
   it('never refreshes credentials or writes Claude Code sign-in data', async () => {
@@ -165,5 +194,23 @@ describe('Claude quota polling', () => {
     credentials = claudeCredentials('replacement-token', Date.now() + 60 * 60_000);
     await service.fetchQuota();
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('parseScopedClaudeLimits', () => {
+  it('returns only model-scoped weekly limits with a name and percentage', () => {
+    expect(parseScopedClaudeLimits([
+      { kind: 'weekly_all', percent: 10, resets_at: null, scope: null },
+      { kind: 'weekly_scoped', percent: 40, resets_at: null, scope: { model: { display_name: ' Fable ' } } },
+      { kind: 'weekly_scoped', percent: 5, scope: { model: { display_name: '' } } },
+      { kind: 'weekly_scoped', percent: 'high', scope: { model: { display_name: 'Opus' } } },
+      { kind: 'weekly_scoped', percent: 12, scope: { surface: 'chat' } },
+      null,
+    ])).toEqual([{ label: 'Fable', utilization: 40, resetsAt: null }]);
+  });
+
+  it('returns an empty list when the endpoint omits limits', () => {
+    expect(parseScopedClaudeLimits(undefined)).toEqual([]);
+    expect(parseScopedClaudeLimits({})).toEqual([]);
   });
 });
