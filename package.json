@@ -21,7 +21,8 @@
     "audit:security": "node scripts/audit-security.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint \"src/**/*.{ts,tsx}\""
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "lint:changed": "node scripts/lint-changed.mjs"
   },
   "author": {
     "name": "Max Thomas",
@@ -63,6 +64,7 @@
     "@vitest/coverage-v8": "5.1.0",
     "electron": "45.2.3",
     "eslint": "^9.39.4",
+    "eslint-plugin-sonarjs": "^4.2.2",
     "globals": "^15.15.0",
     "jsdom": "^29.1.1",
     "patch-package": "^8.0.1",

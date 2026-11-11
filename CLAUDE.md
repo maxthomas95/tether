@@ -137,7 +137,8 @@ node --version       # CI uses Node 24
 npx npm@10.9.4 ci    # Install the locked dependencies with CI's npm version
 npm run start        # Launch in dev mode (Electron Forge + Vite)
 npm run typecheck    # TypeScript check (tsc --noEmit)
-npm run lint         # ESLint
+npm run lint         # ESLint, including SonarQube rules (see docs/SONAR.md)
+npm run lint:changed # Lint only files changed since main — local Sonar new-code check
 npm test             # Vitest tests
 npm run test:packaging # Packaging helper tests
 ```
