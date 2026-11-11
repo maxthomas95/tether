@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron';
 import { IPC } from '../shared/constants';
 import type { KeybindingOverrides } from '../shared/keybindings';
+import type { CodexResetResult } from '../shared/codex-types';
 import type {
   CreateSessionOptions, SessionInfo, SessionState,
   CreateEnvironmentOptions, EnvironmentInfo,
@@ -267,6 +268,7 @@ const api: TetherAPI = {
     get: (): Promise<QuotaInfo> => ipcRenderer.invoke(IPC.QUOTA_GET),
     refresh: (): Promise<QuotaInfo> => ipcRenderer.invoke(IPC.QUOTA_REFRESH),
     setEnabled: (enabled: boolean): Promise<void> => ipcRenderer.invoke(IPC.QUOTA_SET_ENABLED, enabled),
+    redeemCodexReset: (): Promise<CodexResetResult> => ipcRenderer.invoke(IPC.QUOTA_CODEX_RESET),
     onUpdate(cb: (info: QuotaInfo) => void): () => void {
       const h = (_e: Electron.IpcRendererEvent, info: QuotaInfo) => cb(info);
       ipcRenderer.on(IPC.QUOTA_UPDATED, h);

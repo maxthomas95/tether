@@ -8,9 +8,9 @@ const fsMocks = vi.hoisted(() => ({
 
 vi.mock('node:fs', () => fsMocks);
 vi.mock('../logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn() }) }));
-vi.mock('../codex/integration-service', () => ({ readCodexQuota: vi.fn() }));
+vi.mock('../codex/integration-service', () => ({ readCodexQuota: vi.fn(), consumeCodexResetCredit: vi.fn() }));
 
-import { readCodexQuota } from '../codex/integration-service';
+import { consumeCodexResetCredit, readCodexQuota } from '../codex/integration-service';
 import { normalizeCodexResetAt, parseScopedClaudeLimits, QuotaService } from './quota-service';
 
 beforeEach(() => {
@@ -212,5 +212,46 @@ describe('parseScopedClaudeLimits', () => {
   it('returns an empty list when the endpoint omits limits', () => {
     expect(parseScopedClaudeLimits(undefined)).toEqual([]);
     expect(parseScopedClaudeLimits({})).toEqual([]);
+  });
+});
+
+describe('Codex reset credits', () => {
+  function readySnapshot(availableCount: number) {
+    return {
+      status: 'ready' as const, lastUpdated: '2026-11-10T12:00:00.000Z', error: null, authMode: 'chatgpt', planType: 'plus',
+      summary: null, dailyUsage: [], warnings: [],
+      rateLimits: [{ id: 'codex', name: 'Codex', primary: { usedPercent: 95, windowMinutes: 300, resetsAt: null }, secondary: null }],
+      resetCredits: { availableCount, soonestExpiresAt: '2026-11-30T20:04:46.000Z' },
+    };
+  }
+
+  it('retains the last reset count when a Codex refresh fails', async () => {
+    vi.mocked(readCodexQuota)
+      .mockResolvedValueOnce(readySnapshot(2))
+      .mockResolvedValueOnce({ ...readySnapshot(0), status: 'error', error: 'Codex quota could not be read', resetCredits: null });
+    const service = new QuotaService();
+
+    await service.fetchQuota();
+    const failed = await service.fetchQuota();
+
+    expect(failed.codex?.error).toBeTruthy();
+    expect(failed.codex?.resetCredits?.availableCount).toBe(2);
+  });
+
+  it('shares one redemption across concurrent requests and refreshes quota afterwards', async () => {
+    vi.mocked(readCodexQuota).mockResolvedValueOnce(readySnapshot(2)).mockResolvedValue(readySnapshot(1));
+    let finish: (value: { outcome: 'reset' }) => void = () => undefined;
+    vi.mocked(consumeCodexResetCredit).mockReset().mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const service = new QuotaService();
+    await service.fetchQuota();
+
+    const first = service.redeemCodexResetCredit();
+    const second = service.redeemCodexResetCredit();
+    finish({ outcome: 'reset' });
+
+    expect(await first).toEqual({ outcome: 'reset' });
+    expect(await second).toEqual({ outcome: 'reset' });
+    expect(consumeCodexResetCredit).toHaveBeenCalledTimes(1);
+    expect(service.getQuota().codex?.resetCredits?.availableCount).toBe(1);
   });
 });

@@ -1,7 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useQuota } from '../../hooks/useQuota';
-import { onKeyActivate } from '../../utils/a11y';
-import { codexQuotaWarnings, quotaWindowLabel } from '../../utils/codex-quota';
+import { onKeyActivate, stopPropagationOnKey } from '../../utils/a11y';
+import { codexQuotaWarnings, highestCodexUsedPercent, quotaWindowLabel } from '../../utils/codex-quota';
+import type { ConfirmOptions } from '../ConfirmDialog';
+import type { CodexResetOutcome } from '../../../shared/codex-types';
+
+/** Usage below this level makes the confirm dialog warn that a reset may be wasted. */
+const RESET_WORTHWHILE_PERCENT = 80;
+
+function formatExpiryDate(iso: string): string {
+  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
 
 function formatResetTime(iso: string | null): string {
   if (!iso) return '';
@@ -48,8 +57,16 @@ function QuotaBar({ label, used, resetsAt }: QuotaBarProps) {
   );
 }
 
-export function QuotaFooter({ onQuotaLow }: { onQuotaLow?: (message: string) => void } = {}) {
+interface QuotaFooterProps {
+  onQuotaLow?: (message: string) => void;
+  /** Enables the "Use reset" action; the redemption is always confirmed first. */
+  confirm?: (options: ConfirmOptions) => Promise<{ confirmed: boolean }>;
+  onCodexReset?: (outcome: CodexResetOutcome) => void;
+}
+
+export function QuotaFooter({ onQuotaLow, confirm, onCodexReset }: QuotaFooterProps = {}) {
   const { quota, refresh, enabled } = useQuota();
+  const [redeeming, setRedeeming] = useState(false);
   const [warningThreshold, setWarningThreshold] = useState(0);
   const warned = useRef(new Set<string>());
 
@@ -90,6 +107,32 @@ export function QuotaFooter({ onQuotaLow }: { onQuotaLow?: (message: string) => 
   }, [enabled, quota?.codex, warningThreshold, onQuotaLow]);
 
   if (!enabled || !quota) return null;
+
+  const resetCredits = quota.codex?.resetCredits ?? null;
+
+  const redeemCodexReset = async (event: React.SyntheticEvent) => {
+    // The footer itself refreshes on click; keep that out of this action.
+    event.stopPropagation();
+    if (!confirm || redeeming || !resetCredits?.availableCount) return;
+    const count = resetCredits.availableCount;
+    const highest = highestCodexUsedPercent(quota.codex);
+    const parts = [`Use 1 of your ${count} free Codex reset${count === 1 ? '' : 's'} now? Codex restores your rate limits right away, and this cannot be undone.`];
+    if (highest !== null && highest < RESET_WORTHWHILE_PERCENT) {
+      parts.push(`Your Codex limits are only ${Math.round(highest)}% used, so you may be wasting it.`);
+    }
+    if (resetCredits.soonestExpiresAt) parts.push(`The soonest reset expires ${formatExpiryDate(resetCredits.soonestExpiresAt)}.`);
+    const { confirmed } = await confirm({ title: 'Use a Codex reset?', message: parts.join(' '), confirmLabel: 'Use reset', danger: true });
+    if (!confirmed) return;
+    setRedeeming(true);
+    try {
+      const result = await window.electronAPI.quota.redeemCodexReset();
+      onCodexReset?.(result.outcome);
+    } catch {
+      onCodexReset?.('unknown');
+    } finally {
+      setRedeeming(false);
+    }
+  };
 
   const hasClaudeData = quota.fiveHour.utilization !== null || quota.sevenDay.utilization !== null
     || !!quota.scoped?.some(window => window.utilization !== null);
@@ -145,6 +188,30 @@ export function QuotaFooter({ onQuotaLow }: { onQuotaLow?: (message: string) => 
             <QuotaBar label="Primary" used={quota.codex.primary.usedPercent} resetsAt={quota.codex.primary.resetAt} />
             <QuotaBar label="Secondary" used={quota.codex.secondary.usedPercent} resetsAt={quota.codex.secondary.resetAt} />
           </>}
+          {resetCredits && resetCredits.availableCount > 0 && (
+            <div className="quota-reset-credits">
+              <span
+                className="quota-reset-credits-text"
+                title={resetCredits.soonestExpiresAt
+                  ? `Soonest expires ${new Date(resetCredits.soonestExpiresAt).toLocaleString()}`
+                  : 'Free Codex rate-limit resets'}
+              >
+                {resetCredits.availableCount} free reset{resetCredits.availableCount === 1 ? '' : 's'}
+                {resetCredits.soonestExpiresAt && ` · expires ${formatExpiryDate(resetCredits.soonestExpiresAt)}`}
+              </span>
+              {confirm && (
+                <button
+                  type="button"
+                  className="quota-reset-btn"
+                  disabled={redeeming}
+                  onClick={redeemCodexReset}
+                  onKeyDown={stopPropagationOnKey}
+                >
+                  {redeeming ? 'Resetting…' : 'Use reset'}
+                </button>
+              )}
+            </div>
+          )}
           {quota.codex.lastUpdated && <div className="quota-plan">
             {quota.codex.error ? 'Last known quota' : 'Updated'} {new Date(quota.codex.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>}

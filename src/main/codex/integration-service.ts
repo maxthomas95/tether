@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getCodexHome } from './transcripts';
@@ -11,12 +12,17 @@ import type {
   CodexIntegration,
   CodexRateLimit,
   CodexRateLimitWindow,
+  CodexResetCredits,
+  CodexResetOutcome,
+  CodexResetResult,
   CodexUsageSummary,
 } from '../../shared/codex-types';
 
 const CONFIG_KEYS = ['model', 'model_reasoning_effort', 'sandbox_mode', 'approval_policy', 'web_search', 'service_tier'] as const;
 const MAX_ROWS = 400;
 const MAX_STRING_LENGTH = 160;
+const RESET_CONSUME_TIMEOUT_MS = 30_000;
+const RESET_OUTCOMES = new Set<CodexResetOutcome>(['reset', 'nothingToReset', 'noCredit', 'alreadyRedeemed']);
 const ALLOWED_SOURCE_TYPES = new Set(['user', 'project', 'sessionFlags', 'packagedDefaults', 'enterpriseManaged', 'system']);
 
 type JsonObject = Record<string, unknown>;
@@ -61,6 +67,7 @@ export async function readCodexAccount(): Promise<CodexAccountSnapshot> {
     summary,
     dailyUsage: dailyUsageFromUsage(usageResult),
     rateLimits: rateLimitsFromResponse(rateLimits.result),
+    resetCredits: resetCreditsFromResponse(rateLimits.result),
     warnings,
   };
 }
@@ -96,8 +103,30 @@ export async function readCodexQuota(): Promise<CodexAccountSnapshot> {
     summary: null,
     dailyUsage: [],
     rateLimits: rateLimitsFromResponse(rateLimits.result),
+    resetCredits: resetCreditsFromResponse(rateLimits.result),
     warnings,
   };
+}
+
+/**
+ * Redeem one free Codex rate-limit reset; the backend picks the credit. Each
+ * call uses a fresh idempotency key, so callers must not retry automatically:
+ * an `unknown` outcome may already have spent a credit.
+ */
+export async function consumeCodexResetCredit(): Promise<CodexResetResult> {
+  const [result] = await callCodexAppServer(
+    [{ method: 'account/rateLimitResetCredit/consume', params: { idempotencyKey: randomUUID() } }],
+    { timeoutMs: RESET_CONSUME_TIMEOUT_MS },
+  );
+  if (!result) return { outcome: 'unknown' };
+  if (result.ok) {
+    const outcome = asObject(result.result)?.outcome;
+    return { outcome: typeof outcome === 'string' && RESET_OUTCOMES.has(outcome as CodexResetOutcome) ? outcome as CodexResetOutcome : 'unknown' };
+  }
+  // A method-not-found reply proves the request was rejected before running.
+  // Timeouts and lost connections are ambiguous, so they stay unknown.
+  if (result.error === 'Codex app-server method unavailable') return { outcome: 'unsupported' };
+  return { outcome: 'unknown' };
 }
 
 export async function inspectCodexConfiguration(cwd?: string): Promise<CodexConfigurationSnapshot> {
@@ -152,6 +181,7 @@ function accountSnapshot(
     summary: null,
     dailyUsage: [],
     rateLimits: [],
+    resetCredits: null,
     warnings,
   };
 }
@@ -241,6 +271,25 @@ function rateLimitWindow(raw: unknown): CodexRateLimitWindow | null {
     usedPercent: validPercent(window.usedPercent),
     windowMinutes: validCounterOrNull(window.windowDurationMins),
     resetsAt: resetsAt === null ? null : new Date(resetsAt * 1000).toISOString(),
+  };
+}
+
+export function resetCreditsFromResponse(value: unknown): CodexResetCredits | null {
+  const summary = asObject(asObject(value)?.rateLimitResetCredits);
+  if (!summary) return null;
+  const availableCount = validCounterOrNull(summary.availableCount);
+  if (availableCount === null) return null;
+  let soonest: number | null = null;
+  const credits = Array.isArray(summary.credits) ? summary.credits : [];
+  for (const raw of credits) {
+    const credit = asObject(raw);
+    if (credit?.status !== 'available') continue;
+    const expiresAt = validTimestampSeconds(credit.expiresAt);
+    if (expiresAt !== null && (soonest === null || expiresAt < soonest)) soonest = expiresAt;
+  }
+  return {
+    availableCount,
+    soonestExpiresAt: soonest === null ? null : new Date(soonest * 1000).toISOString(),
   };
 }
 

@@ -8,6 +8,7 @@ import type {
   UsageExportFormat,
   UsageExportResult,
 } from '../../shared/types';
+import type { CodexResetResult } from '../../shared/codex-types';
 import { quotaService } from '../quota/quota-service';
 import { usageService } from '../usage/usage-service';
 import { createLogger } from '../logger';
@@ -35,6 +36,10 @@ export function registerUsageHandlers(ctx: HandlerContext): void {
 
   ipc.handle(IPC.QUOTA_SET_ENABLED, async (_event, enabled: boolean): Promise<void> => {
     quotaService.setEnabled(enabled);
+  });
+
+  ipc.handle(IPC.QUOTA_CODEX_RESET, async (): Promise<CodexResetResult> => {
+    return quotaService.redeemCodexResetCredit();
   });
 
   // === Usage tracking ===
