@@ -49,6 +49,8 @@ When the Existing directory tab points to a git repository, a **Create as new gi
 
 Local Git operations require a full, absolute directory path. Spaces and Unicode names are supported. Worktree branch names must be valid Git branch names; values that look like command options are rejected.
 
+If a session cannot start, the dialog stays open with your settings so you can correct them and try again. A worktree created for that attempt is removed.
+
 Install Git in an absolute directory listed on your system PATH. Tether's Git operations skip relative PATH entries and do not search the project folder for Git. On Windows, they use `git.exe` directly; batch-file wrappers are not supported for these operations.
 
 ## Resume Conversation

@@ -79,6 +79,7 @@ import { WelcomePane } from './components/WelcomePane';
 import { Icon } from './components/Icon';
 import { useRecentProjects } from './hooks/useRecentProjects';
 import { useChildAgents } from './hooks/useChildAgents';
+import { useEnvironmentActions } from './hooks/useEnvironmentActions';
 import { ChildAgentViewer } from './components/ChildAgentViewer';
 import type { ChildAgentInfo } from '../shared/child-agents';
 import { OfficePane } from './components/OfficePane';
@@ -859,7 +860,7 @@ export function App() {
     }
   }, [termManager, recordSession]);
 
-  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean, launchSnapshotId?: string) => {
+  const handleCreateSession = useCallback(async (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CreateSessionOptions['cliTool'], customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean, launchSnapshotId?: string): Promise<boolean> => {
     const createOpts: CreateSessionOptions = {
       workingDir,
       label: label || undefined,
@@ -881,11 +882,13 @@ export function App() {
     if (outcome.status === 'created') {
       setSessions(prev => [...prev, outcome.session]);
       openCreatedSession(outcome.session.id);
+      return true;
     } else if (outcome.status === 'failed') {
       console.error('Failed to create session:', outcome.error);
       notifyError('Failed to create session', outcome.error);
     }
     // 'cancelled': the user declined the Vault login — silent abort.
+    return false;
   }, [createSessionFromOptions, notifyError, openCreatedSession]);
 
   const registerRecipeSession = useCallback((session: SessionInfo) => {
@@ -912,27 +915,7 @@ export function App() {
     applyLayout: applyRecipeLayout, focusPane: termManager.focusPane, notifyError,
   });
 
-  const handleCreateEnvironment = useCallback(async (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
-    try {
-      const env = await window.electronAPI.environment.create({ name, type, config, envVars });
-      setEnvironments(prev => [...prev, env]);
-    } catch (err) {
-      console.error('Failed to create environment:', err);
-      notifyError('Failed to create environment', err);
-    }
-  }, [notifyError]);
-
-  const handleUpdateEnvironment = useCallback(async (id: string, name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => {
-    try {
-      await window.electronAPI.environment.update(id, { name, type, config, envVars });
-      setEnvironments(prev => prev.map(env =>
-        env.id === id ? { ...env, name, type, config, envVars } : env,
-      ));
-    } catch (err) {
-      console.error('Failed to update environment:', err);
-      notifyError('Failed to update environment', err);
-    }
-  }, [notifyError]);
+  const { handleCreateEnvironment, handleUpdateEnvironment } = useEnvironmentActions(setEnvironments, notifyError);
 
   const handleDeleteEnvironment = useCallback(async (env: EnvironmentInfo) => {
     const envSessions = sessions.filter(s => s.environmentId === env.id);
@@ -1163,7 +1146,7 @@ export function App() {
       .filter(s => s.workingDir === source.workingDir)
       .map(s => s.label);
     const label = nextDuplicateLabel(source.label, siblingLabels);
-    handleCreateSession(source.workingDir, label, source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined, source.helmEnabled, source.launchSnapshotId);
+    void handleCreateSession(source.workingDir, label, source.environmentId || undefined, undefined, undefined, undefined, undefined, undefined, source.cliTool, source.customCliBinary, undefined, undefined, source.helmEnabled, source.launchSnapshotId);
   }, [sessions, handleCreateSession]);
 
   const sessionsInGroup = useCallback((environmentId: string, workingDir: string): SessionInfo[] => {
@@ -1303,7 +1286,7 @@ export function App() {
     // Carry the source session's saved launch settings (profile, env, flags)
     // the way Duplicate does; otherwise a session launched under an API-key
     // or model profile would resume under the defaults.
-    handleCreateSession(
+    void handleCreateSession(
       source.workingDir,
       '',
       source.environmentId || undefined,

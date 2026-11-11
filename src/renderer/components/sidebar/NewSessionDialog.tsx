@@ -9,6 +9,7 @@ import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
 import type { CliToolDef } from '../../../shared/cli-tools';
 import { onKeyActivate } from '../../utils/a11y';
 import { shouldHandleDialogEnter } from '../../utils/dialog-keyboard';
+import { submitAndClose } from '../../utils/submit-and-close';
 
 type CliFlagsPerTool = Partial<Record<CliToolId, string[]>>;
 
@@ -234,7 +235,7 @@ interface NewSessionDialogProps {
   environments: EnvironmentInfo[];
   profiles: LaunchProfileInfo[];
   onClose: () => void;
-  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean) => void;
+  onCreate: (workingDir: string, label: string, environmentId?: string, env?: Record<string, string>, cliArgs?: string[], resumeToolSessionId?: string, profileId?: string, cloneUrl?: string, cliTool?: CliToolId, customCliBinary?: string, disabledInheritedFlags?: string[], worktreeOf?: string, helmEnabled?: boolean) => Promise<boolean>;
   /** Optional environment to preselect when the dialog opens. Used by the welcome pane CTAs. */
   initialEnvId?: string;
   initialDirectory?: string;
@@ -272,6 +273,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   const [worktreePath, setWorktreePath] = useState('');
   const [worktreePathEdited, setWorktreePathEdited] = useState(false);
   const [creatingWorktree, setCreatingWorktree] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
   const [worktreeError, setWorktreeError] = useState('');
 
   // Tab state
@@ -689,10 +691,11 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
   };
 
   const handleCreate = async (resumeToolSessionId?: string) => {
-    if (!directory.trim()) return;
+    if (!directory.trim() || creatingWorktree || creatingSession) return;
 
     let effectiveDir = directory.trim();
     let worktreeSourceRepo: string | undefined;
+    let createdWorktree = false;
 
     if (createWorktree && dirIsRepo) {
       const branch = worktreeBranch.trim();
@@ -711,19 +714,35 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
           worktreePath: path,
           branch,
         });
+        createdWorktree = true;
       } catch (err: unknown) {
         setWorktreeError(err instanceof Error ? err.message : String(err));
         setCreatingWorktree(false);
         return;
       }
-      setCreatingWorktree(false);
     }
 
     const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
     const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
     const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
-    onCreate(effectiveDir, label.trim(), envId || undefined, env, args, resumeToolSessionId, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, worktreeSourceRepo, helmEnabled || undefined);
-    resetAndClose();
+    if (!createdWorktree) setCreatingSession(true);
+    try {
+      const created = await submitAndClose(
+        () => onCreate(effectiveDir, label.trim(), envId || undefined, env, args, resumeToolSessionId, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, worktreeSourceRepo, helmEnabled || undefined),
+        resetAndClose,
+      );
+      if (!created && createdWorktree && worktreeSourceRepo) {
+        try {
+          await window.electronAPI.git.worktreeRemove({ sourceRepo: worktreeSourceRepo, worktreePath: worktreePath.trim(), force: true });
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          setWorktreeError(`The session did not start and the worktree was left at ${worktreePath.trim()}: ${message}`);
+        }
+      }
+    } finally {
+      setCreatingWorktree(false);
+      setCreatingSession(false);
+    }
   };
 
   type NewFolderValidation =
@@ -802,10 +821,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
       const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
       const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
-      onCreate(createdPath, label.trim() || name, envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, undefined, helmEnabled || undefined);
-      resetAndClose();
+      await submitAndClose(
+        () => onCreate(createdPath, label.trim() || name, envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, undefined, helmEnabled || undefined),
+        resetAndClose,
+      );
     } catch (err: unknown) {
       setNewFolderError(err instanceof Error ? err.message : String(err));
+    } finally {
       setCreatingNewFolder(false);
     }
   };
@@ -837,8 +859,10 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
         // `git clone <url> <subdir> && cd <subdir> && <cli>` inside the
         // workspace PTY. All clone output streams to the terminal.
         const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
-        onCreate(`${coderCloneWorkspace}::${destInside}`, label.trim() || repoName, envId, env, args, undefined, profileId || undefined, url, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, undefined, helmEnabled || undefined);
-        resetAndClose();
+        await submitAndClose(
+          () => onCreate(`${coderCloneWorkspace}::${destInside}`, label.trim() || repoName, envId, env, args, undefined, profileId || undefined, url, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, undefined, helmEnabled || undefined),
+          resetAndClose,
+        );
         return;
       }
 
@@ -853,10 +877,13 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
       const env = Object.keys(sessionEnvVars).length > 0 ? sessionEnvVars : undefined;
       const args = sessionCliFlags.length > 0 ? sessionCliFlags : undefined;
       const disabled = disabledFlags.size > 0 ? Array.from(disabledFlags) : undefined;
-      onCreate(clonedPath, label.trim() || repoName, envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, undefined, helmEnabled || undefined);
-      resetAndClose();
+      await submitAndClose(
+        () => onCreate(clonedPath, label.trim() || repoName, envId || undefined, env, args, undefined, profileId || undefined, undefined, cliTool, cliTool === 'custom' ? customBinary : undefined, disabled, undefined, helmEnabled || undefined),
+        resetAndClose,
+      );
     } catch (err: unknown) {
       setCloneError(err instanceof Error ? err.message : String(err));
+    } finally {
       setCloning(false);
     }
   };
@@ -872,6 +899,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     setWorktreePath('');
     setWorktreePathEdited(false);
     setCreatingWorktree(false);
+    setCreatingSession(false);
     setWorktreeError('');
     setSessionEnvVars({});
     setSessionCliFlags([]);
@@ -918,7 +946,7 @@ export function NewSessionDialog({ isOpen, environments, profiles, onClose, onCr
     onClose();
   };
 
-  const canCreateLocalSession = Boolean(directory.trim()) && !creatingWorktree;
+  const canCreateLocalSession = Boolean(directory.trim()) && !creatingWorktree && !creatingSession;
   const canCreateNewFolderSession = Boolean(newFolderName.trim())
     && Boolean(reposRoot)
     && !creatingNewFolder

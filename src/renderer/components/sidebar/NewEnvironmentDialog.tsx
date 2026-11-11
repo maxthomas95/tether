@@ -6,16 +6,17 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import type { EnvironmentType } from '../../../shared/types';
 import { suggestVaultPath, VAULT_REF_PREFIX } from '../../utils/vault-path';
+import { submitAndClose } from '../../utils/submit-and-close';
 
 const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
 
 interface NewEnvironmentDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => void;
+  onCreate: (name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => Promise<boolean>;
   /** When set, the dialog opens in edit mode with pre-filled values. */
   editing?: { id: string; name: string; type: EnvironmentType; config: Record<string, unknown>; envVars: Record<string, string> } | null;
-  onUpdate?: (id: string, name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => void;
+  onUpdate?: (id: string, name: string, type: EnvironmentType, config: Record<string, unknown>, envVars: Record<string, string>) => Promise<boolean>;
   /** Optional environment type to preselect on open (creation mode only). Used by welcome-pane CTAs. */
   initialType?: EnvironmentType;
 }
@@ -116,7 +117,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
   );
 
   const handleSubmit = async () => {
-    if (!name.trim() || (type === 'ssh' && !host.trim())) return;
+    if (creating || !name.trim() || (type === 'ssh' && !host.trim())) return;
 
     setCreating(true);
     setCreateError(null);
@@ -166,14 +167,18 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
       }
     }
 
-    if (editing && onUpdate) {
-      onUpdate(editing.id, name.trim(), type, config, envVars);
-    } else {
-      onCreate(name.trim(), type, config, envVars);
+    const created = await submitAndClose(
+      () => editing && onUpdate
+        ? onUpdate(editing.id, name.trim(), type, config, envVars)
+        : onCreate(name.trim(), type, config, envVars),
+      () => {
+        resetForm();
+        onClose();
+      },
+    );
+    if (!created) {
+      setCreating(false);
     }
-    // Reset form
-    resetForm();
-    onClose();
   };
 
   const resetForm = () => {
