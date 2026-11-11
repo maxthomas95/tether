@@ -676,29 +676,44 @@ export class SessionManager {
       if (event.type === 'session_start' && !agentId) this.adoptClaudeConversation(session, nativeId, event);
       return true;
     }
-    if (event.type === 'session_end' || event.type === 'session_start') {
-      if (!agentId) this.noteClaudeSessionBoundary(session, event);
-      return true;
+    switch (event.type) {
+      case 'session_end':
+      case 'session_start':
+        if (!agentId) this.noteClaudeSessionBoundary(session, event);
+        return true;
+      case 'subagent_start':
+      case 'subagent_stop':
+        if (agentId) this.noteSubagentLifecycle(session, agentId, event.type === 'subagent_start');
+        return true;
+      default:
+        return agentId
+          ? this.handleClaudeSubagentHook(session, agentId, event)
+          : this.handleClaudeIdlePrompt(session, event);
     }
-    if (event.type === 'subagent_start' || event.type === 'subagent_stop') {
-      if (agentId) {
-        if (event.type === 'subagent_start') statusDetector.markSubagentStarted(session.id, agentId);
-        else statusDetector.markSubagentStopped(session.id, agentId);
-        this.notifyLifecycle(o => o.onSubagentEvent?.(session));
-      }
-      return true;
-    }
-    if (!agentId) {
-      if (event.type !== 'idle_prompt') return false;
-      // Claude raises its idle prompt only once no background agent is still
-      // running, so this is the one completion that need not wait for them.
-      const hadSubagents = statusDetector.getActiveSubagentIds(session.id).length > 0;
-      statusDetector.markTurnComplete(session.id, { authoritative: true });
-      if (hadSubagents) this.notifyLifecycle(o => o.onSubagentEvent?.(session));
-      return true;
-    }
-    // Subagents inherit the same configured hooks and Tether env. Their
-    // activity and Stop events cannot start or complete the parent turn.
+  }
+
+  private noteSubagentLifecycle(session: Session, agentId: string, started: boolean): void {
+    if (started) statusDetector.markSubagentStarted(session.id, agentId);
+    else statusDetector.markSubagentStopped(session.id, agentId);
+    this.notifyLifecycle(o => o.onSubagentEvent?.(session));
+  }
+
+  /** The parent's own hooks: only its idle prompt is consumed here. */
+  private handleClaudeIdlePrompt(session: Session, event: HookEvent): boolean {
+    if (event.type !== 'idle_prompt') return false;
+    // Claude raises its idle prompt only once no background agent is still
+    // running, so this is the one completion that need not wait for them.
+    const hadSubagents = statusDetector.getActiveSubagentIds(session.id).length > 0;
+    statusDetector.markTurnComplete(session.id, { authoritative: true });
+    if (hadSubagents) this.notifyLifecycle(o => o.onSubagentEvent?.(session));
+    return true;
+  }
+
+  /**
+   * Subagents inherit the same configured hooks and Tether env. Their
+   * activity and Stop events cannot start or complete the parent turn.
+   */
+  private handleClaudeSubagentHook(session: Session, agentId: string, event: HookEvent): boolean {
     switch (event.type) {
       case 'turn_complete':
         statusDetector.markSubagentStopped(session.id, agentId);

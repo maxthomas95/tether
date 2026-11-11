@@ -22,7 +22,7 @@ it('opens the local folder, reloads themes, and identifies files that could not 
   expect(openFolder).toHaveBeenCalledOnce();
   await click(button(view.container, 'Reload themes'));
   expect(onReload).toHaveBeenCalledOnce();
-  expect(view.container.querySelector('[role="status"]')?.textContent).toBe('Themes reloaded.');
+  expect(view.container.querySelector('output')?.textContent).toBe('Themes reloaded.');
 });
 
 it('disables repeated actions while loading and reports reload failures', async () => {

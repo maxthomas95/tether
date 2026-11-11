@@ -21,7 +21,7 @@ function loaderPalette(theme: TetherTheme): LoaderTheme {
 export const LOADER_THEMES: Record<string, LoaderTheme> = Object.fromEntries(
   builtInThemeList.map(theme => [theme.name, loaderPalette(theme)]),
 );
-export const DEFAULT_LOADER_THEME = DEFAULT_THEME;
+export { DEFAULT_THEME as DEFAULT_LOADER_THEME } from './themes';
 export function getLoaderTheme(name: string | null | undefined): LoaderTheme {
   return loaderPalette(getTheme(name || DEFAULT_THEME));
 }

@@ -28,7 +28,7 @@ export function LocalThemeControls({ catalog, onReload, disabled }: Readonly<Loc
         <button type="button" className="form-btn" disabled={disabled || busy} onClick={() => void run(onReload, 'Themes reloaded.')}>{busy ? 'Working…' : 'Reload themes'}</button>
       </div>
       {catalog.directory && <p className="form-hint local-theme-path">{catalog.directory}</p>}
-      {message && <p className="form-hint" role="status">{message}</p>}
+      {message && <output className="form-hint">{message}</output>}
       {error && <p className="form-hint local-theme-error" role="alert">{error}</p>}
       {catalog.issues.length > 0 && <div role="alert"><p className="form-hint">Some local themes could not be loaded:</p><ul>{catalog.issues.map(issue => <li key={issue.file}>{issue.file}: {issue.message}</li>)}</ul></div>}
     </div>

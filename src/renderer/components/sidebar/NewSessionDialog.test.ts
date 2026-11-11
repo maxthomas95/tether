@@ -133,8 +133,8 @@ it('removes the new worktree when the session it was made for fails to start', a
   await click(primary());
 
   expect(api.git.worktreeAdd).toHaveBeenCalledOnce();
-  expect(onCreate.mock.calls[0][0]).toBe(worktreePath);
-  expect(onCreate.mock.calls[0][11]).toBe(String.raw`C:\repos\app`);
+  expect(onCreate.mock.calls[0][0].workingDir).toBe(worktreePath);
+  expect(onCreate.mock.calls[0][0].worktreeOf).toBe(String.raw`C:\repos\app`);
   expect(api.git.worktreeRemove).toHaveBeenCalledWith({ sourceRepo: String.raw`C:\repos\app`, worktreePath, force: true });
   expect(onClose).not.toHaveBeenCalled();
   expect(primary().disabled).toBe(false);
@@ -168,7 +168,7 @@ it('keeps the new-folder form open until its session starts', async () => {
 
   await click(primary());
   expect(api.git.createFolder).toHaveBeenCalledWith(String.raw`C:\repos\fresh`, expect.any(Boolean));
-  expect(onCreate.mock.calls[0][0]).toBe(String.raw`C:\repos\fresh`);
+  expect(onCreate.mock.calls[0][0].workingDir).toBe(String.raw`C:\repos\fresh`);
   expect(onClose).not.toHaveBeenCalled();
   expect(primary().disabled).toBe(false);
 
@@ -184,7 +184,7 @@ it('keeps the clone form open until its session starts', async () => {
 
   await click(primary());
   expect(api.git.clone).toHaveBeenCalledWith('https://example.invalid/team/repo.git', String.raw`C:\repos\repo`);
-  expect(onCreate.mock.calls[0][0]).toBe(String.raw`C:\repos\repo`);
+  expect(onCreate.mock.calls[0][0].workingDir).toBe(String.raw`C:\repos\repo`);
   expect(onClose).not.toHaveBeenCalled();
   expect(primary().disabled).toBe(false);
 

@@ -28,6 +28,16 @@ export function getLocalThemeCatalog(): LocalThemeCatalog {
   return catalog;
 }
 
+function readThemeFile(target: string) {
+  const info = fs.lstatSync(target);
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error('Theme must be a regular JSON file.');
+  if (info.size > MAX_THEME_BYTES) throw new Error('Theme exceeds the 64 KiB size limit.');
+  let value: unknown;
+  try { value = JSON.parse(fs.readFileSync(target, 'utf8').replace(/^\uFEFF/, '')); }
+  catch { throw new Error('Theme is not valid JSON.'); }
+  return parseThemeFile(value);
+}
+
 /** Bounded, local, data-only loading. A bad theme does not prevent startup. */
 export function loadLocalThemes(directory = getThemesDirectory()): LocalThemeCatalog {
   const next: LocalThemeCatalog = { directory, themes: [], issues: [] };
@@ -40,14 +50,7 @@ export function loadLocalThemes(directory = getThemesDirectory()): LocalThemeCat
     for (const entry of candidates.slice(0, MAX_THEMES)) {
       const file = entry.isDirectory() ? path.join(entry.name, 'theme.json') : entry.name;
       try {
-        const target = path.join(directory, file);
-        const info = fs.lstatSync(target);
-        if (!info.isFile() || info.isSymbolicLink()) throw new Error('Theme must be a regular JSON file.');
-        if (info.size > MAX_THEME_BYTES) throw new Error('Theme exceeds the 64 KiB size limit.');
-        let value: unknown;
-        try { value = JSON.parse(fs.readFileSync(target, 'utf8').replace(/^\uFEFF/, '')); }
-        catch { throw new Error('Theme is not valid JSON.'); }
-        const theme = parseThemeFile(value);
+        const theme = readThemeFile(path.join(directory, file));
         if (ids.has(theme.name)) throw new Error('Another local theme already uses this id.');
         ids.add(theme.name);
         next.themes.push(theme);

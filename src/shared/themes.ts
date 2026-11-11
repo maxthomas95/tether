@@ -555,11 +555,12 @@ export const builtInThemeList: TetherTheme[] = [mocha, macchiato, frappe, latte,
 export const DEFAULT_THEME = 'mocha';
 
 let localThemes = new Map<string, TetherTheme>();
-export let themeList: TetherTheme[] = builtInThemeList;
+/** Built-in themes followed by the loaded local ones. Updated in place by `setLocalThemes`. */
+export const themeList: TetherTheme[] = [...builtInThemeList];
 
 export function setLocalThemes(local: TetherTheme[]): void {
   localThemes = new Map(local.map(theme => [theme.name, theme]));
-  themeList = [...builtInThemeList, ...local];
+  themeList.splice(builtInThemeList.length, themeList.length, ...local);
 }
 
 export function getTheme(name: string): TetherTheme {

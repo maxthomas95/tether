@@ -55,37 +55,23 @@ function resolveWindowsCli(binary: string, opts: ResolveCliExecutableOptions): C
     .map(entry => entry.trim().replace(/^"|"$/g, ''))
     .filter(isTrustedWindowsAbsolutePath);
 
-  const executableCandidates: string[] = [];
-  const shimCandidates: string[] = [];
-  for (const directory of pathEntries) {
-    for (const extension of extensions) {
-      const candidate = path.win32.resolve(directory, `${binary}${extension}`);
-      const extensionLower = path.win32.extname(candidate).toLowerCase();
-      if (WINDOWS_DIRECT_EXTS.has(extensionLower)) {
-        executableCandidates.push(candidate);
-      } else if (WINDOWS_SHIM_EXTS.has(extensionLower)) {
-        shimCandidates.push(candidate);
-      }
-    }
-  }
+  const candidates = pathEntries.flatMap(directory =>
+    extensions.map(extension => path.win32.resolve(directory, `${binary}${extension}`)));
+  const withExtensionIn = (allowed: ReadonlySet<string>) =>
+    candidates.filter(candidate => allowed.has(path.win32.extname(candidate).toLowerCase()));
 
-  for (const candidate of executableCandidates) {
-    if (existsSync(candidate)) return { kind: 'direct', file: candidate, args: [...(opts.args ?? [])] };
-  }
+  const executable = withExtensionIn(WINDOWS_DIRECT_EXTS).find(candidate => existsSync(candidate));
+  if (executable) return { kind: 'direct', file: executable, args: [...(opts.args ?? [])] };
 
-  for (const candidate of shimCandidates) {
-    if (existsSync(candidate)) {
-      // These characters can expand inside cmd.exe quotes. Native paths do
-      // not cross a shell and have no such restriction.
-      if (/[%^!"\r\n\0]/.test(candidate)) continue;
-      const cmd = resolveWindowsSystemExecutable('cmd.exe', opts);
-      if (!cmd) return null;
-      const args = (opts.args ?? []).map(quoteCmdExeArg).join(' ');
-      return { kind: 'cmd', file: cmd, args: ['/d', '/v:off', '/s', '/c', `"${quoteCmdExeArg(candidate)} ${args}"`] };
-    }
-  }
-
-  return null;
+  // These characters can expand inside cmd.exe quotes. Native paths do
+  // not cross a shell and have no such restriction.
+  const shim = withExtensionIn(WINDOWS_SHIM_EXTS)
+    .find(candidate => existsSync(candidate) && !/[%^!"\r\n\0]/.test(candidate));
+  if (!shim) return null;
+  const cmd = resolveWindowsSystemExecutable('cmd.exe', opts);
+  if (!cmd) return null;
+  const args = (opts.args ?? []).map(quoteCmdExeArg).join(' ');
+  return { kind: 'cmd', file: cmd, args: ['/d', '/v:off', '/s', '/c', `"${quoteCmdExeArg(shim)} ${args}"`] };
 }
 
 function resolvePosixCli(binary: string, opts: ResolveCliExecutableOptions): CliExecutableLaunch | null {

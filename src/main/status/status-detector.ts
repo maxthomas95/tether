@@ -47,7 +47,7 @@ const CLAUDE_SILENCE_WATCHDOG_MS = 2 * 60 * 1000;
 // The single bytes xterm.js sends for Esc and Ctrl+C. Arrow keys, focus
 // reports and bracketed paste are multi-byte sequences that merely START with
 // ESC, so only an exact match counts as an interrupt keypress.
-const INTERRUPT_KEYS: ReadonlySet<string> = new Set([String.fromCharCode(0x1b), String.fromCharCode(0x03)]);
+const INTERRUPT_KEYS: ReadonlySet<string> = new Set([String.fromCodePoint(0x1b), String.fromCodePoint(0x03)]);
 
 // CLIs that *can* drive hook-based turn detection when hooks are actually
 // wired. This is a capability ceiling, not a guarantee: a session only
