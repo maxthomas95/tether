@@ -242,6 +242,7 @@ export function NewEnvironmentDialog({ isOpen, onClose, onCreate, editing, onUpd
                     className="form-input"
                     value={host}
                     onChange={e => setHost(e.target.value)}
+                    // eslint-disable-next-line sonarjs/no-hardcoded-ip -- example placeholder; reviewed safe in SonarQube Cloud
                     placeholder="192.168.1.100"
                   />
                   <input

@@ -24,7 +24,7 @@ export function registerDialogHandlers(ctx: HandlerContext): void {
       return entries
         .filter(e => e.isDirectory() && !e.name.startsWith('.'))
         .map(e => path.join(dir, e.name))
-        .sort();
+        .sort((a, b) => a.localeCompare(b));
     } catch {
       return [];
     }

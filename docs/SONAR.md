@@ -12,6 +12,40 @@ Helm server are outside this coverage suite but remain statically analyzed.
 There is no local coverage threshold. Keep the coverage provider version aligned
 with Vitest when upgrading them.
 
+## Local checks before pushing
+
+`npm run lint` includes `eslint-plugin-sonarjs`, SonarSource's ESLint port of
+the JS/TS rules, using type information from `tsconfig.json`. It covers the
+same files Sonar analyzes in `src/` (tests, mocks and the renderer bootstrap
+are excluded, matching `sonar.exclusions`).
+
+- **Errors** are the rules that have failed the quality gate on new code:
+  security hotspots and reliability bugs such as PATH-resolved commands
+  (S4036), shell commands (S4721), catastrophic-backtracking regexes (S5852),
+  `sort()` without a comparator (S2871), publicly writable directories
+  (S5443), clear-text protocols (S5332), hardcoded IPs and passwords, and
+  dynamic code execution. The list is `SONAR_GATE_RULES` in
+  `eslint.config.mjs`.
+- **Warnings** are every other recommended Sonar rule. Existing findings are
+  grandfathered by the new-code period, which ESLint cannot express, so they
+  do not fail lint.
+
+`npm run lint:changed` lints only `src/` files changed since the merge base
+with `main` (pass another ref, such as `-- github/main`, if local `main` is
+stale). Treat warnings in that output as what Sonar will report on the PR.
+
+The ESLint plugin does not read `NOSONAR` comments, and Sonar does not read
+ESLint directives. A deliberate exception needs both: an
+`// eslint-disable-next-line sonarjs/<rule> -- <reason>` comment for lint, and
+a trailing `// NOSONAR(typescript:Sxxxx)` or a reviewed disposition in
+SonarQube Cloud.
+
+The plugin is a subset of the server analysis. It cannot check coverage
+(run `npm run test:coverage`), duplication, CSS, or rules that only exist
+server-side (such as the `Number.parseFloat` preference rules), and some of its
+type-aware rules report false positives that the server does not. Pull request
+analysis remains authoritative.
+
 ## Release baseline and gate policy
 
 CI supplies `sonar.projectVersion` from the checked-out `package.json` version.
