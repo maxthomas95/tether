@@ -16,13 +16,15 @@
     "build:helm": "npm --prefix mcp-servers/tether-helm run build",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "coverage:changed": "node scripts/coverage-changed.mjs",
     "test:packaging": "node --test scripts/extract-zip.test.mjs",
     "test:security": "node --test scripts/audit-security.test.mjs",
     "audit:security": "node scripts/audit-security.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
-    "lint:changed": "node scripts/lint-changed.mjs"
+    "lint:changed": "node scripts/lint-changed.mjs",
+    "check:pr": "node scripts/check-pr.mjs"
   },
   "author": {
     "name": "Max Thomas",

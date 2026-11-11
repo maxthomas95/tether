@@ -139,11 +139,12 @@ npm run start        # Launch in dev mode (Electron Forge + Vite)
 npm run typecheck    # TypeScript check (tsc --noEmit)
 npm run lint         # ESLint, including SonarQube rules (see docs/SONAR.md)
 npm run lint:changed # Lint only files changed since main — local Sonar new-code check
+npm run check:pr -- github/main # Before every PR: typecheck, changed-file lint, coverage, new-code coverage
 npm test             # Vitest tests
 npm run test:packaging # Packaging helper tests
 ```
 
-Also run `npm run test:security` and the documented dependency gates when relevant. For packaging changes, run `npm run package` and `npm run verify:package`; releases also require `npm run make` and packaged runtime smoke. CI separately builds/audits Helm and audits root/runtime dependencies; see `.github/workflows/ci.yml` and `docs/DEPENDENCY_SECURITY.md`. Settings has nine sections, including CLI tools. See `src/docs/settings.md` for controls and save behavior.
+**Before opening any PR, run `npm run check:pr -- github/main` and fix what it reports** (see `AGENTS.md`, Before Opening a Pull Request). Also run `npm run test:security` and the documented dependency gates when relevant. For packaging changes, run `npm run package` and `npm run verify:package`; releases also require `npm run make` and packaged runtime smoke. CI separately builds/audits Helm and audits root/runtime dependencies; see `.github/workflows/ci.yml` and `docs/DEPENDENCY_SECURITY.md`. Settings has nine sections, including CLI tools. See `src/docs/settings.md` for controls and save behavior.
 
 **Native packaging:** Forge uses pinned prebuilt node-pty binaries instead of rebuilding with unsupported Visual Studio toolchains. Windows local/Coder PTYs use bundled ConPTY DLL support so shutdown works with `RunAsNode` disabled. Keep the packaged verifier and real PTY startup/stop smoke green; app state remains JSON.
 

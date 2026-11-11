@@ -140,6 +140,16 @@ Additional checks:
 - Do not invent validation commands in PR descriptions. Report exactly what ran
   and call out anything skipped.
 
+## Before Opening a Pull Request
+
+Run `npm run check:pr -- github/main` before pushing a branch for review, and
+fix what it reports before opening the PR. It runs typecheck, lints the changed
+files with the SonarQube rules, runs the tests with coverage, and estimates
+SonarQube Cloud's new-code coverage against the 80% gate. All steps run even if
+one fails; the summary lists each result. Treat lint warnings on changed files
+as findings Sonar will report on the PR. If you skip it or a step fails for an
+unrelated reason, say so in the PR test plan. See `docs/SONAR.md`.
+
 ## Worktree and Branch Policy
 
 - Never work directly on `main`; create a feature branch first.

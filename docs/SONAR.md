@@ -34,6 +34,18 @@ are excluded, matching `sonar.exclusions`).
 with `main` (pass another ref, such as `-- github/main`, if local `main` is
 stale). Treat warnings in that output as what Sonar will report on the PR.
 
+`npm run coverage:changed` reads `coverage/lcov.info` (from
+`npm run test:coverage`) and estimates Sonar's new-code coverage for lines
+added or modified since the merge base, using Sonar's formula of covered lines
+plus covered conditions over coverable lines plus conditions. It lists
+uncovered changed lines per file and fails below 80%.
+
+`npm run check:pr` runs typecheck, `lint:changed`, tests with coverage and
+`coverage:changed` in one pass, continuing past failures and printing a
+summary. Run it before opening every pull request. On Windows, two tests that
+need a real POSIX shell or PTY (`remote-command.test.ts` and
+`remote-bootstrap.test.ts`) can fail locally; CI runs them on Linux.
+
 The ESLint plugin does not read `NOSONAR` comments, and Sonar does not read
 ESLint directives. A deliberate exception needs both: an
 `// eslint-disable-next-line sonarjs/<rule> -- <reason>` comment for lint, and
