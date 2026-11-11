@@ -9,6 +9,7 @@ function quota(usedPercent: number, availableCount = 2): QuotaInfo {
   return {
     fiveHour: { utilization: null, resetsAt: null },
     sevenDay: { utilization: null, resetsAt: null },
+    scoped: [],
     subscriptionType: null,
     rateLimitTier: null,
     lastUpdated: null,
