@@ -42,6 +42,15 @@ async function click(selector: string) { await act(async () => (container.queryS
 async function advance(ms: number) { await act(async () => vi.advanceTimersByTime(ms)); }
 function panel() { return container.querySelector<HTMLElement>('.pip-panel')!; }
 function line() { return container.querySelector('.pip-speech')?.textContent; }
+function aiSelect() {
+  return Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('AI quips'))!.querySelector('select')!;
+}
+async function choose(select: HTMLSelectElement, value: string) {
+  await act(async () => {
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
 async function state(state: PipSession['state'], waitingReason?: PipSession['waitingReason']) {
   sessions = sessions.map(session => session.id === focused ? { ...session, state, waitingReason } : session);
   await render();
@@ -232,13 +241,58 @@ describe('Pip sidebar interactions', () => {
     await advance(600);
     expect(comment).not.toHaveBeenCalled();
     await click('.pip-options-toggle');
-    const aiToggle = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('AI quips'))!.querySelector('input')!;
-    await act(async () => aiToggle.click());
-    expect(save).toHaveBeenLastCalledWith({ aiComments: true });
+    expect(container.querySelector('.pip-options-toggle')?.textContent).toBe('Pip options');
+    expect(aiSelect().value).toBe('off');
+    await choose(aiSelect(), 'codex');
+    expect(save).toHaveBeenLastCalledWith({ aiComments: true, aiBackend: 'codex' });
     expect(container.textContent).not.toContain('Share submitted prompts');
     settings = { ...settings, aiComments: true };
     await render();
     expect(container.textContent).toContain('Share submitted prompts');
+    expect(container.textContent).toContain('to OpenAI');
+    await choose(aiSelect(), 'off');
+    expect(save).toHaveBeenLastCalledWith({ aiComments: false });
+  });
+
+  it('checks the chosen backend when it is picked and names its recipient', async () => {
+    const backendStatus = vi.fn(async (backend: string) => backend === 'claude'
+      ? { backend, ready: true, detail: 'Signed in with Claude Max. Quips use Claude Haiku.' }
+      : { backend, ready: false, detail: 'Sign in to Codex with ChatGPT to enable AI quips.' });
+    vi.stubGlobal('electronAPI', { pip: { comment: vi.fn(), cancelComment: vi.fn(), backendStatus } });
+    settings = { ...settings, aiComments: true, aiBackend: 'codex' };
+    await render();
+    expect(backendStatus).not.toHaveBeenCalled();
+    await click('.pip-options-toggle');
+    expect(backendStatus).toHaveBeenLastCalledWith('codex');
+    expect(container.querySelector('.pip-ai-backend')?.textContent).toContain('Sign in to Codex');
+    expect(container.querySelector<HTMLElement>('.pip-ai-backend')?.dataset.ready).toBe('false');
+    await choose(aiSelect(), 'claude');
+    expect(save).toHaveBeenLastCalledWith({ aiComments: true, aiBackend: 'claude' });
+    settings = { ...settings, aiBackend: 'claude' };
+    await render();
+    expect(backendStatus).toHaveBeenLastCalledWith('claude');
+    expect(container.querySelector('.pip-ai-backend')?.textContent).toBe('Signed in with Claude Max. Quips use Claude Haiku.');
+    expect(container.textContent).toContain('to Anthropic');
+    expect(container.textContent).toContain('Haiku only');
+  });
+
+  it('asks for a quip on demand with Try a quip', async () => {
+    const comment = vi.fn().mockResolvedValue({ status: 'ready', line: 'Testing, testing.', model: 'claude-haiku-5-5', reason: null });
+    vi.stubGlobal('electronAPI', { pip: { comment, cancelComment: vi.fn().mockResolvedValue(undefined), backendStatus: vi.fn(() => new Promise(() => {})) } });
+    settings = { ...settings, aiComments: true, aiBackend: 'claude' };
+    await render();
+    await click('.pip-options-toggle');
+    expect(container.querySelector('.pip-ai-backend')?.textContent).toBe('Checking sign-in…');
+    await click('.pip-try-quip');
+    const local = line();
+    expect(local).not.toBe('Testing, testing.');
+    await advance(600);
+    expect(comment).toHaveBeenCalledWith({ event: 'hello', sessionId: 'a' });
+    expect(line()).toBe('Testing, testing.');
+    expect(container.querySelector('.pip-ai-status')?.textContent).toBe('Quip via claude-haiku-5-5');
+    settings = { ...settings, quiet: true };
+    await render();
+    expect(container.querySelector<HTMLButtonElement>('.pip-try-quip')?.disabled).toBe(true);
   });
   it('follows real focus and lets keyboard-compatible petting respond immediately', async () => {
     await render();

@@ -24,7 +24,9 @@ export function usePipSettings(onError: (title: string, error: unknown) => void)
     saving.current = true;
     setBusy(true);
     const previous = current.current;
-    const next = readPipSettings(JSON.stringify({ ...previous, ...patch }));
+    // Prompt-sharing consent names one recipient. Choosing another backend withdraws it.
+    const consent = patch.aiBackend && patch.aiBackend !== previous.aiBackend ? { sharePrompts: false } : {};
+    const next = readPipSettings(JSON.stringify({ ...previous, ...patch, ...consent }));
     setSettings(next);
     try {
       await window.electronAPI.config.set(PIP_SETTINGS_KEY, JSON.stringify(next));

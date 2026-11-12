@@ -20,6 +20,15 @@ export interface CliToolDef {
   maintenance?: { methods: CliMaintenanceMethod[] };
   /** Newline key sequence for CLIs that submit modified Windows Enter. */
   win32ShiftEnterSequence?: string;
+  /** Set for CLIs that can back Pip's AI quips. */
+  pipQuips?: CliPipQuips;
+}
+
+export interface CliPipQuips {
+  /** Company that receives Pip's request text. Named in the prompt-sharing consent. */
+  recipient: string;
+  /** The sign-in quips use, as shown in the chooser. */
+  account: string;
 }
 
 export interface CliLaunchOption {
@@ -46,6 +55,7 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     ] },
     supportsSessionResume: true,
     historyProvider: 'claude',
+    pipQuips: { recipient: 'Anthropic', account: 'Claude subscription' },
     commonFlags: [
       { flag: '--dangerously-skip-permissions', label: 'Skip permission prompts' },
       { flag: '--permission-mode plan', label: 'Plan mode (no edits)' },
@@ -64,6 +74,7 @@ export const CLI_TOOL_REGISTRY: Record<CliToolId, CliToolDef> = {
     ] },
     supportsSessionResume: true,
     historyProvider: 'codex',
+    pipQuips: { recipient: 'OpenAI', account: 'ChatGPT sign-in' },
     commonFlags: [
       { flag: '--full-auto', label: 'Full auto mode' },
       { flag: '--search', label: 'Enable web search' },

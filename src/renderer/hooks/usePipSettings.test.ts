@@ -94,3 +94,20 @@ it('ignores a load result that arrives after unmount', async () => {
   await act(async () => pending.resolve('{"enabled":true}'));
   expect(preferences.settings).toBeNull();
 });
+
+it('withdraws prompt-sharing consent when the AI backend changes, and keeps the backend when AI is turned off', async () => {
+  get.mockResolvedValue('{"enabled":true,"aiComments":true,"aiBackend":"codex","sharePrompts":true}');
+  await mount();
+  await act(async () => preferences.update({ aiComments: true, aiBackend: 'codex' }));
+  expect(preferences.settings?.sharePrompts).toBe(true);
+  await act(async () => preferences.update({ aiComments: true, aiBackend: 'claude' }));
+  expect(JSON.parse(set.mock.calls.at(-1)![1])).toMatchObject({ aiBackend: 'claude', sharePrompts: false });
+  await act(async () => preferences.update({ aiComments: false }));
+  expect(preferences.settings).toMatchObject({ aiComments: false, aiBackend: 'claude' });
+});
+
+it('reads an unknown saved backend as Codex', async () => {
+  get.mockResolvedValue('{"aiBackend":"opencode"}');
+  await mount();
+  expect(preferences.settings?.aiBackend).toBe('codex');
+});

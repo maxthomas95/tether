@@ -2,11 +2,11 @@ import { app } from 'electron';
 import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { IPC } from '../../shared/constants';
-import { PIP_AI_EVENTS, PIP_SETTINGS_KEY, readPipSettings, type PipCommentRequest } from '../../shared/pip';
+import { PIP_AI_BACKENDS, PIP_AI_EVENTS, PIP_SETTINGS_KEY, readPipSettings, type PipAiBackend, type PipBackendStatus, type PipCommentRequest } from '../../shared/pip';
 import { createTrustedIpc } from './trusted-ipc';
 import type { HandlerContext } from './helpers';
 import { getDb } from '../db/database';
-import { generatePipComment } from '../codex/pip-comment-client';
+import { pipBackend } from '../pip/backends';
 import { PipCommentService, setPipCommentService } from '../pip/comment-service';
 import { readRecentPrompt } from '../pip/prompt-context';
 import { sessionManager } from '../session/session-manager';
@@ -24,13 +24,23 @@ export function validatePipRequest(raw: unknown): PipCommentRequest {
   return { event: value.event as PipCommentRequest['event'], sessionId: value.sessionId as string | null };
 }
 
+export function validatePipBackend(raw: unknown): PipAiBackend {
+  if (!PIP_AI_BACKENDS.includes(raw as never)) throw new Error('Invalid Pip backend.');
+  return raw as PipAiBackend;
+}
+
+async function pipWorkspace(): Promise<string> {
+  const cwd = path.join(app.getPath('userData'), 'pip-workspace');
+  await mkdir(cwd, { recursive: true });
+  return cwd;
+}
+
 export function registerPipHandlers(ctx: HandlerContext): void {
   const ipc = createTrustedIpc(ctx.mainWindow);
   const service = new PipCommentService({
     settings: () => readPipSettings(getDb().config[PIP_SETTINGS_KEY] ?? null),
     async generate(request, settings, signal) {
-      const cwd = path.join(app.getPath('userData'), 'pip-workspace');
-      await mkdir(cwd, { recursive: true });
+      const cwd = await pipWorkspace();
       let prompt: string | null = null;
       if (settings.sharePrompts && request.sessionId && request.event !== 'attention') {
         const session = sessionManager.getSession(request.sessionId);
@@ -41,7 +51,7 @@ export function registerPipHandlers(ctx: HandlerContext): void {
           if (file) prompt = await readRecentPrompt(file).catch(() => null);
         }
       }
-      return generatePipComment({ cwd, event: request.event, personality: settings.personality, prompt, signal });
+      return pipBackend(settings.aiBackend).generate({ cwd, event: request.event, personality: settings.personality, prompt }, signal);
     },
   });
   setPipCommentService(service);
@@ -57,4 +67,21 @@ export function registerPipHandlers(ctx: HandlerContext): void {
     return service.comment(request);
   });
   ipc.handle(IPC.PIP_CANCEL_COMMENT, () => service.cancel());
+  let checking: AbortController | null = null;
+  ipc.handle(IPC.PIP_BACKEND_STATUS, async (_event, raw: unknown): Promise<PipBackendStatus> => {
+    const backend = validatePipBackend(raw);
+    // Only the latest check matters, so picking another backend abandons the previous one.
+    checking?.abort();
+    const controller = new AbortController();
+    checking = controller;
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    try {
+      return await pipBackend(backend).status(await pipWorkspace(), controller.signal);
+    } catch {
+      return { backend, ready: false, detail: 'Could not check sign-in. Using local quips.' };
+    } finally {
+      clearTimeout(timer);
+      if (checking === controller) checking = null;
+    }
+  });
 }

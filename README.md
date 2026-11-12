@@ -119,7 +119,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Update notifications** — checks GitHub Releases on launch and links to downloads; stable/beta channels and an opt-out live in Settings → General
 - **Diagnostics export** — one-click bundle of scrubbed `data.json` (SSH passwords, tokens, sensitive env-var values redacted) plus rotated logs, for triaging support issues
 - **CLI maintenance** — check and update installed Claude Code, Codex CLI, and OpenCode tools on local, SSH, or Coder targets through temporary terminals
-- **Optional sidebar companions** — local GIF panel and Pip pet, off by default. Pip's local reactions use status metadata; generated Codex quips and submitted-prompt sharing have separate opt-ins
+- **Optional sidebar companions** — local GIF panel and Pip pet, off by default. Pip's local reactions use status metadata; generated Codex or Claude quips and submitted-prompt sharing have separate opt-ins
 - **J.O.B.S. Office** — optional external office view, off for new setups, with separate connection, remote-session sharing and automatic-launch controls
 - **Helm** *(opt-in, personal-experimental)* — designate a session as "helm" so it can dispatch pre-briefed child sessions through the `tether-helm` MCP, including spawning Coder workspaces. Off by default behind a two-level gate. Not on the 1.0 roadmap.
 
@@ -181,7 +181,7 @@ Tether runs as a desktop client; outbound network traffic is intentionally minim
 | Configured Git provider and clone hosts | Repository browsing, creation, and cloning through GitHub, Azure DevOps, or Gitea. | `src/main/git/` |
 | Configured webhook endpoint | Optional session-state notifications. A blank URL disables them. | `src/main/notifications/` |
 | Configured J.O.B.S. server (default `localhost:8780`) | Opted-in health probes, Office view, and separately enabled remote-session narration. | `src/main/jobs/` |
-| Provider endpoints used by the local Codex CLI | Optional Pip AI quips; submitted-prompt excerpts require separate consent. | `src/main/pip/`, `src/main/codex/pip-comment-client.ts` |
+| Provider endpoints used by the local Codex CLI or Claude Code, whichever you choose | Optional Pip AI quips; submitted-prompt excerpts require separate consent for the chosen backend. | `src/main/pip/`, `src/main/codex/pip-comment-client.ts`, `src/main/claude/pip-comment-client.ts` |
 
 Launch update checks, pricing refresh, and subscription quota are on by default. Disable launch checks in **Settings → General** and quota in **Usage**. Pricing refresh has no toggle and falls back to the bundled snapshot when unavailable. J.O.B.S. is off for new setups; saved integrations keep their previous behavior. Webhooks, Helm, GIFs, Pip, AI quips and prompt sharing require configuration or opt-in. Manual update checks and configured GitHub providers can still contact GitHub when launch checks are off. Each CLI also makes its own network requests.
 

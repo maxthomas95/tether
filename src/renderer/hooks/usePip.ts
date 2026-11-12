@@ -261,5 +261,7 @@ export function usePip(
     emote,
     following: session ? `Following ${pipSessionLabel(session)}` : 'Keeping you company',
     pet: () => { sleeping.current = false; setNapping(false); showEvent({ kind: 'pet', label: '' }, true); },
+    /** Ask for an AI quip now, so sign-in can be confirmed without waiting for a session moment. */
+    tryQuip: () => { rouse.current(); showEvent({ kind: 'hello', label: '' }, true); },
   };
 }

@@ -60,6 +60,7 @@ const api: TetherAPI = {
   pip: {
     comment: (request) => ipcRenderer.invoke(IPC.PIP_COMMENT, request),
     cancelComment: () => ipcRenderer.invoke(IPC.PIP_CANCEL_COMMENT),
+    backendStatus: (backend) => ipcRenderer.invoke(IPC.PIP_BACKEND_STATUS, backend),
   },
   platform: process.platform,
   homeDir: process.env.USERPROFILE || process.env.HOME || '',

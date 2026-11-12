@@ -77,6 +77,12 @@
 .pip-options select { flex: 1; min-width: 0; max-width: 100%; padding: 3px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--control-radius); font: inherit; }
 .pip-options-help { margin: -2px 0 2px; color: var(--text-secondary); line-height: 1.5; }
 .pip-ai-status { color: var(--text-secondary); line-height: 1.5; }
+.pip-ai-backend { color: var(--text-secondary); line-height: 1.5; }
+.pip-ai-backend:empty { display: none; }
+.pip-ai-backend[data-ready="false"] { color: var(--status-waiting); }
+.pip-try-quip { align-self: flex-start; padding: 3px 8px; border: 1px solid var(--border-color); border-radius: var(--control-radius); background: transparent; color: var(--text-primary); font: inherit; cursor: pointer; }
+.pip-try-quip:hover:not(:disabled) { background: var(--bg-hover); }
+.pip-try-quip:disabled { opacity: .5; cursor: default; }
 .pip-panel[data-motion="false"] :is(.pip-creature, .pip-tail, .pip-eye, .pip-paw) { animation: none; }
 .pip-panel[data-motion="false"] :is(.pip-head, .pip-eye, .pip-pupil, .pip-keyboard) { transition: none; }
 @keyframes pip-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
