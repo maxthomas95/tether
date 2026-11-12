@@ -2,6 +2,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { onPipActivity } from '../lib/pip-activity';
 
 const mocks = vi.hoisted(() => {
   class FakeTerminal {
@@ -150,23 +151,51 @@ afterEach(() => {
 });
 
 describe('terminal session lifecycle', () => {
-  it('keeps input bytes unchanged and emits text-free Pip activity in xterm event order', async () => {
+  it('keeps input bytes unchanged and reports text-free Pip activity after the write', () => {
     const events: unknown[] = [];
-    const listen = (event: Event) => events.push((event as CustomEvent).detail);
-    document.addEventListener('tether:pip-input', listen);
+    const sentBefore: number[] = [];
+    const stop = onPipActivity(activity => {
+      sentBefore.push(mocks.sendInput.mock.calls.length);
+      events.push(activity);
+    });
     try {
       api.getOrCreate('a');
       const t = terminal('a');
-      t.input?.('private draft\x1b[200~raw\x1b[201~');
-      t.key?.({ domEvent: new KeyboardEvent('keydown', { key: 'Enter' }) });
-      t.input?.('\r');
-      await Promise.resolve();
-      expect(mocks.sendInput).toHaveBeenCalledWith('a', 'private draft\x1b[200~raw\x1b[201~');
-      expect(events).toEqual([{ sessionId: 'a', submitted: false }, { sessionId: 'a', submitted: false }, { sessionId: 'a', submitted: true }]);
-      t.key?.({ domEvent: new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true }) });
-      await Promise.resolve();
-      expect(events).toHaveLength(3);
-    } finally { document.removeEventListener('tether:pip-input', listen); }
+      mocks.sendInput.mockClear();
+      const key = (init: KeyboardEventInit, data: string) => {
+        t.key?.({ domEvent: new KeyboardEvent('keydown', init) });
+        t.input?.(data);
+      };
+      t.input?.('private draft');
+      expect(mocks.sendInput).toHaveBeenLastCalledWith('a', 'private draft');
+      t.input?.('\x1b[200~pasted\x1b[201~');
+      key({ key: 'ArrowUp' }, '\x1b[A');
+      key({ key: 'Enter' }, '\r');
+      key({ key: 'Enter', ctrlKey: true }, '\n');
+      expect(events).toEqual([
+        { sessionId: 'a', submitted: false }, { sessionId: 'a', submitted: false }, { sessionId: 'a', submitted: false },
+        { sessionId: 'a', submitted: true }, { sessionId: 'a', submitted: false },
+      ]);
+      // Each report follows the PTY write for the same input.
+      expect(sentBefore).toEqual([1, 2, 3, 4, 5]);
+    } finally { stop(); }
+  });
+
+  it('does not treat focus reports, terminal replies, or mouse reports as typing', () => {
+    const events: unknown[] = [];
+    const stop = onPipActivity(activity => events.push(activity));
+    api.getOrCreate('a');
+    const t = terminal('a');
+    mocks.sendInput.mockClear();
+    try {
+      const reports = ['\x1b[I', '\x1b[O', '\x1b[12;40R', '\x1b[?1;2c', '\x1b[<35;10;5M', '\x1b]11;rgb:0000/0000/0000\x1b\\'];
+      for (const report of reports) t.input?.(report);
+      expect(mocks.sendInput).toHaveBeenCalledTimes(reports.length);
+      expect(events).toEqual([]);
+    } finally { stop(); }
+    t.input?.('typed with Pip hidden');
+    expect(mocks.sendInput).toHaveBeenLastCalledWith('a', 'typed with Pip hidden');
+    expect(events).toEqual([]);
   });
   it('waits for fonts, ignores stale font loads, and refits only visible panes', async () => {
     const finish = new Map<string, () => void>();

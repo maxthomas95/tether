@@ -59,7 +59,8 @@ export function PipPanel({ settings, sessions, activeSessionId, busy, onSettings
         onClick={() => update({ enabled: false })}><Icon name="close" size={13} /></button>
     </div>
     {pip.active && <div id={contentId} className="pip-content">
-      <div className="pip-speech" role="status" aria-live="polite" aria-atomic="true">{pip.line}</div>
+      <div className="pip-speech">{pip.line}</div>
+      <span className="pip-announcement" role="status" aria-atomic="true">{pip.announcement}</span>
       <div className="pip-stage">
         <span className="pip-ground" aria-hidden="true" />
         <button type="button" className="pip-pet-button" aria-label={`Pet Pip. ${PIP_MOOD_LABELS[pip.mood]}.`}
