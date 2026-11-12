@@ -6,7 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { PaneId } from '../../shared/layout-types';
 import { canWriteOsc52Clipboard, decodeOsc52Write } from '../utils/osc52';
 import { DEFAULT_TERMINAL_FONT, loadTerminalFont } from '../styles/terminal-fonts';
-import { reportPipActivity } from '../lib/pip-activity';
+import { isTypedText, reportPipActivity } from '../lib/pip-activity';
 import { encodeShiftEnter } from '../utils/terminal-input';
 import type { SessionInfo } from '../../shared/types';
 
@@ -306,17 +306,22 @@ export function useTerminalManager(
       return false;
     });
 
-    // Wire up input forwarding
+    // Wire up input forwarding. Pip's typing signal follows the PTY write and
+    // never delays or changes it. xterm fires onKey and then onData for one
+    // keystroke, so the key event says what kind of input the next write is.
+    // Input with no key event counts only when it is text: xterm also sends
+    // focus reports, query replies and mouse reports through onData.
+    let pendingKey: 'key' | 'submit' | null = null;
     terminal.onData((data: string) => {
       sendInput(sessionId, data);
-      reportPipActivity(sessionId);
+      const key = pendingKey;
+      pendingKey = null;
+      if (key) reportPipActivity(sessionId, key === 'submit');
+      else if (isTypedText(data)) reportPipActivity(sessionId);
     });
     terminal.onKey(({ domEvent }) => {
-      if (domEvent.key === 'Enter' && !domEvent.shiftKey && !domEvent.ctrlKey && !domEvent.altKey && !domEvent.metaKey) {
-        // xterm fires onKey before onData. Finish the typing reaction after
-        // that input signal without delaying or changing the PTY write.
-        queueMicrotask(() => reportPipActivity(sessionId, true));
-      }
+      const plainEnter = domEvent.key === 'Enter' && !domEvent.shiftKey && !domEvent.ctrlKey && !domEvent.altKey && !domEvent.metaKey;
+      pendingKey = plainEnter ? 'submit' : 'key';
     });
 
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {

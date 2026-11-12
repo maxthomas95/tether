@@ -37,6 +37,9 @@ beforeEach(() => {
   vi.setSystemTime(100000);
   vi.clearAllMocks();
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  // Frames run on the fake clock, and an uncancelled frame counts as a leaked timer.
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(Date.now()), 16));
+  vi.stubGlobal('cancelAnimationFrame', (frame: number) => clearTimeout(frame));
   hidden = reduced = false;
   vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
   vi.stubGlobal('matchMedia', () => ({ get matches() { return reduced; }, addEventListener: (_: string, callback: () => void) => { mediaChange = callback; }, removeEventListener: vi.fn() }));
@@ -257,8 +260,15 @@ describe('Pip sidebar interactions', () => {
     reduced = false;
     await act(async () => mediaChange());
     expect(panel().dataset.motion).toBe('true');
-    await act(async () => document.dispatchEvent(new MouseEvent('pointermove', { clientX: 300, clientY: 300 })));
+    const read = vi.spyOn(container.querySelector('.pip-pet-button')!, 'getBoundingClientRect');
+    await act(async () => {
+      for (const clientX of [100, 200, 300]) document.dispatchEvent(new MouseEvent('pointermove', { clientX, clientY: 300 }));
+    });
+    expect(read).not.toHaveBeenCalled();
+    await advance(20);
+    expect(read).toHaveBeenCalledTimes(1);
     expect(panel().style.getPropertyValue('--pip-gaze-x')).toBe('3px');
+    await act(async () => document.dispatchEvent(new MouseEvent('pointermove', { clientX: 300, clientY: 300 })));
     await act(async () => document.dispatchEvent(new Event('pointerleave')));
     expect(panel().style.getPropertyValue('--pip-gaze-x')).toBe('0px');
     settings = { ...settings, motion: false };
@@ -352,5 +362,66 @@ describe('Pip sidebar interactions', () => {
     await render();
     expect(container.querySelector('.pip-header .pip-waiting')).toBeNull();
     expect(container.querySelector('.pip-footer .pip-waiting')?.textContent).toContain('1 waiting');
+  });
+
+  it('announces only lines about a session that needs you', async () => {
+    const announced = () => container.querySelector('.pip-announcement')?.textContent;
+    await render();
+    expect(container.querySelector('.pip-speech')?.getAttribute('aria-live')).toBeNull();
+    expect(container.querySelector('.pip-speech')?.getAttribute('role')).toBeNull();
+    expect(container.querySelector('.pip-announcement')?.getAttribute('role')).toBe('status');
+    focused = 'b';
+    await render();
+    expect(line()).toContain('jobs');
+    expect(announced()).toBe('');
+    await click('.pip-pet-button');
+    expect(announced()).toBe('');
+    sessions = sessions.map(session => session.id === 'c' ? { ...session, state: 'waiting', waitingReason: 'permission' } : session);
+    await render();
+    expect(announced()).toBe(line());
+    expect(announced()).toContain('scratchpad');
+    await advance(PIP_SPEECH_MS);
+    expect(announced()).toBe('');
+  });
+
+  it('announces the local line when an AI quip replaces it, and nothing in quiet mode', async () => {
+    const comment = vi.fn().mockResolvedValue({ status: 'ready', line: 'A generated quip.', model: 'gpt-6-luna', reason: null });
+    vi.stubGlobal('electronAPI', { pip: { comment, cancelComment: vi.fn().mockResolvedValue(undefined) } });
+    settings = { ...settings, aiComments: true };
+    await render();
+    await state('waiting', 'permission');
+    const local = line();
+    await advance(600);
+    expect(line()).toBe('A generated quip.');
+    expect(container.querySelector('.pip-announcement')?.textContent).toBe(local);
+    settings = { ...settings, quiet: true };
+    await render();
+    expect(container.querySelector('.pip-announcement')?.textContent).toBe('');
+  });
+
+  it('keeps one nap timer however much the pointer moves', async () => {
+    await render();
+    const timers = vi.getTimerCount();
+    await advance(PIP_NAP_DELAY_MS - 1000);
+    await act(async () => {
+      for (let index = 0; index < 50; index += 1) document.dispatchEvent(new MouseEvent('pointerdown'));
+    });
+    expect(vi.getTimerCount()).toBe(timers);
+    await advance(1000);
+    expect(panel().dataset.mood).toBe('busy');
+    await advance(PIP_NAP_DELAY_MS - 1000);
+    expect(panel().dataset.mood).toBe('sleepy');
+  });
+
+  it('wakes fully when typing ends a nap', async () => {
+    await render();
+    await advance(PIP_NAP_DELAY_MS);
+    expect(panel().dataset.mood).toBe('sleepy');
+    expect(line()).toContain('Wake me');
+    await act(async () => reportPipActivity('a'));
+    expect(panel().dataset.mood).toBe('typing');
+    expect(line()).toBe('I supervise. You do the keyboard stuff.');
+    await advance(1200);
+    expect(panel().dataset.mood).toBe('busy');
   });
 });
