@@ -8,7 +8,7 @@ import type { HandlerContext } from './helpers';
 import { getDb } from '../db/database';
 import { pipBackend } from '../pip/backends';
 import { PipCommentService, setPipCommentService } from '../pip/comment-service';
-import { readRecentPrompt } from '../pip/prompt-context';
+import { readRecentOpenCodePrompt, readRecentPrompt } from '../pip/prompt-context';
 import { sessionManager } from '../session/session-manager';
 import { getEnvironment } from '../db/environment-repo';
 import { usageService } from '../usage/usage-service';
@@ -35,22 +35,37 @@ async function pipWorkspace(): Promise<string> {
   return cwd;
 }
 
+/**
+ * The latest prompt submitted in a local session, from the source usage already attributed to it.
+ * Remote sessions, and CLIs without a supported local source (Copilot, Custom), share activity only.
+ */
+async function readSessionPrompt(sessionId: string): Promise<string | null> {
+  const session = sessionManager.getSession(sessionId);
+  const env = session?.environmentId ? getEnvironment(session.environmentId) : null;
+  if (!session || (session.environmentId && env?.type !== 'local')) return null;
+  const id = session.usageSessionId ?? session.toolSessionId ?? session.claudeSessionId;
+  if (!id) return null;
+  const tool = session.cliTool ?? 'claude';
+  if (tool === 'claude' || tool === 'codex') {
+    const file = usageService.getLocalTranscriptPath(id);
+    return file ? readRecentPrompt(file).catch(() => null) : null;
+  }
+  if (tool === 'opencode') {
+    const db = usageService.getLocalOpenCodeDatabase(id);
+    return db ? readRecentOpenCodePrompt(db, id) : null;
+  }
+  return null;
+}
+
 export function registerPipHandlers(ctx: HandlerContext): void {
   const ipc = createTrustedIpc(ctx.mainWindow);
   const service = new PipCommentService({
     settings: () => readPipSettings(getDb().config[PIP_SETTINGS_KEY] ?? null),
     async generate(request, settings, signal) {
       const cwd = await pipWorkspace();
-      let prompt: string | null = null;
-      if (settings.sharePrompts && request.sessionId && request.event !== 'attention') {
-        const session = sessionManager.getSession(request.sessionId);
-        const env = session?.environmentId ? getEnvironment(session.environmentId) : null;
-        if (session && (!session.environmentId || env?.type === 'local') && ['claude', 'codex'].includes(session.cliTool ?? 'claude')) {
-          const id = session.usageSessionId ?? session.toolSessionId ?? session.claudeSessionId;
-          const file = id ? usageService.getLocalTranscriptPath(id) : null;
-          if (file) prompt = await readRecentPrompt(file).catch(() => null);
-        }
-      }
+      // Attention is about another session, so it never carries this one's prompt.
+      const prompt = settings.sharePrompts && request.sessionId && request.event !== 'attention'
+        ? await readSessionPrompt(request.sessionId) : null;
       return pipBackend(settings.aiBackend).generate({ cwd, event: request.event, personality: settings.personality, prompt }, signal);
     },
   });

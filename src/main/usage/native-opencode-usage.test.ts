@@ -66,6 +66,8 @@ describe('native OpenCode service integration', () => {
     expect(service.getAll().daily).toContainEqual(expect.objectContaining({ date: '2026-10-14', totalCost: 0, inputTokens: 20 }));
     expect(mocks.db.usageSummaries[0]).toMatchObject({ usageSource: 'native-opencode', costSource: 'reported', filePath: dbPath });
     expect(service.getLocalTranscriptPath('ses_native')).toBeNull();
+    expect(service.getLocalOpenCodeDatabase('ses_native')).toBe(dbPath);
+    expect(service.getLocalOpenCodeDatabase('ses_unknown')).toBeNull();
   });
 
   it('refreshes a preloaded native session on track and preserves environment attribution', async () => {

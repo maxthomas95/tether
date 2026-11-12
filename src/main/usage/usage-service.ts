@@ -732,6 +732,13 @@ export class UsageService {
     return tracked && !tracked.remote && (tracked.cliTool === 'claude' || tracked.cliTool === 'codex') && tracked.filePath ? tracked.filePath : null;
   }
 
+  /** The local native OpenCode database that usage already attributed to this session, if any. */
+  getLocalOpenCodeDatabase(sessionId: string): string | null {
+    const tracked = this.tracked.get(sessionId);
+    return tracked && !tracked.remote && tracked.cliTool === 'opencode' && tracked.usage.usageSource === 'native-opencode' && tracked.filePath
+      ? tracked.filePath : null;
+  }
+
   getAll(): UsageInfo {
     const sessions: Record<string, SessionUsage> = {};
     const allUsage: SessionUsage[] = [];
