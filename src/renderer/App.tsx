@@ -387,6 +387,7 @@ export function App() {
     () => (viewedChildAgent ? { sessionId: viewedChildAgent.sessionId, agentId: viewedChildAgent.agent.id } : null),
     [viewedChildAgent?.sessionId, viewedChildAgent?.agent.id],
   );
+  const [availableUpdate, setAvailableUpdate] = useState<string | null>(null);
   const runningChildCounts = useMemo(() => countRunningChildren(childAgents.lists), [childAgents.lists]);
 
   // Load profiles on mount
@@ -1841,6 +1842,7 @@ export function App() {
       }
 
       if (result.updateAvailable) {
+        setAvailableUpdate(result.latestVersion);
         notify({
           type: 'info',
           title: `Update available: v${result.latestVersion}`,
@@ -1861,6 +1863,7 @@ export function App() {
   // Listen for background update check result from main process
   useEffect(() => {
     const cleanup = window.electronAPI.update.onUpdateAvailable((result: UpdateCheckResult) => {
+      setAvailableUpdate(result.latestVersion);
       notify({
         type: 'info',
         title: `Update available: v${result.latestVersion}`,
@@ -2165,7 +2168,7 @@ export function App() {
           })}
         </div>
         {sidebarVisible && gifPanel.settings?.enabled && <GifPanel settings={gifPanel.settings} onSettingsChange={gifPanel.setSettings} />}
-        {sidebarVisible && pip.settings?.enabled && <PipPanel settings={pip.settings} sessions={sessions} childCounts={runningChildCounts}
+        {sidebarVisible && pip.settings?.enabled && <PipPanel settings={pip.settings} sessions={sessions} childCounts={runningChildCounts} updateVersion={availableUpdate}
           activeSessionId={activeSessionId} busy={pip.busy} onSettingsChange={pip.update} onActivateSession={handleActivateFromSearch} />}
         <GlobalUsageFooter
           environments={environments}

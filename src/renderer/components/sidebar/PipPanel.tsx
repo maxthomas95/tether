@@ -1,8 +1,10 @@
-import { useId, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import { Icon } from '../Icon';
 import { usePip } from '../../hooks/usePip';
 import { PIP_MOOD_LABELS, pipSessionLabel, type PipSession } from '../../lib/pip-behavior';
 import type { PipSettings } from '../../lib/pip-settings';
+import type { PipNudge } from '../../lib/pip-nudges';
+import { PipNudgeFeed } from './PipNudgeFeed';
 import './pip-panel.css';
 
 interface PipPanelProps {
@@ -11,6 +13,8 @@ interface PipPanelProps {
   activeSessionId: string | null;
   /** Running child agents per session id; omitted when subagent rows are off. */
   childCounts?: ReadonlyMap<string, number>;
+  /** Version of an available Tether update, for the optional operational nudges. */
+  updateVersion?: string | null;
   busy: boolean;
   onSettingsChange: (patch: Partial<PipSettings>) => Promise<void>;
   onActivateSession: (sessionId: string) => void;
@@ -32,8 +36,12 @@ function PipArtwork() {
   </span>;
 }
 
-export function PipPanel({ settings, sessions, activeSessionId, childCounts, busy, onSettingsChange, onActivateSession }: Readonly<PipPanelProps>) {
-  const pip = usePip(sessions, activeSessionId, settings, childCounts);
+const NO_NUDGES: readonly PipNudge[] = [];
+
+export function PipPanel({ settings, sessions, activeSessionId, childCounts, updateVersion = null, busy, onSettingsChange, onActivateSession }: Readonly<PipPanelProps>) {
+  const [nudges, setNudges] = useState<readonly PipNudge[]>(NO_NUDGES);
+  const receiveNudges = useCallback((next: readonly PipNudge[]) => setNudges(next), []);
+  const pip = usePip(sessions, activeSessionId, settings, childCounts, nudges);
   const contentId = useId();
   const optionsId = useId();
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -60,6 +68,7 @@ export function PipPanel({ settings, sessions, activeSessionId, childCounts, bus
       <button type="button" className="icon-button" disabled={busy} aria-label="Hide Pip" title="Hide Pip (View menu to reopen)"
         onClick={() => update({ enabled: false })}><Icon name="close" size={13} /></button>
     </div>
+    {pip.active && settings.nudges && <PipNudgeFeed updateVersion={updateVersion} onChange={receiveNudges} />}
     {pip.active && <div id={contentId} className="pip-content">
       <div className="pip-speech">{pip.line}</div>
       <span className="pip-announcement" role="status" aria-atomic="true">{pip.announcement}</span>
@@ -82,6 +91,9 @@ export function PipPanel({ settings, sessions, activeSessionId, childCounts, bus
         </select></label>
         <label><input type="checkbox" checked={settings.motion} disabled={busy}
           onChange={event => update({ motion: event.target.checked })} /> Ambient motion</label>
+        <label><input type="checkbox" checked={settings.nudges} disabled={busy}
+          onChange={event => update({ nudges: event.target.checked })} /> Operational nudges</label>
+        <p className="pip-options-help">One comment when Vault sign-in is about to expire, a quota passes 90%, a usage budget is crossed, or an update is available. Local only.</p>
         <label><input type="checkbox" checked={settings.aiComments} disabled={busy}
           onChange={event => update({ aiComments: event.target.checked })} /> AI quips through Codex</label>
         <p className="pip-options-help">Uses your local Codex ChatGPT sign-in and subscription allowance. Luna only; up to 12 quips/hour.</p>

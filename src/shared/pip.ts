@@ -6,11 +6,13 @@ export interface PipSettings {
   personality: 'dry' | 'sweet';
   aiComments: boolean;
   sharePrompts: boolean;
+  /** Mention Vault expiry, quota, budget and updates that the sidebar already shows. */
+  nudges: boolean;
 }
 
 export const PIP_SETTINGS_KEY = 'sidebarPet';
 export const DEFAULT_PIP_SETTINGS: PipSettings = {
-  enabled: false, collapsed: false, quiet: false, motion: true, personality: 'dry', aiComments: false, sharePrompts: false,
+  enabled: false, collapsed: false, quiet: false, motion: true, personality: 'dry', aiComments: false, sharePrompts: false, nudges: false,
 };
 
 export function readPipSettings(raw: string | null): PipSettings {
@@ -26,6 +28,7 @@ export function readPipSettings(raw: string | null): PipSettings {
       personality: saved.personality === 'sweet' ? 'sweet' : 'dry',
       aiComments: saved.aiComments === true,
       sharePrompts: saved.sharePrompts === true,
+      nudges: saved.nudges === true,
     };
   } catch {
     return { ...DEFAULT_PIP_SETTINGS };

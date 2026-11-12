@@ -2,6 +2,18 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PipNudge } from '../../lib/pip-nudges';
+
+// The real feed reads quota, usage and Vault; here the test plays its part.
+const feed = vi.hoisted(() => ({ onChange: null as ((nudges: readonly unknown[]) => void) | null, updateVersion: undefined as string | null | undefined }));
+vi.mock('./PipNudgeFeed', () => ({
+  PipNudgeFeed: (props: { updateVersion: string | null; onChange: (nudges: readonly unknown[]) => void }) => {
+    feed.onChange = props.onChange;
+    feed.updateVersion = props.updateVersion;
+    return null;
+  },
+}));
+
 import { PipPanel } from './PipPanel';
 import { DEFAULT_PIP_SETTINGS, type PipSettings } from '../../lib/pip-settings';
 import { PIP_COMMENT_COOLDOWN_MS, PIP_EXPRESSION_MS, PIP_NAP_DELAY_MS, PIP_SPEECH_MS, type PipSession } from '../../lib/pip-behavior';
@@ -24,6 +36,7 @@ async function render() {
     settings, sessions, activeSessionId: focused, childCounts, busy: false, onSettingsChange: save, onActivateSession: activate,
   })));
 }
+async function nudge(...nudges: PipNudge[]) { await act(async () => feed.onChange?.(nudges)); }
 async function click(selector: string) { await act(async () => (container.querySelector(selector) as HTMLElement).click()); }
 async function advance(ms: number) { await act(async () => vi.advanceTimersByTime(ms)); }
 function panel() { return container.querySelector<HTMLElement>('.pip-panel')!; }
@@ -52,6 +65,8 @@ beforeEach(() => {
   ];
   focused = 'a';
   childCounts = undefined;
+  feed.onChange = null;
+  feed.updateVersion = undefined;
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -465,5 +480,60 @@ describe('Pip sidebar interactions', () => {
     expect(panel().dataset.mood).toBe('concerned');
     expect(line()).toBe('That session ended badly. I saw nothing.');
     expect(container.querySelector('.pip-announcement')?.textContent).toBe('');
+  });
+
+  it('keeps operational nudges off until asked, then mentions each occurrence once', async () => {
+    const update: PipNudge = { key: 'update:0.8.0', kind: 'updateAvailable', detail: 'v0.8.0' };
+    await render();
+    expect(feed.onChange).toBeNull();
+    await click('.pip-options-toggle');
+    const toggle = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Operational nudges'))!.querySelector('input')!;
+    await act(async () => toggle.click());
+    expect(save).toHaveBeenLastCalledWith({ nudges: true });
+    settings = { ...settings, nudges: true };
+    await render();
+    expect(feed.onChange).not.toBeNull();
+    await nudge(update);
+    expect(line()).toBe('Tether v0.8.0 is out. I hear the new me is the same.');
+    expect(panel().dataset.mood).toBe('happy');
+    expect(container.querySelector('.pip-announcement')?.textContent).toBe('');
+    await advance(PIP_SPEECH_MS);
+    await nudge({ ...update });
+    await nudge();
+    await nudge(update);
+    expect(line()).toBe('I supervise. You do the keyboard stuff.');
+  });
+
+  it('waits for a live line, then speaks one nudge per kind', async () => {
+    settings = { ...settings, nudges: true };
+    await render();
+    await state('waiting', 'permission');
+    const permissionLine = line();
+    await nudge(
+      { key: 'quota:claude-5h:x', kind: 'quotaHigh', detail: 'Claude 5-hour limit' },
+      { key: 'quota:claude-7d:x', kind: 'quotaHigh', detail: 'Claude weekly limit' },
+      { key: 'budget:daily:2026-11-12', kind: 'budgetCrossed', detail: 'daily' },
+    );
+    expect(line()).toBe(permissionLine);
+    await advance(PIP_SPEECH_MS);
+    expect(line()).toBe('Your Claude 5-hour limit is nearly used up. Pace yourself.');
+    await advance(PIP_SPEECH_MS);
+    expect(line()).toBe('You passed your daily budget. I bill less.');
+    await advance(PIP_SPEECH_MS);
+    expect(line()).toBe('I supervise. You do the keyboard stuff.');
+    expect(panel().dataset.mood).toBe('permission');
+  });
+
+  it('shows a nudge as posture only in quiet mode, and passes the update version to the feed', async () => {
+    settings = { ...settings, nudges: true, quiet: true };
+    await act(async () => root.render(createElement(PipPanel, {
+      settings, sessions, activeSessionId: focused, updateVersion: '0.8.0', busy: false, onSettingsChange: save, onActivateSession: activate,
+    })));
+    expect(feed.updateVersion).toBe('0.8.0');
+    await nudge({ key: 'vault:soon', kind: 'vaultExpiring', detail: '5 minutes' });
+    expect(panel().dataset.mood).toBe('concerned');
+    expect(line()).toBe('Quiet company. Same tiny supervisor.');
+    await advance(PIP_EXPRESSION_MS);
+    expect(panel().dataset.mood).toBe('busy');
   });
 });
