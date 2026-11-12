@@ -17,9 +17,13 @@ describe('secure remote bootstrap', () => {
   it.skipIf(!fs.existsSync(bash))('preserves long multiline values on a real PTY without echo or interactive history', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-bootstrap-'));
     const history = path.join(dir, 'history');
+    // The reader forks once per 256-byte chunk, and MSYS emulates fork at about
+    // a third of a second each. Git Bash therefore gets a value just past the
+    // 4096-byte canonical line limit; native shells keep the full-size one.
+    const repeats = process.platform === 'win32' ? 400 : 1600;
     // Git Bash's MSYS sh ignores CR while parsing eval; native POSIX shells do not.
     const secret = "synthetic-secret ' $HOME `never-run`\n" + (process.platform === 'win32' ? '' : '\r') +
-      'Unicode café 漢字\n' + 'long value '.repeat(1600) + '\n\n';
+      'Unicode café 漢字\n' + 'long value '.repeat(repeats) + '\n\n';
     const expected = crypto.createHash('sha256').update(secret).digest('hex');
     const cli = [process.execPath, '-e', "process.stdout.write(String.fromCharCode(13,10)+'DIGEST='+require('node:crypto').createHash('sha256').update(process.env.CONNECTION_STRING).digest('hex'));process.exitCode=7"].map(quotePosixShellArg).join(' ');
     const bootstrap = buildRemoteBootstrap(`env ${quotePosixShellArg('CONNECTION_STRING=' + secret)} ${cli}`, true);
@@ -44,6 +48,11 @@ describe('secure remote bootstrap', () => {
       const recorded = fs.readFileSync(history, 'utf8');
       expect(recorded).not.toContain('synthetic-secret');
       expect(recorded).not.toContain(bootstrap.payload.split('\n')[0]);
-    } finally { try { proc.kill(); } catch { /* already exited */ } fs.rmSync(dir, { recursive: true, force: true }); }
+    } finally {
+      try { proc.kill(); } catch { /* already exited */ }
+      // Windows refuses to delete a directory that is still a live shell's cwd.
+      // Cleanup must not replace the assertion error with its own.
+      try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch { /* left for the OS temp cleaner */ }
+    }
   }, 30_000);
 });

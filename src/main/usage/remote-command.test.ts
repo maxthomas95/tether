@@ -83,6 +83,26 @@ describe('remote usage command boundary', () => {
       expect(stdout).not.toContain('private');
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('still finds node when the login profile aliases it', async () => {
+    const { execFileSync } = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+    const shell = process.platform === 'win32' ? path.join(process.env.ProgramFiles || '', 'Git', 'bin', 'bash.exe') : '/bin/sh';
+    if (!fs.existsSync(shell)) return;
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-usage-alias-'));
+    try {
+      // `command -v node` would print this alias instead of a path to exec.
+      fs.writeFileSync(path.join(home, '.profile'), "alias node='echo not-node'\n");
+      const file = path.join(home, 'projects', fs.realpathSync(home).replace(/[^a-zA-Z0-9]/g, '-'), 'native.jsonl');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, '{"type":"user","message":"hello"}\n');
+      const command = buildProbeCommand({ cli: 'claude', marker: 'pane', workingDir: home, claudeHome: home, nativeSessionId: 'native' });
+      const stdout = execFileSync(shell, ['-s'], {
+        input: command, windowsHide: true, timeout: 10_000, encoding: 'utf8', env: { ...process.env, HOME: home },
+      });
+      expect(stdout).not.toContain('not-node');
+      expect(parseProbeReply(stdout).source?.nativeSessionId).toBe('native');
+    } finally { fs.rmSync(home, { recursive: true, force: true }); }
+  });
 });
 
 describe('resident probe on a real shell', () => {

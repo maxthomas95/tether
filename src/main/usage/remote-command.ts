@@ -68,7 +68,10 @@ export function buildProbeCommand(request?: RemoteUsageRequest, sudo = false, pa
   // A resident reader says it is up by echoing this token, which is how the
   // caller knows sudo accepted the password before it sends anything else.
   const readyEnv = ready ? `TETHER_PROBE_READY=${ready} ` : '';
-  const command = `${readyEnv}exec "$(command -v node || command -v nodejs)" -e ${q(bootstrap)}${encoded ? ` ${q(encoded)}` : ''}`;
+  // `command -v` names an alias as `alias node=...`, which cannot be exec'd, so
+  // a login profile that aliases node must not decide what gets resolved here.
+  const requestArg = encoded ? ' ' + q(encoded) : '';
+  const command = `unalias node nodejs 2>/dev/null; ${readyEnv}exec "$(command -v node || command -v nodejs)" -e ${q(bootstrap)}${requestArg}`;
   // Login-shell context matches the CLI's home/PATH. The only password input,
   // when needed, travels over encrypted stdin, never argv/history/logs.
   const shell = `sh -lc ${q(command)}`;

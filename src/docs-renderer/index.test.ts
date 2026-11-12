@@ -94,7 +94,9 @@ it.each(articlePages)('%s internal links use Markdown paths and open existing pa
       expect(document.getElementById(anchor)?.classList.contains('docs-anchor-flash'), `${page} → ${href}`).toBe(true);
     }
   }
-});
+// Every link re-renders a whole page in jsdom: seconds for the longest pages on
+// their own, and past the 5s default when the full suite runs in parallel.
+}, 30_000);
 
 
 it('loads local themes and follows saved palette edits, including light/dark controls', async () => {
