@@ -45,6 +45,8 @@ describe('Pip consent and IPC boundary', () => {
       expect(() => validatePipRequest(raw)).toThrow('Invalid');
     }
     expect(mocks.generate).not.toHaveBeenCalled();
+    expect(validatePipRequest({ event: 'longTurn', sessionId: 'a' }).event).toBe('longTurn');
+    for (const event of ['crashed', 'delegated', 'quotaHigh']) expect(() => validatePipRequest({ ...request, event })).toThrow('Invalid');
   });
   it('does not read prompts or generate until AI is explicitly enabled', async () => {
     await mocks.handlers.get(IPC.PIP_COMMENT)!(trusted, request);

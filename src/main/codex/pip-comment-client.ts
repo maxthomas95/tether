@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { JsonLineParser, spawnOptions, disposeChild, type CodexAppServerClientOptions } from './app-server-client';
 import { resolveCodexExecutable, resolveWindowsSystemExecutable } from './executable-resolver';
-import type { PipAiEvent, PipCommentResult, PipSettings } from '../../shared/pip';
+import { PIP_AI_SITUATIONS, type PipAiEvent, type PipCommentResult, type PipSettings } from '../../shared/pip';
 import packageJson from '../../../package.json';
 
 type JsonObject = Record<string, unknown>;
@@ -122,7 +122,7 @@ export function generatePipComment(options: PipCommentClientOptions): Promise<Pi
           if (!model || !threadId || result.model !== model.model || result.modelProvider !== 'openai' || object(result.thread).ephemeral !== true) { finish(); break; }
           send({ id: 6, method: 'turn/start', params: {
             threadId, model: model.model, ...(model.effort ? { effort: model.effort } : {}), serviceTier: 'default',
-            input: [{ type: 'text', text: JSON.stringify({ event: options.event, ...(options.prompt ? { submittedPromptExcerpt: options.prompt } : {}) }), text_elements: [] }],
+            input: [{ type: 'text', text: JSON.stringify({ event: options.event, situation: PIP_AI_SITUATIONS[options.event], ...(options.prompt ? { submittedPromptExcerpt: options.prompt } : {}) }), text_elements: [] }],
           } });
         } else if (message.id === 6) {
           const id = object(object(message.result).turn).id;
