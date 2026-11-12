@@ -18,6 +18,7 @@ import { PipPanel } from './PipPanel';
 import { DEFAULT_PIP_SETTINGS, type PipSettings } from '../../lib/pip-settings';
 import { PIP_COMMENT_COOLDOWN_MS, PIP_EXPRESSION_MS, PIP_NAP_DELAY_MS, PIP_SPEECH_MS, type PipSession } from '../../lib/pip-behavior';
 import { reportPipActivity } from '../../lib/pip-activity';
+import { PIP_AI_WAIT_MS } from '../../hooks/usePip';
 
 let container: HTMLDivElement;
 let root: Root;
@@ -122,6 +123,105 @@ describe('Pip sidebar interactions', () => {
     expect(cancelComment).toHaveBeenCalled();
     await act(async () => resolve({ status: 'ready', line: 'Stale quip', model: 'gpt-6-luna', reason: null }));
     expect(line()).not.toBe('Stale quip');
+  });
+
+  it('gives a late AI quip a full window from when it lands', async () => {
+    let resolve!: (value: unknown) => void;
+    const comment = vi.fn(() => new Promise(done => { resolve = done; }));
+    vi.stubGlobal('electronAPI', { pip: { comment, cancelComment: vi.fn().mockResolvedValue(undefined) } });
+    settings = { ...settings, aiComments: true };
+    await render();
+    await state('waiting', 'permission');
+    const local = line();
+    await advance(600);
+    // The local line outlives its own 12 seconds while the quip is on its way.
+    await advance(PIP_SPEECH_MS + 2000);
+    expect(line()).toBe(local);
+    await act(async () => resolve({ status: 'ready', line: 'Worth the wait.', model: 'gpt-6-luna', reason: null }));
+    expect(line()).toBe('Worth the wait.');
+    await advance(PIP_SPEECH_MS - 1);
+    expect(line()).toBe('Worth the wait.');
+    await advance(1);
+    expect(line()).not.toBe('Worth the wait.');
+    expect(line()).not.toBe(local);
+  });
+
+  it('lets the local line keep only its own time when no quip comes back', async () => {
+    let resolve!: (value: unknown) => void;
+    const comment = vi.fn(() => new Promise(done => { resolve = done; }));
+    vi.stubGlobal('electronAPI', { pip: { comment, cancelComment: vi.fn().mockResolvedValue(undefined) } });
+    settings = { ...settings, aiComments: true };
+    await render();
+    await state('waiting', 'permission');
+    const local = line();
+    await advance(600 + 4000);
+    await act(async () => resolve({ status: 'unavailable', line: null, model: null, reason: 'AI comments unavailable. Using local quips.' }));
+    await advance(PIP_SPEECH_MS - 4600 - 1);
+    expect(line()).toBe(local);
+    await advance(1);
+    expect(line()).not.toBe(local);
+  });
+
+  it('does not hold a line forever for a reply that never arrives', async () => {
+    const comment = vi.fn(() => new Promise(() => {}));
+    vi.stubGlobal('electronAPI', { pip: { comment, cancelComment: vi.fn().mockResolvedValue(undefined) } });
+    settings = { ...settings, aiComments: true };
+    await render();
+    await state('waiting', 'permission');
+    const local = line();
+    await advance(600);
+    await advance(PIP_AI_WAIT_MS - 600 - 1);
+    expect(line()).toBe(local);
+    await advance(1);
+    expect(line()).not.toBe(local);
+  });
+
+  it('sends nothing for a moment that ends before the request goes out', async () => {
+    const comment = vi.fn();
+    const cancelComment = vi.fn();
+    vi.stubGlobal('electronAPI', { pip: { comment, cancelComment } });
+    settings = { ...settings, aiComments: true };
+    await render();
+    await state('waiting', 'permission');
+    await advance(300);
+    await state('running');
+    await advance(PIP_SPEECH_MS);
+    expect(comment).not.toHaveBeenCalled();
+    expect(cancelComment).not.toHaveBeenCalled();
+  });
+
+  it('leaves the AI cooldown to main and shows the reason it gives back', async () => {
+    const comment = vi.fn()
+      .mockResolvedValueOnce({ status: 'ready', line: 'First quip.', model: 'gpt-6-luna', reason: null })
+      .mockResolvedValueOnce({ status: 'paused', line: null, model: null, reason: 'Taking a breather between AI comments.' });
+    vi.stubGlobal('electronAPI', { pip: { comment, cancelComment: vi.fn().mockResolvedValue(undefined) } });
+    settings = { ...settings, aiComments: true };
+    await render();
+    await click('.pip-options-toggle');
+    await state('waiting', 'permission');
+    await advance(600);
+    expect(line()).toBe('First quip.');
+    await state('running');
+    await state('waiting', 'permission');
+    await advance(600);
+    expect(comment).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('.pip-ai-status')?.textContent).toBe('Taking a breather between AI comments.');
+    expect(line()).not.toBe('First quip.');
+  });
+
+  it('asks for a quip when a long turn hands back', async () => {
+    const comment = vi.fn().mockResolvedValue({ status: 'ready', line: 'Marathon done.', model: 'gpt-6-luna', reason: null });
+    vi.stubGlobal('electronAPI', { pip: { comment, cancelComment: vi.fn().mockResolvedValue(undefined) } });
+    settings = { ...settings, aiComments: true };
+    await render();
+    await state('idle');
+    await advance(PIP_COMMENT_COOLDOWN_MS);
+    await state('running');
+    await advance(6 * 60_000);
+    await state('waiting', 'input');
+    await advance(600);
+    expect(comment).toHaveBeenLastCalledWith({ event: 'longTurn', sessionId: 'a' });
+    expect(line()).toBe('Marathon done.');
   });
 
   it('keeps AI requests off by default and exposes separate prompt consent', async () => {

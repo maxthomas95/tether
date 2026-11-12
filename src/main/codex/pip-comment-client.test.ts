@@ -1,3 +1,4 @@
+import { PIP_AI_SITUATIONS } from '../../shared/pip';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, it, expect, vi } from 'vitest';
@@ -70,6 +71,8 @@ describe('Pip bounded Codex turn', () => {
     expect(f.resolver.mock.calls[0][0]).toMatchObject({ args: expect.arrayContaining(['--disable', 'hooks']) });
     f.thread();
     expect(f.writes.find(row => row.method === 'turn/start')?.params).toMatchObject({ effort: 'low', serviceTier: 'default' });
+    const input = JSON.parse((f.writes.find(row => row.method === 'turn/start')!.params as { input: { text: string }[] }).input[0].text);
+    expect(input).toEqual({ event: 'submitted', situation: PIP_AI_SITUATIONS.submitted, submittedPromptExcerpt: 'Fix my loop' });
     f.frame({ id: 6, result: { turn: { id: 'quip' } } });
     f.frame({ method: 'item/completed', params: { threadId: 'other', item: { type: 'agentMessage', text: 'Wrong thread' } } });
     f.frame({ method: 'item/completed', params: { threadId: 'pip', turnId: 'quip', item: { type: 'agentMessage', text: ' Bold\nkeyboard energy. ' } } });

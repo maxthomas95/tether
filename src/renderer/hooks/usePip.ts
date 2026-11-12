@@ -63,6 +63,12 @@ function usePipGaze(panelRef: RefObject<HTMLElement | null>, motionAllowed: bool
   }, [motionAllowed]);
 }
 
+/**
+ * Longest a line is held open for a pending AI quip. Main gives up on a backend after 20 seconds,
+ * so this only matters if the reply never comes back at all.
+ */
+export const PIP_AI_WAIT_MS = 25_000;
+
 const NO_CHILDREN: ReadonlyMap<string, number> = new Map();
 const NO_NUDGES: readonly PipNudge[] = [];
 
@@ -84,6 +90,7 @@ export function usePip(
   const [reducedMotion, setReducedMotion] = useState(() => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
   const [expression, setExpression] = useState<PipMoment | null>(null);
   const [speech, setSpeech] = useState<PipMoment | null>(null);
+  const speechAt = useRef(0);
   const [typing, setTyping] = useState(false);
   const [napping, setNapping] = useState(false);
   const sleeping = useRef(false);
@@ -123,6 +130,7 @@ export function usePip(
     const cooled = now - lastComment.current >= PIP_COMMENT_COOLDOWN_MS;
     if (!force && tier !== PIP_TIER_URGENT && !cooled && tier <= lastTier.current) return;
     setSpeech(moment);
+    speechAt.current = now;
     lastComment.current = now;
     lastTier.current = tier;
     spoken.current.set(event.kind, moment.variation + 1);
@@ -164,9 +172,15 @@ export function usePip(
 
   useEffect(() => {
     if (!active || !speech) return;
-    const timer = setTimeout(() => setSpeech(null), PIP_SPEECH_MS);
+    // A line waits for its AI quip instead of expiring under it. A quip gets a full window from when
+    // it lands; otherwise the local line keeps whatever is left of its own.
+    const elapsed = Date.now() - speechAt.current;
+    let left = Math.max(0, PIP_SPEECH_MS - elapsed);
+    if (comments.pending) left = Math.max(0, PIP_AI_WAIT_MS - elapsed);
+    else if (comments.line) left = PIP_SPEECH_MS;
+    const timer = setTimeout(() => setSpeech(null), left);
     return () => clearTimeout(timer);
-  }, [active, speech]);
+  }, [active, speech, comments.pending, comments.line]);
 
   useEffect(() => {
     setTyping(false);
