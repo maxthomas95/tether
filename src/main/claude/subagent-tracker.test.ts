@@ -187,13 +187,24 @@ describe('SubagentTracker updates and polling', () => {
 
 describe('SubagentTracker transcripts', () => {
   it('returns a digest for a listed subagent and nothing for others', async () => {
-    write('a1', prompt(1, 'Count widgets') + reply(2, 'm1', [{ type: 'text', text: 'Three.' }]));
+    write('a1', prompt(1, 'Count widgets') + reply(2, 'm1', [{ type: 'text', text: 'Three.' }]), RUNNING_WINDOW_MS + 1000);
     const transcript = await tracker.getTranscript('s1', 'a1');
     expect(transcript?.prompt).toBe('Count widgets');
+    expect(transcript?.agent.state).toBe('done');
     expect(transcript?.result).toBe('Three.');
+    expect(transcript?.entries).toEqual([]);
     expect(transcript?.agent.id).toBe('a1');
     expect(await tracker.getTranscript('s1', 'missing')).toBeNull();
     expect(await tracker.getTranscript('s1', '../../escape')).toBeNull();
+  });
+
+  it('lists the newest message as activity, not as the result, while the subagent still runs', async () => {
+    write('a1', prompt(1, 'Count widgets') + reply(2, 'm1', [{ type: 'text', text: 'Looking around first.' }]));
+    const transcript = await tracker.getTranscript('s1', 'a1');
+    expect(transcript?.agent.state).toBe('running');
+    expect(transcript?.result).toBeNull();
+    expect(transcript?.entries).toEqual([{ kind: 'text', text: 'Looking around first.' }]);
+    expect(transcript).not.toHaveProperty('resultFromEntries');
   });
 });
 
@@ -353,7 +364,8 @@ describe('SubagentTracker transcript reader lifetime', () => {
     try {
       fs.appendFileSync(path.join(subagents, 'agent-a1.jsonl'), reply2(3, 'm2', 'finished'));
       const grown = await tracker.getTranscript('s1', 'a1');
-      expect(grown?.result).toBe('finished');
+      // Just written, so it still counts as running and the newest message is activity.
+      expect(grown?.entries.at(-1)).toEqual({ kind: 'text', text: 'finished' });
       expect(reads).toContain(Buffer.byteLength(first));
       expect(reads).not.toContain(0);
 

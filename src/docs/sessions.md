@@ -229,7 +229,17 @@ When a **Claude Code** session starts subagents (local, SSH or Coder), a **subag
 - **Tokens** — input, output and newly cached tokens the subagent used. Cache reads are left out of the total because they repeat every turn; hover a row for the full breakdown.
 - At most 20 rows show. Finished subagents drop off first, so a running one is never hidden. **+N more** shows the rest, and Tether keeps the 50 most recent subagents of a session.
 
-Click a row to read what the subagent did. The viewer is read-only, because subagents have no terminal of their own: it shows the task it was given, a compact list of its messages and tool calls (tool output is not shown), and its final answer. For a very long run it shows the task from the start and only the most recent activity, and says so. It refreshes while the subagent runs, reading only what was added. **Escape** closes it.
+Hover a row to read its whole first line when the sidebar has cut it short.
+
+Click a row (or press **Enter** or **Space** on it) to read what the subagent did. Its transcript opens in a panel docked to the right of the terminal area. The panel is not a dialog: your terminals stay usable while it is open, so you can watch a subagent work and keep typing in its session. The row it is showing is highlighted in the sidebar.
+
+- **Switch** to another subagent by clicking its row. **Close** the panel with its **×**, by clicking the highlighted row again, or with **Escape** while focus is inside the panel. Escape in a terminal still goes to the CLI.
+- **Resize** it by dragging its left edge, or focus that edge and press **Left** or **Right**. The width is remembered. The panel never takes more than 60% of the window.
+- The panel is read-only, because subagents have no terminal of their own. It shows the task the subagent was given, a compact list of its messages and tool calls (tool output is not shown), and its final answer. A long task starts folded; **Show full task** opens it. A long tool line wraps to three lines, with the rest on hover.
+- **While the subagent runs** the panel refreshes every few seconds, reading only what was added, and stays at the newest activity unless you scroll up. **Result** says **Still running** until it finishes; a message it writes along the way is listed under **Activity**, not shown as the answer.
+- **Once it has finished** the panel opens at the answer, with the task and activity above it. The answer is shown whole (up to 200,000 characters; the panel says so if an answer is longer than that).
+- For a very long run it shows the task from the start and only the most recent activity, and says so.
+- The panel closes by itself when its session is removed or **Show subagents in sidebar** is turned off. If Tether can no longer read the transcript, the panel keeps what it had and says it may be out of date.
 
 Tether reads the files Claude Code writes for each subagent; it does not look at the terminal. A subagent counts as running when [CLI hooks](settings.md#cli-hooks) report that it has started and not stopped. With hooks off, or before the first hook event arrives, it counts as running while its transcript has changed in the last 30 seconds, so a subagent that thinks quietly for longer can show as done. Tether checks for new subagents every few seconds while one is running or the list is open. With hooks off it also looks about every ten seconds, but only if Claude's folder for the session sits where Tether expects it; if Tether has to search for that folder (very long working-directory paths), it searches less and less often, up to about every three minutes, until a subagent hook event or a restart.
 
@@ -243,7 +253,7 @@ When a **local Claude Code** session delegates work by running `codex exec ...` 
 
 `↳ codex exec · Review the module and list risks` on the first line, then `gpt-5.5/high · running 2m · 8.1k tok` below it.
 
-The row works like a subagent row: green dot while the run is going, gray when it has finished, model and reasoning effort from the run, and the token total. The first line of the prompt is shown after `codex exec`. Click the row to read the run: its prompt, a compact list of the agent's messages and shell, patch or tool calls (tool output is not shown), and its final message. When a run has no rollout file (for example `codex exec --ephemeral`) there is no prompt or token count, and the viewer says so; the row still shows the model Codex's hooks reported.
+The row works like a subagent row: green dot while the run is going, gray when it has finished, model and reasoning effort from the run, and the token total. The first line of the prompt is shown after `codex exec`. Click the row to read the run in the same docked panel: its prompt, a compact list of the agent's messages and shell, patch or tool calls (tool output is not shown), and its final message. When a run has no rollout file (for example `codex exec --ephemeral`) there is no prompt or token count, and the panel says so; the row still shows the model Codex's hooks reported.
 
 These runs never change the Claude session's own status. A run finishing does not mark the Claude session as waiting, and its activity does not mark it as working.
 

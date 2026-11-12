@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { ChildAgentInfo, ChildAgentList } from '../../../shared/child-agents';
+import { useNow } from '../../hooks/useNow';
 import { onKeyActivate } from '../../utils/a11y';
 import {
   CHILD_AGENT_ROW_LIMIT,
@@ -17,23 +18,20 @@ interface ChildAgentRowsProps {
   sessionLabel: string;
   list: ChildAgentList;
   expanded: boolean;
+  /** Id of the row the docked panel is showing, when it belongs to this session. */
+  selectedId?: string | null;
   onToggle: () => void;
-  onOpen: (agent: ChildAgentInfo) => void;
+  /** Open the row in the panel, or close the panel when it already shows this row. */
+  onOpen: (agent: ChildAgentInfo, viaKeyboard: boolean) => void;
 }
 
-/** Re-render once a second while something is running so "running 2m" counts up. */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [active]);
-  return now;
+/** Hover text: the whole first line, which the row may have cut short, then the token breakdown. */
+function rowTitle(agent: ChildAgentInfo): string {
+  const heading = agent.description ? `${agent.agentType} · ${agent.description}` : agent.agentType;
+  return `${heading}\n${describeChildAgentTokens(agent.tokens)}`;
 }
 
-export function ChildAgentRows({ sessionLabel, list, expanded, onToggle, onOpen }: Readonly<ChildAgentRowsProps>) {
+export function ChildAgentRows({ sessionLabel, list, expanded, selectedId, onToggle, onOpen }: Readonly<ChildAgentRowsProps>) {
   const [showAll, setShowAll] = useState(false);
   const running = list.agents.filter(a => a.state === 'running').length;
   const now = useNow(expanded && running > 0);
@@ -58,18 +56,20 @@ export function ChildAgentRows({ sessionLabel, list, expanded, onToggle, onOpen 
       </div>
       {expanded && visible.map(agent => {
         const isRunning = agent.state === 'running';
+        const isSelected = agent.id === selectedId;
         const model = formatChildAgentModel(agent);
         return (
           <div
             key={agent.id}
-            className="child-agent-row"
+            className={`child-agent-row${isSelected ? ' child-agent-row--selected' : ''}`}
             role="button"
             tabIndex={0}
             style={{ paddingLeft: `calc(var(--child-agent-indent) + ${Math.max(0, agent.depth - 1) * 12}px)` }}
-            aria-label={`${childAgentKind(agent)} ${childAgentSummary(agent, now)}. Open transcript`}
-            title={describeChildAgentTokens(agent.tokens)}
-            onClick={() => onOpen(agent)}
-            onKeyDown={onKeyActivate(() => onOpen(agent))}
+            aria-pressed={isSelected}
+            aria-label={`${childAgentKind(agent)} ${childAgentSummary(agent, now)}. ${isSelected ? 'Close' : 'Open'} transcript`}
+            title={rowTitle(agent)}
+            onClick={() => onOpen(agent, false)}
+            onKeyDown={onKeyActivate(() => onOpen(agent, true))}
           >
             <span className={`status-dot status-dot--${isRunning ? 'running' : 'idle'}`} aria-hidden="true" />
             <div className="child-agent-info">

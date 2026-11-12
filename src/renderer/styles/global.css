@@ -1493,6 +1493,17 @@ textarea:focus-visible,
   color: var(--text-muted);
 }
 
+/* The row the docked panel is showing. */
+.child-agent-row--selected,
+.child-agent-row--selected:hover {
+  background: var(--bg-active);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.child-agent-row--selected:focus-visible {
+  box-shadow: var(--focus-ring-inset);
+}
+
 .child-agent-info {
   min-width: 0;
   flex: 1;
@@ -1522,41 +1533,150 @@ textarea:focus-visible,
   font-size: var(--text-2xs);
 }
 
-/* Read-only subagent transcript viewer */
-.child-agent-overlay {
-  z-index: 20;
+/* Read-only subagent transcript, docked to the right of the terminal area.
+ * It is a sibling of the sidebar and the terminal panel, not a dialog. */
+.child-agent-panel-resize {
+  width: 4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  transition: var(--hover-transition);
 }
 
-.child-agent-dialog {
-  width: min(760px, calc(100vw - 32px));
+.child-agent-panel-resize:hover,
+.child-agent-panel-resize:active,
+.child-agent-panel-resize:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background: var(--accent);
 }
 
-.child-agent-body {
-  max-height: min(72vh, 640px);
+.child-agent-panel {
+  flex: 0 0 auto;
+  /* The terminal keeps at least 40% of the window whatever width was dragged. */
+  max-width: 60%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-color);
+}
+
+.child-agent-panel:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-inset);
+}
+
+.child-agent-panel-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.child-agent-panel-heading {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+
+.child-agent-panel-eyebrow {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.child-agent-panel-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: var(--text-md-lh);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.child-agent-panel-description {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.child-agent-panel-meta {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.child-agent-panel-body {
+  /* Positioned so the Result section's offset is measured from here. */
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-4) var(--space-4);
+  user-select: text;
 }
 
 .child-agent-heading {
-  margin: var(--space-3) 0 var(--space-1);
-  font-size: var(--text-xs);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 var(--space-1);
+  font-size: var(--text-2xs);
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-.child-agent-text-block {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-  background: var(--surface-2);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-family: inherit;
+.child-agent-count {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Task and answer text. One scroll area for the whole panel: these never scroll on their own. */
+.child-agent-text {
   font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: 220px;
-  overflow-y: auto;
+}
+
+.child-agent-text--result {
+  color: var(--text-primary);
+}
+
+.child-agent-text--folded {
+  max-height: 9em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent);
+}
+
+.child-agent-fold {
+  margin-top: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.child-agent-fold:hover {
+  text-decoration: underline;
 }
 
 .child-agent-activity {
@@ -1565,12 +1685,13 @@ textarea:focus-visible,
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   font-size: var(--text-xs);
 }
 
 .child-agent-tool {
   display: flex;
+  align-items: baseline;
   gap: var(--space-2);
   min-width: 0;
 }
@@ -1581,11 +1702,15 @@ textarea:focus-visible,
   color: var(--text-primary);
 }
 
+/* Up to three lines, so a command is readable at panel width; the rest is in the hover text. */
 .child-agent-tool-summary {
   min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   color: var(--text-secondary);
   font-family: var(--font-mono-terminal, monospace);
 }

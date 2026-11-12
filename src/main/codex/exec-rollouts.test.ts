@@ -149,6 +149,15 @@ describe('parseCodexExecTranscript', () => {
     expect(parsed.result).toBe('Done.');
   });
 
+  it('keeps a long final message whole and still drops its copy from the activity list', () => {
+    const answer = `${'a'.repeat(12_000)} END`;
+    const parsed = parseCodexExecTranscript(jsonl(rolloutMeta(0), userMessage(1, 'task'), assistantText(2, answer), taskComplete(3, answer)));
+    expect(parsed.result).toBe(answer);
+    expect(parsed.entries).toEqual([]);
+    expect(parsed.resultFromEntries).toBe(true);
+    expect(parsed).not.toHaveProperty('resultTruncated');
+  });
+
   it('uses the last agent message as the result when the run never completed cleanly', () => {
     const parsed = parseCodexExecTranscript(jsonl(rolloutMeta(0), userMessage(1, 'task'), assistantText(2, 'Partial answer.')));
     expect(parsed.result).toBe('Partial answer.');

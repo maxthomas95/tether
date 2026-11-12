@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import type { ChildTranscriptEntry } from '../../shared/child-agents';
+import type { ChildAgentInfo, ChildAgentTranscript, ChildTranscriptEntry } from '../../shared/child-agents';
 
 /**
  * Incremental reading shared by the Claude subagent and Codex rollout readers:
@@ -15,6 +15,10 @@ const MAX_PENDING_LINE_BYTES = 16 * 1024 * 1024;
 export const TRANSCRIPT_HEAD_BYTES = 256 * 1024;
 export const TRANSCRIPT_TAIL_BYTES = 8 * 1024 * 1024;
 export const MAX_VIEWER_ENTRIES = 400;
+/** Longest interim message kept in the activity list. */
+export const MAX_ENTRY_TEXT_CHARS = 4000;
+/** Longest final answer kept. It is the one thing the viewer is opened to read, so it is not cut like an interim message. */
+export const MAX_RESULT_CHARS = 200_000;
 
 /**
  * Feed the complete lines found in bytes [from, size) of `file` to `onText`,
@@ -113,6 +117,34 @@ export function capDigestEntries(state: DigestState): void {
 export function visibleDigestEntries(state: DigestState): { entries: ChildTranscriptEntry[]; truncated: boolean } {
   const truncated = state.dropped || state.skippedMiddle || state.entries.length > MAX_VIEWER_ENTRIES;
   return { entries: state.entries.slice(-MAX_VIEWER_ENTRIES), truncated };
+}
+
+/** A digest snapshot, taken before it is known whether the child is still working. */
+export interface ViewerDigest {
+  prompt: string | null;
+  entries: ChildTranscriptEntry[];
+  result: string | null;
+  /** Earlier activity is missing: skipped bytes of a long file or entries past the cap. */
+  truncated: boolean;
+  /** Set when the result is longer than `MAX_RESULT_CHARS` and was cut. */
+  resultTruncated?: boolean;
+  /** Set when the result was the newest listed message and was lifted out of `entries`. */
+  resultFromEntries?: boolean;
+}
+
+/**
+ * Join a digest to its row for the viewer. A child that is still working has
+ * no answer yet: its newest message is interim, so it goes back to the end of
+ * the activity list instead of showing as the result until the next tool call.
+ */
+export function toChildAgentTranscript(agent: ChildAgentInfo, digest: ViewerDigest, note?: string): ChildAgentTranscript {
+  const { resultFromEntries, resultTruncated, ...rest } = digest;
+  const base: ChildAgentTranscript = { agent, ...rest, ...(note ? { note } : {}) };
+  if (agent.state !== 'running' || rest.result === null) return resultTruncated ? { ...base, resultTruncated: true } : base;
+  const entries = resultFromEntries
+    ? [...rest.entries, { kind: 'text' as const, text: rest.result.slice(0, MAX_ENTRY_TEXT_CHARS) }]
+    : rest.entries;
+  return { ...base, entries, result: null };
 }
 
 // ---------------------------------------------------------------------------
