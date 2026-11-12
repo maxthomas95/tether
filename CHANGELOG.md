@@ -1,5 +1,39 @@
 # Changelog — Tether
 
+## [0.7.1-beta.1] - 2026-11-12
+
+Beta release for testing the changes since `0.7.0`, available on the Beta update channel. This is the first build on Electron 45.
+
+### New Features
+- **Native OpenCode usage** - local OpenCode sessions now count toward the same totals, daily/model/environment breakdowns, budgets, pane details and exports as Claude Code and Codex. Usage is read from OpenCode's own database (read-only), including cache/reasoning tokens and CLI-reported cost; legacy Crush databases are still supported (#282).
+- **Local theme packs** - add full JSON themes under Tether's `themes` folder. Appearance lists them beside the built-in themes, with **Open themes folder** and **Reload themes** actions (#279).
+- **Docked subagent transcripts** - clicking a subagent row opens its transcript in a resizable panel beside the terminals instead of a modal dialog. The panel follows a running agent and keeps final answers whole up to 200,000 characters (#326).
+- **More quota detail** - show model-scoped weekly Claude limits such as Fable, and show free Codex rate-limit resets with a confirmed **Use reset** action (#322, #323).
+- **Pip polish** - Pip wakes for permission prompts and waiting sessions, no longer blanks its lines, counts only real typing, and reacts to long turns, crashes and helpers. New off-by-default **Operational nudges** cover Vault expiry, quota, budgets and updates (#327, #329, #330, #332).
+- **Pip AI quips through Claude** - the AI quips setting is now a chooser: Off, Codex or Claude (Claude subscription, Haiku, no tools, hooks or saved history). Late replies get their own display window, and cooldowns are enforced in main. **Share submitted prompts** names the recipient and now covers local OpenCode sessions (#333, #334, #335).
+
+### Bug Fixes
+- **Quit guard** - closing the window now asks first when a session is starting, running or waiting on a permission prompt. The window is shown on a fallback timer if the GPU compositor never reports ready, so Tether can no longer run invisibly (#307).
+- **Claude credentials are read-only** - the quota service no longer refreshes or rewrites `~/.claude/.credentials.json` (#306).
+- **Status detection** - handle Claude's failure, idle and session-switch hooks, and add bounded fallbacks so a hook-driven session doesn't get stuck on "running" (#310).
+- **Recoverable remove, restart and undo** - **Restart all** starts each replacement before removing the original, and undo/remove can no longer lose a session (#311).
+- **Focus and shortcuts** - focus can no longer land on a hidden pane, along with other status and shortcut fixes (#308).
+- **Create dialogs stay open on failure** - New Session and New Environment keep what you typed when creation fails, and a worktree created for a failed launch is cleaned up (#314).
+- **Windows npm-shim launches** - Codex and OpenCode launch directly through their npm shims, so initial prompts and Helm briefs containing quotes work (#313).
+- **Session creation during shutdown** - quitting, removing or force-killing a starting session cancels its creation instead of leaving an unowned process (#289).
+- **Less disk churn** - Tether no longer rewrites `data.json` every time a session changes state (#305).
+- **Pricing for new models** - a model newer than the pricing table is priced from its nearest known version rather than Sonnet-class defaults (#309).
+- **Remote usage probe** - resolve `node` even when the remote login profile aliases it (#328).
+- **OpenCode** - restore Windows conversation discovery for npm installs, and keep known conversation IDs when restarting SSH/Coder sessions (#278, #281).
+
+### Security and Internal
+- Scope Helm's status/kill tools to the sessions that Helm session spawned, accept OSC 52 clipboard writes only from the focused pane, and harden webhook tokens (#312).
+- Upgrade to Electron 45, Vitest 5.1 and current dependency/action versions. Move build tooling off ReDoS-prone `minimatch`/`ip-address` releases (#303, #304, #315-#321).
+- Run SonarQube JS/TS rules locally through ESLint, clear new Sonar issues and add test coverage (#324, #325, #331). Strengthen dependency, Windows smoke and release checks in CI (#280).
+- Refresh the bundled pricing snapshot used for offline API-cost estimates.
+
+---
+
 ## [0.7.0] — 2026-10-15
 
 Stable release graduating the 0.6.x beta train, the first stable milestone since `0.6.1-hotfix.1`. Runtime code and bundled pricing match `0.6.10-beta.9`; this promotion updates release metadata and documentation.
