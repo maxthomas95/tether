@@ -109,3 +109,13 @@ export function selectVisibleChildAgents(
   const visible = agents.filter(a => !drop.has(a.id));
   return { visible, hidden: agents.length - visible.length };
 }
+
+/** Running child agents per session id; sessions with none are left out. */
+export function countRunningChildren(lists: ReadonlyMap<string, ChildAgentList>): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const [sessionId, list] of lists) {
+    const running = list.agents.filter(agent => agent.state === 'running').length;
+    if (running > 0) counts.set(sessionId, running);
+  }
+  return counts;
+}

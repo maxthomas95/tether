@@ -1,17 +1,27 @@
 import type { SessionInfo } from '../../shared/types';
 import type { PipSettings } from './pip-settings';
+import { PIP_LINES, type PipEventKind } from './pip-lines';
+
+export type { PipEventKind } from './pip-lines';
 
 export type PipSession = Pick<SessionInfo, 'id' | 'label' | 'workingDir' | 'state' | 'waitingReason'>;
 export type PipMood = 'curious' | 'busy' | 'permission' | 'waiting' | 'happy' | 'sleepy' | 'dizzy' | 'concerned' | 'typing';
-export type PipEventKind = 'switch' | 'dizzy' | 'working' | 'permission' | 'ready' | 'idle' | 'stopped' | 'attention' | 'pet' | 'nap' | 'submitted';
 /** `sessionId` names the session a line is about, so the line can be retired once it stops being true. */
-export interface PipEvent { kind: PipEventKind; label: string; sessionId?: string; }
+export interface PipEvent {
+  kind: PipEventKind;
+  label: string;
+  sessionId?: string;
+  /** Whole minutes of a long turn. */
+  minutes?: number;
+}
 export interface PipReaction { mood: PipMood; emote: string; line: string; }
 
 export const PIP_COMMENT_COOLDOWN_MS = 25000;
 export const PIP_NAP_DELAY_MS = 90000;
 export const PIP_EXPRESSION_MS = 6000;
 export const PIP_SPEECH_MS = 12000;
+/** A turn at least this long gets its own reaction when the agent hands back. */
+export const PIP_LONG_TURN_MS = 5 * 60_000;
 
 export function pipSessionLabel(session?: PipSession): string {
   return session?.label || session?.workingDir.split(/[\\/]/).findLast(part => part.length > 0) || 'your sessions';
@@ -25,7 +35,11 @@ export type PipEventTier = typeof PIP_TIER_AMBIENT | typeof PIP_TIER_NOTABLE | t
 
 export function pipEventTier(kind: PipEventKind): PipEventTier {
   if (kind === 'permission' || kind === 'attention') return PIP_TIER_URGENT;
-  return kind === 'ready' || kind === 'stopped' ? PIP_TIER_NOTABLE : PIP_TIER_AMBIENT;
+  return kind === 'ready' || kind === 'longTurn' || kind === 'stopped' || kind === 'crashed' ? PIP_TIER_NOTABLE : PIP_TIER_AMBIENT;
+}
+
+function isWorking(session: PipSession): boolean {
+  return session.state === 'starting' || session.state === 'running';
 }
 
 function waitsOnPermission(session: PipSession): boolean {
@@ -39,7 +53,7 @@ export function pipPermissionPending(sessions: readonly PipSession[]): boolean {
 
 export function pipSessionMood(session?: PipSession): PipMood {
   if (!session) return 'curious';
-  if (session.state === 'starting' || session.state === 'running') return 'busy';
+  if (isWorking(session)) return 'busy';
   if (session.state === 'waiting') return waitsOnPermission(session) ? 'permission' : 'waiting';
   if (session.state === 'idle') return 'sleepy';
   return 'concerned';
@@ -65,43 +79,17 @@ const EVENT_EXPRESSIONS: Record<PipEventKind, { mood: PipMood; emote: string }> 
   ready: { mood: 'happy', emote: '✧' }, idle: { mood: 'sleepy', emote: 'z z' },
   stopped: { mood: 'concerned', emote: '?' }, attention: { mood: 'permission', emote: '?' },
   pet: { mood: 'happy', emote: '♥' }, nap: { mood: 'sleepy', emote: 'z z' },
+  longTurn: { mood: 'happy', emote: '✧' }, crashed: { mood: 'concerned', emote: '!' }, delegated: { mood: 'busy', emote: '+' },
 };
 
-const LINES: Record<PipSettings['personality'], Record<PipEventKind, readonly string[]>> = {
-  dry: {
-    submitted: ['Another idea launched into the void. Bold.', 'Enter pressed. Plausible deniability lost.', 'I would have typed that. If I had fingers.'],
-    switch: ['Ah, {session}. My other office.', 'New session. Same excellent supervisor.', 'I followed you. Very professional of me.'],
-    dizzy: ['Are we coding or speed-dating repositories?', 'So many tabs. So few paws.'],
-    working: ["They're thinking. I'm also thinking. About snacks.", 'Excellent. Someone around here is working.', 'My contribution is moral support and cable management.'],
-    permission: ["Permission slip, please. I don't have thumbs.", 'Your agent has a question. I have several.', "Someone needs the human. That's you, apparently."],
-    ready: ["They're ready for you. I'm ready for snacks.", 'Your agent is waiting. My supervision is impeccable.', 'The keyboard needs its human again.'],
-    idle: ["I'll guard the sidebar. From inside this nap.", 'Scheduled maintenance: tiny nap.'],
-    stopped: ['This session has stopped. My shift apparently continues.', 'Agent offline. Gremlin still connected.'],
-    attention: ['{session} needs you. I would go, but no thumbs.', 'A question from {session}. I delegated it to you.'],
-    pet: ['Finally. My performance review.', 'Compensation received. Continue.', 'I accept payment in this exact format.'],
-    nap: ['Wake me when the humans return.', "I'll guard the sidebar. From inside this nap.", 'Scheduled maintenance: tiny nap.'],
-  },
-  sweet: {
-    submitted: ['Your next idea is on its way.', 'A little nudge toward the next adventure.', 'Sent! I will keep you company.'],
-    switch: ['Off to {session}! Coming with you.', 'A new little adventure. I am here.', 'Your {session} buddy has arrived.'],
-    dizzy: ['Lots of adventures today! Let me catch up.', 'Tiny paws. So many places to be.'],
-    working: ["You've got this. I'll keep you company.", 'Little paws, big moral support.', 'Busy brains. Cozy company.'],
-    permission: ['Your agent is waiting for a little help.', "A question for you! I'll wait here.", 'They need your okay before continuing.'],
-    ready: ['Your agent is ready when you are.', 'Ready for the next little adventure.', 'A little pause for your next idea.'],
-    idle: ['Rest is part of the work, too.', 'A little nap sounds lovely.'],
-    stopped: ['This session has stopped. I am still here with you.', 'Your agent is offline. Your buddy is here.'],
-    attention: ['{session} is waiting for a little help.', 'A question for you over in {session}.'],
-    pet: ['You made my whole afternoon.', "Purr. That's the entire review.", 'Best part of being your coding buddy.'],
-    nap: ['Rest is part of the work, too.', "I'll be right here when you get back.", 'A little nap sounds lovely.'],
-  },
-};
-
+/** `variation` is how many lines of this kind have been spoken, so each kind walks its own list. */
 export function pipReaction(event: PipEvent, personality: PipSettings['personality'], variation = 0): PipReaction {
-  const lines = LINES[personality][event.kind];
-  return { ...EVENT_EXPRESSIONS[event.kind], line: lines[variation % lines.length].replaceAll('{session}', event.label) };
+  const lines = PIP_LINES[personality][event.kind];
+  const line = lines[variation % lines.length].replaceAll('{session}', event.label).replaceAll('{minutes}', String(event.minutes ?? 0));
+  return { ...EVENT_EXPRESSIONS[event.kind], line };
 }
 
-type PipStateEventKind = 'permission' | 'ready' | 'working' | 'idle' | 'stopped';
+type PipStateEventKind = 'permission' | 'ready' | 'working' | 'idle' | 'stopped' | 'crashed';
 
 function stateEventKind(session: PipSession): PipStateEventKind {
   switch (session.state) {
@@ -109,6 +97,7 @@ function stateEventKind(session: PipSession): PipStateEventKind {
     case 'starting':
     case 'running': return 'working';
     case 'idle': return 'idle';
+    case 'dead': return 'crashed';
     default: return 'stopped';
   }
 }
@@ -128,11 +117,14 @@ export function pipEventHolds(event: PipEvent, sessions: readonly PipSession[], 
   switch (event.kind) {
     case 'attention': return !!subject && subject.id !== activeId && subject.state === 'waiting';
     case 'switch': return event.sessionId === activeId;
+    case 'longTurn': return !!subject && subject.id === activeId && stateEventKind(subject) === 'ready';
+    case 'delegated': return !!subject && subject.id === activeId && isWorking(subject);
     case 'working':
     case 'permission':
     case 'ready':
     case 'idle':
-    case 'stopped': return !!subject && subject.id === activeId && stateEventKind(subject) === event.kind;
+    case 'stopped':
+    case 'crashed': return !!subject && subject.id === activeId && stateEventKind(subject) === event.kind;
     default: return true;
   }
 }
@@ -142,18 +134,53 @@ function enteredWaiting(session: PipSession, previous?: PipSession): boolean {
     (previous.state !== 'waiting' || (waitsOnPermission(session) && !waitsOnPermission(previous)));
 }
 
+const NO_CHILDREN: ReadonlyMap<string, number> = new Map();
+
 /** Observes metadata only. Seeding prevents replaying events after a hidden panel resumes. */
 export class PipObserver {
   private previous = new Map<string, PipSession>();
+  private children: ReadonlyMap<string, number> = NO_CHILDREN;
+  private readonly turnStarts = new Map<string, number>();
   private activeId: string | null = null;
   private switches: number[] = [];
 
-  seed(sessions: readonly PipSession[], activeId: string | null) {
+  /** `children` is the number of running child agents per session id. */
+  seed(sessions: readonly PipSession[], activeId: string | null, children: ReadonlyMap<string, number> = NO_CHILDREN) {
+    this.remember(sessions, activeId, children);
+    // A turn already under way was not seen starting, so its length is unknown.
+    this.turnStarts.clear();
+    this.switches = [];
+  }
+
+  private remember(sessions: readonly PipSession[], activeId: string | null, children: ReadonlyMap<string, number>) {
     // Copy only the values we observe; never retain mutable session objects.
     this.previous = new Map(sessions.map(({ id, label, workingDir, state, waitingReason }) =>
       [id, { id, label, workingDir, state, waitingReason }]));
+    this.children = new Map(children);
     this.activeId = activeId;
-    this.switches = [];
+  }
+
+  /**
+   * Follows each turn from the moment it is seen starting and returns the length
+   * of every turn that just ended. A permission wait is part of the turn.
+   */
+  private trackTurns(sessions: readonly PipSession[], previous: ReadonlyMap<string, PipSession>, now: number): Map<string, number> {
+    const ended = new Map<string, number>();
+    const live = new Set<string>();
+    for (const session of sessions) {
+      live.add(session.id);
+      const started = this.turnStarts.get(session.id);
+      if (isWorking(session)) {
+        if (started === undefined && seenStarting(session, previous.get(session.id))) this.turnStarts.set(session.id, now);
+      } else if (!waitsOnPermission(session) && started !== undefined) {
+        ended.set(session.id, now - started);
+        this.turnStarts.delete(session.id);
+      }
+    }
+    for (const id of Array.from(this.turnStarts.keys())) {
+      if (!live.has(id)) this.turnStarts.delete(id);
+    }
+    return ended;
   }
 
   private focusEvent(active: PipSession, oldActiveId: string | null, now: number): PipEvent {
@@ -163,19 +190,44 @@ export class PipObserver {
     return { kind: waitsOnPermission(active) ? 'permission' : 'switch', label, sessionId: active.id };
   }
 
-  observe(sessions: readonly PipSession[], activeId: string | null, now: number): PipEvent | null {
-    const previous = this.previous;
-    const oldActiveId = this.activeId;
-    const switches = this.switches.filter(time => now - time < 6000);
-    this.seed(sessions, activeId);
-    this.switches = switches;
-    const active = sessions.find(session => session.id === activeId);
-    const label = pipSessionLabel(active);
-    if (active && oldActiveId !== activeId) return this.focusEvent(active, oldActiveId, now);
-    const old = active ? previous.get(active.id) : undefined;
+  private stateChange(active: PipSession, old: PipSession | undefined, turnMs: number | undefined): PipEvent | null {
     const kind = stateEvent(active, old);
-    if (active && kind) return { kind, label, sessionId: active.id };
-    const newlyWaiting = sessions.find(session => session.id !== activeId && enteredWaiting(session, previous.get(session.id)));
-    return newlyWaiting ? { kind: 'attention', label: pipSessionLabel(newlyWaiting), sessionId: newlyWaiting.id } : null;
+    if (!kind) return null;
+    const label = pipSessionLabel(active);
+    if (kind === 'ready' && turnMs !== undefined && turnMs >= PIP_LONG_TURN_MS) {
+      return { kind: 'longTurn', label, sessionId: active.id, minutes: Math.floor(turnMs / 60_000) };
+    }
+    return { kind, label, sessionId: active.id };
   }
+
+  observe(sessions: readonly PipSession[], activeId: string | null, now: number, children: ReadonlyMap<string, number> = NO_CHILDREN): PipEvent | null {
+    const previous = this.previous;
+    const previousChildren = this.children;
+    const oldActiveId = this.activeId;
+    this.switches = this.switches.filter(time => now - time < 6000);
+    this.remember(sessions, activeId, children);
+    const ended = this.trackTurns(sessions, previous, now);
+    const active = sessions.find(session => session.id === activeId);
+    if (!active) return backgroundWait(sessions, activeId, previous);
+    if (oldActiveId !== activeId) return this.focusEvent(active, oldActiveId, now);
+    const old = previous.get(active.id);
+    const change = this.stateChange(active, old, ended.get(active.id));
+    if (change) return change;
+    const waiting = backgroundWait(sessions, activeId, previous);
+    if (waiting) return waiting;
+    // Helpers appearing under the focused session, when it had none a moment ago.
+    const gainedHelpers = (children.get(active.id) ?? 0) > 0 && (previousChildren.get(active.id) ?? 0) === 0;
+    return old && isWorking(active) && gainedHelpers ? { kind: 'delegated', label: pipSessionLabel(active), sessionId: active.id } : null;
+  }
+}
+
+/** A turn counts from a start Pip saw: a session leaving a rest state, or a new session launching. */
+function seenStarting(session: PipSession, before: PipSession | undefined): boolean {
+  if (!before) return session.state === 'starting';
+  return !isWorking(before) && !waitsOnPermission(before);
+}
+
+function backgroundWait(sessions: readonly PipSession[], activeId: string | null, previous: ReadonlyMap<string, PipSession>): PipEvent | null {
+  const newlyWaiting = sessions.find(session => session.id !== activeId && enteredWaiting(session, previous.get(session.id)));
+  return newlyWaiting ? { kind: 'attention', label: pipSessionLabel(newlyWaiting), sessionId: newlyWaiting.id } : null;
 }

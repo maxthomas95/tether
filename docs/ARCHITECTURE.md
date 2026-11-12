@@ -33,7 +33,7 @@ Main owns transports, persistence, credentials, host-key verification, usage/quo
 | Workspace recipes and encrypted launch intent | `src/main/workspace-recipes/`, `src/main/session/launch-snapshots.ts` |
 | Claude child discovery and remote reads | `src/main/claude/subagent-tracker.ts`, `src/main/claude/remote-subagents.ts` |
 | Codex account/configuration and child runs | `src/main/codex/` |
-| Optional Pip reactions and AI comments | `src/renderer/lib/pip-behavior.ts`, `src/main/pip/` |
+| Optional Pip reactions and AI comments | `src/renderer/lib/pip-behavior.ts`, `src/renderer/lib/pip-lines.ts`, `src/main/pip/` |
 | Shortcut defaults and overrides | `src/shared/keybindings.ts` |
 | In-app help and renderer | `src/docs/`, `src/docs-renderer/` |
 
