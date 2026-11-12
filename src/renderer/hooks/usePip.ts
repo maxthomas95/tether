@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import {
   PipObserver, PIP_COMMENT_COOLDOWN_MS, PIP_EXPRESSION_MS, PIP_NAP_DELAY_MS, PIP_SPEECH_MS, PIP_TIER_AMBIENT, PIP_TIER_URGENT,
   pipEventHolds, pipEventTier, pipPermissionPending, pipReaction, pipRestingMood, pipSessionLabel,
-  type PipEvent, type PipEventTier, type PipMood, type PipReaction, type PipSession,
+  type PipEvent, type PipEventKind, type PipEventTier, type PipMood, type PipReaction, type PipSession,
 } from '../lib/pip-behavior';
 import type { PipSettings } from '../lib/pip-settings';
 import { onPipActivity } from '../lib/pip-activity';
@@ -62,14 +62,21 @@ function usePipGaze(panelRef: RefObject<HTMLElement | null>, motionAllowed: bool
   }, [motionAllowed]);
 }
 
-export function usePip(sessions: readonly PipSession[], activeSessionId: string | null, settings: PipSettings) {
+const NO_CHILDREN: ReadonlyMap<string, number> = new Map();
+
+/** `childCounts` is the number of running child agents per session id. */
+export function usePip(
+  sessions: readonly PipSession[], activeSessionId: string | null, settings: PipSettings,
+  childCounts: ReadonlyMap<string, number> = NO_CHILDREN,
+) {
   const panelRef = useRef<HTMLElement>(null);
   const observer = useRef(new PipObserver());
   const wasActive = useRef(false);
   const lastComment = useRef(-Infinity);
   const lastTier = useRef<PipEventTier>(PIP_TIER_AMBIENT);
   const rouse = useRef<() => void>(() => {});
-  const variation = useRef(0);
+  // Lines spoken so far per event kind, so each kind works through its own list before repeating.
+  const spoken = useRef(new Map<PipEventKind, number>());
   const [visible, setVisible] = useState(!document.hidden);
   const [reducedMotion, setReducedMotion] = useState(() => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
   const [expression, setExpression] = useState<PipMoment | null>(null);
@@ -98,9 +105,9 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
   const showEvent = useCallback((event: PipEvent, force = false) => {
     const now = Date.now();
     const tier = pipEventTier(event.kind);
-    const moment = { event, variation: variation.current };
-    // A session that needs the person outranks a nap.
-    if (tier === PIP_TIER_URGENT) rouse.current();
+    const moment = { event, variation: spoken.current.get(event.kind) ?? 0 };
+    // A session that needs the person, or hands back to them, outranks a nap.
+    if (tier !== PIP_TIER_AMBIENT) rouse.current();
     setExpression(moment);
     if (settings.quiet) {
       setSpeech(null);
@@ -113,12 +120,12 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
     setSpeech(moment);
     lastComment.current = now;
     lastTier.current = tier;
-    variation.current += 1;
+    spoken.current.set(event.kind, moment.variation + 1);
   }, [settings.quiet]);
 
   useEffect(() => {
     if (!active || !wasActive.current) {
-      observer.current.seed(sessions, activeSessionId);
+      observer.current.seed(sessions, activeSessionId, childCounts);
       wasActive.current = active;
       setExpression(null);
       setSpeech(null);
@@ -126,11 +133,11 @@ export function usePip(sessions: readonly PipSession[], activeSessionId: string 
       sleeping.current = false;
       return;
     }
-    const event = observer.current.observe(sessions, activeSessionId, Date.now());
+    const event = observer.current.observe(sessions, activeSessionId, Date.now(), childCounts);
     if (event) showEvent(event);
     // Retire a line once the state it describes has ended.
     setSpeech(moment => moment && !pipEventHolds(moment.event, sessions, activeSessionId) ? null : moment);
-  }, [sessions, activeSessionId, active, showEvent]);
+  }, [sessions, activeSessionId, active, showEvent, childCounts]);
 
   useEffect(() => {
     if (!active || !expression) return;

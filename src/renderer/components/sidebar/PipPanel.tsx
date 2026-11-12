@@ -9,6 +9,8 @@ interface PipPanelProps {
   settings: PipSettings;
   sessions: readonly PipSession[];
   activeSessionId: string | null;
+  /** Running child agents per session id; omitted when subagent rows are off. */
+  childCounts?: ReadonlyMap<string, number>;
   busy: boolean;
   onSettingsChange: (patch: Partial<PipSettings>) => Promise<void>;
   onActivateSession: (sessionId: string) => void;
@@ -30,8 +32,8 @@ function PipArtwork() {
   </span>;
 }
 
-export function PipPanel({ settings, sessions, activeSessionId, busy, onSettingsChange, onActivateSession }: Readonly<PipPanelProps>) {
-  const pip = usePip(sessions, activeSessionId, settings);
+export function PipPanel({ settings, sessions, activeSessionId, childCounts, busy, onSettingsChange, onActivateSession }: Readonly<PipPanelProps>) {
+  const pip = usePip(sessions, activeSessionId, settings, childCounts);
   const contentId = useId();
   const optionsId = useId();
   const [optionsOpen, setOptionsOpen] = useState(false);

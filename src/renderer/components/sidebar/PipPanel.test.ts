@@ -12,6 +12,7 @@ let root: Root;
 let settings: PipSettings;
 let sessions: PipSession[];
 let focused: string | null;
+let childCounts: ReadonlyMap<string, number> | undefined;
 let hidden: boolean;
 let reduced: boolean;
 let mediaChange: () => void;
@@ -20,7 +21,7 @@ const activate = vi.fn();
 
 async function render() {
   await act(async () => root.render(createElement(PipPanel, {
-    settings, sessions, activeSessionId: focused, busy: false, onSettingsChange: save, onActivateSession: activate,
+    settings, sessions, activeSessionId: focused, childCounts, busy: false, onSettingsChange: save, onActivateSession: activate,
   })));
 }
 async function click(selector: string) { await act(async () => (container.querySelector(selector) as HTMLElement).click()); }
@@ -50,6 +51,7 @@ beforeEach(() => {
     { id: 'c', label: 'scratchpad', workingDir: '/repo/scratchpad', state: 'idle' },
   ];
   focused = 'a';
+  childCounts = undefined;
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -132,7 +134,7 @@ describe('Pip sidebar interactions', () => {
     expect(line()).toContain('jobs');
     await click('.pip-pet-button');
     expect(panel().dataset.mood).toBe('happy');
-    expect(line()).toContain('Compensation');
+    expect(line()).toBe('Finally. My performance review.');
     await advance(PIP_EXPRESSION_MS);
     expect(panel().dataset.mood).toBe('busy');
     await advance(PIP_SPEECH_MS);
@@ -288,7 +290,7 @@ describe('Pip sidebar interactions', () => {
     await advance(5000);
     await state('waiting', 'permission');
     expect(panel().dataset.mood).toBe('permission');
-    expect(line()).toBe('Your agent has a question. I have several.');
+    expect(line()).toBe("Permission slip, please. I don't have thumbs.");
   });
 
   it('lets a ready line replace a routine one and retires it when the agent resumes', async () => {
@@ -297,9 +299,9 @@ describe('Pip sidebar interactions', () => {
     expect(line()).toContain('idea');
     await advance(3000);
     await state('waiting', 'idle');
-    expect(line()).toBe('Your agent is waiting. My supervision is impeccable.');
+    expect(line()).toBe("They're ready for you. I'm ready for snacks.");
     await act(async () => reportPipActivity('a', true));
-    expect(line()).toBe('Your agent is waiting. My supervision is impeccable.');
+    expect(line()).toBe("They're ready for you. I'm ready for snacks.");
     await state('running');
     expect(line()).toBe('I supervise. You do the keyboard stuff.');
   });
@@ -423,5 +425,45 @@ describe('Pip sidebar interactions', () => {
     expect(line()).toBe('I supervise. You do the keyboard stuff.');
     await advance(1200);
     expect(panel().dataset.mood).toBe('busy');
+  });
+
+  it('works through an event\'s lines before repeating one', async () => {
+    await render();
+    const seen: string[] = [];
+    for (let index = 0; index < 7; index += 1) {
+      await click('.pip-pet-button');
+      seen.push(line() ?? '');
+    }
+    expect(new Set(seen.slice(0, 6)).size).toBe(6);
+    expect(seen[6]).toBe(seen[0]);
+    focused = 'b';
+    await render();
+    await click('.pip-pet-button');
+    expect(line()).toBe(seen[1]);
+  });
+
+  it('remarks on a long turn when the agent hands back', async () => {
+    sessions = sessions.map(session => session.id === 'a' ? { ...session, state: 'waiting', waitingReason: 'idle' } : session);
+    await render();
+    await state('running');
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' })));
+    await advance(7 * 60_000 + 5000);
+    await state('waiting', 'idle');
+    expect(panel().dataset.mood).toBe('happy');
+    expect(line()).toBe('7 minutes. I aged visibly. Your turn.');
+    await state('running');
+    expect(line()).toBe('I supervise. You do the keyboard stuff.');
+  });
+
+  it('reacts to a crash and to helpers joining the focused session', async () => {
+    await render();
+    childCounts = new Map([['a', 2]]);
+    await render();
+    expect(line()).toBe('It hired interns. I was not consulted.');
+    expect(container.querySelector('.pip-emote')?.textContent).toBe('+');
+    await state('dead');
+    expect(panel().dataset.mood).toBe('concerned');
+    expect(line()).toBe('That session ended badly. I saw nothing.');
+    expect(container.querySelector('.pip-announcement')?.textContent).toBe('');
   });
 });

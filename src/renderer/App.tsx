@@ -83,6 +83,7 @@ import { Icon } from './components/Icon';
 import { useRecentProjects } from './hooks/useRecentProjects';
 import { useChildAgents } from './hooks/useChildAgents';
 import { useChildAgentViewer } from './hooks/useChildAgentViewer';
+import { countRunningChildren } from './utils/child-agents';
 import { useEnvironmentActions } from './hooks/useEnvironmentActions';
 import { ChildAgentViewer } from './components/ChildAgentViewer';
 import { OfficePane } from './components/OfficePane';
@@ -386,6 +387,7 @@ export function App() {
     () => (viewedChildAgent ? { sessionId: viewedChildAgent.sessionId, agentId: viewedChildAgent.agent.id } : null),
     [viewedChildAgent?.sessionId, viewedChildAgent?.agent.id],
   );
+  const runningChildCounts = useMemo(() => countRunningChildren(childAgents.lists), [childAgents.lists]);
 
   // Load profiles on mount
   useEffect(() => {
@@ -2163,7 +2165,7 @@ export function App() {
           })}
         </div>
         {sidebarVisible && gifPanel.settings?.enabled && <GifPanel settings={gifPanel.settings} onSettingsChange={gifPanel.setSettings} />}
-        {sidebarVisible && pip.settings?.enabled && <PipPanel settings={pip.settings} sessions={sessions}
+        {sidebarVisible && pip.settings?.enabled && <PipPanel settings={pip.settings} sessions={sessions} childCounts={runningChildCounts}
           activeSessionId={activeSessionId} busy={pip.busy} onSettingsChange={pip.update} onActivateSession={handleActivateFromSearch} />}
         <GlobalUsageFooter
           environments={environments}
