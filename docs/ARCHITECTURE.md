@@ -175,7 +175,7 @@ When sharing is enabled, remote SSH/Coder session metadata is narrated through J
 
 The GIF panel reads only selected local image folders and ships no media. Pip's local reactions use session/focus metadata and a text-free typing signal. Both are off by default and pause hidden work/reduce motion as documented in [Settings](../src/docs/settings.md#appearance).
 
-Pip AI comments are another opt-in, using a bounded temporary Codex conversation with ChatGPT sign-in. Activity-only context excludes paths, labels, draft text, and terminal output. Separate prompt-sharing consent permits a scrubbed, bounded excerpt from an attributed recent local Claude/Codex transcript. Tether saves neither excerpts nor generated comments. Failure or unavailable models fall back to local quips.
+Pip AI comments are another opt-in. The user picks a backend behind `PipCommentBackend` (`src/main/pip/backends/`): a bounded temporary Codex conversation with ChatGPT sign-in, or a one-shot Claude Code Haiku prompt with subscription sign-in, no tools, no settings sources (so no hooks), and no saved session. Main owns the cooldown and hourly cap. Activity-only context excludes paths, labels, draft text, and terminal output. Separate prompt-sharing consent permits a scrubbed, bounded excerpt from an attributed recent local Claude/Codex transcript. Tether saves neither excerpts nor generated comments. Failure or unavailable models fall back to local quips.
 
 ## Desktop Security and Packaging
 

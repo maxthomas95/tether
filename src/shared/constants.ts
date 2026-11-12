@@ -114,6 +114,7 @@ export const IPC = {
   CODEX_CONFIGURATION: 'codex:configuration',
   PIP_COMMENT: 'pip:comment',
   PIP_CANCEL_COMMENT: 'pip:cancel-comment',
+  PIP_BACKEND_STATUS: 'pip:backend-status',
 
   // Update
   UPDATE_CHECK: 'update:check',

@@ -2,7 +2,7 @@ import type { PipSettings } from './pip-settings';
 
 export type PipEventKind =
   | 'switch' | 'dizzy' | 'working' | 'delegated' | 'permission' | 'ready' | 'longTurn'
-  | 'idle' | 'stopped' | 'crashed' | 'attention' | 'pet' | 'nap' | 'submitted'
+  | 'idle' | 'stopped' | 'crashed' | 'attention' | 'pet' | 'hello' | 'nap' | 'submitted'
   | 'vaultExpiring' | 'quotaHigh' | 'budgetCrossed' | 'updateAvailable';
 
 /**
@@ -64,6 +64,10 @@ export const PIP_LINES: Record<PipSettings['personality'], Record<PipEventKind, 
     pet: [
       'Finally. My performance review.', 'Compensation received. Continue.', 'I accept payment in this exact format.',
       'Acceptable. You may do that again.', 'This is the only meeting I enjoy.', 'Noted in my records as a bonus.',
+    ],
+    hello: [
+      'Hold on. Consulting my writers.', 'One moment. Summoning wit.', 'Asking the cloud for material.',
+      'Stand by. Comedy is loading.', 'Let me phone a friend.', 'Requesting one quip, extra dry.',
     ],
     nap: [
       'Wake me when the humans return.', 'Out of office. In the office.', 'Entering low-power gremlin mode.',
@@ -138,6 +142,10 @@ export const PIP_LINES: Record<PipSettings['personality'], Record<PipEventKind, 
     pet: [
       'You made my whole afternoon.', "Purr. That's the entire review.", 'Best part of being your coding buddy.',
       'That was lovely. Thank you.', 'I saved that one for later.', 'Happiest gremlin in the sidebar.',
+    ],
+    hello: [
+      'Ooh, give me a second to think.', 'Thinking of something nice to say.', 'Let me find the right words.',
+      'One little moment, friend.', 'Warming up my best line.', 'Asking for something cheerful.',
     ],
     nap: [
       "I'll be right here when you get back.", 'Curling up for a moment.', 'A cozy pause while you are away.',

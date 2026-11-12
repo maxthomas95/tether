@@ -82,7 +82,7 @@ const EVENT_EXPRESSIONS: Record<PipEventKind, { mood: PipMood; emote: string }> 
   working: { mood: 'busy', emote: '···' }, permission: { mood: 'permission', emote: '?' },
   ready: { mood: 'happy', emote: '✧' }, idle: { mood: 'sleepy', emote: 'z z' },
   stopped: { mood: 'concerned', emote: '?' }, attention: { mood: 'permission', emote: '?' },
-  pet: { mood: 'happy', emote: '♥' }, nap: { mood: 'sleepy', emote: 'z z' },
+  pet: { mood: 'happy', emote: '♥' }, hello: { mood: 'curious', emote: '…' }, nap: { mood: 'sleepy', emote: 'z z' },
   longTurn: { mood: 'happy', emote: '✧' }, crashed: { mood: 'concerned', emote: '!' }, delegated: { mood: 'busy', emote: '+' },
   vaultExpiring: { mood: 'concerned', emote: '!' }, quotaHigh: { mood: 'concerned', emote: '%' },
   budgetCrossed: { mood: 'concerned', emote: '$' }, updateAvailable: { mood: 'happy', emote: '↑' },

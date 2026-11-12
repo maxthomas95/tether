@@ -793,6 +793,7 @@ export interface TetherAPI {
   pip: {
     comment(request: import('./pip').PipCommentRequest): Promise<import('./pip').PipCommentResult>;
     cancelComment(): Promise<void>;
+    backendStatus(backend: import('./pip').PipAiBackend): Promise<import('./pip').PipBackendStatus>;
   };
   repoGroup: {
     getPrefs(): Promise<RepoGroupPref[]>;

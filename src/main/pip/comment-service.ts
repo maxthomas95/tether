@@ -22,7 +22,10 @@ export class PipCommentService {
     const now = this.dependencies.now?.() ?? Date.now();
     this.attempts = this.attempts.filter(time => now - time < 3_600_000);
     if (this.attempts.length >= PIP_AI_HOURLY_LIMIT) return paused('Hourly limit reached. Local quips for now.');
-    if (this.attempts.length && now - this.attempts[this.attempts.length - 1] < PIP_AI_COOLDOWN_MS) return paused('Taking a breather between AI comments.');
+    // Try a quip is asked for by the person, so it skips the cooldown. It still counts toward the hourly limit.
+    if (request.event !== 'hello' && this.attempts.length && now - this.attempts[this.attempts.length - 1] < PIP_AI_COOLDOWN_MS) {
+      return paused('Taking a breather between AI comments.');
+    }
     this.attempts.push(now);
     const controller = new AbortController();
     this.pending = controller;
@@ -30,7 +33,8 @@ export class PipCommentService {
       const result = await this.dependencies.generate(request, settings, controller.signal);
       const current = this.dependencies.settings();
       if (controller.signal.aborted || !current.enabled || current.collapsed || current.quiet || !current.aiComments
-        || current.personality !== settings.personality || current.sharePrompts !== settings.sharePrompts) return paused('AI comment cancelled.');
+        || current.personality !== settings.personality || current.sharePrompts !== settings.sharePrompts
+        || current.aiBackend !== settings.aiBackend) return paused('AI comment cancelled.');
       return result;
     } catch {
       return { status: 'unavailable', line: null, model: null, reason: 'AI comments unavailable. Using local quips.' };

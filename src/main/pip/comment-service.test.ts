@@ -48,4 +48,18 @@ describe('Pip subscription limits', () => {
     f.generate.mockImplementation(async () => { f.settings({ sharePrompts: false }); return reply; });
     expect((await f.service.comment(request)).line).toBeNull();
   });
+  it('lets Try a quip skip the cooldown but not the hourly limit', async () => {
+    const f = fixture();
+    await f.service.comment(request);
+    expect((await f.service.comment(request)).reason).toContain('breather');
+    expect((await f.service.comment({ event: 'hello', sessionId: null })).status).toBe('ready');
+    for (let i = 2; i < 12; i++) await f.service.comment({ event: 'hello', sessionId: null });
+    expect((await f.service.comment({ event: 'hello', sessionId: null })).reason).toContain('Hourly');
+    expect(f.generate).toHaveBeenCalledTimes(12);
+  });
+  it('does not show a reply after the AI backend changes', async () => {
+    const f = fixture();
+    f.generate.mockImplementation(async () => { f.settings({ aiBackend: 'claude' }); return reply; });
+    expect((await f.service.comment(request)).line).toBeNull();
+  });
 });

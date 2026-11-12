@@ -1,3 +1,7 @@
+/** CLI whose sign-in makes AI quips. It decides which company receives the text, so it is always chosen explicitly. */
+export type PipAiBackend = 'codex' | 'claude';
+export const PIP_AI_BACKENDS: readonly PipAiBackend[] = ['codex', 'claude'];
+
 export interface PipSettings {
   enabled: boolean;
   collapsed: boolean;
@@ -5,6 +9,8 @@ export interface PipSettings {
   motion: boolean;
   personality: 'dry' | 'sweet';
   aiComments: boolean;
+  /** Kept when AI quips are turned off, so turning them back on restores the last choice. */
+  aiBackend: PipAiBackend;
   sharePrompts: boolean;
   /** Mention Vault expiry, quota, budget and updates that the sidebar already shows. */
   nudges: boolean;
@@ -12,7 +18,7 @@ export interface PipSettings {
 
 export const PIP_SETTINGS_KEY = 'sidebarPet';
 export const DEFAULT_PIP_SETTINGS: PipSettings = {
-  enabled: false, collapsed: false, quiet: false, motion: true, personality: 'dry', aiComments: false, sharePrompts: false, nudges: false,
+  enabled: false, collapsed: false, quiet: false, motion: true, personality: 'dry', aiComments: false, aiBackend: 'codex', sharePrompts: false, nudges: false,
 };
 
 export function readPipSettings(raw: string | null): PipSettings {
@@ -27,6 +33,7 @@ export function readPipSettings(raw: string | null): PipSettings {
       motion: typeof saved.motion === 'boolean' ? saved.motion : true,
       personality: saved.personality === 'sweet' ? 'sweet' : 'dry',
       aiComments: saved.aiComments === true,
+      aiBackend: saved.aiBackend === 'claude' ? 'claude' : 'codex',
       sharePrompts: saved.sharePrompts === true,
       nudges: saved.nudges === true,
     };
@@ -39,9 +46,10 @@ export const PIP_AI_COOLDOWN_MS = 120_000;
 export const PIP_AI_HOURLY_LIMIT = 12;
 /**
  * Events that may ask for an AI quip. `longTurn` is the only PR 3 reaction here: crashes are not
- * joke material, helpers joining is frequent, and nudges stay local by design.
+ * joke material, helpers joining is frequent, and nudges stay local by design. `hello` comes only
+ * from the **Try a quip** button.
  */
-export const PIP_AI_EVENTS = ['working', 'permission', 'ready', 'longTurn', 'stopped', 'attention', 'submitted', 'dizzy'] as const;
+export const PIP_AI_EVENTS = ['working', 'permission', 'ready', 'longTurn', 'stopped', 'attention', 'submitted', 'dizzy', 'hello'] as const;
 export type PipAiEvent = typeof PIP_AI_EVENTS[number];
 /** Plain-language situations sent to a quip backend, so the model is not guessing at event ids. */
 export const PIP_AI_SITUATIONS: Readonly<Record<PipAiEvent, string>> = {
@@ -53,7 +61,16 @@ export const PIP_AI_SITUATIONS: Readonly<Record<PipAiEvent, string>> = {
   attention: 'A different session in the background needs the person.',
   submitted: 'The person just pressed Enter to send something to the agent.',
   dizzy: 'The person is switching between sessions very quickly.',
+  hello: 'The person asked Pip to say something.',
 };
+
+/** Whether a backend can make quips right now, checked when it is chosen rather than at the next quip. */
+export interface PipBackendStatus {
+  backend: PipAiBackend;
+  ready: boolean;
+  /** Sign-in and model when ready, otherwise why not. Never includes account identifiers. */
+  detail: string;
+}
 /** Deliberately contains no keystrokes, prompts, labels, paths, or terminal output. */
 export interface PipCommentRequest { event: PipAiEvent; sessionId: string | null; }
 export interface PipCommentResult {
