@@ -76,8 +76,8 @@
 .pip-options label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--text-secondary); }
 .pip-options select { flex: 1; min-width: 0; max-width: 100%; padding: 3px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--control-radius); font: inherit; }
 .pip-options-help { margin: -2px 0 2px; color: var(--text-secondary); line-height: 1.5; }
-.pip-ai-status { color: var(--text-secondary); line-height: 1.5; }
-.pip-ai-backend { color: var(--text-secondary); line-height: 1.5; }
+.pip-ai-status { display: block; color: var(--text-secondary); line-height: 1.5; }
+.pip-ai-backend { display: block; color: var(--text-secondary); line-height: 1.5; }
 .pip-ai-backend:empty { display: none; }
 .pip-ai-backend[data-ready="false"] { color: var(--status-waiting); }
 .pip-try-quip { align-self: flex-start; padding: 3px 8px; border: 1px solid var(--border-color); border-radius: var(--control-radius); background: transparent; color: var(--text-primary); font: inherit; cursor: pointer; }

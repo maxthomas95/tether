@@ -23,7 +23,7 @@ export class PipCommentService {
     this.attempts = this.attempts.filter(time => now - time < 3_600_000);
     if (this.attempts.length >= PIP_AI_HOURLY_LIMIT) return paused('Hourly limit reached. Local quips for now.');
     // Try a quip is asked for by the person, so it skips the cooldown. It still counts toward the hourly limit.
-    if (request.event !== 'hello' && this.attempts.length && now - this.attempts[this.attempts.length - 1] < PIP_AI_COOLDOWN_MS) {
+    if (request.event !== 'hello' && this.attempts.length && now - this.attempts.at(-1)! < PIP_AI_COOLDOWN_MS) {
       return paused('Taking a breather between AI comments.');
     }
     this.attempts.push(now);
