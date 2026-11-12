@@ -33,9 +33,13 @@ export const PIP_TIER_NOTABLE = 1;
 export const PIP_TIER_URGENT = 2;
 export type PipEventTier = typeof PIP_TIER_AMBIENT | typeof PIP_TIER_NOTABLE | typeof PIP_TIER_URGENT;
 
+const NOTABLE_KINDS: ReadonlySet<PipEventKind> = new Set([
+  'ready', 'longTurn', 'stopped', 'crashed', 'vaultExpiring', 'quotaHigh', 'budgetCrossed', 'updateAvailable',
+]);
+
 export function pipEventTier(kind: PipEventKind): PipEventTier {
   if (kind === 'permission' || kind === 'attention') return PIP_TIER_URGENT;
-  return kind === 'ready' || kind === 'longTurn' || kind === 'stopped' || kind === 'crashed' ? PIP_TIER_NOTABLE : PIP_TIER_AMBIENT;
+  return NOTABLE_KINDS.has(kind) ? PIP_TIER_NOTABLE : PIP_TIER_AMBIENT;
 }
 
 function isWorking(session: PipSession): boolean {
@@ -80,12 +84,16 @@ const EVENT_EXPRESSIONS: Record<PipEventKind, { mood: PipMood; emote: string }> 
   stopped: { mood: 'concerned', emote: '?' }, attention: { mood: 'permission', emote: '?' },
   pet: { mood: 'happy', emote: '♥' }, nap: { mood: 'sleepy', emote: 'z z' },
   longTurn: { mood: 'happy', emote: '✧' }, crashed: { mood: 'concerned', emote: '!' }, delegated: { mood: 'busy', emote: '+' },
+  vaultExpiring: { mood: 'concerned', emote: '!' }, quotaHigh: { mood: 'concerned', emote: '%' },
+  budgetCrossed: { mood: 'concerned', emote: '$' }, updateAvailable: { mood: 'happy', emote: '↑' },
 };
 
 /** `variation` is how many lines of this kind have been spoken, so each kind walks its own list. */
 export function pipReaction(event: PipEvent, personality: PipSettings['personality'], variation = 0): PipReaction {
+  // Function replacers, so a label containing "$" is inserted as written.
   const lines = PIP_LINES[personality][event.kind];
-  const line = lines[variation % lines.length].replaceAll('{session}', event.label).replaceAll('{minutes}', String(event.minutes ?? 0));
+  const line = lines[variation % lines.length].replaceAll('{session}', () => event.label).replaceAll('{detail}', () => event.label)
+    .replaceAll('{minutes}', String(event.minutes ?? 0));
   return { ...EVENT_EXPRESSIONS[event.kind], line };
 }
 

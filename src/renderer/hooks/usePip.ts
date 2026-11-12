@@ -6,6 +6,7 @@ import {
 } from '../lib/pip-behavior';
 import type { PipSettings } from '../lib/pip-settings';
 import { onPipActivity } from '../lib/pip-activity';
+import type { PipNudge } from '../lib/pip-nudges';
 import { usePipComments, type PipMoment } from './usePipComments';
 
 /** A nap outranks typing, typing outranks a reaction, and a reaction outranks the resting mood. */
@@ -63,11 +64,13 @@ function usePipGaze(panelRef: RefObject<HTMLElement | null>, motionAllowed: bool
 }
 
 const NO_CHILDREN: ReadonlyMap<string, number> = new Map();
+const NO_NUDGES: readonly PipNudge[] = [];
 
 /** `childCounts` is the number of running child agents per session id. */
 export function usePip(
   sessions: readonly PipSession[], activeSessionId: string | null, settings: PipSettings,
   childCounts: ReadonlyMap<string, number> = NO_CHILDREN,
+  nudges: readonly PipNudge[] = NO_NUDGES,
 ) {
   const panelRef = useRef<HTMLElement>(null);
   const observer = useRef(new PipObserver());
@@ -89,6 +92,8 @@ export function usePip(
   const session = sessions.find(item => item.id === activeSessionId);
   const permissionPending = pipPermissionPending(sessions);
   const comments = usePipComments(speech, activeSessionId, active, settings);
+  // Nudge occurrences already mentioned since Pip was turned on. Each is mentioned once.
+  const mentioned = useRef(new Set<string>());
 
   useEffect(() => {
     const visibility = () => setVisible(!document.hidden);
@@ -138,6 +143,18 @@ export function usePip(
     // Retire a line once the state it describes has ended.
     setSpeech(moment => moment && !pipEventHolds(moment.event, sessions, activeSessionId) ? null : moment);
   }, [sessions, activeSessionId, active, showEvent, childCounts]);
+
+  useEffect(() => {
+    // A nudge waits for the current line to end, so it never talks over a session that needs the person.
+    if (!active || speech) return;
+    const next = nudges.find(nudge => !mentioned.current.has(nudge.key));
+    if (!next) return;
+    // One line per kind at a time: several quota windows over the mark get one comment, not a queue.
+    for (const nudge of nudges) {
+      if (nudge.kind === next.kind) mentioned.current.add(nudge.key);
+    }
+    showEvent({ kind: next.kind, label: next.detail }, true);
+  }, [active, nudges, speech, showEvent]);
 
   useEffect(() => {
     if (!active || !expression) return;

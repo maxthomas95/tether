@@ -2,11 +2,12 @@ import type { PipSettings } from './pip-settings';
 
 export type PipEventKind =
   | 'switch' | 'dizzy' | 'working' | 'delegated' | 'permission' | 'ready' | 'longTurn'
-  | 'idle' | 'stopped' | 'crashed' | 'attention' | 'pet' | 'nap' | 'submitted';
+  | 'idle' | 'stopped' | 'crashed' | 'attention' | 'pet' | 'nap' | 'submitted'
+  | 'vaultExpiring' | 'quotaHigh' | 'budgetCrossed' | 'updateAvailable';
 
 /**
- * Pip's local lines. `{session}` is the session label and `{minutes}` the length
- * of a long turn. Every event has at least six lines per personality so the
+ * Pip's local lines. `{session}` is the session label, `{minutes}` the length of
+ * a long turn, and `{detail}` what an operational nudge is about. Every event has at least six lines per personality so the
  * rotation takes a while to come round. A ready line says the agent is waiting;
  * it never claims the work succeeded.
  */
@@ -68,6 +69,22 @@ export const PIP_LINES: Record<PipSettings['personality'], Record<PipEventKind, 
       'Wake me when the humans return.', 'Out of office. In the office.', 'Entering low-power gremlin mode.',
       'Nobody is here. Excellent. Nap.', 'Resting my eyes. Both of them.', 'I will supervise from behind my eyelids.',
     ],
+    vaultExpiring: [
+      'Your Vault token expires in {detail}. I cannot log in for you.', 'Vault sign-in runs out in {detail}. Just saying.', '{detail} of Vault access left. Tick tock.',
+      'Vault token: {detail} to go. I would renew it, but no thumbs.', 'Heads up: Vault expires in {detail}.', 'The Vault token has {detail} left. Then it is my problem too.',
+    ],
+    quotaHigh: [
+      'Your {detail} is nearly used up. Pace yourself.', 'The {detail} is above 90%. I am rationing my opinions.', 'Running low on the {detail}. Choose your prompts wisely.',
+      'The {detail} is almost gone. I blame the interns.', 'You are close to the {detail}. I will be quieter. Maybe.', 'Nearly out of the {detail}. Time for a snack break anyway.',
+    ],
+    budgetCrossed: [
+      'You passed your {detail} budget. I bill less.', 'The {detail} budget has been crossed. I saw nothing.', 'Over the {detail} budget. Worth it, presumably.',
+      'The {detail} budget is spent. My salary remains zero.', 'That is the {detail} budget gone. Carry on, big spender.', 'Past the {detail} budget. I only count snacks, but still.',
+    ],
+    updateAvailable: [
+      'Tether {detail} is out. I hear the new me is the same.', 'Update available: {detail}. I was fine as I am.', 'Tether {detail} is ready. Change is exhausting.',
+      'A new Tether, {detail}. Nobody asked the gremlin.', 'There is an update, {detail}. I will pack my things.', 'Tether {detail} has arrived. Fashionably late.',
+    ],
   },
   sweet: {
     submitted: [
@@ -125,6 +142,22 @@ export const PIP_LINES: Record<PipSettings['personality'], Record<PipEventKind, 
     nap: [
       "I'll be right here when you get back.", 'Curling up for a moment.', 'A cozy pause while you are away.',
       'Sleepy time. Wake me any time.', 'Just a short doze. I am nearby.', 'Dreaming of tidy cables.',
+    ],
+    vaultExpiring: [
+      'Your Vault sign-in expires in {detail}. A quick login will sort it.', 'Just a nudge: Vault access ends in {detail}.', '{detail} left on your Vault token. Time enough to renew.',
+      'Vault will need a fresh login in {detail}.', 'A gentle reminder: {detail} of Vault access remain.', 'Your Vault token is winding down. {detail} to go.',
+    ],
+    quotaHigh: [
+      'Your {detail} is almost used up. Maybe a little break soon.', 'Heads up: the {detail} is above 90%.', 'You are getting close to the {detail}.',
+      'The {detail} is nearly full. You have done a lot.', 'A gentle note: the {detail} is running low.', 'Almost at the {detail}. It resets before long.',
+    ],
+    budgetCrossed: [
+      'You have reached your {detail} budget. Just so you know.', 'A little note: the {detail} budget has been crossed.', 'Your {detail} budget is used up. You got a lot done.',
+      'Past the {detail} budget now. No judgment from me.', 'Heads up: you are over your {detail} budget.', 'The {detail} budget is spent. Worth a quick look.',
+    ],
+    updateAvailable: [
+      'Tether {detail} is ready when you are.', 'A fresh update is here: {detail}.', 'Good news! Tether {detail} is available.',
+      'Tether {detail} is out. New things to explore.', 'There is a new Tether, {detail}. Exciting!', 'An update is waiting for you: {detail}.',
     ],
   },
 };

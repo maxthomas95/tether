@@ -151,6 +151,7 @@ describe('Pip turn length and helpers', () => {
 describe('Pip attention rules', () => {
   it.each([
     ['permission', PIP_TIER_URGENT], ['attention', PIP_TIER_URGENT], ['ready', PIP_TIER_NOTABLE], ['stopped', PIP_TIER_NOTABLE], ['longTurn', PIP_TIER_NOTABLE], ['crashed', PIP_TIER_NOTABLE], ['delegated', PIP_TIER_AMBIENT],
+    ['vaultExpiring', PIP_TIER_NOTABLE], ['quotaHigh', PIP_TIER_NOTABLE], ['budgetCrossed', PIP_TIER_NOTABLE], ['updateAvailable', PIP_TIER_NOTABLE],
     ['working', PIP_TIER_AMBIENT], ['switch', PIP_TIER_AMBIENT], ['submitted', PIP_TIER_AMBIENT], ['dizzy', PIP_TIER_AMBIENT],
     ['idle', PIP_TIER_AMBIENT], ['nap', PIP_TIER_AMBIENT], ['pet', PIP_TIER_AMBIENT],
   ] as const)('ranks %s events', (kind, tier) => expect(pipEventTier(kind)).toBe(tier));
@@ -248,6 +249,15 @@ describe('Pip presentation preferences and reactions', () => {
   ] as const)('shows the %s session expression', (state, reason, mood) => expect(pipSessionMood(session('a', state, reason))).toBe(mood));
 
   it('has a welcoming expression without a session', () => expect(pipSessionMood()).toBe('curious'));
+
+  it('inserts labels and nudge details exactly as written', () => {
+    for (const label of ['$&', "$'", '$`', '$1', '$$']) {
+      expect(pipReaction({ kind: 'switch', label }, 'dry').line).toBe(`Ah, ${label}. My other office.`);
+    }
+    expect(pipReaction({ kind: 'updateAvailable', label: 'v0.8.0' }, 'sweet').line).toBe('Tether v0.8.0 is ready when you are.');
+    expect(pipReaction({ kind: 'vaultExpiring', label: '12 minutes' }, 'dry').line).toBe('Your Vault token expires in 12 minutes. I cannot log in for you.');
+    expect(pipReaction({ kind: 'budgetCrossed', label: 'daily' }, 'dry').emote).toBe('$');
+  });
 
   it.each(['dry', 'sweet'] as const)('varies every %s event and renders labels as plain text', personality => {
     for (const kind of Object.keys(PIP_LINES[personality]) as PipEventKind[]) {
