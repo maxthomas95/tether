@@ -130,7 +130,7 @@ export function PipPanel({ settings, sessions, activeSessionId, childCounts, upd
           <p className="pip-options-help">Asks for one quip now. It counts toward the hourly limit.</p>
           <label><input type="checkbox" checked={settings.sharePrompts} disabled={busy}
             onChange={event => update({ sharePrompts: event.target.checked })} /> Share submitted prompts</label>
-          <p className="pip-options-help">Sends up to 400 characters from the latest local Claude/Codex prompt to {recipient} for specific jokes. Common secrets are scrubbed; private text can remain. Draft typing and terminal output stay local. Choosing another AI backend turns this off.</p>
+          <p className="pip-options-help">Sends up to 400 characters from the latest local Claude, Codex or OpenCode prompt to {recipient} for specific jokes. Common secrets are scrubbed; private text can remain. Draft typing and terminal output stay local. Choosing another AI backend turns this off.</p>
           <span className="pip-ai-status" role="status">{pipActivityStatus(settings.quiet, pip.comments)}</span>
         </>}
       </div>}

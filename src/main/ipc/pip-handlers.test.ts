@@ -3,7 +3,7 @@ import type { BrowserWindow } from 'electron';
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, ...args: unknown[]) => unknown>(),
-  config: {} as Record<string, string>, generate: vi.fn(), claude: vi.fn(), status: vi.fn(), prompt: vi.fn(), session: vi.fn(), environment: vi.fn(), transcript: vi.fn(),
+  config: {} as Record<string, string>, generate: vi.fn(), claude: vi.fn(), status: vi.fn(), prompt: vi.fn(), opencodePrompt: vi.fn(), opencodeDb: vi.fn(), session: vi.fn(), environment: vi.fn(), transcript: vi.fn(),
   visible: true, minimized: false,
 }));
 vi.mock('electron', () => ({ app: { getPath: () => '/neutral' }, ipcMain: { handle: (key: string, fn: never) => mocks.handlers.set(key, fn) } }));
@@ -12,10 +12,10 @@ vi.mock('../db/database', () => ({ getDb: () => ({ config: mocks.config }) }));
 vi.mock('../pip/backends', () => ({
   pipBackend: (id: string) => ({ id, generate: id === 'claude' ? mocks.claude : mocks.generate, status: (cwd: string, signal: AbortSignal) => mocks.status(id, cwd, signal) }),
 }));
-vi.mock('../pip/prompt-context', () => ({ readRecentPrompt: mocks.prompt }));
+vi.mock('../pip/prompt-context', () => ({ readRecentPrompt: mocks.prompt, readRecentOpenCodePrompt: mocks.opencodePrompt }));
 vi.mock('../session/session-manager', () => ({ sessionManager: { getSession: mocks.session } }));
 vi.mock('../db/environment-repo', () => ({ getEnvironment: mocks.environment }));
-vi.mock('../usage/usage-service', () => ({ usageService: { getLocalTranscriptPath: mocks.transcript } }));
+vi.mock('../usage/usage-service', () => ({ usageService: { getLocalTranscriptPath: mocks.transcript, getLocalOpenCodeDatabase: mocks.opencodeDb } }));
 import { registerPipHandlers, validatePipBackend, validatePipRequest } from './pip-handlers';
 import { DEFAULT_PIP_SETTINGS, PIP_SETTINGS_KEY } from '../../shared/pip';
 import { IPC } from '../../shared/constants';
@@ -35,6 +35,8 @@ beforeEach(() => {
   mocks.environment.mockReturnValue({ type: 'local' });
   mocks.transcript.mockReturnValue('/attributed/rollout.jsonl');
   mocks.prompt.mockResolvedValue('Submitted idea');
+  mocks.opencodeDb.mockReturnValue('/data/opencode/opencode.db');
+  mocks.opencodePrompt.mockReturnValue('OpenCode idea');
   registerPipHandlers({ mainWindow: win, send: vi.fn() });
 });
 
@@ -105,5 +107,34 @@ describe('Pip consent and IPC boundary', () => {
     await vi.waitFor(() => expect(signals).toHaveLength(1));
     await handler(trusted, 'claude');
     expect(signals[0].aborted).toBe(true);
+  });
+  it('reads a local OpenCode prompt from its attributed database', async () => {
+    prefs({ sharePrompts: true });
+    mocks.session.mockReturnValue({ environmentId: 'local', cliTool: 'opencode', toolSessionId: 'ses_1' });
+    await mocks.handlers.get(IPC.PIP_COMMENT)!(trusted, request);
+    expect(mocks.opencodeDb).toHaveBeenCalledWith('ses_1');
+    expect(mocks.opencodePrompt).toHaveBeenCalledWith('/data/opencode/opencode.db', 'ses_1');
+    expect(mocks.transcript).not.toHaveBeenCalled();
+    expect(mocks.generate).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'OpenCode idea' }), expect.any(AbortSignal));
+  });
+  it('shares no prompt for remote OpenCode, Copilot or Custom sessions, or OpenCode without a database', async () => {
+    prefs({ sharePrompts: true });
+    mocks.session.mockReturnValue({ environmentId: 'coder', cliTool: 'opencode', toolSessionId: 'ses_1' });
+    mocks.environment.mockReturnValue({ type: 'coder' });
+    // Try a quip skips the cooldown, so every call below reaches the backend.
+    const hello = { event: 'hello', sessionId: 'a' };
+    await mocks.handlers.get(IPC.PIP_COMMENT)!(trusted, hello);
+    mocks.environment.mockReturnValue({ type: 'local' });
+    for (const cliTool of ['copilot', 'custom']) {
+      mocks.session.mockReturnValue({ environmentId: 'local', cliTool, toolSessionId: 'native-id' });
+      await mocks.handlers.get(IPC.PIP_COMMENT)!(trusted, hello);
+    }
+    mocks.opencodeDb.mockReturnValue(null);
+    mocks.session.mockReturnValue({ environmentId: 'local', cliTool: 'opencode', toolSessionId: 'ses_1' });
+    await mocks.handlers.get(IPC.PIP_COMMENT)!(trusted, hello);
+    expect(mocks.generate).toHaveBeenCalledTimes(4);
+    expect(mocks.opencodePrompt).not.toHaveBeenCalled();
+    expect(mocks.prompt).not.toHaveBeenCalled();
+    for (const call of mocks.generate.mock.calls) expect(call[0]).toMatchObject({ prompt: null });
   });
 });
