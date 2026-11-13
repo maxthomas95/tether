@@ -99,6 +99,38 @@ export interface DiscoveredTranscript {
   mtimeMs: number;
 }
 
+const CWD_HEAD_BYTES = 256 * 1024;
+
+/**
+ * The working directory a transcript was recorded in, from the first entry that carries one.
+ * The project folder name cannot give this back: it replaces every separator with `-`.
+ * Reads only the head of the file, and returns null when no complete entry there has a `cwd`.
+ */
+export function readTranscriptCwd(filePath: string): string | null {
+  let head: string;
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    try {
+      const buffer = Buffer.alloc(CWD_HEAD_BYTES);
+      head = buffer.toString('utf8', 0, fs.readSync(fd, buffer, 0, CWD_HEAD_BYTES, 0));
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+  for (const line of head.split('\n')) {
+    if (!line.includes('"cwd"')) continue;
+    try {
+      const cwd = (JSON.parse(line) as { cwd?: unknown }).cwd;
+      if (typeof cwd === 'string' && cwd.trim()) return cwd;
+    } catch {
+      // A partial last line, or an entry too long to fit in the head.
+    }
+  }
+  return null;
+}
+
 /**
  * Enumerate every Claude Code transcript under ~/.claude/projects/.
  * Skips files whose stem isn't a UUID (defensively — Claude occasionally

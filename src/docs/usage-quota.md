@@ -95,7 +95,7 @@ The sidebar footer shows today's cost and a seven-day sparkline. Click it to ope
 
 ## Usage History Dialog
 
-Filter by CLI, project, environment, model and UTC date range. Compare the selected period with the preceding period of the same length, inspect the daily trend and click a day to narrow the session ledger.
+Filter by CLI, project, environment, model and UTC date range. Compare the selected period with the preceding period of the same length, inspect the daily trend and click a day to narrow the session ledger. Projects are listed by folder name, with the parent folder added when two share a name; hover a name for the full path. Claude sessions that Tether did not launch take their path from the transcript, and fall back to Claude's own project folder name (for example `C--repo-tether`) only when the transcript records none.
 
 Filter checkboxes use the current theme's accent color and follow its light or dark appearance.
 
