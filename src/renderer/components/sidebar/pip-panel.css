@@ -11,7 +11,7 @@
 .pip-header { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; padding: 3px 8px; }
 .pip-heading { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 44px; padding: 6px 0; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
 .pip-quiet { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); cursor: pointer; }
-.pip-quiet input, .pip-options input { accent-color: var(--accent); }
+.pip-quiet input { accent-color: var(--accent); }
 .pip-panel button:disabled, .pip-panel input:disabled, .pip-panel select:disabled { opacity: .5; cursor: default; }
 .pip-panel :is(button, input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .pip-content { padding: 0 10px 8px; }
@@ -70,19 +70,6 @@
 .pip-mood { text-align: right; flex: 0 1 auto; }
 .pip-waiting { display: flex; align-items: center; gap: 4px; flex-shrink: 0; padding: 3px 5px; border: 1px solid var(--border-color); border-radius: var(--control-radius); background: transparent; color: var(--text-primary); font: inherit; cursor: pointer; }
 .pip-waiting:hover { background: var(--bg-hover); }
-.pip-options-toggle { margin-top: 4px; padding: 4px 0; border: 0; background: transparent; color: var(--text-secondary); font: inherit; cursor: pointer; text-align: left; }
-.pip-options-toggle:hover { color: var(--text-primary); }
-.pip-options { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--border-color); }
-.pip-options label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--text-secondary); }
-.pip-options select { flex: 1; min-width: 0; max-width: 100%; padding: 3px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--control-radius); font: inherit; }
-.pip-options-help { margin: -2px 0 2px; color: var(--text-secondary); line-height: 1.5; }
-.pip-ai-status { display: block; color: var(--text-secondary); line-height: 1.5; }
-.pip-ai-backend { display: block; color: var(--text-secondary); line-height: 1.5; }
-.pip-ai-backend:empty { display: none; }
-.pip-ai-backend[data-ready="false"] { color: var(--status-waiting); }
-.pip-try-quip { align-self: flex-start; padding: 3px 8px; border: 1px solid var(--border-color); border-radius: var(--control-radius); background: transparent; color: var(--text-primary); font: inherit; cursor: pointer; }
-.pip-try-quip:hover:not(:disabled) { background: var(--bg-hover); }
-.pip-try-quip:disabled { opacity: .5; cursor: default; }
 .pip-panel[data-motion="false"] :is(.pip-creature, .pip-tail, .pip-eye, .pip-paw) { animation: none; }
 .pip-panel[data-motion="false"] :is(.pip-head, .pip-eye, .pip-pupil, .pip-keyboard) { transition: none; }
 @keyframes pip-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }

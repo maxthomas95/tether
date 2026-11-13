@@ -2067,6 +2067,10 @@ summary.form-label, .settings-advanced > summary {
 }
 summary.form-label::marker, .settings-advanced > summary::marker { color: var(--accent); }
 .settings-advanced { border-top: 1px solid var(--border-color); margin-top: var(--space-5); }
+.pip-settings-limits { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-3); margin-top: 12px; }
+.pip-settings-status { display: block; }
+.pip-settings-status:empty { display: none; }
+.pip-settings-status[data-ready="false"] { color: var(--status-waiting); }
 .settings-advanced[open] > summary { margin-bottom: var(--space-3); }
 
 .settings-section-label {

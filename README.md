@@ -119,7 +119,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Update notifications** — checks GitHub Releases on launch and links to downloads; stable/beta channels and an opt-out live in Settings → General
 - **Diagnostics export** — one-click bundle of scrubbed `data.json` (SSH passwords, tokens, sensitive env-var values redacted) plus rotated logs, for triaging support issues
 - **CLI maintenance** — check and update installed Claude Code, Codex CLI, and OpenCode tools on local, SSH, or Coder targets through temporary terminals
-- **Optional sidebar companions** — local GIF panel and Pip pet, off by default. Pip's local reactions use status metadata; generated Codex or Claude quips and submitted-prompt sharing have separate opt-ins
+- **Optional sidebar companions** — local GIF panel and Pip pet, off by default. Pip's local reactions use status metadata; generated Codex or Claude quips and submitted-prompt sharing have separate opt-ins, with adjustable hourly limits, in **Settings → Pip**
 - **J.O.B.S. Office** — optional external office view, off for new setups, with separate connection, remote-session sharing and automatic-launch controls
 - **Helm** *(opt-in, personal-experimental)* — designate a session as "helm" so it can dispatch pre-briefed child sessions through the `tether-helm` MCP, including spawning Coder workspaces. Off by default behind a two-level gate. Not on the 1.0 roadmap.
 

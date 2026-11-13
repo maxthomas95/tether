@@ -15,6 +15,7 @@ import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, VaultConfig, 
 import { DEFAULT_NOTIFICATION_PREFS } from '../../shared/types';
 import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
 import { KeybindingsEditor } from './KeybindingsEditor';
+import { PipSettingsSection, type PipSettingsControl } from './PipSettingsSection';
 import { HelpAnchor } from './HelpAnchor';
 import { CodexLaunchControls, CodexSettingsSection } from './CodexSettingsSection';
 import { CliLaunchControls } from './CliLaunchControls';
@@ -99,7 +100,7 @@ const UI_FONT_PRESETS: ReadonlyArray<{ label: string; value: string }> = [
   },
 ];
 
-type SettingsSection = 'appearance' | 'general' | 'terminal' | 'sessions' | 'cli-tools' | 'notifications' | 'shortcuts' | 'integrations' | 'usage';
+type SettingsSection = 'appearance' | 'general' | 'terminal' | 'sessions' | 'cli-tools' | 'notifications' | 'shortcuts' | 'integrations' | 'usage' | 'pip';
 
 const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
   { id: 'general', label: 'General' },
@@ -111,6 +112,7 @@ const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
   { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'usage', label: 'Usage' },
+  { id: 'pip', label: 'Pip' },
 ];
 
 /** Per-section docs deep-link target, used by the (?) help icon. */
@@ -124,6 +126,7 @@ const SECTION_HELP: Record<SettingsSection, { title: string; anchor: string }> =
   shortcuts:     { title: 'Shortcuts',     anchor: 'shortcuts' },
   integrations:  { title: 'Integrations',  anchor: 'integrations' },
   usage:         { title: 'Usage',         anchor: 'usage' },
+  pip:           { title: 'Pip',           anchor: 'pip-sidebar-pet' },
 };
 
 function SectionHeader({ section }: Readonly<{ section: SettingsSection }>) {
@@ -150,9 +153,11 @@ interface SettingsDialogProps {
   onKeybindingChange: (action: KeybindingAction, chord: Chord | null) => void;
   onKeybindingsResetAll: () => void;
   onOpenCliMaintenance?: () => void;
+  /** Pip's live preferences. They save as they change, not with the dialog's Save button. */
+  pip?: PipSettingsControl;
 }
 
-export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, onThemeChange, availableThemes = themeList, localThemeCatalog, onReloadThemes, onResetSessionFontSizes, keybindings, onKeybindingChange, onKeybindingsResetAll, onOpenCliMaintenance }: Readonly<SettingsDialogProps>) {
+export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, onThemeChange, availableThemes = themeList, localThemeCatalog, onReloadThemes, onResetSessionFontSizes, keybindings, onKeybindingChange, onKeybindingsResetAll, onOpenCliMaintenance, pip }: Readonly<SettingsDialogProps>) {
   const settingsId = useId();
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [cliFlagsPerTool, setCliFlagsPerTool] = useState<Partial<Record<CliToolId, string[]>>>({});
@@ -613,6 +618,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
     shortcuts: 'shortcuts keyboard keybindings remap',
     integrations: 'integrations git github ado gitea vault ssh known hosts jobs office',
     usage: 'usage quota tokens cost budget export',
+    pip: 'pip sidebar pet companion quips ai personality quiet nudges limit hourly',
   };
   const matchingSections = SECTIONS.filter(section =>
     `${section.label} ${sectionTerms[section.id]}`.toLowerCase().includes(sectionQuery.trim().toLowerCase()));
@@ -1382,6 +1388,13 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
                 sessions={sessions}
               />
               )}
+            </>
+          )}
+
+          {activeSection === 'pip' && matchingSections.length > 0 && (
+            <>
+              <SectionHeader section="pip" />
+              <PipSettingsSection settings={pip?.settings ?? null} busy={pip?.busy ?? true} update={pip?.update ?? (async () => {})} />
             </>
           )}
 
