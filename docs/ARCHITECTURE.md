@@ -127,7 +127,7 @@ Most settings apply on **Save**. Theme changes preview and revert on Cancel. Act
 
 Eleven themes and independent UI/terminal font settings are defined in the renderer, with bundled fonts, a live specimen preview, and comfortable/compact density. The default theme key is `mocha`; the theme labeled **Tether (Default Dark)** is another choice, not the startup default.
 
-Pane splitting is opt-in, with maximum counts of 1, 2, or 4. Layout and session selection stay in the renderer. Keyboard defaults live in `src/shared/keybindings.ts`. Broadcast input is selected from pane headers and only fans out from a selected pane when at least two live targets are selected.
+The title bar's Layout control picks a single pane, a maximum of 2 or 4 split panes, or Canvas. Layout and session selection stay in the renderer. Keyboard defaults live in `src/shared/keybindings.ts`. Broadcast input is selected from pane headers and only fans out from a selected pane when at least two live targets are selected.
 
 Canvas is an independent experimental layout with movable/resizable panels, panning, keyboard navigation, and persisted geometry. Offscreen panels detach their views and retain their terminal buffers. Entering Canvas clears broadcast targets. Terminal search reads the focused pane's scrollback without sending CLI input.
 

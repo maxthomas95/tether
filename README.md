@@ -63,8 +63,8 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Multiple concurrent sessions** with instant switching — click in the sidebar, or `Ctrl+1`–`Ctrl+9`
 - **Session grouping** by environment and working directory; collapsible groups, **drag-reorder** inside a group
 - **Bulk group actions** — Stop all / Restart all / Clear all per repo group from a right-click menu
-- **Split panes** *(experimental)* — drag from the sidebar into drop zones to view sessions side-by-side; keyboard-driven focus (`Alt+Arrow`) and swap (`Alt+Shift+Arrow`); broadcast input to multiple panes; in-pane recovery overlay when a session dies
-- **Canvas layout** *(experimental)* — arrange movable, resizable session panels, pan across larger workspaces, and retain their arrangement when switching layouts
+- **Split panes** — pick a single pane or up to 2 or 4 panes from the title bar's **Layout** control; drag from the sidebar into drop zones to view sessions side-by-side; keyboard-driven focus (`Alt+Arrow`) and swap (`Alt+Shift+Arrow`); broadcast input to multiple panes; in-pane recovery overlay when a session dies
+- **Canvas layout** — arrange movable, resizable session panels, pan across larger workspaces, and retain their arrangement when switching layouts
 - **Workspace recipes** — save named session groups and layouts, then reopen selected slots with edited paths or remapped environments; opening a recipe starts fresh sessions and leaves existing ones running
 - **Navigation and visibility** — `Ctrl+P` session search, an attention queue, local repository branch/dirty badges, and terminal hover previews
 - **Child-agent visibility** — Claude subagent rows for local, SSH, and Coder sessions, with status, model, timing, tokens, and a read-only transcript viewer. Trusted, opted-in local Codex lifecycle hooks also show `codex exec` runs launched by Claude

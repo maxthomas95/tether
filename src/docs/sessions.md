@@ -315,7 +315,7 @@ Recipes use the same launch path as creating sessions manually. Manual CLI flags
 
 ### Canvas workspace
 
-Select **Layout → Canvas** or **View → Canvas Mode** to use movable, resizable session panels. Canvas is independent of the split-pane setting and its four-pane limit.
+Select **Layout → Canvas** or **View → Canvas Mode** to use movable, resizable session panels. Canvas is independent of the split layouts and their four-pane limit.
 
 - On first use, existing sessions are placed on the canvas. Click a session in the sidebar or use **Add session** to open another panel. Selecting a session already on the canvas brings its panel into view and focuses it.
 - Drag a sidebar session onto the canvas to place it at the drop position. Drag panel headers to move them and panel edges or corners to resize them.
