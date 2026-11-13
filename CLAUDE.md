@@ -143,7 +143,7 @@ npm test             # Vitest tests
 npm run test:packaging # Packaging helper tests
 ```
 
-Also run `npm run test:security` and the documented dependency gates when relevant. For packaging changes, run `npm run package` and `npm run verify:package`; releases also require `npm run make` and packaged runtime smoke. CI separately builds/audits Helm and audits root/runtime dependencies; see `.github/workflows/ci.yml` and `docs/DEPENDENCY_SECURITY.md`. Settings has nine sections, including CLI tools. See `src/docs/settings.md` for controls and save behavior.
+Also run `npm run test:security` and the documented dependency gates when relevant. For packaging changes, run `npm run package` and `npm run verify:package`; releases also require `npm run make` and packaged runtime smoke. CI separately builds/audits Helm and audits root/runtime dependencies; see `.github/workflows/ci.yml` and `docs/DEPENDENCY_SECURITY.md`. Settings has ten sections, including CLI tools and Pip. See `src/docs/settings.md` for controls and save behavior.
 
 **Native packaging:** Forge uses pinned prebuilt node-pty binaries instead of rebuilding with unsupported Visual Studio toolchains. Windows local/Coder PTYs use bundled ConPTY DLL support so shutdown works with `RunAsNode` disabled. Keep the packaged verifier and real PTY startup/stop smoke green; app state remains JSON.
 
@@ -275,7 +275,7 @@ src/
       MigrateToVaultDialog.tsx
       Notifications.tsx
       PaneStatusStrip.tsx             # Per-session cost/token strip
-      SettingsDialog.tsx              # Nine searchable settings sections
+      SettingsDialog.tsx              # Ten searchable settings sections
       CanvasLayout.tsx                # Movable/resizable session panels
       SetupWizard.tsx                 # First-run wizard
       SplitDivider.tsx                # Split pane drag handle

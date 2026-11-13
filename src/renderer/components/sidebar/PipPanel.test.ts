@@ -31,10 +31,11 @@ let reduced: boolean;
 let mediaChange: () => void;
 const save = vi.fn();
 const activate = vi.fn();
+const openSettings = vi.fn();
 
 async function render() {
   await act(async () => root.render(createElement(PipPanel, {
-    settings, sessions, activeSessionId: focused, childCounts, busy: false, onSettingsChange: save, onActivateSession: activate,
+    settings, sessions, activeSessionId: focused, childCounts, busy: false, onSettingsChange: save, onOpenSettings: openSettings, onActivateSession: activate,
   })));
 }
 async function nudge(...nudges: PipNudge[]) { await act(async () => feed.onChange?.(nudges)); }
@@ -42,15 +43,6 @@ async function click(selector: string) { await act(async () => (container.queryS
 async function advance(ms: number) { await act(async () => vi.advanceTimersByTime(ms)); }
 function panel() { return container.querySelector<HTMLElement>('.pip-panel')!; }
 function line() { return container.querySelector('.pip-speech')?.textContent; }
-function aiSelect() {
-  return Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('AI quips'))!.querySelector('select')!;
-}
-async function choose(select: HTMLSelectElement, value: string) {
-  await act(async () => {
-    select.value = value;
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-}
 async function state(state: PipSession['state'], waitingReason?: PipSession['waitingReason']) {
   sessions = sessions.map(session => session.id === focused ? { ...session, state, waitingReason } : session);
   await render();
@@ -199,14 +191,13 @@ describe('Pip sidebar interactions', () => {
     expect(cancelComment).not.toHaveBeenCalled();
   });
 
-  it('leaves the AI cooldown to main and shows the reason it gives back', async () => {
+  it('leaves the AI cooldown to main and keeps the local line when it declines', async () => {
     const comment = vi.fn()
       .mockResolvedValueOnce({ status: 'ready', line: 'First quip.', model: 'gpt-6-luna', reason: null })
       .mockResolvedValueOnce({ status: 'paused', line: null, model: null, reason: 'Taking a breather between AI comments.' });
     vi.stubGlobal('electronAPI', { pip: { comment, cancelComment: vi.fn().mockResolvedValue(undefined) } });
     settings = { ...settings, aiComments: true };
     await render();
-    await click('.pip-options-toggle');
     await state('waiting', 'permission');
     await advance(600);
     expect(line()).toBe('First quip.');
@@ -214,7 +205,6 @@ describe('Pip sidebar interactions', () => {
     await state('waiting', 'permission');
     await advance(600);
     expect(comment).toHaveBeenCalledTimes(2);
-    expect(container.querySelector('.pip-ai-status')?.textContent).toBe('Taking a breather between AI comments.');
     expect(line()).not.toBe('First quip.');
   });
 
@@ -233,67 +223,20 @@ describe('Pip sidebar interactions', () => {
     expect(line()).toBe('Marathon done.');
   });
 
-  it('keeps AI requests off by default and exposes separate prompt consent', async () => {
+  it('keeps AI requests off by default and sends configuration to Settings', async () => {
     const comment = vi.fn();
     vi.stubGlobal('electronAPI', { pip: { comment } });
     await render();
     await state('waiting', 'permission');
     await advance(600);
     expect(comment).not.toHaveBeenCalled();
-    await click('.pip-options-toggle');
-    expect(container.querySelector('.pip-options-toggle')?.textContent).toBe('Pip options');
-    expect(aiSelect().value).toBe('off');
-    await choose(aiSelect(), 'codex');
-    expect(save).toHaveBeenLastCalledWith({ aiComments: true, aiBackend: 'codex' });
-    expect(container.textContent).not.toContain('Share submitted prompts');
-    settings = { ...settings, aiComments: true };
-    await render();
-    expect(container.textContent).toContain('Share submitted prompts');
-    expect(container.textContent).toContain('to OpenAI');
-    await choose(aiSelect(), 'off');
-    expect(save).toHaveBeenLastCalledWith({ aiComments: false });
+    expect(container.querySelector('select')).toBeNull();
+    expect(container.textContent).not.toContain('Pip options');
+    await click('[aria-label="Pip settings"]');
+    expect(openSettings).toHaveBeenCalledTimes(1);
+    expect(save).not.toHaveBeenCalled();
   });
 
-  it('checks the chosen backend when it is picked and names its recipient', async () => {
-    const backendStatus = vi.fn(async (backend: string) => backend === 'claude'
-      ? { backend, ready: true, detail: 'Signed in with Claude Max. Quips use Claude Haiku.' }
-      : { backend, ready: false, detail: 'Sign in to Codex with ChatGPT to enable AI quips.' });
-    vi.stubGlobal('electronAPI', { pip: { comment: vi.fn(), cancelComment: vi.fn(), backendStatus } });
-    settings = { ...settings, aiComments: true, aiBackend: 'codex' };
-    await render();
-    expect(backendStatus).not.toHaveBeenCalled();
-    await click('.pip-options-toggle');
-    expect(backendStatus).toHaveBeenLastCalledWith('codex');
-    expect(container.querySelector('.pip-ai-backend')?.textContent).toContain('Sign in to Codex');
-    expect(container.querySelector<HTMLElement>('.pip-ai-backend')?.dataset.ready).toBe('false');
-    await choose(aiSelect(), 'claude');
-    expect(save).toHaveBeenLastCalledWith({ aiComments: true, aiBackend: 'claude' });
-    settings = { ...settings, aiBackend: 'claude' };
-    await render();
-    expect(backendStatus).toHaveBeenLastCalledWith('claude');
-    expect(container.querySelector('.pip-ai-backend')?.textContent).toBe('Signed in with Claude Max. Quips use Claude Haiku.');
-    expect(container.textContent).toContain('to Anthropic');
-    expect(container.textContent).toContain('Haiku only');
-  });
-
-  it('asks for a quip on demand with Try a quip', async () => {
-    const comment = vi.fn().mockResolvedValue({ status: 'ready', line: 'Testing, testing.', model: 'claude-haiku-5-5', reason: null });
-    vi.stubGlobal('electronAPI', { pip: { comment, cancelComment: vi.fn().mockResolvedValue(undefined), backendStatus: vi.fn(() => new Promise(() => {})) } });
-    settings = { ...settings, aiComments: true, aiBackend: 'claude' };
-    await render();
-    await click('.pip-options-toggle');
-    expect(container.querySelector('.pip-ai-backend')?.textContent).toBe('Checking sign-in…');
-    await click('.pip-try-quip');
-    const local = line();
-    expect(local).not.toBe('Testing, testing.');
-    await advance(600);
-    expect(comment).toHaveBeenCalledWith({ event: 'hello', sessionId: 'a' });
-    expect(line()).toBe('Testing, testing.');
-    expect(container.querySelector('.pip-ai-status')?.textContent).toBe('Quip via claude-haiku-5-5');
-    settings = { ...settings, quiet: true };
-    await render();
-    expect(container.querySelector<HTMLButtonElement>('.pip-try-quip')?.disabled).toBe(true);
-  });
   it('follows real focus and lets keyboard-compatible petting respond immediately', async () => {
     await render();
     expect(panel().dataset.mood).toBe('busy');
@@ -374,19 +317,10 @@ describe('Pip sidebar interactions', () => {
     expect(line()).toBe('Finally. My performance review.');
   });
 
-  it('saves presentation controls, collapse, and hide through the parent', async () => {
+  it('saves quiet, collapse, and hide through the parent', async () => {
     await render();
     await click('.pip-quiet input');
     expect(save).toHaveBeenLastCalledWith({ quiet: true });
-    await click('.pip-options-toggle');
-    await act(async () => {
-      const select = container.querySelector('select')!;
-      select.value = 'sweet';
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    expect(save).toHaveBeenLastCalledWith({ personality: 'sweet' });
-    await click('.pip-options input');
-    expect(save).toHaveBeenLastCalledWith({ motion: false });
     await click('.pip-heading');
     expect(save).toHaveBeenLastCalledWith({ collapsed: true });
     await click('[aria-label="Hide Pip"]');
@@ -640,10 +574,6 @@ describe('Pip sidebar interactions', () => {
     const update: PipNudge = { key: 'update:0.8.0', kind: 'updateAvailable', detail: 'v0.8.0' };
     await render();
     expect(feed.onChange).toBeNull();
-    await click('.pip-options-toggle');
-    const toggle = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Operational nudges'))!.querySelector('input')!;
-    await act(async () => toggle.click());
-    expect(save).toHaveBeenLastCalledWith({ nudges: true });
     settings = { ...settings, nudges: true };
     await render();
     expect(feed.onChange).not.toBeNull();
@@ -681,7 +611,7 @@ describe('Pip sidebar interactions', () => {
   it('shows a nudge as posture only in quiet mode, and passes the update version to the feed', async () => {
     settings = { ...settings, nudges: true, quiet: true };
     await act(async () => root.render(createElement(PipPanel, {
-      settings, sessions, activeSessionId: focused, updateVersion: '0.8.0', busy: false, onSettingsChange: save, onActivateSession: activate,
+      settings, sessions, activeSessionId: focused, updateVersion: '0.8.0', busy: false, onSettingsChange: save, onOpenSettings: openSettings, onActivateSession: activate,
     })));
     expect(feed.updateVersion).toBe('0.8.0');
     await nudge({ key: 'vault:soon', kind: 'vaultExpiring', detail: '5 minutes' });

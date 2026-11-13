@@ -1,4 +1,4 @@
-import { PIP_AI_COOLDOWN_MS, PIP_AI_HOURLY_LIMIT, type PipCommentRequest, type PipCommentResult, type PipSettings } from '../../shared/pip';
+import { type PipCommentRequest, type PipCommentResult, type PipSettings } from '../../shared/pip';
 
 const paused = (reason: string): PipCommentResult => ({ status: 'paused', line: null, model: null, reason });
 export interface PipCommentDependencies {
@@ -7,7 +7,10 @@ export interface PipCommentDependencies {
   now?: () => number;
 }
 
-/** Main-process limits survive renderer remounts and cannot be bypassed by UI requests. */
+/**
+ * Main-process limits survive renderer remounts and cannot be bypassed by UI requests. The limits
+ * themselves are the person's saved, bounded settings, read fresh for every request.
+ */
 export class PipCommentService {
   private attempts: number[] = [];
   private pending: AbortController | null = null;
@@ -21,9 +24,9 @@ export class PipCommentService {
     if (this.pending) return paused('Pip is already thinking of a quip.');
     const now = this.dependencies.now?.() ?? Date.now();
     this.attempts = this.attempts.filter(time => now - time < 3_600_000);
-    if (this.attempts.length >= PIP_AI_HOURLY_LIMIT) return paused('Hourly limit reached. Local quips for now.');
+    if (this.attempts.length >= settings.aiHourlyLimit) return paused('Hourly limit reached. Local quips for now.');
     // Try a quip is asked for by the person, so it skips the cooldown. It still counts toward the hourly limit.
-    if (request.event !== 'hello' && this.attempts.length && now - this.attempts.at(-1)! < PIP_AI_COOLDOWN_MS) {
+    if (request.event !== 'hello' && this.attempts.length && now - this.attempts.at(-1)! < settings.aiCooldownSeconds * 1000) {
       return paused('Taking a breather between AI comments.');
     }
     this.attempts.push(now);

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PipCommentService } from './comment-service';
-import { DEFAULT_PIP_SETTINGS, PIP_AI_COOLDOWN_MS, type PipCommentResult } from '../../shared/pip';
+import { DEFAULT_PIP_SETTINGS, type PipCommentResult } from '../../shared/pip';
+
+const PIP_AI_COOLDOWN_MS = DEFAULT_PIP_SETTINGS.aiCooldownSeconds * 1000;
 
 const reply: PipCommentResult = { status: 'ready', line: 'The keyboard has opinions.', model: 'gpt-6-luna', reason: null };
 const request = { event: 'submitted' as const, sessionId: 'a' };
@@ -30,6 +32,20 @@ describe('Pip subscription limits', () => {
     f.time(3_600_000);
     await f.service.comment(request);
     expect(f.generate).toHaveBeenCalledTimes(13);
+  });
+  it('uses the saved hourly limit and gap, and picks up a change on the next request', async () => {
+    const f = fixture();
+    f.settings({ aiHourlyLimit: 2, aiCooldownSeconds: 30 });
+    await f.service.comment(request);
+    f.time(29_000);
+    expect((await f.service.comment(request)).reason).toContain('breather');
+    f.time(1_000);
+    expect((await f.service.comment(request)).status).toBe('ready');
+    f.time(30_000);
+    expect((await f.service.comment(request)).reason).toContain('Hourly');
+    f.settings({ aiHourlyLimit: 3 });
+    expect((await f.service.comment(request)).status).toBe('ready');
+    expect(f.generate).toHaveBeenCalledTimes(3);
   });
   it('allows only one pending request and discards a reply after cancellation', async () => {
     const f = fixture();

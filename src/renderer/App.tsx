@@ -119,7 +119,7 @@ export function App() {
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [maintenanceTarget, setMaintenanceTarget] = useState<{ environmentId?: string; sessionId?: string } | null>(null);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<'integrations' | undefined>();
+  const [settingsInitialSection, setSettingsInitialSection] = useState<'integrations' | 'pip' | undefined>();
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   /**
    * Sessions whose current waiting cycle the user has already acknowledged
@@ -2168,7 +2168,8 @@ export function App() {
         </div>
         {sidebarVisible && gifPanel.settings?.enabled && <GifPanel settings={gifPanel.settings} onSettingsChange={gifPanel.setSettings} />}
         {sidebarVisible && pip.settings?.enabled && <PipPanel settings={pip.settings} sessions={sessions} childCounts={runningChildCounts} updateVersion={availableUpdate}
-          activeSessionId={activeSessionId} busy={pip.busy} onSettingsChange={pip.update} onActivateSession={handleActivateFromSearch} />}
+          activeSessionId={activeSessionId} busy={pip.busy} onSettingsChange={pip.update}
+          onOpenSettings={() => { setSettingsInitialSection('pip'); setSettingsOpen(true); }} onActivateSession={handleActivateFromSearch} />}
         <GlobalUsageFooter
           environments={environments}
           onOpenHistory={() => setUsageHistoryOpen(true)}
@@ -2302,6 +2303,7 @@ export function App() {
       <SettingsDialog
         onOpenCliMaintenance={() => { setSettingsOpen(false); setMaintenanceTarget({}); }}
         initialSection={settingsInitialSection}
+        pip={pip}
         isOpen={settingsOpen}
         onClose={() => {
           setSettingsOpen(false);

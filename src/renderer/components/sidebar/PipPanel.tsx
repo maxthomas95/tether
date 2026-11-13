@@ -5,9 +5,6 @@ import { PIP_MOOD_LABELS, pipSessionLabel, type PipSession } from '../../lib/pip
 import type { PipSettings } from '../../lib/pip-settings';
 import type { PipNudge } from '../../lib/pip-nudges';
 import { PipNudgeFeed } from './PipNudgeFeed';
-import { usePipBackendStatus } from '../../hooks/usePipBackendStatus';
-import { CLI_TOOL_REGISTRY } from '../../../shared/cli-tools';
-import type { PipAiBackend } from '../../../shared/pip';
 import './pip-panel.css';
 
 interface PipPanelProps {
@@ -20,6 +17,8 @@ interface PipPanelProps {
   updateVersion?: string | null;
   busy: boolean;
   onSettingsChange: (patch: Partial<PipSettings>) => Promise<void>;
+  /** Opens Settings → Pip, where personality, nudges and AI quips are configured. */
+  onOpenSettings: () => void;
   onActivateSession: (sessionId: string) => void;
 }
 
@@ -41,27 +40,11 @@ function PipArtwork() {
 
 const NO_NUDGES: readonly PipNudge[] = [];
 
-const BACKEND_HELP: Readonly<Record<PipAiBackend, string>> = {
-  codex: 'Uses your local Codex ChatGPT sign-in and subscription allowance. Luna only; up to 12 quips/hour.',
-  claude: 'Uses your local Claude Code subscription sign-in and allowance. Haiku only; up to 12 quips/hour.',
-};
-
-function pipActivityStatus(quiet: boolean, comments: ReturnType<typeof usePip>['comments']): string {
-  if (quiet) return 'AI paused while Quiet is on.';
-  if (comments.pending) return 'Thinking of a quip…';
-  if (comments.result?.reason) return comments.result.reason;
-  return comments.result?.model ? `Quip via ${comments.result.model}` : 'AI on. Waiting for a session moment.';
-}
-
-export function PipPanel({ settings, sessions, activeSessionId, childCounts, updateVersion = null, busy, onSettingsChange, onActivateSession }: Readonly<PipPanelProps>) {
+export function PipPanel({ settings, sessions, activeSessionId, childCounts, updateVersion = null, busy, onSettingsChange, onOpenSettings, onActivateSession }: Readonly<PipPanelProps>) {
   const [nudges, setNudges] = useState<readonly PipNudge[]>(NO_NUDGES);
   const receiveNudges = useCallback((next: readonly PipNudge[]) => setNudges(next), []);
   const pip = usePip(sessions, activeSessionId, settings, childCounts, nudges);
   const contentId = useId();
-  const optionsId = useId();
-  const [optionsOpen, setOptionsOpen] = useState(false);
-  const backend = usePipBackendStatus(settings.aiBackend, pip.active && optionsOpen && settings.aiComments);
-  const recipient = CLI_TOOL_REGISTRY[settings.aiBackend].pipQuips?.recipient ?? 'the AI provider';
   const waiting = sessions.filter(session => session.id !== activeSessionId && session.state === 'waiting');
   const nextWaiting = waiting.find(session => session.waitingReason === 'permission') ?? waiting[0];
   const update = (patch: Partial<PipSettings>) => { void onSettingsChange(patch); };
@@ -82,6 +65,8 @@ export function PipPanel({ settings, sessions, activeSessionId, childCounts, upd
       {settings.collapsed && waitingButton}
       <label className="pip-quiet"><input type="checkbox" checked={settings.quiet} disabled={busy}
         onChange={event => update({ quiet: event.target.checked })} /> Quiet</label>
+      <button type="button" className="icon-button" aria-label="Pip settings" title="Pip settings"
+        onClick={onOpenSettings}><Icon name="settings" size={13} /></button>
       <button type="button" className="icon-button" disabled={busy} aria-label="Hide Pip" title="Hide Pip (View menu to reopen)"
         onClick={() => update({ enabled: false })}><Icon name="close" size={13} /></button>
     </div>
@@ -99,41 +84,6 @@ export function PipPanel({ settings, sessions, activeSessionId, childCounts, upd
         <span className="pip-following" title={pip.following}>{pip.following}</span>
         {waitingButton ?? <span className="pip-mood">{PIP_MOOD_LABELS[pip.mood]}</span>}
       </div>
-      <button type="button" className="pip-options-toggle" aria-expanded={optionsOpen} aria-controls={optionsId}
-        onClick={() => setOptionsOpen(value => !value)}>Pip options</button>
-      {optionsOpen && <div id={optionsId} className="pip-options">
-        <label>Personality <select value={settings.personality} disabled={busy}
-          onChange={event => update({ personality: event.target.value === 'sweet' ? 'sweet' : 'dry' })}>
-          <option value="dry">Dry little gremlin</option><option value="sweet">Cozy companion</option>
-        </select></label>
-        <label><input type="checkbox" checked={settings.motion} disabled={busy}
-          onChange={event => update({ motion: event.target.checked })} /> Ambient motion</label>
-        <label><input type="checkbox" checked={settings.nudges} disabled={busy}
-          onChange={event => update({ nudges: event.target.checked })} /> Operational nudges</label>
-        <p className="pip-options-help">One comment when Vault sign-in is about to expire, a quota passes 90%, a usage budget is crossed, or an update is available. Local only.</p>
-        <label>AI quips <select value={settings.aiComments ? settings.aiBackend : 'off'} disabled={busy}
-          onChange={event => {
-            const value = event.target.value;
-            update(value === 'codex' || value === 'claude' ? { aiComments: true, aiBackend: value } : { aiComments: false });
-          }}>
-          <option value="off">Off</option>
-          <option value="codex">Codex ({CLI_TOOL_REGISTRY.codex.pipQuips?.account})</option>
-          <option value="claude">Claude ({CLI_TOOL_REGISTRY.claude.pipQuips?.account})</option>
-        </select></label>
-        <p className="pip-options-help">{settings.aiComments ? BACKEND_HELP[settings.aiBackend] : 'Local quips only. Choose Codex or Claude for occasional generated comments.'}</p>
-        {settings.aiComments && <>
-          <output className="pip-ai-backend" data-ready={backend.status?.ready ?? undefined}>
-            {backend.checking ? 'Checking sign-in…' : backend.status?.detail ?? ''}
-          </output>
-          <button type="button" className="pip-try-quip" disabled={busy || settings.quiet || pip.comments.pending}
-            onClick={pip.tryQuip}>Try a quip</button>
-          <p className="pip-options-help">Asks for one quip now. It counts toward the hourly limit.</p>
-          <label><input type="checkbox" checked={settings.sharePrompts} disabled={busy}
-            onChange={event => update({ sharePrompts: event.target.checked })} /> Share submitted prompts</label>
-          <p className="pip-options-help">Sends up to 400 characters from the latest local Claude, Codex or OpenCode prompt to {recipient} for specific jokes. Common secrets are scrubbed; private text can remain. Draft typing and terminal output stay local. Choosing another AI backend turns this off.</p>
-          <output className="pip-ai-status">{pipActivityStatus(settings.quiet, pip.comments)}</output>
-        </>}
-      </div>}
     </div>}
   </section>;
 }

@@ -12,7 +12,7 @@ both on GitHub and inside Tether.
 - [Getting started](../src/docs/getting-started.md) — installation, setup and layouts.
 - [Sessions](../src/docs/sessions.md) — launch, resume, restore, recipes, search and child viewers.
 - [Environments](../src/docs/environments.md) — local, SSH and Coder requirements.
-- [Settings](../src/docs/settings.md) — all nine sections, defaults and consent controls.
+- [Settings](../src/docs/settings.md) — all ten sections, defaults and consent controls.
 - [Keyboard shortcuts](../src/docs/keyboard-shortcuts.md) — navigation, clipboard and multiline input.
 - [Usage and quota](../src/docs/usage-quota.md) — estimates, remote collection, exports and privacy.
 - [Vault](../src/docs/vault.md), [Git providers](../src/docs/git-providers.md) and [Helm](../src/docs/helm.md).

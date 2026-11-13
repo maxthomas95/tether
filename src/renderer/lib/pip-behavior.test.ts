@@ -237,6 +237,14 @@ describe('Pip presentation preferences and reactions', () => {
     expect(readPipSettings('{"enabled":"true","collapsed":0,"quiet":{},"motion":null,"personality":"unknown"}')).toEqual(DEFAULT_PIP_SETTINGS);
   });
 
+  it('keeps the AI limits inside their bounds and falls back for anything that is not a number', () => {
+    expect(readPipSettings('{"aiHourlyLimit":20,"aiCooldownSeconds":300}')).toMatchObject({ aiHourlyLimit: 20, aiCooldownSeconds: 300 });
+    expect(readPipSettings('{"aiHourlyLimit":9999,"aiCooldownSeconds":1}')).toMatchObject({ aiHourlyLimit: 30, aiCooldownSeconds: 30 });
+    expect(readPipSettings('{"aiHourlyLimit":0,"aiCooldownSeconds":99999}')).toMatchObject({ aiHourlyLimit: 1, aiCooldownSeconds: 1800 });
+    expect(readPipSettings('{"aiHourlyLimit":4.6,"aiCooldownSeconds":"60"}')).toMatchObject({ aiHourlyLimit: 5, aiCooldownSeconds: 120 });
+    expect(readPipSettings('{"aiHourlyLimit":null}')).toMatchObject({ aiHourlyLimit: 12, aiCooldownSeconds: 120 });
+  });
+
   it('uses labels and platform-neutral directory fallbacks', () => {
     expect(pipSessionLabel()).toBe('your sessions');
     expect(pipSessionLabel({ ...session('a'), label: '', workingDir: 'C:\\repo\\tether\\' })).toBe('tether');

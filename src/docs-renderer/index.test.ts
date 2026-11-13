@@ -57,7 +57,7 @@ it('opens and navigates settings help anchors in the rendered docs', async () =>
   await import('./index');
   expect(document.getElementById('appearance')?.classList.contains('docs-anchor-flash')).toBe(true);
 
-  for (const anchor of ['general', 'appearance', 'terminal', 'sessions', 'notifications', 'shortcuts', 'integrations', 'usage']) {
+  for (const anchor of ['general', 'appearance', 'terminal', 'sessions', 'notifications', 'shortcuts', 'integrations', 'usage', 'cli-tools', 'pip-sidebar-pet']) {
     navigate({ page: 'settings', anchor });
     expect(document.getElementById(anchor)?.classList.contains('docs-anchor-flash'), anchor).toBe(true);
   }

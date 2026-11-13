@@ -14,11 +14,25 @@ export interface PipSettings {
   sharePrompts: boolean;
   /** Mention Vault expiry, quota, budget and updates that the sidebar already shows. */
   nudges: boolean;
+  /** Most AI quip requests in any rolling hour, including Try a quip. */
+  aiHourlyLimit: number;
+  /** Shortest wait between two automatic AI quips. */
+  aiCooldownSeconds: number;
+}
+
+/** Bounds for the two AI limits. Main reads the saved value through `readPipSettings`, so these hold there too. */
+export const PIP_AI_HOURLY_LIMIT_RANGE = { min: 1, max: 30, fallback: 12 } as const;
+export const PIP_AI_COOLDOWN_SECONDS_RANGE = { min: 30, max: 1800, fallback: 120 } as const;
+
+function boundedInteger(value: unknown, range: { min: number; max: number; fallback: number }): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return range.fallback;
+  return Math.min(range.max, Math.max(range.min, Math.round(value)));
 }
 
 export const PIP_SETTINGS_KEY = 'sidebarPet';
 export const DEFAULT_PIP_SETTINGS: PipSettings = {
   enabled: false, collapsed: false, quiet: false, motion: true, personality: 'dry', aiComments: false, aiBackend: 'codex', sharePrompts: false, nudges: false,
+  aiHourlyLimit: PIP_AI_HOURLY_LIMIT_RANGE.fallback, aiCooldownSeconds: PIP_AI_COOLDOWN_SECONDS_RANGE.fallback,
 };
 
 export function readPipSettings(raw: string | null): PipSettings {
@@ -36,14 +50,14 @@ export function readPipSettings(raw: string | null): PipSettings {
       aiBackend: saved.aiBackend === 'claude' ? 'claude' : 'codex',
       sharePrompts: saved.sharePrompts === true,
       nudges: saved.nudges === true,
+      aiHourlyLimit: boundedInteger(saved.aiHourlyLimit, PIP_AI_HOURLY_LIMIT_RANGE),
+      aiCooldownSeconds: boundedInteger(saved.aiCooldownSeconds, PIP_AI_COOLDOWN_SECONDS_RANGE),
     };
   } catch {
     return { ...DEFAULT_PIP_SETTINGS };
   }
 }
 
-export const PIP_AI_COOLDOWN_MS = 120_000;
-export const PIP_AI_HOURLY_LIMIT = 12;
 /**
  * Events that may ask for an AI quip. `longTurn` is the only PR 3 reaction here: crashes are not
  * joke material, helpers joining is frequent, and nudges stay local by design. `hello` comes only
