@@ -2067,6 +2067,25 @@ summary.form-label, .settings-advanced > summary {
 }
 summary.form-label::marker, .settings-advanced > summary::marker { color: var(--accent); }
 .settings-advanced { border-top: 1px solid var(--border-color); margin-top: var(--space-5); }
+.settings-subheading { font-size: 14px; color: var(--text-primary); margin-bottom: 8px; }
+.cli-tool-defaults { margin-top: var(--space-5); }
+.cli-tool-tabs { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 10px; border-bottom: 1px solid var(--border-color); }
+.cli-tool-tab { position: relative; padding: 7px 12px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--text-sm); cursor: pointer; border-radius: var(--control-radius) var(--control-radius) 0 0; }
+.cli-tool-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+.cli-tool-tab--active { color: var(--text-primary); border-bottom-color: var(--accent); font-weight: 600; }
+.cli-tool-tab[data-default]::after { content: 'default'; margin-left: 6px; padding: 1px 5px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-muted); font-size: var(--text-2xs); font-weight: 500; }
+.cli-tool-panel { padding: 14px 0 0; }
+.cli-tool-panel .codex-settings-launch { margin-bottom: 14px; }
+.cli-flag-list { display: grid; gap: 2px; }
+.cli-flag-option { display: flex; align-items: center; gap: 8px; padding: 4px 6px; margin: 0 -6px; border-radius: var(--control-radius); cursor: pointer; }
+.cli-flag-option:hover { background: var(--bg-hover); }
+.cli-flag-option input { accent-color: var(--accent); flex: none; }
+.cli-flag-option-label { color: var(--text-secondary); font-size: var(--text-sm); }
+.cli-flag-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.cli-flag-chips .cli-flag-custom { margin: 0; }
+.cli-tool-updates { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border-color); }
+.cli-tool-updates .form-hint { margin-bottom: 0; }
+.cli-tool-updates .form-btn { flex: none; }
 .pip-settings-limits { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-3); margin-top: 12px; }
 .pip-settings-status { display: block; }
 .pip-settings-status:empty { display: none; }

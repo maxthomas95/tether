@@ -34,6 +34,23 @@ describe('CLI settings navigation and persistence', () => {
       onKeybindingChange: vi.fn(), onKeybindingsResetAll: vi.fn(), onOpenCliMaintenance: vi.fn() }));
     expect(view.container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('CLI tools');
     expect(view.container.textContent).toContain('Default Claude Code launch');
+    // The tab of the default tool is marked, and a flag the guided field owns is not repeated as a chip.
+    expect(button(view.container, 'Claude Code').dataset.default).toBe('true');
+    expect(button(view.container, 'OpenCode').dataset.default).toBeUndefined();
+    const chips = () => [...view.container.querySelectorAll('.cli-flag-chips code')].map(code => code.textContent);
+    expect(chips()).toEqual([]);
+    const claudeModel = view.container.querySelector<HTMLInputElement>('.codex-settings-launch input')!;
+    await change(claudeModel, 'opus');
+    await act(async () => claudeModel.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+    expect(chips()).toEqual([]);
+    const custom = view.container.querySelector<HTMLInputElement>('[aria-label="Custom Claude Code flag"]')!;
+    expect(button(view.container, 'Add flag').disabled).toBe(true);
+    await change(custom, '--add-dir ../shared');
+    await click(button(view.container, 'Add flag'));
+    expect(chips()).toEqual(['--add-dir ../shared']);
+    await click(view.container.querySelector<HTMLButtonElement>('[aria-label="Remove --add-dir ../shared"]')!);
+    await change(claudeModel, '');
+    await act(async () => claudeModel.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
     await click(button(view.container, 'OpenCode'));
     const model = view.container.querySelector<HTMLInputElement>('.codex-settings-launch input')!;
     await change(model, 'provider/model');
