@@ -1,34 +1,5 @@
 # Settings
 
-## CLI updates
-
-Open **File → CLI Tools…**, or **Settings → CLI tools → Manage CLI tools…**, to check
-versions and update **Codex CLI**, **Claude Code**, or **OpenCode**. Choose the local
-machine, an SSH environment, or a Coder workspace. A session's **Check / update CLI…**
-menu action preselects its launch environment, including PATH and CLI home variables.
-
-**Check version** shows the executable path and installed version in a dedicated
-terminal. **Update** runs `codex update`, `claude update`, or `opencode upgrade`, then
-runs the version check again. Native output and interactive prompts appear unchanged.
-Output tabs retain the executable path, version before, updater output, and version
-after separately, including on Windows where starting a command can clear its screen.
-
-Choose the update method that matches your installation. Older npm-installed Codex
-releases without `codex update` can use the npm option. Claude installations managed
-by Homebrew or WinGet need their package-manager option; `claude update` can report
-up to date without upgrading these installations. Tether does not infer the install
-method from terminal output or change the CLI's configuration. Tool updaters use
-existing settings; package-manager options use the indicated package or channel.
-
-Updates affect the selected installation and may apply to multiple conversations.
-Existing sessions keep running. Restart or resume them when ready to use the new
-version. On Windows, an updater can fail if a running session locks the executable;
-stop affected sessions and retry. **Cancel**, closing the dialog, or closing Tether
-stops the maintenance terminal. Interrupted updates may need to be retried.
-
-Maintenance terminals are temporary: they are not saved as conversations and do not
-install Tether status hooks or contribute session usage statistics.
-
 Open Settings with **Ctrl+,**, the button at the bottom of the sidebar, or **File → Settings…** in the menu bar. Search for a settings section by name or topic, such as “theme”, “hooks”, or “usage”. The dialog has ten sections:
 
 - [General](#general) — session restore and update checks
@@ -155,52 +126,6 @@ Pick the font used in the sidebar, dialogs, and menus:
 
 On by default. Lists the subagents a Claude Code session (local, SSH or Coder) has started under that session, and the `codex exec` runs a local session has launched (when Codex lifecycle hooks are tracked and trusted), with their status, model and token use; click one to read its transcript in a panel docked beside the terminals. Turn it off to hide the rows, close that panel and stop Tether reading subagent files on this machine and on remote hosts, and local Codex rollout files. Applies when you save. See [Subagents](sessions.md#subagents) and [Codex exec runs](sessions.md#codex-exec-runs).
 
-## Sidebar panels
-
-Turn the GIF panel and Pip on from the **View** menu. The GIF panel's options are in the panel itself. Pip's are in **Settings → Pip**, which the gear button in Pip's header opens. Both save immediately.
-
-### GIF panel
-
-Choose **View → GIF Panel** to show an optional animated-image viewer above the sidebar footers, then **Add GIF folder** to select local folders. This is Tether's native version of GIF Panel for VS Code; installing the VS Code extension is not required.
-
-- Use **Previous**, **Next**, or **Shuffle** to change images. **Rotate** starts automatic shuffling; **Pause** stops changing images (the current GIF keeps animating).
-- **Folders & options** lets you add or remove folders, include subfolders, choose **Fit panel** or **Original** size, and set a rotation interval from 1 to 60 seconds. Original-size images can be scrolled when they exceed the viewer.
-- Settings save immediately. Tether remembers the selected image, folders, panel visibility, collapse state, size mode, and rotation preference across launches.
-- Click the panel heading to collapse it, or **Hide GIF panel** to remove it from the sidebar. Reopen it from **View → GIF Panel**. Collapsing the panel, hiding the sidebar, or minimizing the window stops image loading and rotation until it is visible again.
-- With the system's reduced-motion preference enabled, images stay unloaded until you choose **Play GIFs**. **Stop animations** in the options restores that behavior.
-
-GIF, APNG, and WebP files are supported. Folders refresh every 30 seconds while the panel is visible; **Rescan** refreshes immediately. Images over 50 MB, empty files, and linked files or subfolders are skipped or rejected. Scans stop at 2,000 images, 20,000 directory entries, or 32 folder levels; choose smaller folders if a limit is reached. Missing folders and unreadable images show a message in the panel.
-
-The panel is off by default and ships without media. Files stay on your computer; folders belong to the machine running Tether, including when your terminal sessions use SSH or Coder. The panel does not affect terminal output, session status, or CLI input.
-
-### Pip sidebar pet
-
-Choose **View → Pip Sidebar Pet** to invite Pip into the sidebar. Pip is a small cable gremlin with a terminal face, a linked-cable badge, and a looped tether tail. Its colors follow your Tether theme. It is off by default and can live alongside the GIF panel. **Show Pip in the sidebar** in **Settings → Pip** is the same switch.
-
-- Pip follows your focused session in single, split, and Canvas layouts. It reacts to starting or working agents, input and permission waits, idle sessions, stopped sessions, and sessions that ended unexpectedly. A ready-for-input reaction means the agent is waiting for you; it does not certify that a task or test succeeded.
-- When a turn Pip watched from its start runs five minutes or longer, the ready reaction mentions how long it took. Pip also notices when the focused Claude or Codex session starts its first subagent or `codex exec` run; this follows **Show subagents in sidebar**, and OpenCode sessions have no child rows to notice.
-- When another session is waiting, the **waiting** button switches to it, prioritizing permission prompts. The button stays in the header while the panel is collapsed. While any session is blocked on a permission prompt, Pip stays alert until it is answered. Switching sessions quickly can make Pip dizzy. Click Pip, or focus it and press **Enter** or **Space**, to pet it.
-- Pip perks up and taps a tiny keyboard while you type in the focused terminal. Pressing **Enter** gets an occasional reaction; this signals a keypress, not proof that the CLI accepted a prompt. Keys, pasted text, and composed text count as typing; focus changes, mouse movement, and the terminal's own replies do not. Draft text is never collected for this animation.
-- **Quiet**, in Pip's header and in **Settings → Pip**, keeps the expressions and silences local and AI comments. **Settings → Pip** also lets you choose **Dry little gremlin** or **Cozy companion**, and turn ambient motion off. Your system's reduced-motion preference also stops animations and cursor tracking.
-- Routine comments appear at most once every 25 seconds. A session becoming ready or stopping can replace a routine comment, and a permission prompt or another session needing you always gets one. A comment stays for 12 seconds, or until what it describes is no longer true, then returns to a greeting. Petting gets an immediate response.
-- After 90 seconds without mouse, keyboard, or scroll activity in Tether, Pip takes a nap. Using the app wakes it, and so does a session that needs you. Pip does not nap while a permission prompt is pending.
-- Screen readers announce only comments about a session that needs you: a permission prompt, or another session waiting. Other comments, including AI quips, stay visible and silent.
-- **Operational nudges** in **Settings → Pip** is off by default. When on, Pip comments once when Vault sign-in is within 30 minutes of expiring, a Claude or Codex quota window passes 90%, a daily or weekly usage budget is crossed, or a Tether update is available. Each occurrence is mentioned once per launch, a nudge waits for the current comment to end, and several quota windows over the mark share one comment. Every nudge repeats an indicator the sidebar already shows; Pip is never the only place a warning appears. Nudges are local lines and are never sent to an AI quip backend. With **Quiet** on, Pip changes expression without the comment.
-- Preferences save immediately and persist across launches. Click **Pip** to collapse the panel, or **Hide Pip** to remove it. Reopen it from **View → Pip Sidebar Pet**. Collapsing it, hiding the sidebar, or minimizing the window suspends its timers and cursor tracking; reopening it does not replay missed reactions.
-
-Local reactions use session labels, focus, status metadata, and a text-free typing signal. They make no model or network requests and work with local, SSH, and Coder sessions. How accurately Pip reacts depends on that session's status detection. Pip never parses or alters terminal output.
-
-#### Optional AI quips
-
-- Choose a **Backend** under **AI quips** in **Settings → Pip** to get occasional generated comments: **Codex (ChatGPT sign-in)** uses your local Codex CLI, and **Claude (Claude subscription)** uses your local Claude Code. Either way the quip uses that subscription's allowance; API-key, proxy, and cloud-provider sign-ins are not used for Pip. **Off** keeps local quips only and remembers your last backend. AI quips are off by default. OpenCode is not supported as a quip backend, because `opencode run` gives no error and never exits when a model call fails.
-- The backend is always your explicit choice, not the focused session's CLI, because it decides which company receives the request. When you pick one, a status line shows its sign-in and model, or why it cannot be used. **Try a quip** asks for one immediately and shows the line, or the reason none came back, beside the button; it skips the gap between quips but counts toward the hourly limit. It needs Pip shown, expanded, and not on Quiet.
-- With Codex, Pip selects **GPT-6 Luna**, or **GPT-5.6 Luna** if the current model is absent from the installed CLI's catalog, with the lowest supported reasoning effort and standard speed. With Claude, Pip uses **Claude Haiku** at low effort and accepts a reply only if it was a single Haiku turn. Neither backend silently falls back to a larger model. If sign-in, model access, or the connection is unavailable, local quips continue.
-- Pip can ask for a quip when the focused session starts working, waits for input or a permission, finishes a turn (including a long one), or stops; when another session needs you; when you press **Enter**; and when it gets dizzy. Crashes, helpers joining, and operational nudges keep local lines.
-- Requests are limited to one every two minutes and twelve attempts per hour by default, including failures. **Quips per hour** (up to 2 to 30) and **Shortest gap between quips** (30 seconds to 30 minutes) change both limits. Tether enforces them outside the window, so a reload does not reset them, and a moment over a limit gets a local line instead. A moment that ends within a fraction of a second, before its request is sent, does not count. Each request is a fresh, temporary conversation. Quiet, collapse, hide, and minimize cancel pending requests; missed events are not replayed.
-- While a quip is on its way, the local line stays up rather than expiring under it. A quip that arrives gets its own 12 seconds; if none arrives, the local line keeps the rest of its time. A newer comment, or the end of what the line describes, discards a reply that is still pending.
-- By default Pip supplies only the event (for example, an input wait or Enter press) and chosen personality. Session labels, project paths, draft text, and terminal output are excluded from that context. Both backends run in Tether's neutral app directory rather than your project. Codex uses a temporary conversation with tools, hooks, apps, plugins, and MCP servers off. Claude runs one prompt with no tools, no MCP servers or skills, and none of your user, project, or local settings, so no hooks run (Tether's included); it saves no session, so nothing is added to your Claude history. Claude Code adds its own environment context, including your account email and that neutral folder.
-- Separately enable **Share submitted prompts** for specific jokes. Pip reads up to 400 characters of the latest available prompt submitted within the past five minutes from an already-attributed **local Claude or Codex transcript**, or from a **local OpenCode session's** own database, opened read-only, when native OpenCode usage has attributed that session. For OpenCode, only the text you typed counts: OpenCode's own reminders, attached files, and tool output are skipped. SSH and Coder sessions, Copilot, and Custom CLIs use activity only. Common credentials are scrubbed, but arbitrary private text may remain; enabling this sends that excerpt to the backend's company: OpenAI for Codex, Anthropic for Claude. Choosing another backend turns sharing off, so consent always names the current recipient. Pip does not collect draft keystrokes or inspect project files. Tether does not save excerpts or generated comments. Quips are not counted in Tether's usage totals: Codex quips are temporary conversations and Claude quips save no transcript.
-
 ## Terminal
 
 ### Default font size
@@ -290,6 +215,79 @@ Each profile has:
 - **Default** — one profile can be marked as default; it pre-selects in the New Session dialog
 
 When you pick a profile, env vars merge in this order: global defaults → environment → profile → session overrides. CLI flags concatenate in this order: per-tool global defaults → per-tool profile flags → session flags. The launch form lets you disable inherited flags individually.
+
+## CLI tools
+
+Pick the **Default tool**, then choose a tab under **Launch defaults** (Claude Code, Codex CLI, GitHub Copilot CLI or OpenCode) to edit that tool's defaults and flags. The tab of the default tool is marked **default**. The same native launch controls are available in the per-tool launch profile editor under **Sessions**. **Save** applies defaults to future sessions; running sessions keep their launch settings. Use **Manage CLI tools…** for version checks and updates.
+
+### Default CLI tool
+
+**Default tool** is the CLI preselected when you open the New Session dialog. Pick Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, or Custom. Custom also stores the binary name/path to prefill in the session form.
+
+### Default CLI flags (per tool)
+
+**Launch defaults** are command-line flags appended whenever a session of that CLI tool is launched. Separate presets are available for Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode. Tick **Common flags**, or type any other flag under **Other flags** and choose **Add flag**. A flag set through a guided field, such as Claude's model, is shown in that field only. Custom binaries accept flags in the New Session dialog; they do not have a preset tab here. Multi-token entries like `--permission-mode plan` are split on whitespace. Entries in `--flag=value` form are kept together. This is not a shell-style quoted-argument parser.
+
+### Claude Code and OpenCode
+
+Claude has a guided model field; OpenCode has model (`provider/model`) and agent fields. Enter identifiers supported by the installed CLI, or clear a field to use the CLI's own configuration. Controls update the corresponding native flags and preserve unrelated flags. Incomplete or combined manual presets must be resolved under **Other flags** before guided edits can apply. Tether does not edit these tools' native configuration or request account information. Claude status hooks are controlled under **Sessions → Advanced session options**; usage for every supported CLI remains under **Usage**.
+
+### Codex
+
+#### Launch controls
+
+Choose a default model, reasoning effort or native Codex profile for new Codex sessions. The same controls are available in a Tether launch profile's Codex flags editor. Tether launch profiles and native Codex profiles are separate: the former combines Tether environment/flag defaults, while the latter selects Codex's own profile through `--profile`.
+
+Inspect configuration to load the installed CLI's model and native-profile choices, or enter an identifier manually. Native profiles are discovered from `*.config.toml` files in the Codex home. Ambiguous manual flags are preserved and must be resolved in the flags editor before guided changes can apply. Saving defaults does not change an already-running session.
+
+#### Account and configuration
+
+**Load account usage** requests account-wide Codex statistics and quota windows. This is separate from the local API-equivalent estimates in [Usage & Quota](usage-quota.md). Fields the CLI or account cannot report stay unavailable.
+
+**Inspect configuration** reads selected effective settings from disk, with their source category. Choose global settings or a local Codex session's project context. This is not a running session's complete runtime configuration: launch overrides, native profiles and later CLI changes can differ. Remote project configuration cannot be inspected through the local CLI.
+
+Only selected settings and integration names are displayed. Tether does not expose raw config, credentials, hook commands, server URLs or environment values. Neither action runs automatically when Settings opens.
+
+#### Lifecycle visibility
+
+**Track Codex lifecycle hooks** is an experimental, explicit opt-in. It also requires **CLI status hooks** in Sessions and takes effect on the next Tether launch. Tether adds asynchronous observer hooks to the native Codex hooks file while preserving existing valid hooks. Malformed configuration is left untouched.
+
+Review and trust the installed commands using Codex's native `/hooks` flow when prompted. Tether does not bypass that review. Hook events provide session activity, permission waits, compaction and subagent metadata; they do not approve requests, alter tool results or modify terminal output. Missing or unsupported hooks leave their metadata unavailable. Local lifecycle installation does not install these additional hooks on remote hosts.
+
+The same hooks are what let Tether list `codex exec` runs that a local Claude Code session starts through its Bash tool as child rows of that session (see [Codex exec runs](sessions.md#codex-exec-runs)). That needs both this opt-in and Codex trusting Tether's hooks: approve them once through `/hooks` in a Codex session, because `codex exec` silently skips hooks that have not been trusted. Without both, no Codex exec rows are shown. Remote sessions get none either.
+
+#### Quota warning
+
+Set **Codex quota warning** to the percentage remaining at which you want an in-app notification. `0` disables it. **Subscription quota** under Usage must also be enabled. Only fresh successful observations can warn, and the provider reset time prevents repeated warnings across restarts.
+
+### CLI updates
+
+Open **File → CLI Tools…**, or **Settings → CLI tools → Manage CLI tools…**, to check
+versions and update **Codex CLI**, **Claude Code**, or **OpenCode**. Choose the local
+machine, an SSH environment, or a Coder workspace. A session's **Check / update CLI…**
+menu action preselects its launch environment, including PATH and CLI home variables.
+
+**Check version** shows the executable path and installed version in a dedicated
+terminal. **Update** runs `codex update`, `claude update`, or `opencode upgrade`, then
+runs the version check again. Native output and interactive prompts appear unchanged.
+Output tabs retain the executable path, version before, updater output, and version
+after separately, including on Windows where starting a command can clear its screen.
+
+Choose the update method that matches your installation. Older npm-installed Codex
+releases without `codex update` can use the npm option. Claude installations managed
+by Homebrew or WinGet need their package-manager option; `claude update` can report
+up to date without upgrading these installations. Tether does not infer the install
+method from terminal output or change the CLI's configuration. Tool updaters use
+existing settings; package-manager options use the indicated package or channel.
+
+Updates affect the selected installation and may apply to multiple conversations.
+Existing sessions keep running. Restart or resume them when ready to use the new
+version. On Windows, an updater can fail if a running session locks the executable;
+stop affected sessions and retry. **Cancel**, closing the dialog, or closing Tether
+stops the maintenance terminal. Interrupted updates may need to be retried.
+
+Maintenance terminals are temporary: they are not saved as conversations and do not
+install Tether status hooks or contribute session usage statistics.
 
 ## Notifications
 
@@ -398,49 +396,51 @@ Two buttons here — **Export as CSV…** and **Export as JSON…**. CSV is one 
 
 **Show usage quota in sidebar** is on by default. Tether can poll subscription quota and show the remaining budget in the sidebar footer. Claude quota reads Claude Code's saved access token without refreshing or modifying its sign-in, and shows as paused until Claude Code refreshes an expired token. Codex quota uses the supported Codex app-server interface instead of reading local auth tokens directly. Disable here if you're on metered API billing instead. See [Usage & Quota](usage-quota.md#quota-tracking).
 
-## CLI tools
+## Sidebar panels
 
-Pick the **Default tool**, then choose a tab under **Launch defaults** (Claude Code, Codex CLI, GitHub Copilot CLI or OpenCode) to edit that tool's defaults and flags. The tab of the default tool is marked **default**. The same native launch controls are available in the per-tool launch profile editor under **Sessions**. **Save** applies defaults to future sessions; running sessions keep their launch settings. Use **Manage CLI tools…** for version checks and updates.
+Turn the GIF panel and Pip on from the **View** menu. The GIF panel's options are in the panel itself. Pip's are in **Settings → Pip**, which the gear button in Pip's header opens. Both save immediately.
 
-### Default CLI tool
+### GIF panel
 
-**Default tool** is the CLI preselected when you open the New Session dialog. Pick Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, or Custom. Custom also stores the binary name/path to prefill in the session form.
+Choose **View → GIF Panel** to show an optional animated-image viewer above the sidebar footers, then **Add GIF folder** to select local folders. This is Tether's native version of GIF Panel for VS Code; installing the VS Code extension is not required.
 
-### Default CLI flags (per tool)
+- Use **Previous**, **Next**, or **Shuffle** to change images. **Rotate** starts automatic shuffling; **Pause** stops changing images (the current GIF keeps animating).
+- **Folders & options** lets you add or remove folders, include subfolders, choose **Fit panel** or **Original** size, and set a rotation interval from 1 to 60 seconds. Original-size images can be scrolled when they exceed the viewer.
+- Settings save immediately. Tether remembers the selected image, folders, panel visibility, collapse state, size mode, and rotation preference across launches.
+- Click the panel heading to collapse it, or **Hide GIF panel** to remove it from the sidebar. Reopen it from **View → GIF Panel**. Collapsing the panel, hiding the sidebar, or minimizing the window stops image loading and rotation until it is visible again.
+- With the system's reduced-motion preference enabled, images stay unloaded until you choose **Play GIFs**. **Stop animations** in the options restores that behavior.
 
-**Launch defaults** are command-line flags appended whenever a session of that CLI tool is launched. Separate presets are available for Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode. Tick **Common flags**, or type any other flag under **Other flags** and choose **Add flag**. A flag set through a guided field, such as Claude's model, is shown in that field only. Custom binaries accept flags in the New Session dialog; they do not have a preset tab here. Multi-token entries like `--permission-mode plan` are split on whitespace. Entries in `--flag=value` form are kept together. This is not a shell-style quoted-argument parser.
+GIF, APNG, and WebP files are supported. Folders refresh every 30 seconds while the panel is visible; **Rescan** refreshes immediately. Images over 50 MB, empty files, and linked files or subfolders are skipped or rejected. Scans stop at 2,000 images, 20,000 directory entries, or 32 folder levels; choose smaller folders if a limit is reached. Missing folders and unreadable images show a message in the panel.
 
-### Claude Code and OpenCode
+The panel is off by default and ships without media. Files stay on your computer; folders belong to the machine running Tether, including when your terminal sessions use SSH or Coder. The panel does not affect terminal output, session status, or CLI input.
 
-Claude has a guided model field; OpenCode has model (`provider/model`) and agent fields. Enter identifiers supported by the installed CLI, or clear a field to use the CLI's own configuration. Controls update the corresponding native flags and preserve unrelated flags. Incomplete or combined manual presets must be resolved under **Other flags** before guided edits can apply. Tether does not edit these tools' native configuration or request account information. Claude status hooks are controlled under **Sessions → Advanced session options**; usage for every supported CLI remains under **Usage**.
+### Pip sidebar pet
 
-### Codex
+Choose **View → Pip Sidebar Pet** to invite Pip into the sidebar. Pip is a small cable gremlin with a terminal face, a linked-cable badge, and a looped tether tail. Its colors follow your Tether theme. It is off by default and can live alongside the GIF panel. **Show Pip in the sidebar** in **Settings → Pip** is the same switch.
 
-#### Launch controls
+- Pip follows your focused session in single, split, and Canvas layouts. It reacts to starting or working agents, input and permission waits, idle sessions, stopped sessions, and sessions that ended unexpectedly. A ready-for-input reaction means the agent is waiting for you; it does not certify that a task or test succeeded.
+- When a turn Pip watched from its start runs five minutes or longer, the ready reaction mentions how long it took. Pip also notices when the focused Claude or Codex session starts its first subagent or `codex exec` run; this follows **Show subagents in sidebar**, and OpenCode sessions have no child rows to notice.
+- When another session is waiting, the **waiting** button switches to it, prioritizing permission prompts. The button stays in the header while the panel is collapsed. While any session is blocked on a permission prompt, Pip stays alert until it is answered. Switching sessions quickly can make Pip dizzy. Click Pip, or focus it and press **Enter** or **Space**, to pet it.
+- Pip perks up and taps a tiny keyboard while you type in the focused terminal. Pressing **Enter** gets an occasional reaction; this signals a keypress, not proof that the CLI accepted a prompt. Keys, pasted text, and composed text count as typing; focus changes, mouse movement, and the terminal's own replies do not. Draft text is never collected for this animation.
+- **Quiet**, in Pip's header and in **Settings → Pip**, keeps the expressions and silences local and AI comments. **Settings → Pip** also lets you choose **Dry little gremlin** or **Cozy companion**, and turn ambient motion off. Your system's reduced-motion preference also stops animations and cursor tracking.
+- Routine comments appear at most once every 25 seconds. A session becoming ready or stopping can replace a routine comment, and a permission prompt or another session needing you always gets one. A comment stays for 12 seconds, or until what it describes is no longer true, then returns to a greeting. Petting gets an immediate response.
+- After 90 seconds without mouse, keyboard, or scroll activity in Tether, Pip takes a nap. Using the app wakes it, and so does a session that needs you. Pip does not nap while a permission prompt is pending.
+- Screen readers announce only comments about a session that needs you: a permission prompt, or another session waiting. Other comments, including AI quips, stay visible and silent.
+- **Operational nudges** in **Settings → Pip** is off by default. When on, Pip comments once when Vault sign-in is within 30 minutes of expiring, a Claude or Codex quota window passes 90%, a daily or weekly usage budget is crossed, or a Tether update is available. Each occurrence is mentioned once per launch, a nudge waits for the current comment to end, and several quota windows over the mark share one comment. Every nudge repeats an indicator the sidebar already shows; Pip is never the only place a warning appears. Nudges are local lines and are never sent to an AI quip backend. With **Quiet** on, Pip changes expression without the comment.
+- Preferences save immediately and persist across launches. Click **Pip** to collapse the panel, or **Hide Pip** to remove it. Reopen it from **View → Pip Sidebar Pet**. Collapsing it, hiding the sidebar, or minimizing the window suspends its timers and cursor tracking; reopening it does not replay missed reactions.
 
-Choose a default model, reasoning effort or native Codex profile for new Codex sessions. The same controls are available in a Tether launch profile's Codex flags editor. Tether launch profiles and native Codex profiles are separate: the former combines Tether environment/flag defaults, while the latter selects Codex's own profile through `--profile`.
+Local reactions use session labels, focus, status metadata, and a text-free typing signal. They make no model or network requests and work with local, SSH, and Coder sessions. How accurately Pip reacts depends on that session's status detection. Pip never parses or alters terminal output.
 
-Inspect configuration to load the installed CLI's model and native-profile choices, or enter an identifier manually. Native profiles are discovered from `*.config.toml` files in the Codex home. Ambiguous manual flags are preserved and must be resolved in the flags editor before guided changes can apply. Saving defaults does not change an already-running session.
+#### Optional AI quips
 
-#### Account and configuration
-
-**Load account usage** requests account-wide Codex statistics and quota windows. This is separate from the local API-equivalent estimates in [Usage & Quota](usage-quota.md). Fields the CLI or account cannot report stay unavailable.
-
-**Inspect configuration** reads selected effective settings from disk, with their source category. Choose global settings or a local Codex session's project context. This is not a running session's complete runtime configuration: launch overrides, native profiles and later CLI changes can differ. Remote project configuration cannot be inspected through the local CLI.
-
-Only selected settings and integration names are displayed. Tether does not expose raw config, credentials, hook commands, server URLs or environment values. Neither action runs automatically when Settings opens.
-
-#### Lifecycle visibility
-
-**Track Codex lifecycle hooks** is an experimental, explicit opt-in. It also requires **CLI status hooks** in Sessions and takes effect on the next Tether launch. Tether adds asynchronous observer hooks to the native Codex hooks file while preserving existing valid hooks. Malformed configuration is left untouched.
-
-Review and trust the installed commands using Codex's native `/hooks` flow when prompted. Tether does not bypass that review. Hook events provide session activity, permission waits, compaction and subagent metadata; they do not approve requests, alter tool results or modify terminal output. Missing or unsupported hooks leave their metadata unavailable. Local lifecycle installation does not install these additional hooks on remote hosts.
-
-The same hooks are what let Tether list `codex exec` runs that a local Claude Code session starts through its Bash tool as child rows of that session (see [Codex exec runs](sessions.md#codex-exec-runs)). That needs both this opt-in and Codex trusting Tether's hooks: approve them once through `/hooks` in a Codex session, because `codex exec` silently skips hooks that have not been trusted. Without both, no Codex exec rows are shown. Remote sessions get none either.
-
-#### Quota warning
-
-Set **Codex quota warning** to the percentage remaining at which you want an in-app notification. `0` disables it. **Subscription quota** under Usage must also be enabled. Only fresh successful observations can warn, and the provider reset time prevents repeated warnings across restarts.
+- Choose a **Backend** under **AI quips** in **Settings → Pip** to get occasional generated comments: **Codex (ChatGPT sign-in)** uses your local Codex CLI, and **Claude (Claude subscription)** uses your local Claude Code. Either way the quip uses that subscription's allowance; API-key, proxy, and cloud-provider sign-ins are not used for Pip. **Off** keeps local quips only and remembers your last backend. AI quips are off by default. OpenCode is not supported as a quip backend, because `opencode run` gives no error and never exits when a model call fails.
+- The backend is always your explicit choice, not the focused session's CLI, because it decides which company receives the request. When you pick one, a status line shows its sign-in and model, or why it cannot be used. **Try a quip** asks for one immediately and shows the line, or the reason none came back, beside the button; it skips the gap between quips but counts toward the hourly limit. It needs Pip shown, expanded, and not on Quiet.
+- With Codex, Pip selects **GPT-6 Luna**, or **GPT-5.6 Luna** if the current model is absent from the installed CLI's catalog, with the lowest supported reasoning effort and standard speed. With Claude, Pip uses **Claude Haiku** at low effort and accepts a reply only if it was a single Haiku turn. Neither backend silently falls back to a larger model. If sign-in, model access, or the connection is unavailable, local quips continue.
+- Pip can ask for a quip when the focused session starts working, waits for input or a permission, finishes a turn (including a long one), or stops; when another session needs you; when you press **Enter**; and when it gets dizzy. Crashes, helpers joining, and operational nudges keep local lines.
+- Requests are limited to one every two minutes and twelve attempts per hour by default, including failures. **Quips per hour** (up to 2 to 30) and **Shortest gap between quips** (30 seconds to 30 minutes) change both limits. Tether enforces them outside the window, so a reload does not reset them, and a moment over a limit gets a local line instead. A moment that ends within a fraction of a second, before its request is sent, does not count. Each request is a fresh, temporary conversation. Quiet, collapse, hide, and minimize cancel pending requests; missed events are not replayed.
+- While a quip is on its way, the local line stays up rather than expiring under it. A quip that arrives gets its own 12 seconds; if none arrives, the local line keeps the rest of its time. A newer comment, or the end of what the line describes, discards a reply that is still pending.
+- By default Pip supplies only the event (for example, an input wait or Enter press) and chosen personality. Session labels, project paths, draft text, and terminal output are excluded from that context. Both backends run in Tether's neutral app directory rather than your project. Codex uses a temporary conversation with tools, hooks, apps, plugins, and MCP servers off. Claude runs one prompt with no tools, no MCP servers or skills, and none of your user, project, or local settings, so no hooks run (Tether's included); it saves no session, so nothing is added to your Claude history. Claude Code adds its own environment context, including your account email and that neutral folder.
+- Separately enable **Share submitted prompts** for specific jokes. Pip reads up to 400 characters of the latest available prompt submitted within the past five minutes from an already-attributed **local Claude or Codex transcript**, or from a **local OpenCode session's** own database, opened read-only, when native OpenCode usage has attributed that session. For OpenCode, only the text you typed counts: OpenCode's own reminders, attached files, and tool output are skipped. SSH and Coder sessions, Copilot, and Custom CLIs use activity only. Common credentials are scrubbed, but arbitrary private text may remain; enabling this sends that excerpt to the backend's company: OpenAI for Codex, Anthropic for Claude. Choosing another backend turns sharing off, so consent always names the current recipient. Pip does not collect draft keystrokes or inspect project files. Tether does not save excerpts or generated comments. Quips are not counted in Tether's usage totals: Codex quips are temporary conversations and Claude quips save no transcript.
 
 ## Data Storage
 
