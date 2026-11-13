@@ -15,6 +15,7 @@ import {
   getClaudeProjectsRoot,
   getProjectDir,
   listTranscripts,
+  readTranscriptCwd,
   transcriptExists,
   transcriptPath,
 } from './transcripts';
@@ -91,6 +92,26 @@ describe('Claude transcript path boundaries', () => {
       expect(transcriptExists('/repo', sessionId)).toBe(false);
     },
   );
+
+  it('reads the working directory from the first transcript entry that carries one', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-transcript-cwd-'));
+    try {
+      const file = path.join(dir, 'session.jsonl');
+      fs.writeFileSync(file, [
+        JSON.stringify({ type: 'mode', mode: 'normal' }),
+        JSON.stringify({ type: 'user', message: { content: 'the "cwd" is not here' } }),
+        JSON.stringify({ type: 'user', cwd: 'C:\\repo\\tether', message: { content: 'hi' } }),
+        JSON.stringify({ type: 'user', cwd: '/elsewhere' }),
+        '{"type":"user","cwd":"/cut-off',
+      ].join('\n'));
+      expect(readTranscriptCwd(file)).toBe('C:\\repo\\tether');
+      fs.writeFileSync(file, JSON.stringify({ type: 'summary', summary: 'no cwd' }) + '\n');
+      expect(readTranscriptCwd(file)).toBeNull();
+      expect(readTranscriptCwd(path.join(dir, 'missing.jsonl'))).toBeNull();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it('encodes every character other than a letter or digit, as Claude names project folders', () => {
     expect(encodeCwdForClaude('/opt/nkp/nkp-v2.17.1/cli')).toBe('-opt-nkp-nkp-v2-17-1-cli');

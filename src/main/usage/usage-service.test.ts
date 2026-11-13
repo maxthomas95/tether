@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   } as DbData,
   saveDb: vi.fn(),
   scanAllTranscripts: vi.fn(() => []),
+  readTranscriptCwd: vi.fn((): string | null => null),
   scanAllCodexTranscripts: vi.fn(() => []),
   readCrushSessions: vi.fn(() => []),
 }));
@@ -41,6 +42,7 @@ vi.mock('../db/database', () => ({
 vi.mock('../claude/transcripts', () => ({
   transcriptPath: (workingDir: string, sessionId: string) => `${workingDir}/${sessionId}.jsonl`,
   scanAllTranscripts: mocks.scanAllTranscripts,
+  readTranscriptCwd: mocks.readTranscriptCwd,
 }));
 
 vi.mock('../codex/transcripts', () => ({
@@ -61,6 +63,8 @@ beforeEach(() => {
   mocks.db.usageSummaries = [];
   mocks.saveDb.mockClear();
   mocks.scanAllTranscripts.mockReturnValue([]);
+  mocks.readTranscriptCwd.mockReset();
+  mocks.readTranscriptCwd.mockReturnValue(null);
   mocks.scanAllCodexTranscripts.mockReturnValue([]);
   mocks.readCrushSessions.mockReturnValue([]);
 });
@@ -534,5 +538,57 @@ describe('usage-service helpers', () => {
 
     expect(service.getAll().sessions['claude-cwd'].workingDir).toBe(realDir);
     expect(mocks.db.usageSummaries[0].workingDir).toBe(realDir);
+  });
+
+  it('names a backfilled Claude session by the cwd in its transcript, not the encoded folder', () => {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const os = require('node:os') as typeof import('node:os');
+    const path = require('node:path') as typeof import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-usage-cwd-'));
+    const filePath = path.join(dir, 'session.jsonl');
+    fs.writeFileSync(filePath, '');
+    mocks.scanAllTranscripts.mockReturnValue([{ sessionId: 'claude-named', projectDirName: 'C--repo-tether', filePath, size: 0, mtimeMs: Date.now() }]);
+    mocks.readTranscriptCwd.mockReturnValue('C:\\repo\\tether');
+
+    const service = new UsageService();
+    (service as unknown as { backfillFromDisk: () => void }).backfillFromDisk();
+    service.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    expect(service.getAll().sessions['claude-named'].workingDir).toBe('C:\\repo\\tether');
+  });
+
+  it('relabels a summary saved under the encoded folder name with one database write', () => {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const os = require('node:os') as typeof import('node:os');
+    const path = require('node:path') as typeof import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tether-usage-relabel-'));
+    const scanned = ['old-a', 'old-b'].map(sessionId => {
+      const filePath = path.join(dir, `${sessionId}.jsonl`);
+      fs.writeFileSync(filePath, '');
+      return { sessionId, projectDirName: 'C--repo-tether', filePath, size: 0, mtimeMs: Date.now() };
+    });
+    mocks.scanAllTranscripts.mockReturnValue(scanned);
+
+    // First pass stands in for an older build: no cwd was read, so both carry the folder name.
+    const service = new UsageService();
+    const backfill = () => (service as unknown as { backfillFromDisk: () => void }).backfillFromDisk();
+    backfill();
+    expect(service.getAll().sessions['old-a'].workingDir).toBe('C--repo-tether');
+
+    mocks.readTranscriptCwd.mockReset();
+    mocks.readTranscriptCwd.mockImplementation((file: string) => file.includes('old-a') ? '/repo/tether' : null);
+    mocks.saveDb.mockClear();
+    backfill();
+    expect(mocks.saveDb).toHaveBeenCalledTimes(1);
+    backfill();
+    service.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    expect(service.getAll().sessions['old-a'].workingDir).toBe('/repo/tether');
+    expect(service.getAll().sessions['old-b'].workingDir).toBe('C--repo-tether');
+    // old-b has no cwd in its transcript: looked up once, not on every rescan.
+    expect(mocks.readTranscriptCwd.mock.calls.filter(([file]) => String(file).includes('old-b'))).toHaveLength(1);
+    expect(mocks.saveDb).toHaveBeenCalledTimes(1);
   });
 });

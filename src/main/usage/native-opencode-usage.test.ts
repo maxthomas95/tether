@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('electron', () => ({ app: { getPath: () => '' } }));
 vi.mock('../db/database', () => ({ getDb: () => mocks.db, saveDb: mocks.save }));
 vi.mock('../logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn() }) }));
-vi.mock('../claude/transcripts', () => ({ transcriptPath: vi.fn(), scanAllTranscripts: () => [] }));
+vi.mock('../claude/transcripts', () => ({ transcriptPath: vi.fn(), scanAllTranscripts: () => [], readTranscriptCwd: () => null }));
 vi.mock('../codex/transcripts', () => ({ scanAllCodexTranscripts: () => [] }));
 vi.mock('../opencode/usage-reader', () => ({ readCrushSessions: mocks.crush }));
 vi.mock('../cli/metadata-command', () => ({ runCliMetadata: mocks.command }));

@@ -9,7 +9,7 @@ vi.mock('../cli/metadata-command', () => ({ runCliMetadata: async () => ({ ok: f
 vi.mock('../db/database');
 vi.mock('../logger', () => ({ createLogger: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn() }) }));
 vi.mock('./remote-command', () => ({ connectRemoteUsage: vi.fn() }));
-vi.mock('../claude/transcripts', () => ({ transcriptPath: vi.fn(), scanAllTranscripts: () => [] }));
+vi.mock('../claude/transcripts', () => ({ transcriptPath: vi.fn(), scanAllTranscripts: () => [], readTranscriptCwd: () => null }));
 vi.mock('../codex/transcripts', () => ({ scanAllCodexTranscripts: () => [] }));
 vi.mock('../opencode/usage-reader', () => ({ readCrushSessions: () => [] }));
 

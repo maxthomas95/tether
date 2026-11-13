@@ -7,6 +7,7 @@ import {
   buildUsageExplorer,
   cacheReadRatio,
   createDefaultUsageExplorerFilters,
+  projectDisplayName,
   type UsageDatePreset,
   type UsageExplorerFilters,
   type UsageExplorerSessionRow,
@@ -71,7 +72,7 @@ function SummaryTile({ label, value, meta }: SummaryTileProps) {
 
 interface FilterGroupProps {
   label: string;
-  options: Array<{ value: string; label: string }>;
+  options: Array<{ value: string; label: string; title?: string }>;
   selected: string[];
   onToggle: (value: string) => void;
 }
@@ -83,7 +84,7 @@ function FilterGroup({ label, options, selected, onToggle }: FilterGroupProps) {
       <legend>{label}</legend>
       <div className="usage-explorer-filter__choices">
         {options.map(option => (
-          <label key={option.value} className="usage-explorer-check">
+          <label key={option.value} className="usage-explorer-check" title={option.title}>
             <input
               type="checkbox"
               checked={selected.includes(option.value)}
@@ -127,7 +128,7 @@ function SessionRow({ row, expanded, onToggle }: SessionRowProps) {
         </td>
         <td>{cliToolName(row.cliTool)}</td>
         <td>{row.environmentLabel}</td>
-        <td>{row.project}</td>
+        <td title={row.project}>{projectDisplayName(row.project)}</td>
         <td>{row.lastDate ?? 'Unknown'}</td>
         <td className="usage-explorer-number">{formatTokens(row.tokens)}</td>
         <td className="usage-explorer-number">{formatCost(row.cost)}</td>
@@ -320,7 +321,7 @@ export function UsageHistoryDialog({ isOpen, onClose }: UsageHistoryDialogProps)
 
           <div className="usage-explorer-filters">
             <FilterGroup label="CLI" options={explorer.options.cliTools.map(option => ({ ...option, label: cliToolName(option.value) }))} selected={filters.cliTools} onToggle={value => setFilterList('cliTools', value as CliToolId)} />
-            <FilterGroup label="Project" options={explorer.options.projects} selected={filters.projects} onToggle={value => setFilterList('projects', value)} />
+            <FilterGroup label="Project" options={explorer.options.projects.map(option => ({ ...option, title: option.value }))} selected={filters.projects} onToggle={value => setFilterList('projects', value)} />
             <FilterGroup label="Environment" options={explorer.options.environments} selected={filters.environments} onToggle={value => setFilterList('environments', value)} />
             <FilterGroup label="Model" options={explorer.options.models} selected={filters.models} onToggle={value => setFilterList('models', value)} />
           </div>

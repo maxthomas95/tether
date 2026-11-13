@@ -65,7 +65,7 @@ describe('usage history interactions', () => {
   it('filters each dimension, toggles filters off, and restores the default range', async () => {
     await render();
     await click(button(view.container, 'All time'));
-    for (const [legend, option] of [['CLI', 'Codex CLI'], ['Project', '/alpha'], ['Environment', 'Local'], ['Model', 'gpt-5']]) {
+    for (const [legend, option] of [['CLI', 'Codex CLI'], ['Project', 'alpha'], ['Environment', 'Local'], ['Model', 'gpt-5']]) {
       const group = [...view.container.querySelectorAll('fieldset')].find(field => field.querySelector('legend')?.textContent === legend)!;
       const checkbox = [...group.querySelectorAll('label')].find(label => label.textContent === option)!.querySelector('input')!;
       await click(checkbox);

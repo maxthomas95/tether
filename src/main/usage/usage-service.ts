@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import path from 'node:path';
 import { createLogger } from '../logger';
-import { transcriptPath, scanAllTranscripts } from '../claude/transcripts';
+import { transcriptPath, scanAllTranscripts, readTranscriptCwd } from '../claude/transcripts';
 import { scanAllCodexTranscripts } from '../codex/transcripts';
 import { parseJsonlFile, parseClaudeUsageText, type ParsedMessage } from './jsonl-parser';
 import { parseCodexJsonl, parseCodexUsageText, type CodexTokenUsageCounters, type CodexRequestUsageCheckpoint } from './codex-jsonl-parser';
@@ -307,6 +307,8 @@ export class UsageService {
   private nativeGeneration = 0;
   private nativeRevision = 0;
   private stopped = false;
+  /** Claude sessions whose transcript head has no `cwd`, so the lookup is not repeated every rescan. */
+  private readonly unresolvedWorkingDirs = new Set<string>();
   private backfillTask: ReturnType<typeof setImmediate> | null = null;
 
   onUpdate(cb: (info: UsageInfo) => void): void {
@@ -359,6 +361,24 @@ export class UsageService {
   }
 
   /**
+   * Summaries saved before transcripts were read for their `cwd` carry the encoded project folder
+   * name ("C--repo-tether") as the working directory. Replace it with the real path, once per run.
+   */
+  private resolveEncodedWorkingDir(session: TrackedSession, projectDirName: string): boolean {
+    if (session.workingDir !== projectDirName || this.unresolvedWorkingDirs.has(session.sessionId)) return false;
+    const cwd = readTranscriptCwd(session.filePath);
+    if (!cwd) {
+      this.unresolvedWorkingDirs.add(session.sessionId);
+      return false;
+    }
+    session.workingDir = cwd;
+    session.usage.workingDir = cwd;
+    const saved = getDb().usageSummaries.find(summary => summary.sessionId === session.sessionId);
+    if (saved) saved.workingDir = cwd;
+    return true;
+  }
+
+  /**
    * Scan ~/.claude/projects/ for every JSONL transcript, and parse any new
    * files or any appends to files we've already seen. Only token counts,
    * model names, and timestamps are persisted — prompts and responses are
@@ -379,6 +399,7 @@ export class UsageService {
 
     let newSessions = 0;
     let updatedSessions = 0;
+    let relabelled = 0;
 
     for (const d of discovered) {
       const existing = this.tracked.get(d.sessionId);
@@ -387,7 +408,7 @@ export class UsageService {
         const session: TrackedSession = {
           sessionId: d.sessionId,
           cliTool: 'claude',
-          workingDir: d.projectDirName,
+          workingDir: readTranscriptCwd(d.filePath) ?? d.projectDirName,
           filePath: d.filePath,
           watching: false,
           debounceTimer: null,
@@ -399,6 +420,7 @@ export class UsageService {
         continue;
       }
       existing.filePath = d.filePath;
+      if (this.resolveEncodedWorkingDir(existing, d.projectDirName)) relabelled++;
       if (!existing.watching) this.startWatching(existing);
       if (needsTrackedUsageReparse(existing.usage, existing.filePath)) {
         this.reparseSessionPreservingLegacy(existing);
@@ -415,6 +437,9 @@ export class UsageService {
         updatedSessions++;
       }
     }
+
+    // One write for the whole pass: a first run after upgrading can relabel every saved summary.
+    if (relabelled > 0) saveDb();
 
     // 1b. Backfill Codex transcripts (JSONL with event_msg/token_count lines).
     let codexDiscovered: ReturnType<typeof scanAllCodexTranscripts> = [];
@@ -534,7 +559,7 @@ export class UsageService {
       }
     }
 
-    if (newSessions > 0 || updatedSessions > 0) {
+    if (newSessions > 0 || updatedSessions > 0 || relabelled > 0) {
       log.info('Transcript scan complete', {
         total: discovered.length + codexDiscovered.length + crushSessions.length,
         newSessions,

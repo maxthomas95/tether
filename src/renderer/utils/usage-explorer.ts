@@ -266,8 +266,37 @@ function inRange(date: string | null, range: UsageExplorerResult['dateRange']): 
   return !!range.startDate && !!range.endDate && date >= range.startDate && date <= range.endDate;
 }
 
+const UNKNOWN_PROJECT = 'Unknown project';
+
 function sessionProject(session: SessionUsage): string {
-  return session.workingDir?.trim() || 'Unknown project';
+  return session.workingDir?.trim() || UNKNOWN_PROJECT;
+}
+
+function pathSegments(project: string): string[] {
+  return project.split(/[\\/]/).filter(Boolean);
+}
+
+/** Folder name for a project path: `C:\repo\tether` reads as `tether`. The full path stays the filter value. */
+export function projectDisplayName(project: string): string {
+  const segments = pathSegments(project);
+  return segments.length > 0 ? segments[segments.length - 1] : project;
+}
+
+/** Folder names for the filter list, with the parent folder added where two projects share a name. */
+function projectOptions(projects: string[]): UsageExplorerOption[] {
+  const counts = new Map<string, number>();
+  for (const project of projects) {
+    const name = projectDisplayName(project).toLowerCase();
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return projects
+    .map(value => {
+      const name = projectDisplayName(value);
+      const segments = pathSegments(value);
+      const shared = (counts.get(name.toLowerCase()) ?? 0) > 1 && segments.length > 1;
+      return { value, label: shared ? `${segments[segments.length - 2]}/${name}` : name };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function snapshotDate(session: SessionUsage): string | null {
@@ -479,7 +508,7 @@ function optionsFrom(usage: UsageInfo | null, environments: ReadonlyArray<Enviro
   const envIds = new Set(sessions.map(session => session.environmentId ?? 'unattributed'));
   return {
     cliTools: cliTools.map(value => ({ value, label: value })),
-    projects: projects.map(value => ({ value, label: value })),
+    projects: projectOptions(projects),
     environments: Array.from(envIds).sort((a, b) => a.localeCompare(b)).map(value => ({
       value,
       label: value === 'unattributed' ? 'Unattributed' : environments.find(env => env.id === value)?.name ?? value,

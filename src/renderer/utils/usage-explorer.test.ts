@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CliToolId, SessionUsage, UsageInfo } from '../../shared/types';
-import { buildUsageExplorer, cacheReadRatio, createDefaultUsageExplorerFilters, type UsageExplorerFilters } from './usage-explorer';
+import { buildUsageExplorer, cacheReadRatio, createDefaultUsageExplorerFilters, projectDisplayName, type UsageExplorerFilters } from './usage-explorer';
 
 function model(model: string, inputTokens: number, outputTokens: number, cost: number, cacheReadTokens = 0, reasoningTokens = 0, cacheCreationTokens = 0) {
   return {
@@ -69,6 +69,27 @@ function build(input: UsageInfo, filterOverrides: Partial<UsageExplorerFilters> 
 }
 
 describe('buildUsageExplorer', () => {
+  it('names projects by folder and adds the parent only where two folders share a name', () => {
+    const result = build(usage([
+      session({ sessionId: 'a', workingDir: 'C:\\repo\\tether' }),
+      session({ sessionId: 'b', workingDir: '/home/max/work/api' }),
+      session({ sessionId: 'c', workingDir: '/home/max/play/api/' }),
+      session({ sessionId: 'd', workingDir: 'C--repo-legacy' }),
+      session({ sessionId: 'e' }),
+    ]), { datePreset: 'all' });
+
+    expect(result.options.projects).toEqual([
+      { value: 'C--repo-legacy', label: 'C--repo-legacy' },
+      { value: '/home/max/play/api/', label: 'play/api' },
+      { value: 'C:\\repo\\tether', label: 'tether' },
+      { value: 'Unknown project', label: 'Unknown project' },
+      { value: '/home/max/work/api', label: 'work/api' },
+    ]);
+    expect(projectDisplayName('C:\\repo\\tether')).toBe('tether');
+    // The filter value is still the whole path.
+    expect(build(usage([session({ sessionId: 'a', workingDir: 'C:\\repo\\tether' })]), { datePreset: 'all', projects: ['C:\\repo\\tether'] }).sessions).toHaveLength(1);
+  });
+
   it('uses UTC date boundaries for today', () => {
     const result = build(usage([
       session({
