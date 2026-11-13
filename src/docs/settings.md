@@ -400,19 +400,19 @@ Two buttons here — **Export as CSV…** and **Export as JSON…**. CSV is one 
 
 ## CLI tools
 
-Select Claude Code, Codex CLI, OpenCode or GitHub Copilot CLI to edit that tool's defaults and flags. The same native launch controls are available in the per-tool launch profile editor under **Sessions**. **Save** applies defaults to future sessions; running sessions keep their launch settings. Use **Manage CLI tools…** for version checks and updates.
+Pick the **Default tool**, then choose a tab under **Launch defaults** (Claude Code, Codex CLI, GitHub Copilot CLI or OpenCode) to edit that tool's defaults and flags. The tab of the default tool is marked **default**. The same native launch controls are available in the per-tool launch profile editor under **Sessions**. **Save** applies defaults to future sessions; running sessions keep their launch settings. Use **Manage CLI tools…** for version checks and updates.
 
 ### Default CLI tool
 
-The CLI tool preselected when you open the New Session dialog. Pick Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, or Custom. Custom also stores the binary name/path to prefill in the session form.
+**Default tool** is the CLI preselected when you open the New Session dialog. Pick Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, or Custom. Custom also stores the binary name/path to prefill in the session form.
 
 ### Default CLI flags (per tool)
 
-Default command-line flags appended whenever a session of that CLI tool is launched. Separate presets are available for Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode. Use **Add Flag** for additional flags for the selected tool. Custom binaries accept flags in the New Session dialog; they do not have a preset tab here. Multi-token entries like `--permission-mode plan` are split on whitespace. Entries in `--flag=value` form are kept together. This is not a shell-style quoted-argument parser.
+**Launch defaults** are command-line flags appended whenever a session of that CLI tool is launched. Separate presets are available for Claude Code, Codex CLI, GitHub Copilot CLI, and OpenCode. Tick **Common flags**, or type any other flag under **Other flags** and choose **Add flag**. A flag set through a guided field, such as Claude's model, is shown in that field only. Custom binaries accept flags in the New Session dialog; they do not have a preset tab here. Multi-token entries like `--permission-mode plan` are split on whitespace. Entries in `--flag=value` form are kept together. This is not a shell-style quoted-argument parser.
 
 ### Claude Code and OpenCode
 
-Claude has a guided model field; OpenCode has model (`provider/model`) and agent fields. Enter identifiers supported by the installed CLI, or clear a field to use the CLI's own configuration. Controls update the corresponding native flags and preserve unrelated flags. Incomplete or combined manual presets must be resolved in **Default CLI Flags** before guided edits can apply. Tether does not edit these tools' native configuration or request account information. Claude status hooks are controlled under **Sessions → Advanced session options**; usage for every supported CLI remains under **Usage**.
+Claude has a guided model field; OpenCode has model (`provider/model`) and agent fields. Enter identifiers supported by the installed CLI, or clear a field to use the CLI's own configuration. Controls update the corresponding native flags and preserve unrelated flags. Incomplete or combined manual presets must be resolved under **Other flags** before guided edits can apply. Tether does not edit these tools' native configuration or request account information. Claude status hooks are controlled under **Sessions → Advanced session options**; usage for every supported CLI remains under **Usage**.
 
 ### Codex
 

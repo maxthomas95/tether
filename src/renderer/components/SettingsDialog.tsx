@@ -13,7 +13,7 @@ import { suggestVaultPath, VAULT_REF_PREFIX } from '../utils/vault-path';
 const isVaultRef = (v: string): boolean => v.startsWith(VAULT_REF_PREFIX);
 import type { GitProviderInfo, GitProviderType, LaunchProfileInfo, VaultConfig, VaultStatus, CliToolId, KnownHostInfo, UsageExportFormat, NotificationPrefs, JobsStatus, JobsSettings, SessionInfo } from '../../shared/types';
 import { DEFAULT_NOTIFICATION_PREFS } from '../../shared/types';
-import { CLI_TOOL_REGISTRY } from '../../shared/cli-tools';
+import { CLI_TOOL_REGISTRY, readCliLaunchOption } from '../../shared/cli-tools';
 import { KeybindingsEditor } from './KeybindingsEditor';
 import { PipSettingsSection, type PipSettingsControl } from './PipSettingsSection';
 import { HelpAnchor } from './HelpAnchor';
@@ -648,7 +648,10 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
   const toolDef = CLI_TOOL_REGISTRY[flagTool];
   const commonFlags = toolDef?.commonFlags || [];
   const commonFlagSet = new Set(commonFlags.map(f => f.flag));
-  const extraFlags = currentToolFlags.filter(f => !commonFlagSet.has(f));
+  // A flag the guided fields own (for example `--model opus`) is edited there, not listed again as a chip.
+  const guidedOptions = toolDef?.launchOptions ?? [];
+  const extraFlags = currentToolFlags.filter(f => !commonFlagSet.has(f)
+    && !guidedOptions.some(option => readCliLaunchOption([f], option) !== ''));
 
   return (
     <div className="dialog-overlay">
@@ -1267,18 +1270,10 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
           {activeSection === 'cli-tools' && matchingSections.length > 0 && (
             <>
               <SectionHeader section="cli-tools" />
-          {onOpenCliMaintenance && <div className="form-group">
-            <div className="form-label">CLI updates</div>
-            <p className="form-hint">Check versions and update Codex, Claude Code, or OpenCode on your local machine, an SSH host, or a Coder workspace.</p>
-            <button className="form-btn" onClick={onOpenCliMaintenance}>Manage CLI tools…</button>
-          </div>}
-          <div className="form-group" style={{ marginTop: 20 }}>
-            <label className="form-label" htmlFor={`${settingsId}-default-cli-tool`} style={{ fontSize: 14, marginBottom: 8 }}>
-              Default CLI Tool
+          <div className="form-group">
+            <label className="form-label settings-subheading" htmlFor={`${settingsId}-default-cli-tool`}>
+              Default tool
             </label>
-            <p className="form-hint" style={{ marginBottom: 8 }}>
-              Preselected when you open the New Session dialog. You can still change it per session.
-            </p>
             <select
               id={`${settingsId}-default-cli-tool`}
               className="form-input"
@@ -1300,23 +1295,26 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
                 style={{ marginTop: 8 }}
               />
             )}
+            <p className="form-hint">
+              Preselected when you open the New Session dialog. You can still change it per session.
+            </p>
           </div>
 
-          <div className="form-group" style={{ marginTop: 20 }}>
-            <div className="form-label" style={{ fontSize: 14, marginBottom: 8 }}>
-              Default CLI Flags
-            </div>
-            <p className="form-hint" style={{ marginBottom: 8 }}>
-              Applied to sessions using the selected CLI tool.
+          <div className="form-group cli-tool-defaults">
+            <div className="form-label settings-subheading">Launch defaults</div>
+            <p className="form-hint">
+              Added to every new session of the selected tool. Launch profiles and individual sessions can add their own on top.
             </p>
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
+            <div className="cli-tool-tabs">
               {FLAG_TOOLS.map(id => (
                 <button
                   key={id}
-                  className={`form-btn${flagTool === id ? ' form-btn--primary' : ''}`}
-                  style={{ fontSize: 12, padding: '3px 10px' }}
+                  type="button"
+                  className={`cli-tool-tab${flagTool === id ? ' cli-tool-tab--active' : ''}`}
                   aria-pressed={flagTool === id}
+                  data-default={defaultCliTool === id || undefined}
+                  title={defaultCliTool === id ? `${CLI_TOOL_REGISTRY[id].displayName} is the default tool` : undefined}
                   onClick={() => { setFlagTool(id); setCustomFlag(''); }}
                 >
                   {CLI_TOOL_REGISTRY[id].displayName}
@@ -1324,6 +1322,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
               ))}
             </div>
 
+            <div className="cli-tool-panel">
             <CliLaunchControls
               key={flagTool}
               tool={flagTool}
@@ -1333,44 +1332,51 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
             />
             {loaded && (
               <>
-                {commonFlags.length > 0 ? commonFlags.map(({ flag, label }) => (
-                  <label key={flag} className="form-radio-label" style={{ marginBottom: 4 }}>
-                    <input
-                      type="checkbox"
-                      checked={currentToolFlags.includes(flag)}
-                      onChange={() => toggleFlag(flag)}
-                    />
-                    <code className="cli-flag-code">{flag}</code>
-                    <span className="form-hint" style={{ display: 'inline', marginLeft: 6 }}>{label}</span>
-                  </label>
-                )) : (
-                  <p className="form-hint" style={{ marginBottom: 8 }}>No common flags defined for {toolDef?.displayName || flagTool}.</p>
+                <div className="form-label">Common flags</div>
+                {commonFlags.length > 0 ? (
+                  <div className="cli-flag-list">
+                    {commonFlags.map(({ flag, label }) => (
+                      <label key={flag} className="cli-flag-option">
+                        <input
+                          type="checkbox"
+                          checked={currentToolFlags.includes(flag)}
+                          onChange={() => toggleFlag(flag)}
+                        />
+                        <code className="cli-flag-code">{flag}</code>
+                        <span className="cli-flag-option-label">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="form-hint">No common flags defined for {toolDef?.displayName || flagTool}.</p>
                 )}
 
+                <div className="form-label" style={{ marginTop: 14 }}>Other flags</div>
                 {extraFlags.length > 0 && (
-                  <div style={{ marginTop: 8 }}>
+                  <div className="cli-flag-chips">
                     {extraFlags.map(flag => (
                       <div key={flag} className="cli-flag-custom">
                         <code className="cli-flag-code">{flag}</code>
-                        <button className="env-editor-btn env-editor-btn--remove" onClick={() => removeFlag(flag)}>&times;</button>
+                        <button type="button" className="env-editor-btn env-editor-btn--remove" aria-label={`Remove ${flag}`} onClick={() => removeFlag(flag)}>&times;</button>
                       </div>
                     ))}
                   </div>
                 )}
-
-                <div className="form-row" style={{ marginTop: 8 }}>
+                <div className="form-row">
                   <input
                     className="form-input"
                     aria-label={`Custom ${toolDef?.displayName || flagTool} flag`}
                     value={customFlag}
                     onChange={e => setCustomFlag(e.target.value)}
-                    placeholder="--custom-flag"
+                    placeholder="--flag or --flag value"
+                    spellCheck={false}
                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomFlag(); } }}
                   />
-                  <button className="form-btn" onClick={addCustomFlag}>Add Flag</button>
+                  <button type="button" className="form-btn" disabled={!customFlag.trim()} onClick={addCustomFlag}>Add flag</button>
                 </div>
               </>
             )}
+            </div>
           </div>
 
               {flagTool === 'codex' && (
@@ -1388,6 +1394,16 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
                 sessions={sessions}
               />
               )}
+
+          {onOpenCliMaintenance && (
+            <div className="form-group cli-tool-updates">
+              <div>
+                <div className="form-label settings-subheading">Versions and updates</div>
+                <p className="form-hint">Check versions and update Codex, Claude Code, or OpenCode on your local machine, an SSH host, or a Coder workspace.</p>
+              </div>
+              <button type="button" className="form-btn" onClick={onOpenCliMaintenance}>Manage CLI tools…</button>
+            </div>
+          )}
             </>
           )}
 
