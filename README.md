@@ -34,7 +34,7 @@
 
 ## Download
 
-Download the [latest stable Windows release](https://github.com/maxthomas95/tether/releases/latest). The v0.7.0 milestone brings together the changes tested on the 0.6.x beta train; see the [changelog](CHANGELOG.md) for the overview and upgrade notes. Beta builds remain on the [Releases page](https://github.com/maxthomas95/tether/releases).
+Download the [latest stable Windows release](https://github.com/maxthomas95/tether/releases/latest). Beta builds, with the newest features ahead of the next stable release, are on the [Releases page](https://github.com/maxthomas95/tether/releases). See the [changelog](CHANGELOG.md) for what each release contains and any upgrade notes.
 
 - **Setup installer** — `Tether-x.y.z-Setup.exe` (recommended)
 - **Portable zip** — `Tether-x.y.z-portable.zip` (no install required)
@@ -67,7 +67,7 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 - **Canvas layout** — arrange movable, resizable session panels, pan across larger workspaces, and retain their arrangement when switching layouts
 - **Workspace recipes** — save named session groups and layouts, then reopen selected slots with edited paths or remapped environments; opening a recipe starts fresh sessions and leaves existing ones running
 - **Navigation and visibility** — `Ctrl+P` session search, an attention queue, local repository branch/dirty badges, and terminal hover previews
-- **Child-agent visibility** — Claude subagent rows for local, SSH, and Coder sessions, with status, model, timing, tokens, and a read-only transcript viewer. Trusted, opted-in local Codex lifecycle hooks also show `codex exec` runs launched by Claude
+- **Child-agent visibility** — Claude subagent rows for local, SSH, and Coder sessions, with status, model, timing, tokens, and a read-only transcript panel docked beside the terminals. Trusted, opted-in local Codex lifecycle hooks also show `codex exec` runs launched by Claude
 - **Desktop notifications** — configurable alerts for waiting, idle, unexpected exit, and terminal bell; per-session mute toggle with 🔕 badge; suppresses when focused
 - **Status indicators** — green (running), amber (waiting), gray (idle), red (dead) — passive PTY tap, no ANSI parsing; optional CLI hook integration for higher-fidelity detection
 - **Workspace persistence** — sessions save on quit and restore on launch; writes are atomic (tmp → fsync → rename)
@@ -107,12 +107,12 @@ Tether gives you a **single window** with a sidebar to manage it all — while e
 
 - **Customizable keyboard shortcuts** — every binding remappable in Settings, with a reserved-chord warn list for conflicts like `Ctrl+C`
 - **Window zoom** — `Ctrl+=` / `Ctrl+-` / `Ctrl+0` zoom UI + terminal together; `Ctrl+scroll` resizes just one pane's terminal font
-- **Font customization** — pick terminal font (Cascadia Code, JetBrains Mono, Fira Code, Consolas) and UI font (IBM Plex Sans, Inter, Atkinson Hyperlegible, System) independently
+- **Font customization** — pick terminal font (Cascadia Code, JetBrains Mono, Iosevka Fixed, IBM Plex Mono, Fira Code, Consolas) and UI font (IBM Plex Sans, Inter, Atkinson Hyperlegible, System) independently
 - **Terminal search** — search each pane's scrollback with next/previous, match-case and whole-word options
 - **Clickable URLs** — `Ctrl+click` HTTP(S) URLs and OSC 8 hyperlinks, including Claude login links, to open them in the system browser
 - **Clipboard and multiline input** — bracketed paste, write-only OSC 52 for remote clipboard copying, and per-CLI Windows Shift+Enter handling; hold Shift while dragging to select text in mouse-capturing full-screen CLIs
 - **In-app documentation** with `(?)` deep-link icons that jump from dialogs straight to the relevant docs section
-- **Eleven themes** — Catppuccin (Mocha, Macchiato, Frappé, Latte), Brass, Tether (Default Dark), Tether Light, Nord, Gruvbox Dark/Light, Harbor — applied everywhere including the title bar and docs window; bundled Iosevka Fixed and IBM Plex Mono terminal fonts with a live specimen preview
+- **Eleven built-in themes, plus your own** — Catppuccin (Mocha, Macchiato, Frappé, Latte), Brass, Tether (Default Dark), Tether Light, Nord, Gruvbox Dark/Light, Harbor — applied everywhere including the title bar and docs window, with a live terminal specimen preview; local theme packs load from Tether's themes folder
 
 ### Operations
 
@@ -156,7 +156,7 @@ Use `npm run test:coverage` to generate application coverage and a local HTML re
 
 | | Technology | Why |
 |---|---|---|
-| Shell | Electron 44 | Native window management, sandboxed preloads, context isolation |
+| Shell | Electron 45 | Native window management, sandboxed preloads, context isolation |
 | Frontend | React 19 + TypeScript | Component model, ecosystem |
 | Terminal | xterm.js 6.0 | Full VT emulation — same engine as VS Code |
 | Local PTY | node-pty | Real pseudo-terminal, same lib as VS Code |

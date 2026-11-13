@@ -1,14 +1,5 @@
 # Sessions
 
-## Check and update a session's CLI
-
-Choose **Check / update CLI…** from a Codex, Claude Code, or OpenCode session's menu.
-The maintenance terminal uses that session's machine or Coder workspace and its
-launch environment. Check the executable path and version before updating, and
-choose the update method matching your installation. Existing conversations keep
-running; restart or resume them when ready after an update. See **Settings → CLI
-updates** for installation methods and cancellation behavior.
-
 A **session** in Tether is a running CLI process in a specific directory and environment. You can have many sessions open at once, each with its own terminal. Tether is a "dumb pipe" — the PTY stream flows byte-for-byte into the terminal; nothing is parsed, rewritten, or intercepted.
 
 The optional **[Pip sidebar pet](settings.md#pip-sidebar-pet)** follows the focused session, reacts to its status, and taps a tiny keyboard while you type. Enable it from **View → Pip Sidebar Pet**. Its **waiting** button opens another session that needs input, with permission prompts first. Optional AI quips and submitted-prompt sharing have separate controls in **Settings → Pip**, using your Codex or Claude sign-in.
@@ -181,6 +172,22 @@ Right-click a session and choose **Mute notifications** to silence desktop notif
 ### Pane recovery
 
 If a session inside a split pane dies, the pane shows an in-pane overlay with **Restart in this pane** (re-spawn with the same working directory, environment, launch profile, session overrides, and known conversation, keeping the layout slot) or **Close pane**.
+
+### Session details
+
+The **⋯** button at the end of a pane's status strip opens **Session details**: the CLI, environment and project,
+the model and reasoning effort requested at launch and those last observed, context window and last request size,
+token, cache and cost totals with their cost basis, usage-tracking and hook health, active subagents, and the
+session's native ID. Values Tether has not observed are shown as unknown rather than guessed. Press **Esc** or click
+outside to close it.
+
+### Checking and updating a session's CLI
+
+Choose **Check / update CLI…** from a Codex, Claude Code, or OpenCode session's menu.
+The maintenance terminal uses that session's machine or Coder workspace and its
+launch environment. Check the executable path and version before updating, and
+choose the update method matching your installation. Existing conversations keep
+running; restart or resume them when ready after an update. See [CLI updates](settings.md#cli-updates) for installation methods and cancellation behavior.
 
 ## Broadcast Input
 

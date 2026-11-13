@@ -56,12 +56,12 @@ const pages: DocPage[] = [
   { id: 'getting-started',    title: 'Getting Started',    html: renderMarkdown(gettingStartedMd) },
   { id: 'sessions',           title: 'Sessions',           html: renderMarkdown(sessionsMd) },
   { id: 'environments',       title: 'Environments',       html: renderMarkdown(environmentsMd) },
+  { id: 'settings',           title: 'Settings',           html: renderMarkdown(settingsMd) },
+  { id: 'keyboard-shortcuts', title: 'Keyboard Shortcuts', html: renderMarkdown(keyboardShortcutsMd) },
+  { id: 'usage-quota',        title: 'Usage & Quota',      html: renderMarkdown(usageQuotaMd) },
   { id: 'vault',              title: 'Vault',              html: renderMarkdown(vaultMd) },
   { id: 'git-providers',      title: 'Git Providers',      html: renderMarkdown(gitProvidersMd) },
-  { id: 'usage-quota',        title: 'Usage & Quota',      html: renderMarkdown(usageQuotaMd) },
   { id: 'helm',               title: 'Helm',               html: renderMarkdown(helmMd) },
-  { id: 'keyboard-shortcuts', title: 'Keyboard Shortcuts', html: renderMarkdown(keyboardShortcutsMd) },
-  { id: 'settings',           title: 'Settings',           html: renderMarkdown(settingsMd) },
 ];
 
 let currentPage = pages[0];
