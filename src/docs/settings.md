@@ -238,7 +238,9 @@ When the xterm.js cursor is visible, pick its shape (block / underline / bar) an
 
 ## Sessions
 
-Launch profiles and default environment variables appear first. CLI defaults and per-tool controls are under **CLI tools**. Expand **Advanced session options** for Helm, CLI status hooks, pane splitting, and the maximum pane count. These options keep their existing opt-in behavior.
+Launch profiles and default environment variables appear first. CLI defaults and per-tool controls are under **CLI tools**. Expand **Advanced session options** for Helm and CLI status hooks. These options keep their existing opt-in behavior.
+
+Pane layout is not a setting in this dialog. Pick **Single pane**, **Up to 2 panes**, **Up to 4 panes**, or **Canvas** from the title bar's **Layout** control; see [split panes](getting-started.md#split-panes).
 
 ### Allow Helm
 
@@ -264,12 +266,6 @@ available. Terminal redraws cannot override a received completion or permission
 signal.
 
 SSH environments can extend this to their remote hosts, but only with a second, per-environment opt-in — see [CLI status hooks on remote hosts](environments.md#cli-status-hooks-on-remote-hosts). With the global toggle on and the environment checkbox off, remote sessions stay on cadence-only detection and nothing is written to the host.
-
-### Enable pane splitting
-
-Turns on drag-to-split and the split pane layout. When off, the standard layout shows one full-screen session. **Layout → Canvas** is a separate mode with movable, resizable panels and works regardless of this setting. See [Getting Started](getting-started.md#split-panes).
-
-**Maximum panes** sets a limit of 1, 2, or 4 (default 4 when splitting is enabled). The title bar's **Layout** control changes the same settings immediately. Lowering the limit leaves other sessions running in the sidebar.
 
 ### Default environment variables
 

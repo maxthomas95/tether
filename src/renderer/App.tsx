@@ -153,8 +153,9 @@ export function App() {
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
   const [allowHelm, setAllowHelm] = useState(false);
-  const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
-  const [maxPanes, setMaxPanes] = useState(4);
+  // The title bar's Layout control is the only place this changes. 1 means a single pane.
+  const [maxPanes, setMaxPanes] = useState(1);
+  const enablePaneSplitting = maxPanes > 1;
   const [resumePickerFor, setResumePickerFor] = useState<{ sessionId: string; workingDir: string; cliTool: CreateSessionOptions['cliTool']; currentTranscriptId?: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null);
@@ -251,7 +252,7 @@ export function App() {
   // the restored sessions and any failed entries have been accounted for.
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const savedCanvas = useMemo(() => saveCanvas(canvasState, sessions.map(s => s.id)), [canvasState, sessions]);
-  const effectiveMaxPanes = canvasEnabled ? Number.POSITIVE_INFINITY : enablePaneSplitting ? maxPanes : 1;
+  const effectiveMaxPanes = canvasEnabled ? Number.POSITIVE_INFINITY : maxPanes;
 
   const handleCanvasMode = useCallback((enabled: boolean) => {
     if (enabled) {
@@ -430,8 +431,7 @@ export function App() {
       if (cancelled) return;
       setShowResumeBadge(badge === 'true');
       setEnableResumePicker(picker !== 'false');
-      setEnablePaneSplitting(splitting === 'true');
-      setMaxPanes(parseMaxPanes(maxPaneValue));
+      setMaxPanes(savedPaneLimit(splitting, maxPaneValue));
       const shouldHideCursor = hideCursor !== 'false';
       setHideTerminalCursor(shouldHideCursor);
       setAllowHelm(helm === 'true');
@@ -523,7 +523,7 @@ export function App() {
           // The main process still owns the PTY processes — just rebuild UI state.
           const splittingSetting = await window.electronAPI.config.get?.('enablePaneSplitting');
           const maxPaneSetting = await window.electronAPI.config.get?.('maxPanes');
-          const reconnectMaxPanes = splittingSetting === 'true' ? parseMaxPanes(maxPaneSetting) : 1;
+          const reconnectMaxPanes = savedPaneLimit(splittingSetting, maxPaneSetting);
 
           // Load saved workspace for ordering/focus hints
           const workspace = await window.electronAPI.workspace?.load?.();
@@ -633,7 +633,7 @@ export function App() {
         const resumeChats = resumeSetting !== 'false';
         const splittingSetting = await window.electronAPI.config.get?.('enablePaneSplitting');
         const maxPaneSetting = await window.electronAPI.config.get?.('maxPanes');
-        const restoreMaxPanes = splittingSetting === 'true' ? parseMaxPanes(maxPaneSetting) : 1;
+        const restoreMaxPanes = savedPaneLimit(splittingSetting, maxPaneSetting);
 
         const workspace = await window.electronAPI.workspace?.load?.();
         if (!workspace || !workspace.sessions.length) return;
@@ -911,7 +911,7 @@ export function App() {
   }, [splitDispatch, canvasDispatch, setCanvasEnabled]);
   const workspaceRecipes = useWorkspaceRecipeController({
     activeSessionId, splitState: splitLayoutState, canvasState, canvasEnabled,
-    maxPanes: enablePaneSplitting ? maxPanes : 1,
+    maxPanes,
     registerSession: registerRecipeSession, requestVaultLogin: requestRecipeVaultLogin,
     applyLayout: applyRecipeLayout, focusPane: termManager.focusPane, notifyError,
   });
@@ -2000,7 +2000,6 @@ export function App() {
               await window.electronAPI.config.set('maxPanes', String(limit));
               await window.electronAPI.config.set('enablePaneSplitting', limit > 1 ? 'true' : 'false');
               setMaxPanes(limit);
-              setEnablePaneSplitting(limit > 1);
               handleCanvasMode(false);
             } catch (error) {
               notifyError('Could not update the pane layout', error);
@@ -2410,7 +2409,12 @@ function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
   return true;
 }
 
-function parseMaxPanes(value: string | null | undefined): number {
-  const parsed = Number(value);
+/**
+ * Pane limit from the two saved keys. `enablePaneSplitting` predates the Layout control and is still
+ * written alongside `maxPanes`, so an older build reads the same layout.
+ */
+function savedPaneLimit(splitting: string | null | undefined, maxPanes: string | null | undefined): number {
+  if (splitting !== 'true') return 1;
+  const parsed = Number(maxPanes);
   return clampMaxPanes(Number.isFinite(parsed) ? parsed : 4);
 }

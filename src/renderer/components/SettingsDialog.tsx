@@ -165,8 +165,6 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
   const [showResumeBadge, setShowResumeBadge] = useState(false);
   const [showSubagents, setShowSubagents] = useState(true);
   const [enableResumePicker, setEnableResumePicker] = useState(true);
-  const [enablePaneSplitting, setEnablePaneSplitting] = useState(false);
-  const [maxPanes, setMaxPanes] = useState(4);
   const [allowHelm, setAllowHelm] = useState(false);
   const [cliHooksEnabled, setCliHooksEnabled] = useState(false);
   const [codexLifecycleHooksEnabled, setCodexLifecycleHooksEnabled] = useState(false);
@@ -263,8 +261,6 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       window.electronAPI.config.get?.('resumePreviousChats')?.catch(() => null),
       window.electronAPI.config.get?.('showResumeBadge')?.catch(() => null),
       window.electronAPI.config.get?.('enableResumePicker')?.catch(() => null),
-      window.electronAPI.config.get?.('enablePaneSplitting')?.catch(() => null),
-      window.electronAPI.config.get?.('maxPanes')?.catch(() => null),
       window.electronAPI.config.get?.('updateCheckEnabled')?.catch(() => null),
       window.electronAPI.config.get?.('confirmQuitWithActiveSessions')?.catch(() => null),
       window.electronAPI.config.get?.('quotaEnabled')?.catch(() => null),
@@ -287,7 +283,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       window.electronAPI.config.get?.('updateChannel')?.catch(() => null),
       window.electronAPI.config.get('uiDensity').catch(() => null),
       window.electronAPI.config.get?.('showSubagentsInSidebar')?.catch(() => null),
-    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, splitting, maxPaneValue, updateCheck, confirmQuit, quota, codexQuotaWarning, usageStrip, globalUsage, cliBreakdown, dailyBudget, weeklyBudget, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, codexLifecycleHooks, updateCh, densityValue, subagentsSetting]) => {
+    ]).then(([vars, restore, perToolFlags, cliToolSetting, customCliBinarySetting, resumeChats, badge, picker, updateCheck, confirmQuit, quota, codexQuotaWarning, usageStrip, globalUsage, cliBreakdown, dailyBudget, weeklyBudget, hideCursor, helm, fontSize, fontFamily, uiFont, cursorStyle, cursorBlink, scrollback, cliHooks, codexLifecycleHooks, updateCh, densityValue, subagentsSetting]) => {
       if (cancelled) return;
       setEnvVars(vars || {});
       setRestoreOnLaunch(restore !== 'false');
@@ -299,8 +295,6 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       setShowResumeBadge(badge === 'true');
       setShowSubagents(subagentsSetting !== 'false');
       setEnableResumePicker(picker !== 'false');
-      setEnablePaneSplitting(splitting === 'true');
-      setMaxPanes(parseMaxPanes(maxPaneValue));
       setUpdateCheckEnabled(updateCheck !== 'false');
       setConfirmQuitWithActiveSessions(confirmQuit !== 'false');
       setQuotaEnabled(quota !== 'false');
@@ -393,8 +387,6 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       await window.electronAPI.config.set?.('showResumeBadge', showResumeBadge ? 'true' : 'false');
       await window.electronAPI.config.set?.('showSubagentsInSidebar', showSubagents ? 'true' : 'false');
       await window.electronAPI.config.set?.('enableResumePicker', enableResumePicker ? 'true' : 'false');
-      await window.electronAPI.config.set?.('enablePaneSplitting', enablePaneSplitting ? 'true' : 'false');
-      await window.electronAPI.config.set?.('maxPanes', String(maxPanes));
       await window.electronAPI.config.set?.('updateCheckEnabled', updateCheckEnabled ? 'true' : 'false');
       await window.electronAPI.config.set?.('confirmQuitWithActiveSessions', confirmQuitWithActiveSessions ? 'true' : 'false');
       await window.electronAPI.config.set?.('updateChannel', updateChannel);
@@ -436,7 +428,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
     } finally {
       setSaving(false);
     }
-  }, [saving, loaded, currentTheme, uiDensity, envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, showSubagents, enableResumePicker, enablePaneSplitting, maxPanes, updateCheckEnabled, confirmQuitWithActiveSessions, updateChannel, quotaEnabled, codexQuotaWarningPercent, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, dailyBudgetUsd, weeklyBudgetUsd, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, codexLifecycleHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsSettings, jobsDirty, jobsTesting, onClose]);
+  }, [saving, loaded, currentTheme, uiDensity, envVars, restoreOnLaunch, resumePreviousChats, showResumeBadge, showSubagents, enableResumePicker, updateCheckEnabled, confirmQuitWithActiveSessions, updateChannel, quotaEnabled, codexQuotaWarningPercent, usageStripEnabled, globalUsageEnabled, cliToolBreakdownEnabled, dailyBudgetUsd, weeklyBudgetUsd, hideTerminalCursor, terminalCursorStyle, terminalCursorBlink, allowHelm, cliHooksEnabled, codexLifecycleHooksEnabled, terminalFontSize, terminalScrollback, terminalFontFamily, uiFontFamily, defaultCliTool, defaultCustomCliBinary, cliFlagsPerTool, vaultConfig, notificationPrefs, jobsSettings, jobsDirty, jobsTesting, onClose]);
 
   const handleJobsAction = async (action: 'save' | 'disable' | 'remove') => {
     if (jobsTesting || saving || (action === 'save' && !jobsSettings)) return;
@@ -615,7 +607,7 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
     appearance: 'theme color dark light font interface density comfortable compact sidebar subagents',
     general: 'restore resume startup launch update quit close folder logs',
     terminal: 'terminal cursor font size scrollback blink',
-    sessions: 'profiles environment variables helm hooks splitting maximum panes advanced',
+    sessions: 'profiles environment variables helm hooks advanced',
     'cli-tools': 'claude codex opencode copilot cli default flags update account usage quota configuration model agent reasoning profile hooks lifecycle mcp skill',
     notifications: 'notifications alerts sound waiting idle webhook',
     shortcuts: 'shortcuts keyboard keybindings remap',
@@ -1260,42 +1252,6 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
               need &ldquo;Install CLI status hooks on this host&rdquo; enabled per
               environment — Tether never writes to a remote host without that opt-in.
             </p>
-          </div>
-
-          <div className="form-group">
-            <label className="form-radio-label">
-              <input
-                type="checkbox"
-                checked={enablePaneSplitting}
-                onChange={e => setEnablePaneSplitting(e.target.checked)}
-              />
-              <span>Enable pane splitting</span>
-              <span className="settings-tag settings-tag--experimental">Experimental</span>
-            </label>
-            <p className="form-hint">
-              Drag session headers to split the terminal area into multiple panes.
-              Disable if you hit layout bugs &mdash; new sessions will replace the focused pane instead.
-            </p>
-            {enablePaneSplitting && (
-              <div style={{ marginLeft: 22, marginTop: 10 }}>
-                <label className="form-label" htmlFor="max-panes-select">
-                  Maximum panes
-                </label>
-                <select
-                  id="max-panes-select"
-                  className="form-input"
-                  value={maxPanes}
-                  onChange={e => setMaxPanes(parseMaxPanes(e.target.value))}
-                >
-                  <option value={1}>1</option>
-                  <option value={2}>2</option>
-                  <option value={4}>4</option>
-                </select>
-                <p className="form-hint">
-                  Panes use equal locked splits. Three-pane layouts are skipped.
-                </p>
-              </div>
-            )}
           </div>
 
           </details>
@@ -2143,14 +2099,6 @@ export function SettingsDialog({ isOpen, initialSection, onClose, currentTheme, 
       />
     </div>
   );
-}
-
-function parseMaxPanes(value: string | null | undefined): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 4;
-  if (parsed <= 1) return 1;
-  if (parsed <= 2) return 2;
-  return 4;
 }
 
 function trimmedSetting(value: unknown): string {
