@@ -12,7 +12,7 @@ Tether is a desktop session multiplexer for Claude Code, Codex CLI, and OpenCode
 
 ## Tech Stack
 
-- **Shell:** Electron 44 (sandboxed preloads; main owns PTY lifecycle, renderer owns UI)
+- **Shell:** Electron 45 (sandboxed preloads; main owns PTY lifecycle, renderer owns UI)
 - **Frontend:** React 19 + TypeScript
 - **Terminal:** xterm.js 6.0 + xterm-addon-fit (same as VS Code)
 - **Local PTY:** node-pty

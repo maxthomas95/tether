@@ -27,7 +27,7 @@ This milestone brings the 0.6.x beta train to stable. The [changelog](CHANGELOG.
 - Investigate new status/attention regressions using live traces across CLI, transport, and hook settings. Cadence-only status remains an estimate, especially for quiet model calls or child agents.
 - Keep event-day accounting, request/compaction deduplication, per-model/environment attribution, and unknown daily timing explicit in usage UI and exports.
 - **Copilot cost tracking remains blocked:** there is no supported cost reader. Inspect an installed CLI's persisted usage format before proposing ingestion; resume and transcript browsing already work.
-- OpenCode usage covers the supported local Crush database, not all OpenCode storage formats. Remote OpenCode usage and broader format coverage remain unimplemented.
+- OpenCode usage covers the supported native local SQLite schema and legacy Crush snapshots, not every OpenCode storage format. Remote OpenCode usage, quota, and broader format coverage remain unimplemented.
 
 ### Release and desktop quality
 
